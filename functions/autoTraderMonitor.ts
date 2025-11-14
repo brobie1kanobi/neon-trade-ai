@@ -1,19 +1,15 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
- * Auto-Trader Monitor - SIMPLIFIED & INDEPENDENT
+ * Auto-Trader Monitor - CRITICAL: Uses correct balance based on mode
  * 
- * CRITICAL: Auto-trader operates INDEPENDENTLY of Kraken
- * - Only checks local database state
- * - Does NOT wait for Kraken API responses
- * - Returns health instantly based on local data
+ * LEGAL COMPLIANCE: Never mixes sim and real balances
  */
 
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     
-    // Fast auth check
     const user = await Promise.race([
       base44.auth.me(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
@@ -27,18 +23,16 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch (e) {
-      // Ignore JSON parse errors
+      // Ignore parse errors
     }
 
     const { action = 'health' } = body;
-    console.log('[autoTraderMonitor] Action:', action);
 
     // ============================================
-    // HEALTH CHECK - FAST & LOCAL ONLY
+    // HEALTH CHECK - RESPECTS MODE SETTING
     // ============================================
     if (action === 'health') {
       try {
-        // CRITICAL: All queries run in parallel with fast timeouts
         const [settings, trades, orders, wallet] = await Promise.all([
           Promise.race([
             base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
@@ -70,21 +64,26 @@ Deno.serve(async (req) => {
         const userSetting = settings[0] || {};
         const walletData = wallet[0] || {};
         
-        // Calculate metrics
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const trades24h = trades.filter(t => new Date(t.created_date) > oneDayAgo);
-        
+        // CRITICAL: Respect mode setting
         const isSimMode = userSetting.sim_trading_mode !== false;
+        
+        // CRITICAL: Use correct balance based on mode
         const balance = isSimMode 
           ? (Number(walletData.cash_balance) || 0)
           : (Number(walletData.real_cash_balance) || 0);
+
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const trades24h = trades.filter(t => {
+          const tradeDate = new Date(t.created_date);
+          return tradeDate > oneDayAgo && t.is_simulation === isSimMode;
+        });
 
         const health = {
           auto_trading_enabled: Boolean(userSetting.auto_trading_enabled),
           sim_trading_mode: isSimMode,
           wallet_balance: balance,
           wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
-          active_conditional_orders: orders.length,
+          active_conditional_orders: orders.filter(o => o.is_simulation === isSimMode).length,
           trades_24h: {
             total: trades24h.length,
             buys: trades24h.filter(t => t.type === 'buy').length,
@@ -99,7 +98,6 @@ Deno.serve(async (req) => {
       } catch (healthError) {
         console.error('[autoTraderMonitor] Health error:', healthError);
         
-        // Return minimal valid health data
         return Response.json({
           success: true,
           health: {
@@ -116,11 +114,9 @@ Deno.serve(async (req) => {
     }
 
     // ============================================
-    // EMERGENCY STOP - SIMPLE & FAST
+    // EMERGENCY STOP
     // ============================================
     if (action === 'emergency_stop') {
-      console.log('[autoTraderMonitor] 🚨 EMERGENCY STOP');
-
       try {
         const [settings, activeOrders] = await Promise.all([
           base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
@@ -130,14 +126,12 @@ Deno.serve(async (req) => {
           })
         ]);
 
-        // Disable auto-trading
         if (settings.length > 0) {
           await base44.asServiceRole.entities.UserSettings.update(settings[0].id, {
             auto_trading_enabled: false
           });
         }
 
-        // Cancel all active orders in parallel
         await Promise.all(
           activeOrders.map(order =>
             base44.asServiceRole.entities.ConditionalOrder.update(order.id, {
@@ -159,17 +153,6 @@ Deno.serve(async (req) => {
           error: stopError.message
         }, { status: 200 });
       }
-    }
-
-    // ============================================
-    // CLEAR ERRORS - NOT NEEDED, REMOVED
-    // ============================================
-    if (action === 'clear_errors') {
-      return Response.json({
-        success: true,
-        message: 'Error logs are auto-cleaned',
-        cleared_count: 0
-      }, { status: 200 });
     }
 
     return Response.json({ 

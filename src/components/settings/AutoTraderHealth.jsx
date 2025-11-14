@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +17,12 @@ export default function AutoTraderHealth() {
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
 
-  // Listen to WebSocket for real-time balance updates (LIVE mode only)
-  const { isConnected: wsConnected, balances: wsBalances } = useRealtimeKrakenData({
+  // CRITICAL: Use WebSocket for LIVE mode balance
+  const { 
+    isConnected: wsConnected, 
+    usdBalance: wsUsdBalance,
+    totalAssets: wsTotalAssets
+  } = useRealtimeKrakenData({
     subscribeToBalances: !isSimMode,
     subscribeToOrders: !isSimMode,
     subscribeToExecutions: !isSimMode,
@@ -30,7 +34,6 @@ export default function AutoTraderHealth() {
       setLoading(true);
       setError(null);
       
-      // CRITICAL: Fast timeout - 5 seconds max
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout after 5s')), 5000)
       );
@@ -52,7 +55,6 @@ export default function AutoTraderHealth() {
       console.error('[AutoTraderHealth] Error:', fetchError.message);
       setError(fetchError.message);
       
-      // Show minimal fallback health
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
         sim_trading_mode: isSimMode,
@@ -69,26 +71,25 @@ export default function AutoTraderHealth() {
 
   useEffect(() => {
     fetchHealth();
-    
-    // Refresh every 30 seconds
     const interval = setInterval(fetchHealth, 30000);
-    
     return () => clearInterval(interval);
-  }, []);
+  }, [isSimMode]);
 
-  // Auto-update balance from WebSocket in LIVE mode
-  useEffect(() => {
-    if (!isSimMode && wsBalances && Object.keys(wsBalances).length > 0) {
-      const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
-      
-      setHealth(prev => prev ? {
-        ...prev,
-        wallet_balance: usdBalance,
-        wallet_status: usdBalance < 0 ? 'critical' : usdBalance < 10 ? 'warning' : 'healthy',
-        last_check: new Date().toISOString()
-      } : null);
+  // CRITICAL: Use WebSocket balance in LIVE mode
+  const displayBalance = React.useMemo(() => {
+    if (isSimMode) {
+      return health?.wallet_balance || 0;
     }
-  }, [isSimMode, wsBalances]);
+    // LIVE MODE: Use WebSocket USD balance
+    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (health?.wallet_balance || 0);
+  }, [isSimMode, wsConnected, wsUsdBalance, health?.wallet_balance]);
+
+  const walletStatus = React.useMemo(() => {
+    const balance = displayBalance;
+    if (balance < 0) return 'critical';
+    if (balance < 10) return 'warning';
+    return 'healthy';
+  }, [displayBalance]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
@@ -141,9 +142,9 @@ export default function AutoTraderHealth() {
 
   if (!health) return null;
 
-  const isHealthy = health.wallet_status === 'healthy';
-  const isWarning = health.wallet_status === 'warning';
-  const isCritical = health.wallet_status === 'critical';
+  const isHealthy = walletStatus === 'healthy';
+  const isWarning = walletStatus === 'warning';
+  const isCritical = walletStatus === 'critical';
 
   return (
     <Card className="border-2" style={{ 
@@ -160,10 +161,10 @@ export default function AutoTraderHealth() {
               <CheckCircle className="w-5 h-5 text-green-500" />
             )}
             Auto-Trader Status
-            {!isSimMode && wsConnected && (
-              <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
-                <Wifi className="w-3 h-3" />
-                Live
+            {!isSimMode && (
+              <Badge className="bg-green-500 text-white text-xs flex items-center gap-1">
+                {wsConnected ? <Wifi className="w-3 h-3" /> : null}
+                🟢 LIVE
               </Badge>
             )}
           </CardTitle>
@@ -181,34 +182,50 @@ export default function AutoTraderHealth() {
           </div>
         )}
 
+        {!isSimMode && !wsConnected && (
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+            <p className="text-xs font-semibold text-red-700 dark:text-red-400">
+              ⚠️ Kraken WebSocket Disconnected
+            </p>
+            <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+              Auto-trader may not function properly without live connection
+            </p>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Status</span>
           <Badge className={
-            health.auto_trading_enabled && !health.sim_trading_mode
+            health.auto_trading_enabled && !isSimMode
               ? 'bg-green-500 text-white'
               : health.auto_trading_enabled
               ? 'bg-blue-500 text-white'
               : 'bg-gray-500 text-white'
           }>
             {health.auto_trading_enabled 
-              ? (health.sim_trading_mode ? '💎 Running (SIM)' : '🟢 LIVE & Active')
+              ? (isSimMode ? '💎 Running (SIM)' : '🟢 LIVE & Active')
               : '⏸️ Disabled'}
           </Badge>
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Wallet Balance</span>
+          <span className="text-sm font-medium">
+            {isSimMode ? 'Wallet Balance (SIM)' : 'USD Balance (LIVE)'}
+          </span>
           <div className="text-right">
-            <p className="font-semibold">${health.wallet_balance.toFixed(2)}</p>
+            <p className="font-semibold">${displayBalance.toFixed(2)}</p>
             <Badge variant="outline" className={
-              health.wallet_status === 'critical'
+              walletStatus === 'critical'
                 ? 'text-red-600 border-red-600'
-                : health.wallet_status === 'warning'
+                : walletStatus === 'warning'
                 ? 'text-yellow-600 border-yellow-600'
                 : 'text-green-600 border-green-600'
             }>
-              {health.wallet_status}
+              {walletStatus}
             </Badge>
+            {!isSimMode && wsConnected && (
+              <p className="text-xs text-green-600 mt-1">✅ Live WebSocket</p>
+            )}
           </div>
         </div>
 
@@ -244,7 +261,7 @@ export default function AutoTraderHealth() {
           </div>
         </div>
 
-        {health.auto_trading_enabled && !health.sim_trading_mode && (
+        {health.auto_trading_enabled && !isSimMode && (
           <Button
             variant="destructive"
             className="w-full"
@@ -258,8 +275,8 @@ export default function AutoTraderHealth() {
 
         <p className="text-xs text-gray-500 text-center">
           Last checked: {new Date(health.last_check).toLocaleTimeString()}
-          {!isSimMode && wsConnected && (
-            <span className="text-green-600"> • WebSocket Active 🟢</span>
+          {!isSimMode && wsConnected && wsTotalAssets > 0 && (
+            <span className="text-green-600"> • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''} • WebSocket Active 🟢</span>
           )}
         </p>
       </CardContent>
