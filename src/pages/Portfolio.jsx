@@ -10,6 +10,7 @@ import AssetAllocation from "../components/portfolio/AssetAllocation";
 import TradingInterface from "../components/portfolio/TradingInterface";
 import TradeHistory from "../components/portfolio/TradeHistory";
 import DataSync from "../components/portfolio/DataSync";
+import OpenAndConditionalOrders from "../components/portfolio/OpenAndConditionalOrders";
 import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
@@ -608,6 +609,10 @@ export default function Portfolio() {
           allocations={detailedHoldings}
           isLoading={isCalculatingValue || krakenLoading || pricesLoading}
         />
+      </motion.div>
+      
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        <OpenAndConditionalOrders />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
