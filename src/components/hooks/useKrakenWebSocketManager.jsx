@@ -2,10 +2,39 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
- * PRODUCTION KRAKEN WEBSOCKET - WITH AUTO TOKEN REFRESH
- * Maintains persistent connection with automatic reconnect and token refresh
- * FIXED: Proper ready state checking before sending
+ * PRODUCTION KRAKEN WEBSOCKET - FIXED asset normalization & conditional orders
  */
+
+// CRITICAL: Normalize Kraken asset codes (XXRP → XRP, XXBT → BTC)
+function normalizeKrakenSymbol(symbol) {
+  if (!symbol) return symbol;
+  
+  let normalized = symbol;
+  
+  // Remove X/Z prefixes
+  if (symbol.startsWith('X') && symbol.length > 3) {
+    normalized = symbol.substring(1);
+  }
+  if (symbol.startsWith('Z') && symbol.length > 3) {
+    normalized = symbol.substring(1);
+  }
+  
+  // Map to standard symbols
+  const map = {
+    'XBT': 'BTC',
+    'XDG': 'DOGE',
+    'XRP': 'XRP',
+    'ETH': 'ETH',
+    'SOL': 'SOL',
+    'ADA': 'ADA',
+    'DOT': 'DOT',
+    'DOGE': 'DOGE',
+    'LINK': 'LINK',
+    'USD': 'USD'
+  };
+  
+  return map[normalized] || normalized;
+}
 
 const GLOBAL_WS_STATE = {
   ws: null,
@@ -81,7 +110,6 @@ function setupTokenRefresh() {
   }, TOKEN_REFRESH_INTERVAL);
 }
 
-// CRITICAL: Safe send that checks ready state
 function safeSend(message) {
   if (!GLOBAL_WS_STATE.ws) {
     GLOBAL_WS_STATE.pendingSubscriptions.push(message);
@@ -92,7 +120,6 @@ function safeSend(message) {
     GLOBAL_WS_STATE.ws.send(JSON.stringify(message));
     return true;
   } else if (GLOBAL_WS_STATE.ws.readyState === WebSocket.CONNECTING) {
-    // Queue for when connection opens
     GLOBAL_WS_STATE.pendingSubscriptions.push(message);
     return false;
   }
@@ -126,15 +153,12 @@ async function connectWebSocket() {
       GLOBAL_WS_STATE.reconnectAttempts = 0;
       emitEvent('connected', {});
       
-      // CRITICAL: Wait a tick before sending subscriptions
       setTimeout(() => {
-        // Send pending subscriptions
         if (GLOBAL_WS_STATE.pendingSubscriptions.length > 0) {
           GLOBAL_WS_STATE.pendingSubscriptions.forEach(sub => safeSend(sub));
           GLOBAL_WS_STATE.pendingSubscriptions = [];
         }
         
-        // Resubscribe active subscriptions
         GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => safeSend(sub));
       }, 100);
     };
@@ -201,8 +225,9 @@ function handleMessage(message) {
 function handleTickerUpdate(data) {
   data.forEach(ticker => {
     const { symbol, last, bid, ask, change_24h, volume_24h } = ticker;
-    GLOBAL_WS_STATE.prices.set(symbol, {
-      symbol, price: last, bid, ask, change_24h, volume_24h, timestamp: Date.now()
+    const normalized = normalizeKrakenSymbol(symbol);
+    GLOBAL_WS_STATE.prices.set(normalized, {
+      symbol: normalized, price: last, bid, ask, change_24h, volume_24h, timestamp: Date.now()
     });
   });
   emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
@@ -211,8 +236,9 @@ function handleTickerUpdate(data) {
 function handleBalanceSnapshot(data) {
   data.forEach(balance => {
     const { asset, balance: amount, available } = balance;
-    GLOBAL_WS_STATE.balances.set(asset, {
-      asset, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
+    const normalized = normalizeKrakenSymbol(asset);
+    GLOBAL_WS_STATE.balances.set(normalized, {
+      asset: normalized, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
     });
   });
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
@@ -221,8 +247,9 @@ function handleBalanceSnapshot(data) {
 function handleBalanceUpdate(data) {
   data.forEach(balance => {
     const { asset, balance: amount, available } = balance;
-    GLOBAL_WS_STATE.balances.set(asset, {
-      asset, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
+    const normalized = normalizeKrakenSymbol(asset);
+    GLOBAL_WS_STATE.balances.set(normalized, {
+      asset: normalized, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
     });
   });
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
@@ -231,17 +258,27 @@ function handleBalanceUpdate(data) {
 function handleOrderSnapshot(data) {
   GLOBAL_WS_STATE.orders.clear();
   data.forEach(order => {
-    GLOBAL_WS_STATE.orders.set(order.order_id, order);
+    // CRITICAL: Normalize symbol in order
+    const normalizedOrder = {
+      ...order,
+      symbol: normalizeKrakenSymbol(order.symbol)
+    };
+    GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
   });
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
 }
 
 function handleOrderUpdate(data) {
   data.forEach(order => {
+    const normalizedOrder = {
+      ...order,
+      symbol: normalizeKrakenSymbol(order.symbol)
+    };
+    
     if (order.status === 'closed' || order.status === 'canceled') {
       GLOBAL_WS_STATE.orders.delete(order.order_id);
     } else {
-      GLOBAL_WS_STATE.orders.set(order.order_id, order);
+      GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
     }
   });
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));

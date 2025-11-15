@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Wallet, Eye, EyeOff, RefreshCw, Wifi, WifiOff, AlertCircle, TrendingUp } from "lucide-react";
@@ -16,8 +16,15 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const [isVisible, setIsVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  
+  // CRITICAL: Persistent state to prevent flashing to zero
+  const persistentDataRef = useRef({
+    cash: 0,
+    portfolio: 0,
+    total: 0,
+    assets: 0
+  });
 
-  // Use WebSocket for LIVE mode
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -29,34 +36,64 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
-    subscribeToBalances: true,
+    subscribeToBalances: !isSimMode,
     subscribeToOrders: false,
     subscribeToExecutions: true,
     isSimMode
   });
 
+  // CRITICAL: Calculate display values and PERSIST them
   const displayCash = React.useMemo(() => {
+    let value;
+    
     if (isSimMode) {
-      return wallet?.cash_balance || 0;
+      value = wallet?.cash_balance || 0;
+    } else {
+      const krakenUSD = wsUsdBalance || 0;
+      const dbCash = wallet?.real_cash_balance || 0;
+      value = wsConnected && krakenUSD >= 0 ? krakenUSD : dbCash;
     }
-
-    const krakenUSD = wsUsdBalance || 0;
-    const dbCash = wallet?.real_cash_balance || 0;
-
-    return wsConnected && krakenUSD >= 0 ? krakenUSD : dbCash;
+    
+    // CRITICAL: Only update if value is valid (non-zero or first load)
+    if (value > 0 || persistentDataRef.current.cash === 0) {
+      persistentDataRef.current.cash = value;
+    }
+    
+    return persistentDataRef.current.cash;
   }, [isSimMode, wallet, wsUsdBalance, wsConnected]);
 
   const displayPortfolioValue = React.useMemo(() => {
+    let value;
+    
     if (isSimMode) {
-      return portfolioMarketValue;
+      value = portfolioMarketValue;
+    } else {
+      const wsPortfolio = wsTotalValue - (wsUsdBalance || 0);
+      value = wsConnected && wsPortfolio >= 0 ? wsPortfolio : portfolioMarketValue;
     }
-
-    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue;
-  }, [isSimMode, wsTotalValue, portfolioMarketValue, wsConnected]);
+    
+    // CRITICAL: Only update if value is valid
+    if (value > 0 || persistentDataRef.current.portfolio === 0) {
+      persistentDataRef.current.portfolio = value;
+    }
+    
+    return persistentDataRef.current.portfolio;
+  }, [isSimMode, wsTotalValue, portfolioMarketValue, wsConnected, wsUsdBalance]);
 
   const totalBalance = displayCash + displayPortfolioValue;
   
-  const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
+  // CRITICAL: Persist total and assets
+  useEffect(() => {
+    if (totalBalance > 0) {
+      persistentDataRef.current.total = totalBalance;
+    }
+    
+    if (!isSimMode && wsConnected && wsTotalAssets > 0) {
+      persistentDataRef.current.assets = wsTotalAssets;
+    }
+  }, [totalBalance, wsTotalAssets, wsConnected, isSimMode]);
+  
+  const totalAssets = isSimMode ? 0 : persistentDataRef.current.assets;
 
   const totalDeposits = isSimMode ? wallet?.total_deposits || 0 : wallet?.real_total_deposits || 0;
   const totalWithdrawals = isSimMode ? wallet?.total_withdrawals || 0 : wallet?.real_total_withdrawals || 0;
@@ -83,6 +120,14 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       clearTimeout(syncTimeout);
 
       if (syncData?.success) {
+        // CRITICAL: Update persistent ref BEFORE showing toast
+        if (syncData.usdBalance >= 0) {
+          persistentDataRef.current.cash = syncData.usdBalance;
+        }
+        if (syncData.holdings?.length > 0) {
+          persistentDataRef.current.assets = syncData.holdings.length;
+        }
+        
         toast.success('✅ Kraken synced!', {
           description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
           duration: 3000
@@ -91,7 +136,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         invalidateCache();
         invalidatePriceCache();
 
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
         wsRefresh();
 
@@ -105,9 +150,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
         if (onSyncComplete) onSyncComplete();
 
+        // CRITICAL: Delay reload to allow state to settle
         setTimeout(() => {
           window.location.href = window.location.pathname + '?t=' + Date.now();
-        }, 1000);
+        }, 1500);
       } else {
         throw new Error(syncData?.error || 'Sync failed');
       }
@@ -155,14 +201,14 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {!isSimMode && wsConnected && (
+        {!isSimMode && wsConnected && totalBalance > 0 && (
           <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-green-600" />
               <div>
                 <p className="text-xs font-semibold text-green-700 dark:text-green-400">Real-Time WebSocket</p>
                 <p className="text-xs text-green-600 dark:text-green-500">
-                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} found • Updated: {wsLastUpdated ? new Date(wsLastUpdated).toLocaleTimeString() : '—'}
+                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} • Updated: {wsLastUpdated ? new Date(wsLastUpdated).toLocaleTimeString() : '—'}
                 </p>
               </div>
             </div>
@@ -175,21 +221,23 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Total Balance</p>
           {isVisible ? (
-            <NumberDisplay
-              value={totalBalance}
-              prefix="$"
-              decimals={2}
-              className="neon-text"
-              maxFontSize={36}
-              minFontSize={20}
-            />
+            <>
+              <NumberDisplay
+                value={totalBalance}
+                prefix="$"
+                decimals={2}
+                className="neon-text"
+                maxFontSize={36}
+                minFontSize={20}
+              />
+              {!isSimMode && wsConnected && totalBalance > 0 && (
+                <p className="text-xs mt-1 text-green-600 dark:text-green-400">
+                  ✅ Live via WebSocket
+                </p>
+              )}
+            </>
           ) : (
             <p className="text-3xl font-bold neon-text">••••••</p>
-          )}
-          {!isSimMode && wsConnected && totalBalance > 0 && (
-            <p className="text-xs mt-1 text-green-600 dark:text-green-400">
-              ✅ Live via WebSocket
-            </p>
           )}
         </div>
 
