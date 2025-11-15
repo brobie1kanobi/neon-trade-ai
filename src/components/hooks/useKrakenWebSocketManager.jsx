@@ -3,7 +3,8 @@ import { base44 } from '@/api/base44Client';
 
 /**
  * PRODUCTION KRAKEN WEBSOCKET - WITH AUTO TOKEN REFRESH
- * FIXED: Proper Kraken asset name normalization (XXRP -> XRP)
+ * Maintains persistent connection with automatic reconnect and token refresh
+ * FIXED: Proper ready state checking before sending
  */
 
 const GLOBAL_WS_STATE = {
@@ -26,35 +27,6 @@ const WS_URL = 'wss://ws.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
 const TOKEN_REFRESH_INTERVAL = 12 * 60 * 1000;
-
-// CRITICAL: Parse Kraken asset names
-function parseKrakenAsset(krakenCode) {
-  if (!krakenCode || typeof krakenCode !== 'string') return krakenCode;
-  
-  let symbol = krakenCode;
-  
-  // Remove X prefix (but NOT for XRP itself)
-  if (krakenCode.startsWith('X') && krakenCode.length > 3 && krakenCode !== 'XRP') {
-    symbol = krakenCode.substring(1);
-  }
-  // Remove Z prefix
-  if (krakenCode.startsWith('Z') && krakenCode.length > 3) {
-    symbol = krakenCode.substring(1);
-  }
-  
-  // Direct mappings
-  const symbolMap = {
-    'XXRP': 'XRP',
-    'XBT': 'BTC',
-    'XXBT': 'BTC',
-    'XETH': 'ETH',
-    'XXDG': 'DOGE',
-    'ZUSD': 'USD',
-    'ZEUR': 'EUR'
-  };
-  
-  return symbolMap[krakenCode] || symbol;
-}
 
 function emitEvent(eventName, data) {
   const listeners = GLOBAL_WS_STATE.eventListeners.get(eventName) || [];
@@ -120,6 +92,7 @@ function safeSend(message) {
     GLOBAL_WS_STATE.ws.send(JSON.stringify(message));
     return true;
   } else if (GLOBAL_WS_STATE.ws.readyState === WebSocket.CONNECTING) {
+    // Queue for when connection opens
     GLOBAL_WS_STATE.pendingSubscriptions.push(message);
     return false;
   }
@@ -153,12 +126,15 @@ async function connectWebSocket() {
       GLOBAL_WS_STATE.reconnectAttempts = 0;
       emitEvent('connected', {});
       
+      // CRITICAL: Wait a tick before sending subscriptions
       setTimeout(() => {
+        // Send pending subscriptions
         if (GLOBAL_WS_STATE.pendingSubscriptions.length > 0) {
           GLOBAL_WS_STATE.pendingSubscriptions.forEach(sub => safeSend(sub));
           GLOBAL_WS_STATE.pendingSubscriptions = [];
         }
         
+        // Resubscribe active subscriptions
         GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => safeSend(sub));
       }, 100);
     };
@@ -235,13 +211,8 @@ function handleTickerUpdate(data) {
 function handleBalanceSnapshot(data) {
   data.forEach(balance => {
     const { asset, balance: amount, available } = balance;
-    // CRITICAL: Normalize asset names
-    const normalizedAsset = parseKrakenAsset(asset);
-    GLOBAL_WS_STATE.balances.set(normalizedAsset, {
-      asset: normalizedAsset,
-      balance: parseFloat(amount),
-      available: parseFloat(available),
-      timestamp: Date.now()
+    GLOBAL_WS_STATE.balances.set(asset, {
+      asset, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
     });
   });
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
@@ -250,13 +221,8 @@ function handleBalanceSnapshot(data) {
 function handleBalanceUpdate(data) {
   data.forEach(balance => {
     const { asset, balance: amount, available } = balance;
-    // CRITICAL: Normalize asset names
-    const normalizedAsset = parseKrakenAsset(asset);
-    GLOBAL_WS_STATE.balances.set(normalizedAsset, {
-      asset: normalizedAsset,
-      balance: parseFloat(amount),
-      available: parseFloat(available),
-      timestamp: Date.now()
+    GLOBAL_WS_STATE.balances.set(asset, {
+      asset, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
     });
   });
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
@@ -265,12 +231,7 @@ function handleBalanceUpdate(data) {
 function handleOrderSnapshot(data) {
   GLOBAL_WS_STATE.orders.clear();
   data.forEach(order => {
-    // CRITICAL: Normalize symbol in orders
-    const normalizedOrder = {
-      ...order,
-      symbol: parseKrakenAsset(order.symbol?.split('/')[0])
-    };
-    GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
+    GLOBAL_WS_STATE.orders.set(order.order_id, order);
   });
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
 }
@@ -280,12 +241,7 @@ function handleOrderUpdate(data) {
     if (order.status === 'closed' || order.status === 'canceled') {
       GLOBAL_WS_STATE.orders.delete(order.order_id);
     } else {
-      // CRITICAL: Normalize symbol in orders
-      const normalizedOrder = {
-        ...order,
-        symbol: parseKrakenAsset(order.symbol?.split('/')[0])
-      };
-      GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
+      GLOBAL_WS_STATE.orders.set(order.order_id, order);
     }
   });
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
