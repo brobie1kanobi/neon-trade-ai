@@ -1,8 +1,11 @@
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eye, EyeOff, TrendingUp, TrendingDown } from "lucide-react";
+import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function BalanceCard({
   title,
@@ -12,10 +15,49 @@ export default function BalanceCard({
   onToggleVisibility,
   isVisible,
   isPrimary = false,
-  isSimMode = true,
-  changeLabel
+  changeLabel,
+  // CRITICAL: Add wallet prop for live mode balance override
+  wallet = null,
+  // Add type to determine which balance to show
+  balanceType = 'total' // 'total', 'cash', 'portfolio'
 }) {
-  // Use actual change data if provided, otherwise default to positive zero
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
+  // CRITICAL: Use WebSocket for LIVE mode
+  const { 
+    isConnected: wsConnected, 
+    usdBalance: wsUsdBalance,
+    totalPortfolioValue: wsTotalValue,
+    totalAssets: wsTotalAssets
+  } = useRealtimeKrakenData({
+    subscribeToPrices: true,
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'],
+    subscribeToBalances: !isSimMode,
+    subscribeToOrders: !isSimMode,
+    isSimMode
+  });
+
+  // CRITICAL: Calculate display amount based on mode and type
+  const displayAmount = React.useMemo(() => {
+    if (isSimMode) {
+      return amount || 0;
+    }
+
+    // LIVE MODE: Use WebSocket data
+    if (balanceType === 'cash') {
+      return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+    }
+    
+    if (balanceType === 'portfolio') {
+      const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
+      return portfolioValue;
+    }
+    
+    // Total balance (default)
+    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
+  }, [isSimMode, amount, wsConnected, wsUsdBalance, wsTotalValue, balanceType, wallet]);
+
   const displayChange = change || { value: 0, percentage: 0 };
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
@@ -40,7 +82,8 @@ export default function BalanceCard({
               </Badge>
             }
             {!isSimMode &&
-              <Badge className="bg-green-100 text-green-800 text-xs">
+              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+                {wsConnected && <Wifi className="w-3 h-3" />}
                 Live
               </Badge>
             }
@@ -64,14 +107,21 @@ export default function BalanceCard({
         
         <div className="space-y-1">
           {isVisible ? (
-            <NumberDisplay
-              value={amount || 0}
-              prefix="$"
-              decimals={2}
-              className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
-              maxFontSize={isPrimary ? 40 : 28}
-              minFontSize={16}
-            />
+            <>
+              <NumberDisplay
+                value={displayAmount}
+                prefix="$"
+                decimals={2}
+                className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
+                maxFontSize={isPrimary ? 40 : 28}
+                minFontSize={16}
+              />
+              {!isSimMode && wsConnected && balanceType === 'total' && wsTotalAssets > 0 && (
+                <p className="text-xs text-green-600 dark:text-green-400">
+                  ✅ Live • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
+                </p>
+              )}
+            </>
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}
               style={{ color: isPrimary ? 'var(--neon-green)' : 'var(--text-primary)' }}>

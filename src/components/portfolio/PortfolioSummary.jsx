@@ -1,28 +1,60 @@
-
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useSettings } from "@/components/utils/SettingsContext";
 
-export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, isSimMode = true, change24hr, lifetimeChange, onSyncClick }) {
-  const currentCashBalance = isSimMode ? (wallet?.cash_balance || 0) : (wallet?.real_cash_balance || 0);
-  const totalValue = currentCashBalance + (currentPortfolioValue || 0);
+export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick }) {
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
+  // CRITICAL: Use WebSocket for LIVE mode
+  const { 
+    isConnected: wsConnected, 
+    usdBalance: wsUsdBalance,
+    totalPortfolioValue: wsTotalValue,
+    totalAssets: wsTotalAssets
+  } = useRealtimeKrakenData({
+    subscribeToPrices: true,
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
+    subscribeToBalances: !isSimMode,
+    subscribeToOrders: !isSimMode,
+    isSimMode
+  });
+
+  // CRITICAL: Use WebSocket balances in LIVE mode
+  const currentCashBalance = React.useMemo(() => {
+    if (isSimMode) {
+      return wallet?.cash_balance || 0;
+    }
+    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
+
+  const displayPortfolioValue = React.useMemo(() => {
+    if (isSimMode) {
+      return currentPortfolioValue || 0;
+    }
+    // In live mode, portfolio value = total - cash
+    const portfolioOnly = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
+    return portfolioOnly;
+  }, [isSimMode, currentPortfolioValue, wsTotalValue, wsConnected, wsUsdBalance]);
+
+  const totalValue = currentCashBalance + displayPortfolioValue;
   
   const displayChange = change24hr || { value: 0, percentage: 0 };
   const isPositive = displayChange.value >= 0;
   const lifetime = lifetimeChange || { value: 0, percentage: 0 };
   const isLifetimePositive = lifetime.value >= 0;
 
-  // Fallback repair handler (user-only) if onSyncClick not provided by the page
   const [isRepairing, setIsRepairing] = React.useState(false);
   const handleRepair = async () => {
     try {
       setIsRepairing(true);
       const res = await base44.functions.invoke('repairMyPortfolio', {});
-      // Broadcast and soft refresh
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio_summary' } }));
       setTimeout(() => window.location.reload(), 800);
       return res;
@@ -49,7 +81,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               </Badge>
             )}
             {!isSimMode && (
-              <Badge className="bg-green-100 text-green-800 text-xs">
+              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+                {wsConnected && <Wifi className="w-3 h-3" />}
                 Live Mode
               </Badge>
             )}
@@ -59,7 +92,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
             <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
               Total Portfolio Value
             </p>
-            {/* Show immediately; don't block on isLoading */}
             <NumberDisplay
               value={totalValue}
               prefix="$"
@@ -67,9 +99,13 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               className="mx-auto max-w-[min(90vw,420px)]"
               maxFontSize={40}
               minFontSize={18}
-              // New: colorize by lifetime PnL sign (green profit, red loss)
               tone={lifetime.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
             />
+            {!isSimMode && wsConnected && wsTotalAssets > 0 && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                ✅ Live WebSocket • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
+              </p>
+            )}
           </div>
           
           <div className="flex items-center justify-center gap-6 flex-wrap">
@@ -88,7 +124,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
             
               <NumberDisplay
-                value={currentPortfolioValue || 0}
+                value={displayPortfolioValue}
                 prefix="$"
                 decimals={2}
                 className="mx-auto max-w-[180px]"
@@ -125,7 +161,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
           </div>
         </div>
 
-        {/* Persistent sync button at bottom */}
         <div className="pt-4">
           <Button
             onClick={onClick}

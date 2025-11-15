@@ -1,28 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
- * CENTRALIZED KRAKEN WEBSOCKET MANAGER - FIXED ERROR HANDLING
+ * PRODUCTION KRAKEN WEBSOCKET - WITH AUTO TOKEN REFRESH
+ * Maintains persistent connection with automatic reconnect and token refresh
  */
 
-// GLOBAL STATE
 const GLOBAL_WS_STATE = {
   ws: null,
   isConnected: false,
   token: null,
+  tokenExpiry: null,
   reconnectAttempts: 0,
-  subscribers: new Map(),
   prices: new Map(),
   balances: new Map(),
   orders: new Map(),
   executions: [],
   activeSubscriptions: new Set(),
-  eventListeners: new Map()
+  eventListeners: new Map(),
+  tokenRefreshInterval: null
 };
 
 const WS_URL = 'wss://ws.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
+const TOKEN_REFRESH_INTERVAL = 12 * 60 * 1000; // 12 minutes (token valid for 15 min)
 
 function emitEvent(eventName, data) {
   const listeners = GLOBAL_WS_STATE.eventListeners.get(eventName) || [];
@@ -36,42 +38,80 @@ function emitEvent(eventName, data) {
 }
 
 /**
- * FIXED: Better error handling for WebSocket connection
+ * CRITICAL: Auto token refresh mechanism
  */
+async function refreshToken() {
+  try {
+    console.log('[KrakenWS] 🔄 Refreshing WebSocket token...');
+    
+    const response = await Promise.race([
+      base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 5000))
+    ]);
+    
+    const data = response?.data || response;
+    
+    if (data?.success && data?.token) {
+      GLOBAL_WS_STATE.token = data.token;
+      GLOBAL_WS_STATE.tokenExpiry = Date.now() + (data.expires_in || 900) * 1000;
+      console.log('[KrakenWS] ✅ Token refreshed');
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('[KrakenWS] Token refresh failed:', error.message);
+    return false;
+  }
+}
+
+/**
+ * CRITICAL: Setup automatic token refresh interval
+ */
+function setupTokenRefresh() {
+  if (GLOBAL_WS_STATE.tokenRefreshInterval) {
+    clearInterval(GLOBAL_WS_STATE.tokenRefreshInterval);
+  }
+  
+  GLOBAL_WS_STATE.tokenRefreshInterval = setInterval(async () => {
+    const refreshed = await refreshToken();
+    
+    if (refreshed && GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
+      // Reconnect with new token
+      console.log('[KrakenWS] Reconnecting with fresh token...');
+      GLOBAL_WS_STATE.ws.close();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      connectWebSocket();
+    }
+  }, TOKEN_REFRESH_INTERVAL);
+}
+
 async function connectWebSocket() {
   if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
     return;
   }
 
   try {
-    // CRITICAL: Get WebSocket token with error handling
-    if (!GLOBAL_WS_STATE.token) {
-      const response = await Promise.race([
-        base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Token request timeout')), 5000))
-      ]);
-      
-      const data = response?.data || response;
-      
-      // CRITICAL: Handle not connected gracefully - DON'T retry
-      if (!data?.success || !data?.token) {
-        if (data?.connected === false) {
-          console.warn('[KrakenWS] ⚠️ Account not connected - skipping WebSocket');
-          emitEvent('error', { message: 'Account not connected', fatal: true });
-          return;
-        }
-        throw new Error(data?.error || 'No WebSocket token received');
+    // Get token if needed or if expired
+    if (!GLOBAL_WS_STATE.token || (GLOBAL_WS_STATE.tokenExpiry && Date.now() >= GLOBAL_WS_STATE.tokenExpiry)) {
+      const refreshed = await refreshToken();
+      if (!refreshed) {
+        emitEvent('error', { message: 'Account not connected', fatal: true });
+        return;
       }
-      
-      GLOBAL_WS_STATE.token = data.token;
     }
 
-    // Create WebSocket
+    // Setup auto-refresh on first connect
+    if (!GLOBAL_WS_STATE.tokenRefreshInterval) {
+      setupTokenRefresh();
+    }
+
     const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
       GLOBAL_WS_STATE.isConnected = true;
       GLOBAL_WS_STATE.reconnectAttempts = 0;
+      console.log('[KrakenWS] ✅ Connected');
       emitEvent('connected', {});
       
       // Resubscribe
@@ -90,7 +130,7 @@ async function connectWebSocket() {
     };
 
     ws.onerror = (error) => {
-      console.error('[KrakenWS] Error:', error.message || 'Unknown error');
+      console.error('[KrakenWS] Error:', error.message || 'Unknown');
       emitEvent('error', error);
     };
 
@@ -109,16 +149,14 @@ async function connectWebSocket() {
     GLOBAL_WS_STATE.ws = ws;
 
   } catch (error) {
-    console.error('[KrakenWS] Connect error:', error.message || 'Unknown');
+    console.error('[KrakenWS] Connect error:', error.message);
     GLOBAL_WS_STATE.isConnected = false;
     
-    // Don't retry if account not connected or token issues
     if (error.message.includes('not connected') || error.message.includes('token')) {
       emitEvent('error', { message: error.message, fatal: true });
       return;
     }
     
-    // Retry for other errors
     if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       GLOBAL_WS_STATE.reconnectAttempts++;
       setTimeout(connectWebSocket, RECONNECT_DELAY);
@@ -378,12 +416,19 @@ export function useKrakenWebSocketManager(options = {}) {
 }
 
 export function disconnectKrakenWebSocket() {
+  if (GLOBAL_WS_STATE.tokenRefreshInterval) {
+    clearInterval(GLOBAL_WS_STATE.tokenRefreshInterval);
+    GLOBAL_WS_STATE.tokenRefreshInterval = null;
+  }
+  
   if (GLOBAL_WS_STATE.ws) {
     GLOBAL_WS_STATE.ws.close();
     GLOBAL_WS_STATE.ws = null;
   }
+  
   GLOBAL_WS_STATE.isConnected = false;
   GLOBAL_WS_STATE.token = null;
+  GLOBAL_WS_STATE.tokenExpiry = null;
   GLOBAL_WS_STATE.prices.clear();
   GLOBAL_WS_STATE.balances.clear();
   GLOBAL_WS_STATE.orders.clear();

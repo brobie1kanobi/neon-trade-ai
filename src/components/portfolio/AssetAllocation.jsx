@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PieChart, Activity, TrendingUp, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -105,13 +105,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {isLoading ?
-          <div className="space-y-3">
-              {[1, 2, 3].map((i) =>
-            <div key={i} className="h-20 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
-            )}
-            </div> :
-          consolidatedHoldings.length === 0 ?
+          {/* CRITICAL: Never show loading state - always show data or empty state */}
+          {consolidatedHoldings.length === 0 ?
           <div className="text-center py-8" style={{ color: "var(--text-secondary)" }}>
               <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p className="font-medium">No Assets Yet</p>
