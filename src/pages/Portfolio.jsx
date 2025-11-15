@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Trade, Wallet, UserSettings, Holding } from "@/entities/all";
+import { Trade, Wallet, UserSettings, User, Holding } from "@/entities/all";
 import { motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
+import { InvokeLLM } from "@/integrations/Core"; 
 
 import PortfolioSummary from "../components/portfolio/PortfolioSummary";
 import AssetAllocation from "../components/portfolio/AssetAllocation";
