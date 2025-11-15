@@ -4,13 +4,11 @@ import { useKrakenWebSocket } from './useKrakenWebSocket';
 import { useSettings } from '../utils/SettingsContext';
 
 /**
- * Centralized price data hook - UNIFIED APPROACH
- * - Uses WebSocket for LIVE mode (real-time Kraken data)
- * - Uses REST API for SIM mode (market data)
- * - Prevents duplicate API calls with global cache
+ * Centralized price data hook - FIXED VERSION
+ * CRITICAL: Aggressive caching and deduplication to prevent excessive API calls
  */
 
-// GLOBAL CACHE - shared across all component instances
+// GLOBAL CACHE - shared across ALL component instances
 const globalPriceCache = {
   data: null,
   timestamp: 0,
@@ -18,7 +16,10 @@ const globalPriceCache = {
   subscribers: new Set()
 };
 
-const CACHE_TTL = 60000; // 1 minute cache for REST API
+const CACHE_TTL = 120000; // INCREASED to 2 minutes
+const MIN_REQUEST_INTERVAL = 5000; // Minimum 5 seconds between requests
+
+let lastRequestTime = 0;
 
 export function usePriceData(symbols = []) {
   const { settings } = useSettings();
@@ -28,16 +29,20 @@ export function usePriceData(symbols = []) {
   const [loading, setLoading] = useState(false);
   const subscriberIdRef = useRef(Symbol());
 
-  // WebSocket for LIVE mode
   const { 
     prices: wsPrices, 
     isConnected: wsConnected,
     getAllPrices: wsGetAllPrices 
   } = useKrakenWebSocket(symbols, !isSimMode && symbols.length > 0);
 
-  // REST API fetch for SIM mode
   const fetchPricesREST = useCallback(async (force = false) => {
     const now = Date.now();
+    
+    // CRITICAL: Rate limiting - prevent requests within 5 seconds
+    if (!force && (now - lastRequestTime) < MIN_REQUEST_INTERVAL) {
+      console.log('[usePriceData] Rate limited, using cache');
+      return globalPriceCache.data || [];
+    }
     
     // Return cached data if fresh
     if (!force && globalPriceCache.data && (now - globalPriceCache.timestamp) < CACHE_TTL) {
@@ -58,9 +63,9 @@ export function usePriceData(symbols = []) {
 
     console.log('[usePriceData] Fetching REST prices for', symbols.length, 'symbols');
     setLoading(true);
+    lastRequestTime = now;
 
     try {
-      // Separate crypto and stocks
       const cryptoSymbols = [];
       const stockSymbols = [];
       
@@ -75,19 +80,19 @@ export function usePriceData(symbols = []) {
         }
       });
 
-      // Create the fetch promise
-      const fetchPromise = base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      }).then(response => {
+      const fetchPromise = Promise.race([
+        base44.functions.invoke('getMarketData', {
+          action: 'getWatchlistData',
+          payload: { cryptoSymbols, stockSymbols }
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+      ]).then(response => {
         const data = Array.isArray(response?.data) ? response.data : [];
         
-        // Update global cache
         globalPriceCache.data = data;
         globalPriceCache.timestamp = Date.now();
         globalPriceCache.pendingRequest = null;
         
-        // Notify all subscribers
         globalPriceCache.subscribers.forEach(callback => callback(data));
         
         console.log('[usePriceData] Fetched', data.length, 'REST prices');
@@ -95,10 +100,9 @@ export function usePriceData(symbols = []) {
       }).catch(error => {
         console.error('[usePriceData] REST Error:', error);
         globalPriceCache.pendingRequest = null;
-        return [];
+        return globalPriceCache.data || [];
       });
 
-      // Store pending request
       globalPriceCache.pendingRequest = fetchPromise;
       
       const data = await fetchPromise;
@@ -110,7 +114,6 @@ export function usePriceData(symbols = []) {
     }
   }, [symbols.join(',')]);
 
-  // Convert WebSocket prices to REST format
   const convertWSToREST = useCallback(() => {
     if (!wsPrices || Object.keys(wsPrices).length === 0) {
       return [];
@@ -140,26 +143,36 @@ export function usePriceData(symbols = []) {
     }
   }, [isSimMode]);
 
-  // Main data fetching logic
+  // Main data fetching logic - DEBOUNCED
+  const fetchTimeoutRef = useRef(null);
   useEffect(() => {
     if (!symbols || symbols.length === 0) {
       return;
     }
 
+    // Clear existing timeout
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
     if (isSimMode) {
-      // SIM MODE: Use REST API with caching
-      fetchPricesREST();
+      // DEBOUNCE: Wait 2 seconds before fetching
+      fetchTimeoutRef.current = setTimeout(() => {
+        fetchPricesREST();
+      }, 2000);
     } else {
-      // LIVE MODE: Use WebSocket (real-time)
-      console.log('[usePriceData] LIVE mode - using WebSocket for', symbols.length, 'symbols');
-      
-      // Convert WebSocket prices to REST format and update
+      // LIVE MODE: Use WebSocket
       const wsData = convertWSToREST();
       if (wsData.length > 0) {
         setPriceData(wsData);
-        console.log('[usePriceData] Updated from WebSocket:', wsData.length, 'prices');
       }
     }
+
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
   }, [symbols.join(','), isSimMode, fetchPricesREST, convertWSToREST, wsConnected]);
 
   // Update when WebSocket prices change (LIVE mode only)
@@ -167,7 +180,6 @@ export function usePriceData(symbols = []) {
     if (!isSimMode && wsPrices && Object.keys(wsPrices).length > 0) {
       const wsData = convertWSToREST();
       setPriceData(wsData);
-      console.log('[usePriceData] WebSocket update:', Object.keys(wsPrices).length, 'symbols');
     }
   }, [isSimMode, wsPrices, convertWSToREST]);
 
@@ -175,7 +187,6 @@ export function usePriceData(symbols = []) {
     if (isSimMode) {
       return fetchPricesREST(true);
     } else {
-      // For WebSocket, just convert current prices
       const wsData = convertWSToREST();
       setPriceData(wsData);
       return Promise.resolve(wsData);
@@ -190,7 +201,6 @@ export function usePriceData(symbols = []) {
   };
 }
 
-// Helper function to get price for specific symbol
 export function getPriceForSymbol(symbol) {
   if (!globalPriceCache.data) return null;
   return globalPriceCache.data.find(p => 
@@ -198,10 +208,10 @@ export function getPriceForSymbol(symbol) {
   );
 }
 
-// Helper to invalidate cache (call after Kraken sync)
 export function invalidatePriceCache() {
   console.log('[usePriceData] Invalidating price cache');
   globalPriceCache.data = null;
   globalPriceCache.timestamp = 0;
   globalPriceCache.pendingRequest = null;
+  lastRequestTime = 0;
 }

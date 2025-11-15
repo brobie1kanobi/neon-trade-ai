@@ -3,8 +3,7 @@ import { useKrakenWebSocketManager } from './useKrakenWebSocketManager';
 
 /**
  * HIGH-LEVEL HOOK: Real-time Kraken Data - PRODUCTION VERSION
- * 
- * NO LOGS - Performance optimized
+ * FIXED: Reduced update frequency and API calls
  */
 
 export function useRealtimeKrakenData(options = {}) {
@@ -17,7 +16,6 @@ export function useRealtimeKrakenData(options = {}) {
     isSimMode = false
   } = options;
 
-  // WebSocket connection
   const {
     isConnected,
     prices: wsPrices,
@@ -49,9 +47,9 @@ export function useRealtimeKrakenData(options = {}) {
   const [error, setError] = useState(null);
 
   const lastUpdateRef = useRef(0);
-  const UPDATE_THROTTLE = 2000;
+  const UPDATE_THROTTLE = 3000; // INCREASED to 3 seconds to reduce updates
 
-  // Process WebSocket data
+  // Process WebSocket data with throttling
   useEffect(() => {
     if (isSimMode) {
       setLoading(false);
@@ -110,21 +108,34 @@ export function useRealtimeKrakenData(options = {}) {
     }
   }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices]);
 
-  // Handle new executions
+  // Handle new executions with debouncing
+  const executionTimeoutRef = useRef(null);
   useEffect(() => {
     if (lastExecution) {
-      window.dispatchEvent(new CustomEvent('kraken:trade-executed', {
-        detail: lastExecution
-      }));
+      if (executionTimeoutRef.current) {
+        clearTimeout(executionTimeoutRef.current);
+      }
 
-      window.dispatchEvent(new CustomEvent('app:data-updated', {
-        detail: { 
-          type: 'trade-execution', 
-          source: 'kraken-ws',
-          data: lastExecution 
-        }
-      }));
+      executionTimeoutRef.current = setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('kraken:trade-executed', {
+          detail: lastExecution
+        }));
+
+        window.dispatchEvent(new CustomEvent('app:data-updated', {
+          detail: { 
+            type: 'trade-execution', 
+            source: 'kraken-ws',
+            data: lastExecution 
+          }
+        }));
+      }, 1000);
     }
+
+    return () => {
+      if (executionTimeoutRef.current) {
+        clearTimeout(executionTimeoutRef.current);
+      }
+    };
   }, [lastExecution]);
 
   const refresh = useCallback(() => {
