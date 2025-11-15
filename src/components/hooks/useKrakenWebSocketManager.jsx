@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 /**
  * PRODUCTION KRAKEN WEBSOCKET - WITH AUTO TOKEN REFRESH
  * Maintains persistent connection with automatic reconnect and token refresh
+ * FIXED: Proper ready state checking before sending
  */
 
 const GLOBAL_WS_STATE = {
@@ -18,13 +19,14 @@ const GLOBAL_WS_STATE = {
   executions: [],
   activeSubscriptions: new Set(),
   eventListeners: new Map(),
-  tokenRefreshInterval: null
+  tokenRefreshInterval: null,
+  pendingSubscriptions: []
 };
 
 const WS_URL = 'wss://ws.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
-const TOKEN_REFRESH_INTERVAL = 12 * 60 * 1000; // 12 minutes (token valid for 15 min)
+const TOKEN_REFRESH_INTERVAL = 12 * 60 * 1000;
 
 function emitEvent(eventName, data) {
   const listeners = GLOBAL_WS_STATE.eventListeners.get(eventName) || [];
@@ -37,9 +39,6 @@ function emitEvent(eventName, data) {
   });
 }
 
-/**
- * CRITICAL: Auto token refresh mechanism
- */
 async function refreshToken() {
   try {
     console.log('[KrakenWS] 🔄 Refreshing WebSocket token...');
@@ -65,9 +64,6 @@ async function refreshToken() {
   }
 }
 
-/**
- * CRITICAL: Setup automatic token refresh interval
- */
 function setupTokenRefresh() {
   if (GLOBAL_WS_STATE.tokenRefreshInterval) {
     clearInterval(GLOBAL_WS_STATE.tokenRefreshInterval);
@@ -77,7 +73,6 @@ function setupTokenRefresh() {
     const refreshed = await refreshToken();
     
     if (refreshed && GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
-      // Reconnect with new token
       console.log('[KrakenWS] Reconnecting with fresh token...');
       GLOBAL_WS_STATE.ws.close();
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -86,13 +81,31 @@ function setupTokenRefresh() {
   }, TOKEN_REFRESH_INTERVAL);
 }
 
+// CRITICAL: Safe send that checks ready state
+function safeSend(message) {
+  if (!GLOBAL_WS_STATE.ws) {
+    GLOBAL_WS_STATE.pendingSubscriptions.push(message);
+    return false;
+  }
+
+  if (GLOBAL_WS_STATE.ws.readyState === WebSocket.OPEN) {
+    GLOBAL_WS_STATE.ws.send(JSON.stringify(message));
+    return true;
+  } else if (GLOBAL_WS_STATE.ws.readyState === WebSocket.CONNECTING) {
+    // Queue for when connection opens
+    GLOBAL_WS_STATE.pendingSubscriptions.push(message);
+    return false;
+  }
+  
+  return false;
+}
+
 async function connectWebSocket() {
   if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
     return;
   }
 
   try {
-    // Get token if needed or if expired
     if (!GLOBAL_WS_STATE.token || (GLOBAL_WS_STATE.tokenExpiry && Date.now() >= GLOBAL_WS_STATE.tokenExpiry)) {
       const refreshed = await refreshToken();
       if (!refreshed) {
@@ -101,7 +114,6 @@ async function connectWebSocket() {
       }
     }
 
-    // Setup auto-refresh on first connect
     if (!GLOBAL_WS_STATE.tokenRefreshInterval) {
       setupTokenRefresh();
     }
@@ -109,15 +121,22 @@ async function connectWebSocket() {
     const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
+      console.log('[KrakenWS] ✅ Connected');
       GLOBAL_WS_STATE.isConnected = true;
       GLOBAL_WS_STATE.reconnectAttempts = 0;
-      console.log('[KrakenWS] ✅ Connected');
       emitEvent('connected', {});
       
-      // Resubscribe
-      GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
-        ws.send(JSON.stringify(sub));
-      });
+      // CRITICAL: Wait a tick before sending subscriptions
+      setTimeout(() => {
+        // Send pending subscriptions
+        if (GLOBAL_WS_STATE.pendingSubscriptions.length > 0) {
+          GLOBAL_WS_STATE.pendingSubscriptions.forEach(sub => safeSend(sub));
+          GLOBAL_WS_STATE.pendingSubscriptions = [];
+        }
+        
+        // Resubscribe active subscriptions
+        GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => safeSend(sub));
+      }, 100);
     };
 
     ws.onmessage = (event) => {
@@ -139,7 +158,6 @@ async function connectWebSocket() {
       GLOBAL_WS_STATE.ws = null;
       emitEvent('disconnected', {});
       
-      // Auto-reconnect
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
         setTimeout(connectWebSocket, RECONNECT_DELAY);
@@ -240,10 +258,6 @@ function handleExecutionUpdate(data) {
 }
 
 function subscribe(channel, params = {}) {
-  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
-    return;
-  }
-
   const subscription = {
     method: 'subscribe',
     params: { channel, ...params }
@@ -253,21 +267,21 @@ function subscribe(channel, params = {}) {
     subscription.params.token = GLOBAL_WS_STATE.token;
   }
 
-  GLOBAL_WS_STATE.ws.send(JSON.stringify(subscription));
-  GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
+  const sent = safeSend(subscription);
+  
+  if (sent || GLOBAL_WS_STATE.ws?.readyState === WebSocket.CONNECTING) {
+    GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
+  }
 }
 
 function unsubscribe(channel, params = {}) {
-  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
-    return;
-  }
-
   const unsubscription = {
     method: 'unsubscribe',
     params: { channel, ...params }
   };
 
-  GLOBAL_WS_STATE.ws.send(JSON.stringify(unsubscription));
+  safeSend(unsubscription);
+  
   GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
     if (sub.params.channel === channel) {
       GLOBAL_WS_STATE.activeSubscriptions.delete(sub);
@@ -435,4 +449,5 @@ export function disconnectKrakenWebSocket() {
   GLOBAL_WS_STATE.executions = [];
   GLOBAL_WS_STATE.activeSubscriptions.clear();
   GLOBAL_WS_STATE.eventListeners.clear();
+  GLOBAL_WS_STATE.pendingSubscriptions = [];
 }
