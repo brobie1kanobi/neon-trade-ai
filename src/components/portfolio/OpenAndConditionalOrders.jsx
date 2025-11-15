@@ -17,12 +17,14 @@ export default function OpenAndConditionalOrders() {
   const [loadingConditional, setLoadingConditional] = useState(true);
   const [cancellingOrder, setCancellingOrder] = useState(null);
 
-  // Get live Kraken orders via WebSocket
+  // CRITICAL: Subscribe to LIVE orders via WebSocket
   const { 
     orders: krakenOrders,
     isConnected: wsConnected
   } = useRealtimeKrakenData({
     subscribeToOrders: !isSimMode,
+    subscribeToBalances: false,
+    subscribeToPrices: false,
     isSimMode
   });
 
@@ -31,9 +33,9 @@ export default function OpenAndConditionalOrders() {
     const loadConditionalOrders = async () => {
       try {
         setLoadingConditional(true);
+        // CRITICAL: Filter by status only (is_simulation may not exist yet)
         const orders = await base44.entities.ConditionalOrder.filter({ 
-          status: 'active',
-          is_simulation: isSimMode 
+          status: 'active'
         });
         setConditionalOrders(orders || []);
       } catch (error) {
@@ -47,10 +49,12 @@ export default function OpenAndConditionalOrders() {
     loadConditionalOrders();
   }, [isSimMode]);
 
-  // Convert Kraken orders object to array
+  // CRITICAL: Convert Kraken orders object to array
   const openOrdersList = React.useMemo(() => {
     if (!krakenOrders || typeof krakenOrders !== 'object') return [];
-    return Object.values(krakenOrders);
+    return Object.values(krakenOrders).filter(order => 
+      order && order.order_id && order.symbol
+    );
   }, [krakenOrders]);
 
   const handleCancelOrder = async (orderId) => {
