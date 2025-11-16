@@ -9,7 +9,7 @@ import RefundManagement from './pages/RefundManagement';
 import VoiceSettings from './pages/VoiceSettings';
 import StockDetails from './pages/StockDetails';
 import wallet from './pages/wallet';
-import Layout from './Layout.jsx';
+import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
@@ -29,5 +29,5 @@ export const PAGES = {
 export const pagesConfig = {
     mainPage: "Dashboard",
     Pages: PAGES,
-    Layout: Layout,
+    Layout: __Layout,
 };
