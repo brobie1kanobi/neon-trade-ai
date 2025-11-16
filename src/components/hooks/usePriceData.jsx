@@ -4,107 +4,136 @@ import { useKrakenWebSocket } from './useKrakenWebSocket';
 import { useSettings } from '../utils/SettingsContext';
 
 /**
- * FIXED: Global request batching to prevent duplicate calls
+ * CRITICAL FIX: Single global request manager - NO DUPLICATES
  */
 
-// GLOBAL STATE - shared across ALL instances
-const GLOBAL_STATE = {
+const GLOBAL_REQUEST_MANAGER = {
   cache: new Map(),
-  pendingBatch: null,
-  batchTimer: null,
-  symbolQueue: new Set(),
-  subscribers: new Map()
+  inflightRequest: null,
+  lastRequestTime: 0,
+  pendingSymbols: new Set(),
+  subscribers: new Map(),
+  requestTimer: null
 };
 
 const CACHE_TTL = 120000; // 2 minutes
-const BATCH_DELAY = 500; // Wait 500ms to collect all symbol requests
+const MIN_REQUEST_INTERVAL = 2000; // Minimum 2 seconds between requests
 
-function notifySubscribers(symbols, data) {
-  symbols.forEach(symbol => {
-    const subs = GLOBAL_STATE.subscribers.get(symbol) || new Set();
-    subs.forEach(callback => callback(data));
+function notifySubscribers(data) {
+  GLOBAL_REQUEST_MANAGER.subscribers.forEach((callback) => {
+    callback(data);
   });
 }
 
-async function executeBatch() {
-  if (GLOBAL_STATE.symbolQueue.size === 0) return;
-  
-  const symbols = Array.from(GLOBAL_STATE.symbolQueue);
-  GLOBAL_STATE.symbolQueue.clear();
-  
-  console.log('[usePriceData] Executing batch for', symbols.length, 'symbols');
-  
-  try {
-    const cryptoSymbols = [];
-    const stockSymbols = [];
-    
-    symbols.forEach(sym => {
-      const upper = sym.toUpperCase();
-      if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
-        stockSymbols.push(upper);
-      } else {
-        cryptoSymbols.push(upper);
-      }
-    });
-    
-    const response = await Promise.race([
-      base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Batch timeout')), 8000))
-    ]);
-    
-    const data = Array.isArray(response?.data) ? response.data : [];
-    
-    // Cache individual symbols
-    const now = Date.now();
-    data.forEach(item => {
-      GLOBAL_STATE.cache.set(item.symbol, {
-        data: item,
-        timestamp: now
-      });
-    });
-    
-    // Notify all subscribers
-    notifySubscribers(symbols, data);
-    
-    console.log('[usePriceData] Batch complete:', data.length, 'prices');
-    
-  } catch (error) {
-    console.error('[usePriceData] Batch error:', error.message);
-    notifySubscribers(symbols, []);
-  } finally {
-    GLOBAL_STATE.pendingBatch = null;
+async function executeSingleRequest() {
+  if (GLOBAL_REQUEST_MANAGER.inflightRequest) {
+    console.log('[usePriceData] ⚠️ Request already in flight, waiting...');
+    return GLOBAL_REQUEST_MANAGER.inflightRequest;
   }
-}
 
-function scheduleBatch() {
-  if (GLOBAL_STATE.batchTimer) {
-    clearTimeout(GLOBAL_STATE.batchTimer);
-  }
-  
-  GLOBAL_STATE.batchTimer = setTimeout(() => {
-    executeBatch();
-  }, BATCH_DELAY);
-}
+  const symbols = Array.from(GLOBAL_REQUEST_MANAGER.pendingSymbols);
+  GLOBAL_REQUEST_MANAGER.pendingSymbols.clear();
 
-function requestSymbols(symbols) {
-  if (!symbols || symbols.length === 0) return;
-  
-  let needsRefetch = false;
+  if (symbols.length === 0) return;
+
   const now = Date.now();
+  const timeSinceLastRequest = now - GLOBAL_REQUEST_MANAGER.lastRequestTime;
   
-  symbols.forEach(symbol => {
-    const cached = GLOBAL_STATE.cache.get(symbol);
-    if (!cached || (now - cached.timestamp) > CACHE_TTL) {
-      GLOBAL_STATE.symbolQueue.add(symbol);
-      needsRefetch = true;
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+    console.log(`[usePriceData] ⏰ Waiting ${waitTime}ms before next request`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  console.log('[usePriceData] 🚀 SINGLE request for', symbols.length, 'symbols');
+  GLOBAL_REQUEST_MANAGER.lastRequestTime = Date.now();
+
+  const cryptoSymbols = [];
+  const stockSymbols = [];
+
+  symbols.forEach(sym => {
+    const upper = sym.toUpperCase();
+    if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
+      stockSymbols.push(upper);
+    } else {
+      cryptoSymbols.push(upper);
     }
   });
-  
-  if (needsRefetch) {
-    scheduleBatch();
+
+  const requestPromise = (async () => {
+    try {
+      const response = await Promise.race([
+        base44.functions.invoke('getMarketData', {
+          action: 'getWatchlistData',
+          payload: { cryptoSymbols, stockSymbols }
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+      ]);
+
+      const data = Array.isArray(response?.data) ? response.data : [];
+      
+      // Cache ALL symbols
+      const cacheTime = Date.now();
+      data.forEach(item => {
+        GLOBAL_REQUEST_MANAGER.cache.set(item.symbol, {
+          data: item,
+          timestamp: cacheTime
+        });
+      });
+      
+      // Also cache empty results for symbols that weren't found
+      symbols.forEach(sym => {
+        if (!data.find(d => d.symbol.toUpperCase() === sym.toUpperCase())) {
+          GLOBAL_REQUEST_MANAGER.cache.set(sym, {
+            data: null,
+            timestamp: cacheTime
+          });
+        }
+      });
+
+      notifySubscribers(data);
+      console.log('[usePriceData] ✅ Request complete:', data.length, 'prices');
+      
+      return data;
+    } catch (error) {
+      console.error('[usePriceData] ❌ Request error:', error.message);
+      notifySubscribers([]);
+      return [];
+    } finally {
+      GLOBAL_REQUEST_MANAGER.inflightRequest = null;
+    }
+  })();
+
+  GLOBAL_REQUEST_MANAGER.inflightRequest = requestPromise;
+  return requestPromise;
+}
+
+function scheduleRequest() {
+  if (GLOBAL_REQUEST_MANAGER.requestTimer) {
+    clearTimeout(GLOBAL_REQUEST_MANAGER.requestTimer);
+  }
+
+  GLOBAL_REQUEST_MANAGER.requestTimer = setTimeout(() => {
+    executeSingleRequest();
+  }, 100); // Very short delay to batch rapid calls
+}
+
+function requestPrices(symbols) {
+  if (!symbols || symbols.length === 0) return;
+
+  const now = Date.now();
+  let needsFetch = false;
+
+  symbols.forEach(symbol => {
+    const cached = GLOBAL_REQUEST_MANAGER.cache.get(symbol);
+    if (!cached || (now - cached.timestamp) > CACHE_TTL) {
+      GLOBAL_REQUEST_MANAGER.pendingSymbols.add(symbol);
+      needsFetch = true;
+    }
+  });
+
+  if (needsFetch) {
+    scheduleRequest();
   }
 }
 
@@ -123,9 +152,7 @@ export function usePriceData(symbols = []) {
   } = useKrakenWebSocket(symbols, !isSimMode && symbols.length > 0);
 
   const convertWSToREST = useCallback(() => {
-    if (!wsPrices || Object.keys(wsPrices).length === 0) {
-      return [];
-    }
+    if (!wsPrices || Object.keys(wsPrices).length === 0) return [];
     
     return Object.values(wsPrices).map(ws => ({
       symbol: ws.symbol,
@@ -136,61 +163,50 @@ export function usePriceData(symbols = []) {
     }));
   }, [wsPrices]);
 
-  // Subscribe to updates for specific symbols
+  // Subscribe to global updates (SIM MODE ONLY)
   useEffect(() => {
     if (!isSimMode || symbols.length === 0) return;
-    
-    const id = subscriberIdRef.current;
-    
+
     const handleUpdate = (data) => {
       const filtered = data.filter(item => 
         symbols.some(s => s.toUpperCase() === (item.symbol || '').toUpperCase())
       );
-      setPriceData(filtered);
-      setLoading(false);
+      
+      if (filtered.length > 0) {
+        setPriceData(filtered);
+        setLoading(false);
+      }
     };
-    
-    symbols.forEach(symbol => {
-      if (!GLOBAL_STATE.subscribers.has(symbol)) {
-        GLOBAL_STATE.subscribers.set(symbol, new Set());
-      }
-      GLOBAL_STATE.subscribers.get(symbol).add(handleUpdate);
-    });
-    
-    // Check if we have cached data
+
+    const id = subscriberIdRef.current;
+    GLOBAL_REQUEST_MANAGER.subscribers.set(id, handleUpdate);
+
+    // Check cache immediately
+    const cached = [];
+    let allCached = true;
     const now = Date.now();
-    const cachedData = [];
-    let needsFetch = false;
-    
+
     symbols.forEach(symbol => {
-      const cached = GLOBAL_STATE.cache.get(symbol);
-      if (cached && (now - cached.timestamp) < CACHE_TTL) {
-        cachedData.push(cached.data);
+      const entry = GLOBAL_REQUEST_MANAGER.cache.get(symbol);
+      if (entry && (now - entry.timestamp) < CACHE_TTL && entry.data) {
+        cached.push(entry.data);
       } else {
-        needsFetch = true;
+        allCached = false;
       }
     });
-    
-    if (cachedData.length > 0) {
-      setPriceData(cachedData);
+
+    if (cached.length > 0) {
+      setPriceData(cached);
       setLoading(false);
     }
-    
-    if (needsFetch) {
+
+    if (!allCached) {
       setLoading(true);
-      requestSymbols(symbols);
+      requestPrices(symbols);
     }
-    
+
     return () => {
-      symbols.forEach(symbol => {
-        const subs = GLOBAL_STATE.subscribers.get(symbol);
-        if (subs) {
-          subs.delete(handleUpdate);
-          if (subs.size === 0) {
-            GLOBAL_STATE.subscribers.delete(symbol);
-          }
-        }
-      });
+      GLOBAL_REQUEST_MANAGER.subscribers.delete(id);
     };
   }, [symbols.join(','), isSimMode]);
 
@@ -205,9 +221,10 @@ export function usePriceData(symbols = []) {
 
   const refresh = useCallback(() => {
     if (isSimMode) {
-      symbols.forEach(symbol => GLOBAL_STATE.cache.delete(symbol));
+      // Clear cache for these symbols
+      symbols.forEach(symbol => GLOBAL_REQUEST_MANAGER.cache.delete(symbol));
       setLoading(true);
-      requestSymbols(symbols);
+      requestPrices(symbols);
       return Promise.resolve();
     } else {
       const wsData = convertWSToREST();
@@ -224,17 +241,12 @@ export function usePriceData(symbols = []) {
   };
 }
 
-export function getPriceForSymbol(symbol) {
-  const cached = GLOBAL_STATE.cache.get(symbol);
-  return cached?.data || null;
-}
-
 export function invalidatePriceCache() {
-  console.log('[usePriceData] Invalidating price cache');
-  GLOBAL_STATE.cache.clear();
-  GLOBAL_STATE.symbolQueue.clear();
-  if (GLOBAL_STATE.batchTimer) {
-    clearTimeout(GLOBAL_STATE.batchTimer);
-    GLOBAL_STATE.batchTimer = null;
+  console.log('[usePriceData] 🗑️ Clearing ALL cache');
+  GLOBAL_REQUEST_MANAGER.cache.clear();
+  GLOBAL_REQUEST_MANAGER.pendingSymbols.clear();
+  if (GLOBAL_REQUEST_MANAGER.requestTimer) {
+    clearTimeout(GLOBAL_REQUEST_MANAGER.requestTimer);
+    GLOBAL_REQUEST_MANAGER.requestTimer = null;
   }
 }

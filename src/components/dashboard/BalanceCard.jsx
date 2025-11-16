@@ -16,15 +16,13 @@ export default function BalanceCard({
   isVisible,
   isPrimary = false,
   changeLabel,
-  // CRITICAL: Add wallet prop for live mode balance override
   wallet = null,
-  // Add type to determine which balance to show
-  balanceType = 'total' // 'total', 'cash', 'portfolio'
+  balanceType = 'total',
+  krakenPnL = null // CRITICAL: Real Kraken PnL data
 }) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  // CRITICAL: Use WebSocket for LIVE mode
   const { 
     isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
@@ -38,13 +36,11 @@ export default function BalanceCard({
     isSimMode
   });
 
-  // CRITICAL: Calculate display amount based on mode and type
   const displayAmount = React.useMemo(() => {
     if (isSimMode) {
       return amount || 0;
     }
 
-    // LIVE MODE: Use WebSocket data
     if (balanceType === 'cash') {
       return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
     }
@@ -54,11 +50,28 @@ export default function BalanceCard({
       return portfolioValue;
     }
     
-    // Total balance (default)
     return wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
   }, [isSimMode, amount, wsConnected, wsUsdBalance, wsTotalValue, balanceType, wallet]);
 
-  const displayChange = change || { value: 0, percentage: 0 };
+  // CRITICAL: Use REAL Kraken PnL if provided
+  const displayChange = React.useMemo(() => {
+    if (krakenPnL && !isSimMode) {
+      // For 24h cards, use pnl_24h
+      if (changeLabel?.includes('24h')) {
+        return {
+          value: krakenPnL.pnl_24h || 0,
+          percentage: displayAmount > 0 ? (krakenPnL.pnl_24h / displayAmount * 100) : 0
+        };
+      }
+      // For lifetime cards, use pnl_lifetime
+      return {
+        value: krakenPnL.pnl_lifetime || 0,
+        percentage: displayAmount > 0 ? (krakenPnL.pnl_lifetime / displayAmount * 100) : 0
+      };
+    }
+    return change || { value: 0, percentage: 0 };
+  }, [krakenPnL, change, isSimMode, changeLabel, displayAmount]);
+
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
   const changePct = typeof displayChange.percentage === 'number' ? displayChange.percentage : 0;
@@ -140,7 +153,7 @@ export default function BalanceCard({
                 {(changeValue >= 0 ? '+' : '-')}${Math.abs(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({changePct >= 0 ? '+' : '-'}{Math.abs(changePct).toFixed(2)}%)
               </span>
               <span className="text-xs ml-1" style={{ color: 'var(--text-secondary)' }}>
-                {changeLabel ? changeLabel : (isSimMode ? 'Demo Lifetime' : 'Live Lifetime')}
+                {changeLabel || (isSimMode ? 'Demo' : 'Live')}
               </span>
             </div>
           }

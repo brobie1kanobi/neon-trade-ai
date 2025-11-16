@@ -7,12 +7,12 @@ import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
 
 export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick }) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  // CRITICAL: Use WebSocket for LIVE mode
   const { 
     isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
@@ -26,7 +26,9 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     isSimMode
   });
 
-  // CRITICAL: Use WebSocket balances in LIVE mode
+  // CRITICAL: Get REAL Kraken PnL
+  const { pnlData } = useKrakenPnL(isSimMode);
+
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
@@ -38,16 +40,24 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
-    // In live mode, portfolio value = total - cash
     const portfolioOnly = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
     return portfolioOnly;
   }, [isSimMode, currentPortfolioValue, wsTotalValue, wsConnected, wsUsdBalance]);
 
   const totalValue = currentCashBalance + displayPortfolioValue;
   
-  const displayChange = change24hr || { value: 0, percentage: 0 };
+  // CRITICAL: Use REAL Kraken PnL instead of calculated
+  const displayChange = {
+    value: pnlData.pnl_24h || 0,
+    percentage: totalValue > 0 ? (pnlData.pnl_24h / totalValue * 100) : 0
+  };
+
+  const lifetime = {
+    value: pnlData.pnl_lifetime || 0,
+    percentage: totalValue > 0 ? (pnlData.pnl_lifetime / totalValue * 100) : 0
+  };
+
   const isPositive = displayChange.value >= 0;
-  const lifetime = lifetimeChange || { value: 0, percentage: 0 };
   const isLifetimePositive = lifetime.value >= 0;
 
   const [isRepairing, setIsRepairing] = React.useState(false);
@@ -122,7 +132,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
             </div>
             <div className="text-center min-w-[140px]">
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
-            
               <NumberDisplay
                 value={displayPortfolioValue}
                 prefix="$"
@@ -144,7 +153,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                 {isPositive ? '+' : ''}${displayChange.value.toFixed(2)} ({displayChange.percentage.toFixed(1)}%)
               </span>
-              <span className="text-xs text-gray-500">24h</span>
+              <span className="text-xs text-gray-500">24h (Kraken)</span>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap justify-center">
@@ -156,7 +165,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               <span className={`text-sm font-medium ${isLifetimePositive ? 'text-green-500' : 'text-red-500'}`}>
                 {isLifetimePositive ? '+' : ''}${lifetime.value.toFixed(2)} ({lifetime.percentage.toFixed(1)}%)
               </span>
-              <span className="text-xs text-gray-500">Lifetime</span>
+              <span className="text-xs text-gray-500">Lifetime (Kraken)</span>
             </div>
           </div>
         </div>
