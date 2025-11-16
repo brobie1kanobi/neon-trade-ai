@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi, Loader2 } from "lucide-react";
+import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
@@ -23,59 +23,48 @@ export default function BalanceCard({
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
+  // CRITICAL: Persistent ref to prevent flashing to zero
   const persistentValueRef = useRef({
     amount: 0,
     change: { value: 0, percentage: 0 }
   });
   
   const { 
-    isConnected: wsConnected,
-    loading: wsLoading,
+    isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
-    totalAssets: wsTotalAssets,
-    balances: wsBalances
+    totalAssets: wsTotalAssets
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'],
     subscribeToBalances: !isSimMode,
     subscribeToOrders: !isSimMode,
     isSimMode
   });
 
-  // CRITICAL: Calculate display amount from WebSocket data
   const displayAmount = React.useMemo(() => {
+    let value;
+    
     if (isSimMode) {
-      return amount || 0;
+      value = amount || 0;
+    } else {
+      if (balanceType === 'cash') {
+        value = wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+      } else if (balanceType === 'portfolio') {
+        const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
+        value = portfolioValue;
+      } else {
+        value = wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
+      }
     }
     
-    // LIVE MODE: Use WebSocket data
-    if (!wsConnected || wsLoading) {
-      return persistentValueRef.current.amount || 0;
-    }
-
-    let value = 0;
-    
-    if (balanceType === 'cash') {
-      // Cash balance from WebSocket
-      value = typeof wsUsdBalance === 'number' ? wsUsdBalance : 0;
-    } else if (balanceType === 'portfolio') {
-      // Portfolio value = total - cash
-      const total = typeof wsTotalValue === 'number' ? wsTotalValue : 0;
-      const cash = typeof wsUsdBalance === 'number' ? wsUsdBalance : 0;
-      value = Math.max(0, total - cash);
-    } else if (balanceType === 'total') {
-      // Total balance from WebSocket
-      value = typeof wsTotalValue === 'number' ? wsTotalValue : 0;
-    }
-    
-    // Update persistent ref with valid value
-    if (value > 0.01 || !persistentValueRef.current.amount) {
+    // CRITICAL: Only update if value is valid (non-zero or first load)
+    if (value > 0 || persistentValueRef.current.amount === 0) {
       persistentValueRef.current.amount = value;
     }
     
     return persistentValueRef.current.amount;
-  }, [isSimMode, amount, wsConnected, wsLoading, wsUsdBalance, wsTotalValue, balanceType]);
+  }, [isSimMode, amount, wsConnected, wsUsdBalance, wsTotalValue, balanceType, wallet]);
 
   const displayChange = React.useMemo(() => {
     let changeValue;
@@ -84,19 +73,20 @@ export default function BalanceCard({
       if (changeLabel?.includes('24h')) {
         changeValue = {
           value: krakenPnL.pnl_24h || 0,
-          percentage: displayAmount > 0 ? ((krakenPnL.pnl_24h || 0) / displayAmount * 100) : 0
+          percentage: displayAmount > 0 ? (krakenPnL.pnl_24h / displayAmount * 100) : 0
         };
       } else {
         changeValue = {
           value: krakenPnL.pnl_lifetime || 0,
-          percentage: displayAmount > 0 ? ((krakenPnL.pnl_lifetime || 0) / displayAmount * 100) : 0
+          percentage: displayAmount > 0 ? (krakenPnL.pnl_lifetime / displayAmount * 100) : 0
         };
       }
     } else {
       changeValue = change || { value: 0, percentage: 0 };
     }
     
-    if (Math.abs(changeValue.value) > 0.01 || persistentValueRef.current.change.value === 0) {
+    // CRITICAL: Update persistent ref
+    if (changeValue.value !== 0 || persistentValueRef.current.change.value === 0) {
       persistentValueRef.current.change = changeValue;
     }
     
@@ -106,9 +96,6 @@ export default function BalanceCard({
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
   const changePct = typeof displayChange.percentage === 'number' ? displayChange.percentage : 0;
-
-  // Show loading indicator in LIVE mode when connecting
-  const isLoadingLive = !isSimMode && wsLoading && displayAmount === 0;
 
   return (
     <Card className={`border-2 transition-all duration-300 ${
@@ -130,7 +117,7 @@ export default function BalanceCard({
             }
             {!isSimMode &&
               <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
-                {wsConnected ? <Wifi className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                {wsConnected && <Wifi className="w-3 h-3" />}
                 Live
               </Badge>
             }
@@ -155,27 +142,18 @@ export default function BalanceCard({
         <div className="space-y-1">
           {isVisible ? (
             <>
-              {isLoadingLive ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin text-green-500" />
-                  <span className="text-sm text-gray-500">Loading balance...</span>
-                </div>
-              ) : (
-                <>
-                  <NumberDisplay
-                    value={displayAmount}
-                    prefix="$"
-                    decimals={2}
-                    className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
-                    maxFontSize={isPrimary ? 40 : 28}
-                    minFontSize={16}
-                  />
-                  {!isSimMode && wsConnected && balanceType === 'total' && wsTotalAssets > 0 && (
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      ✅ Connected • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
-                    </p>
-                  )}
-                </>
+              <NumberDisplay
+                value={displayAmount}
+                prefix="$"
+                decimals={2}
+                className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
+                maxFontSize={isPrimary ? 40 : 28}
+                minFontSize={16}
+              />
+              {!isSimMode && wsConnected && balanceType === 'total' && wsTotalAssets > 0 && (
+                <p className="text-xs text-green-600 dark:text-green-400">
+                  ✅ Live • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
+                </p>
               )}
             </>
           ) : (
@@ -185,7 +163,7 @@ export default function BalanceCard({
             </p>
           )}
           
-          {isVisible && !isLoadingLive &&
+          {isVisible &&
             <div className="flex items-center gap-1 flex-wrap">
               {isPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
