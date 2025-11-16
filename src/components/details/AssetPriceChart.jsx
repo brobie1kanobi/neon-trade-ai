@@ -8,7 +8,7 @@ import { getMarketData } from "@/functions/getMarketData";
 import { User, Trade } from "@/entities/all";
 import { useSettings } from "@/components/utils/SettingsContext";
 
-export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceUpdate, trades = [], holding = null }) {
+export default function AssetPriceChart({ symbol, onPriceUpdate, assetType = "crypto", trades: preloadedTrades }) {
   const [chartData, setChartData] = useState([]);
   const [timeframe, setTimeframe] = useState("24h");
   const [isLoading, setIsLoading] = useState(true);
@@ -21,7 +21,6 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
   const longPressTimerRef = useRef(null);
   const intervalRef = useRef(null);
   const [latestPrice, setLatestPrice] = useState(null); // Add a local price fallback holder
-  const [periodStartPrice, setPeriodStartPrice] = useState(null); // Store the start price of the current period
 
   // Read simulation mode from settings context
   const { settings } = useSettings();
@@ -79,7 +78,6 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
         setLastFetchTime(now);
         setPinnedIndex(null); // Reset pinned index on new data load
         setLatestPrice(currentPrice); // Store the latest price from the chart data
-        setPeriodStartPrice(startPrice); // Store the start price for P&L calculation
         
         onPriceUpdate({
           price: currentPrice,
@@ -96,7 +94,6 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
         const fallbackPrice = typeof details?.price === 'number' ? details.price : (chartData?.[chartData.length - 1]?.price || null);
         
         setLatestPrice(fallbackPrice); // Always store the latest price available
-        setPeriodStartPrice(fallbackPrice); // If no history, start price is current price
         setLastFetchTime(now);
         setPinnedIndex(null);
         setChartData([]); // Ensure chartData is empty if no historical data was received
@@ -129,30 +126,17 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
     }
   }, [symbol, timeframe, timeframes, onPriceUpdate, lastFetchTime, assetType, chartData]);
 
-  const quantity = holding?.quantity || 0;
-
-  // Compute period P&L
-  const periodPnL = React.useMemo(() => {
-    if (quantity <= 0 || periodStartPrice == null || latestPrice == null) {
-      return { value: 0, percent: 0 };
-    }
-    const diff = latestPrice - periodStartPrice;
-    const value = quantity * diff;
-    const percent = periodStartPrice > 0 ? (diff / periodStartPrice) * 100 : 0;
-    return { value, percent };
-  }, [quantity, periodStartPrice, latestPrice]);
-
   // Handle timeframe changes and initial load
   useEffect(() => {
     if (symbol) {
       fetchChartData();
     }
-  }, [symbol, timeframe, assetType]);
+  }, [symbol, timeframe, assetType]); // FIXED: Removed fetchChartData from deps to prevent infinite loop
 
   // Use preloaded trades if provided; otherwise, fallback to internal fetch
   useEffect(() => {
     const mapTradesToMarkers = (tradesArr) => {
-      const daysMap = { "24h": 1, "7d": 7, "1m": 30, "3m": 90, "1y": 365 };
+      const daysMap = { "24h": 1, "7d": 7, "1m": 30, "3m": 90, "3m": 90, "1y": 365 };
       const days = daysMap[timeframe] || 1;
       const startMs = Date.now() - days * 24 * 60 * 60 * 1000;
       return (tradesArr || [])
@@ -171,8 +155,8 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
         }));
     };
 
-    if (Array.isArray(trades)) { // Changed from preloadedTrades to trades
-      setTradeMarkers(mapTradesToMarkers(trades));
+    if (Array.isArray(preloadedTrades)) {
+      setTradeMarkers(mapTradesToMarkers(preloadedTrades));
       return;
     }
 
@@ -197,7 +181,7 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
     };
     loadTrades();
     return () => { active = false; };
-  }, [trades, symbol, timeframe, isSimMode]); // Changed from preloadedTrades to trades
+  }, [preloadedTrades, symbol, timeframe, isSimMode]);
 
   // Find nearest trade marker to current hover position
   const nearestHoverMarker = useMemo(() => {
@@ -249,7 +233,7 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }, [symbol, chartData.length]);
+  }, [symbol, chartData.length]); // FIXED: Removed fetchChartData from deps
 
   const handleManualRefresh = () => {
     fetchChartData(true); // Bypass rate limiting for manual refresh
@@ -447,51 +431,6 @@ export default function AssetPriceChart({ symbol, assetType = 'crypto', onPriceU
         </div>
       </CardHeader>
       <CardContent>
-        {/* Period P/L and Info Cards like screenshot */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="p-3 rounded-lg border" style={{ 
-            borderColor: 'var(--border-color)',
-            backgroundColor: 'var(--secondary-bg)' 
-          }}>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Period P/L</div>
-            <div className={`font-semibold text-sm ${periodPnL.value >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {periodPnL.value >= 0 ? '+' : ''}${periodPnL.value.toFixed(2)}
-            </div>
-            <div className={`text-xs ${periodPnL.percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {periodPnL.percent >= 0 ? '+' : ''}{periodPnL.percent.toFixed(2)}%
-            </div>
-          </div>
-          
-          <div className="p-3 rounded-lg border" style={{ 
-            borderColor: 'var(--border-color)',
-            backgroundColor: 'var(--secondary-bg)' 
-          }}>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Current Price</div>
-            <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              ${Number(latestPrice || 0).toFixed(2)}
-            </div>
-          </div>
-          
-          <div className="p-3 rounded-lg border" style={{ 
-            borderColor: 'var(--border-color)',
-            backgroundColor: 'var(--secondary-bg)' 
-          }}>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Quantity</div>
-            <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              {Number(quantity).toFixed(6)}
-            </div>
-          </div>
-          
-          <div className="p-3 rounded-lg border" style={{ 
-            borderColor: 'var(--border-color)',
-            backgroundColor: 'var(--secondary-bg)' 
-          }}>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Current Value</div>
-            <div className="font-semibold text-sm neon-text">
-              ${Number(quantity * (latestPrice || 0)).toFixed(2)}
-            </div>
-          </div>
-        </div>
         <div
           className="h-64 rounded-lg p-2"
           style={{ backgroundColor: 'var(--primary-bg)' }}

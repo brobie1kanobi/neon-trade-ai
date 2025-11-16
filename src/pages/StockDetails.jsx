@@ -1,8 +1,9 @@
+
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
-import { User, Holding } from "@/entities/all";
+import { User } from "@/entities/all";
 import { getMarketData } from "@/functions/getMarketData";
 import AssetHeader from "../components/details/AssetHeader";
 import AssetInfoTabs from "../components/details/AssetInfoTabs";
@@ -17,7 +18,6 @@ export default function StockDetails() {
   const isSimMode = settings?.sim_trading_mode !== false;
   
   const [assetData, setAssetData] = useState(null);
-  const [holding, setHolding] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dynamicPriceChange, setDynamicPriceChange] = useState(null);
   const [trades, setTrades] = useState([]);
@@ -32,18 +32,10 @@ export default function StockDetails() {
         return;
       }
       try {
-        const user = await User.me();
-        const [{ data: details }, holdings] = await Promise.all([
-          getMarketData({ action: "getAssetDetails", payload: { symbol, assetType: "stocks" } }),
-          Holding.filter({
-            created_by: user.email,
-            symbol: symbol.toUpperCase(),
-            is_simulation: isSimMode
-          })
+        const [{ data: details }] = await Promise.all([
+          getMarketData({ action: "getAssetDetails", payload: { symbol, assetType: "stocks" } })
         ]);
-        
         if (!details) throw new Error("No details");
-        
         setAssetData({
           name: details.name || symbol,
           symbol: details.symbol || symbol.toUpperCase(),
@@ -54,17 +46,14 @@ export default function StockDetails() {
           sector: details.sector,
           industry: details.industry
         });
-        
-        setHolding(holdings && holdings.length > 0 ? holdings[0] : null);
       } catch (e) {
         setAssetData({ name: symbol, symbol: symbol.toUpperCase(), price: 0 });
-        setHolding(null);
       } finally {
         setIsLoading(false);
       }
     };
     load();
-  }, [symbol, isSimMode]);
+  }, [symbol]);
 
   useEffect(() => {
     let active = true;
@@ -109,29 +98,18 @@ export default function StockDetails() {
 
       {assetData ? (
         <>
-          <AssetHeader 
-            asset={assetData} 
-            dynamicChange={dynamicPriceChange} 
-            isLoading={!dynamicPriceChange} 
-            holding={holding} 
-          />
+          <AssetHeader asset={assetData} dynamicChange={dynamicPriceChange} isLoading={!dynamicPriceChange} />
           <div className="mt-6">
             {tradesLoading ? (
               <div className="h-64 rounded-lg border flex items-center justify-center" style={{ borderColor: 'var(--border-color)' }}>
                 <Loader2 className="w-6 h-6 animate-spin neon-text" />
               </div>
             ) : (
-              <AssetPriceChart 
-                symbol={assetData.symbol} 
-                onPriceUpdate={handlePriceUpdate} 
-                assetType="stocks" 
-                trades={trades} 
-                holding={holding} 
-              />
+              <AssetPriceChart symbol={assetData.symbol} onPriceUpdate={handlePriceUpdate} assetType="stocks" trades={trades} />
             )}
           </div>
           <div className="mt-6">
-            <AssetInfoTabs assetData={assetData} holding={holding} />
+            <AssetInfoTabs assetData={assetData} holding={null} />
           </div>
           <div className="mt-6">
             <TradeHistory trades={trades} />

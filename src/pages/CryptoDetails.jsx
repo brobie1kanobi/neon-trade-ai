@@ -274,14 +274,14 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
 
       {assetData ? (
         <>
-          <AssetHeader asset={assetData} dynamicChange={dynamicPriceChange} isLoading={!dynamicPriceChange} holding={holding} />
+          <AssetHeader asset={assetData} dynamicChange={dynamicPriceChange} isLoading={!dynamicPriceChange} />
           <div className="mt-6">
             {tradesLoading ? (
               <div className="h-64 rounded-lg border flex items-center justify-center" style={{ borderColor: 'var(--border-color)' }}>
                 <Loader2 className="w-6 h-6 animate-spin neon-text" />
               </div>
             ) : (
-              <AssetPriceChart symbol={assetData.symbol} onPriceUpdate={handlePriceUpdate} assetType={assetType} trades={trades} holding={holding} />
+              <AssetPriceChart symbol={assetData.symbol} onPriceUpdate={handlePriceUpdate} assetType={assetType} trades={trades} />
             )}
           </div>
           <div className="mt-6">
