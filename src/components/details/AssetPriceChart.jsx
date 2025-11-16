@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine } from "recharts";
@@ -131,7 +131,7 @@ export default function AssetPriceChart({ symbol, onPriceUpdate, assetType = "cr
     if (symbol) {
       fetchChartData();
     }
-  }, [symbol, timeframe, fetchChartData, assetType]);
+  }, [symbol, timeframe, assetType]); // FIXED: Removed fetchChartData from deps to prevent infinite loop
 
   // Use preloaded trades if provided; otherwise, fallback to internal fetch
   useEffect(() => {
@@ -233,7 +233,7 @@ export default function AssetPriceChart({ symbol, onPriceUpdate, assetType = "cr
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }, [symbol, chartData.length, fetchChartData]);
+  }, [symbol, chartData.length]); // FIXED: Removed fetchChartData from deps
 
   const handleManualRefresh = () => {
     fetchChartData(true); // Bypass rate limiting for manual refresh
