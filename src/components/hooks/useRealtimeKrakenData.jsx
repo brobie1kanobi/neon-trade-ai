@@ -101,6 +101,7 @@ export function useRealtimeKrakenData(options = {}) {
     }
 
     try {
+      // CRITICAL FIX: Calculate usdBalance from wsBalances
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
 
       const totalAssets = Object.keys(wsBalances).filter(asset => {
@@ -142,7 +143,7 @@ export function useRealtimeKrakenData(options = {}) {
     } catch (err) {
       setError(err.message);
     }
-  }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices, wsUsdBalance]);
+  }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices]);
 
   // Handle executions
   useEffect(() => {
