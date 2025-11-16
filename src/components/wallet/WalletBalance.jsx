@@ -16,6 +16,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const [isVisible, setIsVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [hasAutoSynced, setHasAutoSynced] = useState(false);
   
   // CRITICAL: Persistent state to prevent flashing to zero
   const persistentDataRef = useRef({
@@ -41,6 +42,51 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     subscribeToExecutions: true,
     isSimMode
   });
+
+  // CRITICAL: Auto-sync on first WebSocket connection (only once per session)
+  useEffect(() => {
+    if (!isSimMode && wsConnected && !hasAutoSynced) {
+      const sessionKey = 'kraken_auto_synced';
+      const alreadySynced = sessionStorage.getItem(sessionKey);
+      
+      if (!alreadySynced) {
+        console.log('[WalletBalance] 🔄 Auto-syncing on WebSocket connection...');
+        
+        // Small delay to ensure WebSocket is fully ready
+        setTimeout(async () => {
+          try {
+            const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
+            const syncData = syncRes?.data || syncRes;
+            
+            if (syncData?.success) {
+              console.log('[WalletBalance] ✅ Auto-sync complete');
+              
+              // Update persistent ref
+              if (syncData.usdBalance >= 0) {
+                persistentDataRef.current.cash = syncData.usdBalance;
+              }
+              if (syncData.holdings?.length > 0) {
+                persistentDataRef.current.assets = syncData.holdings.length;
+              }
+              
+              invalidateCache();
+              invalidatePriceCache();
+              wsRefresh();
+              
+              sessionStorage.setItem(sessionKey, 'true');
+              setHasAutoSynced(true);
+              
+              if (onSyncComplete) onSyncComplete();
+            }
+          } catch (error) {
+            console.error('[WalletBalance] Auto-sync failed:', error);
+          }
+        }, 1500);
+      } else {
+        setHasAutoSynced(true);
+      }
+    }
+  }, [wsConnected, isSimMode, hasAutoSynced, onSyncComplete, wsRefresh]);
 
   // CRITICAL: Calculate display values and PERSIST them
   const displayCash = React.useMemo(() => {
@@ -99,7 +145,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const totalWithdrawals = isSimMode ? wallet?.total_withdrawals || 0 : wallet?.real_total_withdrawals || 0;
   const netFlow = totalDeposits - totalWithdrawals;
 
-  const handleKrakenSync = async () => {
+  const handleManualSync = async () => {
     if (isSimMode) return;
 
     setIsSyncing(true);
@@ -149,11 +195,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         }));
 
         if (onSyncComplete) onSyncComplete();
-
-        // CRITICAL: Delay reload to allow state to settle
-        setTimeout(() => {
-          window.location.href = window.location.pathname + '?t=' + Date.now();
-        }, 1500);
       } else {
         throw new Error(syncData?.error || 'Sync failed');
       }
@@ -166,6 +207,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       setIsSyncing(false);
     }
   };
+
+  // CRITICAL: Only show sync button when NOT connected or there's an error
+  const showSyncButton = !isSimMode && (!wsConnected || syncError);
 
   return (
     <Card className="border-2 neon-glow" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--neon-green)' }}>
@@ -184,7 +228,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 {wsConnected ? (
                   <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
                     <Wifi className="w-3 h-3" />
-                    WebSocket
+                    Connected 24/7
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="text-xs flex items-center gap-1 bg-yellow-50 text-yellow-700 border-yellow-200">
@@ -206,9 +250,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-green-600" />
               <div>
-                <p className="text-xs font-semibold text-green-700 dark:text-green-400">Real-Time WebSocket</p>
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400">Real-Time WebSocket Active</p>
                 <p className="text-xs text-green-600 dark:text-green-500">
-                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} • Updated: {wsLastUpdated ? new Date(wsLastUpdated).toLocaleTimeString() : '—'}
+                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} • Auto-synced • Updated: {wsLastUpdated ? new Date(wsLastUpdated).toLocaleTimeString() : '—'}
                 </p>
               </div>
             </div>
@@ -232,7 +276,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
               />
               {!isSimMode && wsConnected && totalBalance > 0 && (
                 <p className="text-xs mt-1 text-green-600 dark:text-green-400">
-                  ✅ Live via WebSocket
+                  ✅ Live via WebSocket (No sync needed)
                 </p>
               )}
             </>
@@ -246,16 +290,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Connecting to Kraken...</p>
+                <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Establishing Connection...</p>
                 <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1">
-                  WebSocket establishing real-time connection
+                  WebSocket connecting to Kraken for real-time updates
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {!isSimMode && (
+        {showSyncButton && (
           <div className="pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
             {syncError && (
               <div className="mb-3 p-2 rounded bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs flex items-start gap-2">
@@ -264,16 +308,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
               </div>
             )}
             <Button
-              onClick={handleKrakenSync}
+              onClick={handleManualSync}
               disabled={isSyncing}
               className="w-full bg-purple-600 hover:bg-purple-700"
               size="sm"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync Kraken (One-Time)'}
+              {isSyncing ? 'Syncing...' : 'Reconnect & Sync'}
             </Button>
             <p className="text-xs text-center mt-2" style={{ color: 'var(--text-secondary)' }}>
-              {wsConnected ? '🟢 WebSocket auto-updates • Use sync to force refresh' : 'Connect & import from Kraken'}
+              Connection lost. Click to reconnect.
             </p>
           </div>
         )}
