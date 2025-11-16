@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
@@ -49,17 +50,25 @@ export default function BalanceCard({
       value = amount || 0;
     } else {
       if (balanceType === 'cash') {
-        value = wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+        // LIVE MODE: Cash from WebSocket, fallback to wallet
+        value = (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+        console.log('[BalanceCard] Cash value:', { wsUsdBalance, fromWallet: wallet?.real_cash_balance, using: value });
       } else if (balanceType === 'portfolio') {
-        const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
+        // LIVE MODE: Portfolio = Total - Cash
+        const portfolioValue = (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) 
+          ? Math.max(0, wsTotalValue - wsUsdBalance)
+          : (amount || 0);
         value = portfolioValue;
+        console.log('[BalanceCard] Portfolio value:', { wsTotalValue, wsUsdBalance, calculated: portfolioValue });
       } else {
-        value = wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
+        // Total balance
+        value = (wsConnected && wsTotalValue >= 0) ? wsTotalValue : (amount || 0);
+        console.log('[BalanceCard] Total value:', { wsTotalValue, fallback: amount, using: value });
       }
     }
     
-    // CRITICAL: Only update if value is valid (non-zero or first load)
-    if (value > 0 || persistentValueRef.current.amount === 0) {
+    // CRITICAL: Update persistent ref with valid values
+    if (!isNaN(value) && value >= 0) {
       persistentValueRef.current.amount = value;
     }
     

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,13 +19,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const [syncError, setSyncError] = useState(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
   
-  // CRITICAL: Persistent state to prevent flashing to zero
-  const persistentDataRef = useRef({
-    cash: 0,
-    portfolio: 0,
-    total: 0,
-    assets: 0
-  });
+  // CRITICAL: Persistent state for assets to prevent flashing to zero when WS disconnects
+  const persistentAssetsRef = useRef(0); // Simplified to only track assets
 
   const {
     isConnected: wsConnected,
@@ -61,12 +57,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             if (syncData?.success) {
               console.log('[WalletBalance] ✅ Auto-sync complete');
               
-              // Update persistent ref
-              if (syncData.usdBalance >= 0) {
-                persistentDataRef.current.cash = syncData.usdBalance;
-              }
+              // Update persistent assets ref
+              // persistentDataRef.current.cash is no longer managed here
               if (syncData.holdings?.length > 0) {
-                persistentDataRef.current.assets = syncData.holdings.length;
+                persistentAssetsRef.current = syncData.holdings.length;
               }
               
               invalidateCache();
@@ -88,62 +82,74 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     }
   }, [wsConnected, isSimMode, hasAutoSynced, onSyncComplete, wsRefresh]);
 
-  // CRITICAL: Calculate display values and PERSIST them
+  // CRITICAL: Calculate total balance from WebSocket
+  const totalBalance = React.useMemo(() => {
+    if (isSimMode) {
+      const simCash = wallet?.cash_balance || 0;
+      const simPortfolio = portfolioMarketValue || 0;
+      return simCash + simPortfolio;
+    }
+    
+    // LIVE MODE: Use WebSocket total if available
+    if (wsConnected && wsTotalValue >= 0) {
+      console.log('[WalletBalance] Using WebSocket total:', wsTotalValue);
+      return wsTotalValue;
+    }
+    
+    // Fallback to cash + portfolio from DB
+    const liveCash = wallet?.real_cash_balance || 0;
+    const livePortfolio = portfolioMarketValue || 0;
+    console.log('[WalletBalance] Using DB values:', { liveCash, livePortfolio });
+    return liveCash + livePortfolio;
+  }, [isSimMode, wallet, portfolioMarketValue, wsConnected, wsTotalValue]);
+
   const displayCash = React.useMemo(() => {
-    let value;
-    
     if (isSimMode) {
-      value = wallet?.cash_balance || 0;
-    } else {
-      const krakenUSD = wsUsdBalance || 0;
-      const dbCash = wallet?.real_cash_balance || 0;
-      value = wsConnected && krakenUSD >= 0 ? krakenUSD : dbCash;
+      return wallet?.cash_balance || 0;
     }
-    
-    // CRITICAL: Only update if value is valid (non-zero or first load)
-    if (value > 0 || persistentDataRef.current.cash === 0) {
-      persistentDataRef.current.cash = value;
-    }
-    
-    return persistentDataRef.current.cash;
-  }, [isSimMode, wallet, wsUsdBalance, wsConnected]);
+    // LIVE MODE: WebSocket first, then DB
+    const wsCash = (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : null;
+    const dbCash = wallet?.real_cash_balance || 0;
+    console.log('[WalletBalance] Cash sources:', { wsCash, dbCash });
+    return wsCash ?? dbCash;
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
-  const displayPortfolioValue = React.useMemo(() => {
-    let value;
-    
+  const displayPortfolio = React.useMemo(() => {
     if (isSimMode) {
-      value = portfolioMarketValue;
-    } else {
-      const wsPortfolio = wsTotalValue - (wsUsdBalance || 0);
-      value = wsConnected && wsPortfolio >= 0 ? wsPortfolio : portfolioMarketValue;
+      return portfolioMarketValue || 0;
     }
-    
-    // CRITICAL: Only update if value is valid
-    if (value > 0 || persistentDataRef.current.portfolio === 0) {
-      persistentDataRef.current.portfolio = value;
+    // LIVE MODE: Calculate from WebSocket or use passed value
+    if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
+      const portfolioOnly = Math.max(0, wsTotalValue - wsUsdBalance);
+      console.log('[WalletBalance] Portfolio from WS:', portfolioOnly);
+      return portfolioOnly;
     }
-    
-    return persistentDataRef.current.portfolio;
-  }, [isSimMode, wsTotalValue, portfolioMarketValue, wsConnected, wsUsdBalance]);
+    console.log('[WalletBalance] Portfolio from prop:', portfolioMarketValue);
+    return portfolioMarketValue || 0;
+  }, [isSimMode, portfolioMarketValue, wsConnected, wsTotalValue, wsUsdBalance]);
 
-  const totalBalance = displayCash + displayPortfolioValue;
-  
-  // CRITICAL: Persist total and assets
+  // Calculate 24h change (stubbed for now, can be enhanced)
+  const change24h = { value: 0, percentage: 0 };
+
+  // Net flow calculation
+  const netFlow = React.useMemo(() => {
+    if (isSimMode) {
+      return (wallet?.total_deposits || 0) - (wallet?.total_withdrawals || 0);
+    }
+    return (wallet?.real_total_deposits || 0) - (wallet?.real_total_withdrawals || 0);
+  }, [isSimMode, wallet]);
+
+  // Update persistent assets from WebSocket data
   useEffect(() => {
-    if (totalBalance > 0) {
-      persistentDataRef.current.total = totalBalance;
-    }
-    
     if (!isSimMode && wsConnected && wsTotalAssets > 0) {
-      persistentDataRef.current.assets = wsTotalAssets;
+      persistentAssetsRef.current = wsTotalAssets;
     }
-  }, [totalBalance, wsTotalAssets, wsConnected, isSimMode]);
+  }, [wsTotalAssets, wsConnected, isSimMode]);
   
-  const totalAssets = isSimMode ? 0 : persistentDataRef.current.assets;
+  const totalAssets = isSimMode ? 0 : persistentAssetsRef.current; // Use persistent ref for assets
 
   const totalDeposits = isSimMode ? wallet?.total_deposits || 0 : wallet?.real_total_deposits || 0;
   const totalWithdrawals = isSimMode ? wallet?.total_withdrawals || 0 : wallet?.real_total_withdrawals || 0;
-  const netFlow = totalDeposits - totalWithdrawals;
 
   const handleManualSync = async () => {
     if (isSimMode) return;
@@ -167,11 +173,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
       if (syncData?.success) {
         // CRITICAL: Update persistent ref BEFORE showing toast
-        if (syncData.usdBalance >= 0) {
-          persistentDataRef.current.cash = syncData.usdBalance;
-        }
+        // persistentDataRef.current.cash is no longer managed here
         if (syncData.holdings?.length > 0) {
-          persistentDataRef.current.assets = syncData.holdings.length;
+          persistentAssetsRef.current = syncData.holdings.length;
         }
         
         toast.success('✅ Kraken synced!', {
@@ -270,8 +274,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 value={totalBalance}
                 prefix="$"
                 decimals={2}
-                className="neon-text"
-                maxFontSize={36}
+                className="neon-text max-w-full"
+                maxFontSize={48}
                 minFontSize={20}
               />
               {!isSimMode && wsConnected && totalBalance > 0 && (
@@ -327,7 +331,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Available Cash</p>
             {isVisible ? (
               <div>
-                <NumberDisplay value={displayCash} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
+                <div className="text-2xl font-bold neon-text">
+                  ${displayCash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
                 {!isSimMode && wsConnected && displayCash > 0 && (
                   <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">✅ Live USD</p>
                 )}
@@ -339,13 +345,15 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           <div>
             <p className="text-xs mb-1 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
               Portfolio Value
-              {!isSimMode && wsConnected && displayPortfolioValue > 0 && (
+              {!isSimMode && wsConnected && displayPortfolio > 0 && (
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               )}
             </p>
             {isVisible ? (
               <div>
-                <NumberDisplay value={displayPortfolioValue} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
+                <div className="text-2xl font-bold neon-text">
+                  ${displayPortfolio.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
                 {!isSimMode && wsConnected && totalAssets > 0 && (
                   <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
                     ✅ {totalAssets} asset{totalAssets !== 1 ? 's' : ''}
