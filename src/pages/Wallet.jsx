@@ -23,6 +23,7 @@ export default function WalletPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioMarketValue, setPortfolioMarketValue] = useState(0);
   const [lastLoadTime, setLastLoadTime] = useState(0);
+  const [holdings, setHoldings] = useState([]);
 
   const isSimMode = settings?.sim_trading_mode !== false;
 
@@ -149,6 +150,8 @@ export default function WalletPage() {
           is_simulation: true 
         });
         
+        setHoldings(userHoldings || []);
+        
         if (Array.isArray(userHoldings) && userHoldings.length > 0) {
           const cryptoSymbols = userHoldings.filter(h => h.asset_type === 'crypto').map(h => h.symbol);
           const stockSymbols = userHoldings.filter(h => h.asset_type === 'stock').map(h => h.symbol);
@@ -176,7 +179,21 @@ export default function WalletPage() {
         }
       } else {
         // LIVE mode - portfolio value will come from krakenPortfolioValue
+        // Also fetch Kraken holdings for display
         console.log('[Wallet] LIVE mode - portfolio value from Kraken');
+        if (krakenData?.holdings) {
+          setHoldings(krakenData.holdings.map(kh => ({
+            symbol: kh.symbol,
+            quantity: kh.quantity,
+            average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
+            asset_type: 'crypto', // Assuming Kraken holdings are crypto
+            currentPrice: kh.current_price_usd,
+            currentValue: kh.total_value_usd,
+            is_simulation: false
+          })));
+        } else {
+          setHoldings([]);
+        }
       }
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -212,13 +229,14 @@ export default function WalletPage() {
       }
       
       setPortfolioMarketValue(0);
+      setHoldings([]);
     } finally {
       setIsLoading(false);
       if (typeof window !== "undefined") {
         window.__entityCallInFlight = false;
       }
     }
-  }, [lastLoadTime]);
+  }, [lastLoadTime, krakenData]);
 
   useEffect(() => {
     loadData();
@@ -381,6 +399,8 @@ export default function WalletPage() {
           wallet={wallet} 
           isSimMode={isSimMode} 
           portfolioMarketValue={displayPortfolioValue}
+          holdings={holdings}
+          prices={priceData}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
             setTimeout(() => loadData(), 500);
