@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import { Wallet, Transaction, UserSettings, User, Holding } from "@/entities/all";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { getMarketData } from "@/functions/getMarketData";
-import { useKrakenData, invalidateKrakenCache } from "@/components/hooks/useKrakenData";
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
 
 import WalletBalance from "../components/wallet/WalletBalance";
@@ -26,64 +25,37 @@ export default function WalletPage() {
 
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // CRITICAL: Fetch real Kraken data in LIVE mode (autoFetch ALWAYS enabled for non-sim)
-  const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
+  // CRITICAL: Use WebSocket data for LIVE mode
+  const { 
+    usdBalance: wsUsdBalance,
+    totalPortfolioValue: wsTotalValue,
+    balances: wsBalances,
+    prices: wsPrices,
+    isConnected: wsConnected,
+    refresh: wsRefresh
+  } = useRealtimeKrakenData({
+    subscribeToPrices: true,
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
+    subscribeToBalances: !isSimMode,
+    subscribeToOrders: false,
+    subscribeToExecutions: false,
+    isSimMode
+  });
 
-  // AGGRESSIVE: Force Kraken refresh on page mount in LIVE mode
-  useEffect(() => {
-    if (!isSimMode) {
-      console.log('[Wallet] 🚀 FORCING initial Kraken data refresh');
-      invalidateKrakenCache();
-      setTimeout(() => {
-        refreshKraken();
-      }, 500); // Small delay to allow settings to load
-    }
-  }, [isSimMode, refreshKraken]);
-
-  // Get prices for Kraken holdings
-  const krakenSymbols = React.useMemo(() => {
-    if (isSimMode || !krakenData?.holdings) return [];
-    return krakenData.holdings.map(h => h.symbol);
-  }, [isSimMode, krakenData]);
-
-  const { priceData } = usePriceData(krakenSymbols);
-
-  // CRITICAL FIX: Use Kraken's total_crypto_value directly (most reliable)
+  // CRITICAL: Calculate portfolio value from WebSocket in LIVE mode
   const krakenPortfolioValue = React.useMemo(() => {
-    if (isSimMode || !krakenData) return 0;
+    if (isSimMode) return 0;
 
-    // PRIORITY 1: Use Kraken's calculated total (includes prices)
-    if (krakenData.total_crypto_value && krakenData.total_crypto_value > 0) {
-      console.log('[Wallet] ✅ Using Kraken total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
-      return krakenData.total_crypto_value;
+    // Use WebSocket total portfolio value minus cash balance
+    if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
+      const portfolioValue = wsTotalValue - wsUsdBalance;
+      console.log('[Wallet] ✅ Using WebSocket portfolio value:', portfolioValue.toFixed(2));
+      return portfolioValue;
     }
 
-    // PRIORITY 2: Sum up total_value_usd from individual holdings
-    if (krakenData.holdings && krakenData.holdings.length > 0) {
-      const sumOfHoldings = krakenData.holdings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
-      if (sumOfHoldings > 0) {
-        console.log('[Wallet] ✅ Using sum of holding values:', sumOfHoldings.toFixed(2));
-        return sumOfHoldings;
-      }
-    }
-
-    // PRIORITY 3: Calculate with external price data
-    if (!krakenData.holdings || !priceData || priceData.length === 0) {
-      console.warn('[Wallet] ⚠️ No holdings or price data');
-      return 0;
-    }
-
-    const calculated = krakenData.holdings.reduce((total, holding) => {
-      const price = priceData.find(p => 
-        (p.symbol || '').toUpperCase() === (holding.symbol || '').toUpperCase()
-      );
-      const currentPrice = price?.price || price?.current_price || holding.current_price_usd || 0;
-      return total + (holding.quantity * currentPrice);
-    }, 0);
-
-    console.log('[Wallet] ✅ Calculated portfolio value:', calculated.toFixed(2));
-    return calculated;
-  }, [isSimMode, krakenData, priceData]);
+    console.warn('[Wallet] ⚠️ No WebSocket data available');
+    return 0;
+  }, [isSimMode, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const loadData = useCallback(async () => {
     if (typeof window !== "undefined") {
@@ -100,27 +72,25 @@ export default function WalletPage() {
     }
 
     const now = Date.now();
-    if (lastLoadTime && (now - lastLoadTime) < 30000) { // REDUCED from 60s to 30s
+    if (lastLoadTime && (now - lastLoadTime) < 30000) {
       if (typeof window !== "undefined") window.__entityCallInFlight = false;
       return;
     }
 
     try {
-      // CRITICAL: Removed 5-second artificial delay - was causing slow loads
-      
       const currentUser = await User.me();
       setUser(currentUser);
       const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
       const isCreator = !!currentUser?.is_creator;
       const isAdminOrCreator = isAdmin || isCreator;
       
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
+      await new Promise(resolve => setTimeout(resolve, 200));
       const userWallet = await Wallet.filter({ created_by: currentUser.email });
       
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
+      await new Promise(resolve => setTimeout(resolve, 200));
       const userTransactions = await Transaction.filter({ created_by: currentUser.email }, '-created_date');
 
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
+      await new Promise(resolve => setTimeout(resolve, 200));
       const userSettings = await UserSettings.filter({ created_by: currentUser.email });
       
       setWallet(userWallet[0] || { 
@@ -140,10 +110,9 @@ export default function WalletPage() {
       }
       setSettings(currentSettings);
 
-      // Compute portfolio value (SIM from DB, LIVE from Kraken)
+      // Compute portfolio value for SIM mode only
       if (currentSettings.sim_trading_mode) {
-        // Simulation mode - use database holdings
-        await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
+        await new Promise(resolve => setTimeout(resolve, 200));
         const userHoldings = await Holding.filter({ 
           created_by: currentUser.email, 
           is_simulation: true 
@@ -174,9 +143,6 @@ export default function WalletPage() {
         } else {
           setPortfolioMarketValue(0);
         }
-      } else {
-        // LIVE mode - portfolio value will come from krakenPortfolioValue
-        console.log('[Wallet] LIVE mode - portfolio value from Kraken');
       }
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -230,23 +196,22 @@ export default function WalletPage() {
     }
   }, [loadData]);
 
-  // CRITICAL: Listen for Kraken sync events
+  // Listen for data sync events
   useEffect(() => {
-    const handleKrakenSync = () => {
-      console.log('[Wallet] Kraken sync event detected, refreshing...');
-      invalidateKrakenCache();
-      setTimeout(() => {
-        refreshKraken();
-        loadData();
-      }, 500);
+    const handleSync = () => {
+      console.log('[Wallet] Sync event detected, refreshing...');
+      wsRefresh();
+      setTimeout(() => loadData(), 500);
     };
 
-    window.addEventListener('kraken:synced', handleKrakenSync);
+    window.addEventListener('kraken:synced', handleSync);
+    window.addEventListener('trade:completed', handleSync);
     
     return () => {
-      window.removeEventListener('kraken:synced', handleKrakenSync);
+      window.removeEventListener('kraken:synced', handleSync);
+      window.removeEventListener('trade:completed', handleSync);
     };
-  }, [refreshKraken, loadData]);
+  }, [wsRefresh, loadData]);
 
   const executeTransaction = async (transactionData) => {
     const currentIsSimMode = settings?.sim_trading_mode !== false;
@@ -345,7 +310,7 @@ export default function WalletPage() {
     }
   };
 
-  // CRITICAL: Use Kraken portfolio value in LIVE mode
+  // CRITICAL: Use WebSocket portfolio value in LIVE mode
   const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
 
   if (isLoading) {
@@ -383,6 +348,7 @@ export default function WalletPage() {
           portfolioMarketValue={displayPortfolioValue}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
+            wsRefresh();
             setTimeout(() => loadData(), 500);
           }}
         />
