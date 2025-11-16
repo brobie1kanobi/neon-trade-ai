@@ -4,28 +4,115 @@ import { useKrakenWebSocket } from './useKrakenWebSocket';
 import { useSettings } from '../utils/SettingsContext';
 
 /**
- * Centralized price data hook - FIXED VERSION
- * CRITICAL: Aggressive caching and deduplication to prevent excessive API calls
+ * FIXED: Global request batching to prevent duplicate calls
  */
 
-// GLOBAL CACHE - shared across ALL component instances
-const globalPriceCache = {
-  data: null,
-  timestamp: 0,
-  pendingRequest: null,
-  subscribers: new Set()
+// GLOBAL STATE - shared across ALL instances
+const GLOBAL_STATE = {
+  cache: new Map(),
+  pendingBatch: null,
+  batchTimer: null,
+  symbolQueue: new Set(),
+  subscribers: new Map()
 };
 
-const CACHE_TTL = 120000; // INCREASED to 2 minutes
-const MIN_REQUEST_INTERVAL = 5000; // Minimum 5 seconds between requests
+const CACHE_TTL = 120000; // 2 minutes
+const BATCH_DELAY = 500; // Wait 500ms to collect all symbol requests
 
-let lastRequestTime = 0;
+function notifySubscribers(symbols, data) {
+  symbols.forEach(symbol => {
+    const subs = GLOBAL_STATE.subscribers.get(symbol) || new Set();
+    subs.forEach(callback => callback(data));
+  });
+}
+
+async function executeBatch() {
+  if (GLOBAL_STATE.symbolQueue.size === 0) return;
+  
+  const symbols = Array.from(GLOBAL_STATE.symbolQueue);
+  GLOBAL_STATE.symbolQueue.clear();
+  
+  console.log('[usePriceData] Executing batch for', symbols.length, 'symbols');
+  
+  try {
+    const cryptoSymbols = [];
+    const stockSymbols = [];
+    
+    symbols.forEach(sym => {
+      const upper = sym.toUpperCase();
+      if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
+        stockSymbols.push(upper);
+      } else {
+        cryptoSymbols.push(upper);
+      }
+    });
+    
+    const response = await Promise.race([
+      base44.functions.invoke('getMarketData', {
+        action: 'getWatchlistData',
+        payload: { cryptoSymbols, stockSymbols }
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Batch timeout')), 8000))
+    ]);
+    
+    const data = Array.isArray(response?.data) ? response.data : [];
+    
+    // Cache individual symbols
+    const now = Date.now();
+    data.forEach(item => {
+      GLOBAL_STATE.cache.set(item.symbol, {
+        data: item,
+        timestamp: now
+      });
+    });
+    
+    // Notify all subscribers
+    notifySubscribers(symbols, data);
+    
+    console.log('[usePriceData] Batch complete:', data.length, 'prices');
+    
+  } catch (error) {
+    console.error('[usePriceData] Batch error:', error.message);
+    notifySubscribers(symbols, []);
+  } finally {
+    GLOBAL_STATE.pendingBatch = null;
+  }
+}
+
+function scheduleBatch() {
+  if (GLOBAL_STATE.batchTimer) {
+    clearTimeout(GLOBAL_STATE.batchTimer);
+  }
+  
+  GLOBAL_STATE.batchTimer = setTimeout(() => {
+    executeBatch();
+  }, BATCH_DELAY);
+}
+
+function requestSymbols(symbols) {
+  if (!symbols || symbols.length === 0) return;
+  
+  let needsRefetch = false;
+  const now = Date.now();
+  
+  symbols.forEach(symbol => {
+    const cached = GLOBAL_STATE.cache.get(symbol);
+    if (!cached || (now - cached.timestamp) > CACHE_TTL) {
+      GLOBAL_STATE.symbolQueue.add(symbol);
+      needsRefetch = true;
+    }
+  });
+  
+  if (needsRefetch) {
+    scheduleBatch();
+  }
+}
 
 export function usePriceData(symbols = []) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  const [priceData, setPriceData] = useState(globalPriceCache.data || []);
+  const [priceData, setPriceData] = useState([]);
   const [loading, setLoading] = useState(false);
   const subscriberIdRef = useRef(Symbol());
 
@@ -34,85 +121,6 @@ export function usePriceData(symbols = []) {
     isConnected: wsConnected,
     getAllPrices: wsGetAllPrices 
   } = useKrakenWebSocket(symbols, !isSimMode && symbols.length > 0);
-
-  const fetchPricesREST = useCallback(async (force = false) => {
-    const now = Date.now();
-    
-    // CRITICAL: Rate limiting - prevent requests within 5 seconds
-    if (!force && (now - lastRequestTime) < MIN_REQUEST_INTERVAL) {
-      console.log('[usePriceData] Rate limited, using cache');
-      return globalPriceCache.data || [];
-    }
-    
-    // Return cached data if fresh
-    if (!force && globalPriceCache.data && (now - globalPriceCache.timestamp) < CACHE_TTL) {
-      console.log('[usePriceData] Using cached REST data');
-      return globalPriceCache.data;
-    }
-
-    // If there's already a pending request, wait for it
-    if (globalPriceCache.pendingRequest) {
-      console.log('[usePriceData] Waiting for pending REST request');
-      return globalPriceCache.pendingRequest;
-    }
-
-    // No symbols? Return empty
-    if (!symbols || symbols.length === 0) {
-      return [];
-    }
-
-    console.log('[usePriceData] Fetching REST prices for', symbols.length, 'symbols');
-    setLoading(true);
-    lastRequestTime = now;
-
-    try {
-      const cryptoSymbols = [];
-      const stockSymbols = [];
-      
-      symbols.forEach(sym => {
-        if (sym && typeof sym === 'string') {
-          const upper = sym.toUpperCase();
-          if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
-            stockSymbols.push(upper);
-          } else {
-            cryptoSymbols.push(upper);
-          }
-        }
-      });
-
-      const fetchPromise = Promise.race([
-        base44.functions.invoke('getMarketData', {
-          action: 'getWatchlistData',
-          payload: { cryptoSymbols, stockSymbols }
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-      ]).then(response => {
-        const data = Array.isArray(response?.data) ? response.data : [];
-        
-        globalPriceCache.data = data;
-        globalPriceCache.timestamp = Date.now();
-        globalPriceCache.pendingRequest = null;
-        
-        globalPriceCache.subscribers.forEach(callback => callback(data));
-        
-        console.log('[usePriceData] Fetched', data.length, 'REST prices');
-        return data;
-      }).catch(error => {
-        console.error('[usePriceData] REST Error:', error);
-        globalPriceCache.pendingRequest = null;
-        return globalPriceCache.data || [];
-      });
-
-      globalPriceCache.pendingRequest = fetchPromise;
-      
-      const data = await fetchPromise;
-      setPriceData(data);
-      return data;
-      
-    } finally {
-      setLoading(false);
-    }
-  }, [symbols.join(',')]);
 
   const convertWSToREST = useCallback(() => {
     if (!wsPrices || Object.keys(wsPrices).length === 0) {
@@ -128,70 +136,85 @@ export function usePriceData(symbols = []) {
     }));
   }, [wsPrices]);
 
-  // Subscribe to global REST updates (for SIM mode)
+  // Subscribe to updates for specific symbols
   useEffect(() => {
-    if (isSimMode) {
-      const handleUpdate = (data) => {
-        setPriceData(data);
-      };
-      
-      globalPriceCache.subscribers.add(handleUpdate);
-      
-      return () => {
-        globalPriceCache.subscribers.delete(handleUpdate);
-      };
-    }
-  }, [isSimMode]);
-
-  // Main data fetching logic - DEBOUNCED
-  const fetchTimeoutRef = useRef(null);
-  useEffect(() => {
-    if (!symbols || symbols.length === 0) {
-      return;
-    }
-
-    // Clear existing timeout
-    if (fetchTimeoutRef.current) {
-      clearTimeout(fetchTimeoutRef.current);
-    }
-
-    if (isSimMode) {
-      // DEBOUNCE: Wait 2 seconds before fetching
-      fetchTimeoutRef.current = setTimeout(() => {
-        fetchPricesREST();
-      }, 2000);
-    } else {
-      // LIVE MODE: Use WebSocket
-      const wsData = convertWSToREST();
-      if (wsData.length > 0) {
-        setPriceData(wsData);
-      }
-    }
-
-    return () => {
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
+    if (!isSimMode || symbols.length === 0) return;
+    
+    const id = subscriberIdRef.current;
+    
+    const handleUpdate = (data) => {
+      const filtered = data.filter(item => 
+        symbols.some(s => s.toUpperCase() === (item.symbol || '').toUpperCase())
+      );
+      setPriceData(filtered);
+      setLoading(false);
     };
-  }, [symbols.join(','), isSimMode, fetchPricesREST, convertWSToREST, wsConnected]);
+    
+    symbols.forEach(symbol => {
+      if (!GLOBAL_STATE.subscribers.has(symbol)) {
+        GLOBAL_STATE.subscribers.set(symbol, new Set());
+      }
+      GLOBAL_STATE.subscribers.get(symbol).add(handleUpdate);
+    });
+    
+    // Check if we have cached data
+    const now = Date.now();
+    const cachedData = [];
+    let needsFetch = false;
+    
+    symbols.forEach(symbol => {
+      const cached = GLOBAL_STATE.cache.get(symbol);
+      if (cached && (now - cached.timestamp) < CACHE_TTL) {
+        cachedData.push(cached.data);
+      } else {
+        needsFetch = true;
+      }
+    });
+    
+    if (cachedData.length > 0) {
+      setPriceData(cachedData);
+      setLoading(false);
+    }
+    
+    if (needsFetch) {
+      setLoading(true);
+      requestSymbols(symbols);
+    }
+    
+    return () => {
+      symbols.forEach(symbol => {
+        const subs = GLOBAL_STATE.subscribers.get(symbol);
+        if (subs) {
+          subs.delete(handleUpdate);
+          if (subs.size === 0) {
+            GLOBAL_STATE.subscribers.delete(symbol);
+          }
+        }
+      });
+    };
+  }, [symbols.join(','), isSimMode]);
 
-  // Update when WebSocket prices change (LIVE mode only)
+  // LIVE MODE: Use WebSocket
   useEffect(() => {
     if (!isSimMode && wsPrices && Object.keys(wsPrices).length > 0) {
       const wsData = convertWSToREST();
       setPriceData(wsData);
+      setLoading(false);
     }
   }, [isSimMode, wsPrices, convertWSToREST]);
 
   const refresh = useCallback(() => {
     if (isSimMode) {
-      return fetchPricesREST(true);
+      symbols.forEach(symbol => GLOBAL_STATE.cache.delete(symbol));
+      setLoading(true);
+      requestSymbols(symbols);
+      return Promise.resolve();
     } else {
       const wsData = convertWSToREST();
       setPriceData(wsData);
       return Promise.resolve(wsData);
     }
-  }, [isSimMode, fetchPricesREST, convertWSToREST]);
+  }, [isSimMode, symbols, convertWSToREST]);
 
   return {
     priceData,
@@ -202,16 +225,16 @@ export function usePriceData(symbols = []) {
 }
 
 export function getPriceForSymbol(symbol) {
-  if (!globalPriceCache.data) return null;
-  return globalPriceCache.data.find(p => 
-    (p.symbol || '').toUpperCase() === (symbol || '').toUpperCase()
-  );
+  const cached = GLOBAL_STATE.cache.get(symbol);
+  return cached?.data || null;
 }
 
 export function invalidatePriceCache() {
   console.log('[usePriceData] Invalidating price cache');
-  globalPriceCache.data = null;
-  globalPriceCache.timestamp = 0;
-  globalPriceCache.pendingRequest = null;
-  lastRequestTime = 0;
+  GLOBAL_STATE.cache.clear();
+  GLOBAL_STATE.symbolQueue.clear();
+  if (GLOBAL_STATE.batchTimer) {
+    clearTimeout(GLOBAL_STATE.batchTimer);
+    GLOBAL_STATE.batchTimer = null;
+  }
 }
