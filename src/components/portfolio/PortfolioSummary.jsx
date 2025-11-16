@@ -1,20 +1,24 @@
 import React from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import NumberDisplay from "@/components/ui/NumberDisplay";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { base44 } from "@/api/base44Client";
+import { Badge } from "@/components/ui/badge";
+import { TrendingUp, TrendingDown, RefreshCw, Wallet, Activity, Loader2, Wifi } from "lucide-react";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
-import { useSettings } from "@/components/utils/SettingsContext";
-import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
 
-export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick }) {
-  const { settings } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
-  
+export default function PortfolioSummary({ 
+  wallet, 
+  trades, 
+  currentPortfolioValue,
+  isLoading, 
+  isSimMode,
+  change24hr,
+  lifetimeChange,
+  onSyncClick,
+  krakenData
+}) {
   const { 
-    isConnected: wsConnected, 
+    isConnected: wsConnected,
+    loading: wsLoading,
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets
@@ -22,160 +26,145 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
     subscribeToBalances: !isSimMode,
-    subscribeToOrders: !isSimMode,
+    subscribeToOrders: false,
     isSimMode
   });
 
-  const { pnlData } = useKrakenPnL(isSimMode);
-
-  const currentCashBalance = React.useMemo(() => {
+  // CRITICAL: Use WebSocket data in LIVE mode
+  const displayCash = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+    // LIVE: Use WebSocket cash balance
+    return (wsConnected && typeof wsUsdBalance === 'number') ? wsUsdBalance : (wallet?.real_cash_balance || 0);
   }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
-  const displayPortfolioValue = React.useMemo(() => {
+  const displayAssets = React.useMemo(() => {
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
-    const portfolioOnly = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
-    return portfolioOnly;
-  }, [isSimMode, currentPortfolioValue, wsTotalValue, wsConnected, wsUsdBalance]);
-
-  const totalValue = currentCashBalance + displayPortfolioValue;
-  
-  const displayChange = {
-    value: pnlData.pnl_24h || 0,
-    percentage: totalValue > 0 ? (pnlData.pnl_24h / totalValue * 100) : 0
-  };
-
-  const lifetime = {
-    value: pnlData.pnl_lifetime || 0,
-    percentage: totalValue > 0 ? (pnlData.pnl_lifetime / totalValue * 100) : 0
-  };
-
-  const isPositive = displayChange.value >= 0;
-  const isLifetimePositive = lifetime.value >= 0;
-
-  const [isRepairing, setIsRepairing] = React.useState(false);
-  const handleRepair = async () => {
-    try {
-      setIsRepairing(true);
-      const res = await base44.functions.invoke('repairMyPortfolio', {});
-      window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio_summary' } }));
-      setTimeout(() => window.location.reload(), 800);
-      return res;
-    } finally {
-      setIsRepairing(false);
+    // LIVE: Calculate from WebSocket total - cash
+    if (wsConnected && typeof wsTotalValue === 'number' && typeof wsUsdBalance === 'number') {
+      return Math.max(0, wsTotalValue - wsUsdBalance);
     }
-  };
-  const onClick = onSyncClick || handleRepair;
+    return currentPortfolioValue || 0;
+  }, [isSimMode, currentPortfolioValue, wsConnected, wsTotalValue, wsUsdBalance]);
+
+  const totalValue = displayCash + displayAssets;
+
+  const is24hrPositive = (change24hr?.value || 0) >= 0;
+  const isLifetimePositive = (lifetimeChange?.value || 0) >= 0;
+
+  const showLoading = isLoading || (!isSimMode && wsLoading);
 
   return (
-    <Card className="border-2 neon-glow" style={{ 
-      backgroundColor: 'var(--card-bg)', 
-      borderColor: 'var(--neon-green)' 
-    }}>
-      <CardContent className="p-6">
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              Portfolio Summary
-            </h2>
-            {isSimMode && (
-              <Badge variant="outline" className="text-xs">
-                Demo Mode
-              </Badge>
-            )}
-            {!isSimMode && (
-              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
-                {wsConnected && <Wifi className="w-3 h-3" />}
-                Live Mode
-              </Badge>
-            )}
-          </div>
-          
-          <div>
-            <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
-              Total Portfolio Value
-            </p>
-            <NumberDisplay
-              value={totalValue}
-              prefix="$"
-              decimals={2}
-              className="mx-auto max-w-[min(90vw,420px)]"
-              maxFontSize={40}
-              minFontSize={18}
-              tone={lifetime.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
-            />
-            {!isSimMode && wsConnected && wsTotalAssets > 0 && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                ✅ Live WebSocket • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
-          
-          <div className="flex items-center justify-center gap-6 flex-wrap">
-            <div className="text-center min-w-[120px]">
-              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Cash</p>
-              <NumberDisplay
-                value={currentCashBalance}
-                prefix="$"
-                decimals={2}
-                className="mx-auto max-w-[160px]"
-                maxFontSize={20}
-                minFontSize={12}
-              />
+    <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }} className="border-2">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          Portfolio Summary
+          {!isSimMode && (
+            <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+              {wsConnected ? <Wifi className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+              Live Mode
+            </Badge>
+          )}
+          {isSimMode && <Badge variant="outline" className="text-xs">Demo Mode</Badge>}
+        </CardTitle>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onSyncClick}
+          disabled={showLoading}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${showLoading ? 'animate-spin' : ''}`} />
+          {isSimMode ? 'Repair' : 'Sync'}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="text-center py-4">
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Total Portfolio Value
+          </p>
+          {showLoading && totalValue === 0 ? (
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="w-8 h-8 animate-spin text-green-500" />
+              <span className="text-lg text-gray-500">Loading...</span>
             </div>
-            <div className="text-center min-w-[140px]">
-              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
-              <NumberDisplay
-                value={displayPortfolioValue}
-                prefix="$"
-                decimals={2}
-                className="mx-auto max-w-[180px]"
-                maxFontSize={20}
-                minFontSize={12}
-              />
+          ) : (
+            <h2 className="text-4xl font-bold neon-text mb-1">
+              ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h2>
+          )}
+          {!isSimMode && wsConnected && wsTotalAssets > 0 && (
+            <p className="text-xs text-green-600 dark:text-green-400">
+              ✅ Connected • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <div className="p-2 rounded-full" style={{ backgroundColor: 'var(--primary-bg)' }}>
+              <Wallet className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+            </div>
+            <div>
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Cash</p>
+              <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                ${displayCash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <div className="flex items-center gap-2 flex-wrap justify-center">
-              {isPositive ? (
+          <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <div className="p-2 rounded-full" style={{ backgroundColor: 'var(--primary-bg)' }}>
+              <Activity className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+            </div>
+            <div>
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
+              <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                ${displayAssets.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 pt-2">
+          <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <div className="flex items-center justify-center gap-1 mb-1">
+              {is24hrPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
               ) : (
                 <TrendingDown className="w-4 h-4 text-red-500" />
               )}
-              <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                {isPositive ? '+' : ''}${displayChange.value.toFixed(2)} ({displayChange.percentage.toFixed(1)}%)
+              <span className={`text-sm font-medium ${is24hrPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {is24hrPositive ? '+' : '-'}$
+                {Math.abs(change24hr?.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className="text-xs text-gray-500">24h (Kraken)</span>
             </div>
+            <p className={`text-xs font-medium ${is24hrPositive ? 'text-green-500' : 'text-red-500'}`}>
+              {is24hrPositive ? '+' : ''}{(change24hr?.percentage || 0).toFixed(2)}%
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>24h {!isSimMode ? '(Kraken)' : ''}</p>
+          </div>
 
-            <div className="flex items-center gap-2 flex-wrap justify-center">
+          <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <div className="flex items-center justify-center gap-1 mb-1">
               {isLifetimePositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
               ) : (
                 <TrendingDown className="w-4 h-4 text-red-500" />
               )}
               <span className={`text-sm font-medium ${isLifetimePositive ? 'text-green-500' : 'text-red-500'}`}>
-                {isLifetimePositive ? '+' : ''}${lifetime.value.toFixed(2)} ({lifetime.percentage.toFixed(1)}%)
+                {isLifetimePositive ? '+' : '-'}$
+                {Math.abs(lifetimeChange?.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className="text-xs text-gray-500">Lifetime (Kraken)</span>
             </div>
+            <p className={`text-xs font-medium ${isLifetimePositive ? 'text-green-500' : 'text-red-500'}`}>
+              {isLifetimePositive ? '+' : ''}{(lifetimeChange?.percentage || 0).toFixed(2)}%
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>Lifetime {!isSimMode ? '(Kraken)' : ''}</p>
           </div>
-        </div>
-
-        <div className="pt-4">
-          <Button
-            onClick={onClick}
-            disabled={isRepairing}
-            className="w-full neon-glow bg-green-600 hover:bg-green-700"
-          >
-            {isRepairing ? 'Syncing...' : 'Sync Portfolio Data'}
-          </Button>
         </div>
       </CardContent>
     </Card>
