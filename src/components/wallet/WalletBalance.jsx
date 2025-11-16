@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wallet, Eye, EyeOff, RefreshCw, Wifi, WifiOff, AlertCircle, TrendingUp } from "lucide-react";
+import { Wallet, Eye, EyeOff, RefreshCw, Wifi, WifiOff, AlertCircle, TrendingUp, DollarSign, Activity } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { base44 } from "@/api/base44Client";
@@ -13,7 +14,7 @@ import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData"
 
 export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, onSyncComplete }) {
   const { settings } = useSettings();
-  const [isVisible, setIsVisible] = useState(true);
+  const [balanceVisible, setBalanceVisible] = useState(true); // Renamed from isVisible
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
@@ -208,6 +209,12 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     }
   };
 
+  const connectionStatus = isSimMode
+    ? 'connected' // Sim mode is always 'connected' in a demo sense
+    : wsConnected
+      ? 'connected'
+      : 'disconnected';
+
   // CRITICAL: Only show sync button when NOT connected or there's an error
   const showSyncButton = !isSimMode && (!wsConnected || syncError);
 
@@ -223,25 +230,11 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             {isSimMode ? (
               <Badge variant="outline" className="text-xs">Demo</Badge>
             ) : (
-              <div className="flex items-center gap-2">
-                <Badge className="bg-green-100 text-green-800 text-xs">Live</Badge>
-                {wsConnected ? (
-                  <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
-                    <Wifi className="w-3 h-3" />
-                    Connected 24/7
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-xs flex items-center gap-1 bg-yellow-50 text-yellow-700 border-yellow-200">
-                    <WifiOff className="w-3 h-3" />
-                    Connecting...
-                  </Badge>
-                )}
-              </div>
+              // Simplified primary badge, detailed connection status moved to Total Balance card
+              <Badge className="bg-green-100 text-green-800 text-xs">Live</Badge>
             )}
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setIsVisible(!isVisible)} className="h-8 w-8">
-            {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </Button>
+          {/* Visibility toggle button moved inside the new 'Total Balance' card */}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -262,27 +255,111 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           </div>
         )}
 
-        <div>
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Total Balance</p>
-          {isVisible ? (
-            <>
-              <NumberDisplay
-                value={totalBalance}
-                prefix="$"
-                decimals={2}
-                className="neon-text"
-                maxFontSize={36}
-                minFontSize={20}
-              />
-              {!isSimMode && wsConnected && totalBalance > 0 && (
-                <p className="text-xs mt-1 text-green-600 dark:text-green-400">
-                  ✅ Live via WebSocket (No sync needed)
+        <div className="grid grid-cols-1 gap-4">
+          <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Total Balance
+                  </h3>
+                  {connectionStatus === 'disconnected' && (
+                    <Badge variant="destructive" className="text-xs">
+                      Offline
+                    </Badge>
+                  )}
+                  {connectionStatus === 'connected' && !isSimMode && (
+                    <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+                      <Wifi className="w-3 h-3" />
+                      Connected 24/7
+                    </Badge>
+                  )}
+                  {connectionStatus === 'connected' && isSimMode && (
+                    <Badge variant="outline" className="text-xs">
+                      Demo Mode
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="w-6 h-6 p-0"
+                    onClick={() => setBalanceVisible(!balanceVisible)}
+                  >
+                    {balanceVisible ? 
+                      <EyeOff className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} /> :
+                      <Eye className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                    }
+                  </Button>
+                </div>
+              </div>
+              
+              {balanceVisible ? (
+                <NumberDisplay
+                  value={totalBalance} // Using existing totalBalance
+                  prefix="$"
+                  decimals={2}
+                  className="neon-text max-w-full"
+                  maxFontSize={42}
+                  minFontSize={20}
+                />
+              ) : (
+                <p className="text-3xl font-bold neon-text">
+                  ••••••
                 </p>
               )}
-            </>
-          ) : (
-            <p className="text-3xl font-bold neon-text">••••••</p>
-          )}
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Available Cash
+                  </h4>
+                  <DollarSign className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />
+                </div>
+                {balanceVisible ? (
+                  <NumberDisplay
+                    value={displayCash} // Using existing displayCash
+                    prefix="$"
+                    decimals={2}
+                    className="max-w-full"
+                    maxFontSize={28}
+                    minFontSize={16}
+                  />
+                ) : (
+                  <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>••••</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Portfolio Value
+                  </h4>
+                  <Activity className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />
+                </div>
+                {balanceVisible ? (
+                  <NumberDisplay
+                    value={displayPortfolioValue} // Using existing displayPortfolioValue
+                    prefix="$"
+                    decimals={2}
+                    className="max-w-full"
+                    maxFontSize={28}
+                    minFontSize={16}
+                  />
+                ) : (
+                  <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>••••</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {!isSimMode && !wsConnected && (
@@ -322,46 +399,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-          <div>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Available Cash</p>
-            {isVisible ? (
-              <div>
-                <NumberDisplay value={displayCash} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
-                {!isSimMode && wsConnected && displayCash > 0 && (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">✅ Live USD</p>
-                )}
-              </div>
-            ) : (
-              <p className="text-lg font-semibold">••••••</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs mb-1 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-              Portfolio Value
-              {!isSimMode && wsConnected && displayPortfolioValue > 0 && (
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              )}
-            </p>
-            {isVisible ? (
-              <div>
-                <NumberDisplay value={displayPortfolioValue} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
-                {!isSimMode && wsConnected && totalAssets > 0 && (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                    ✅ {totalAssets} asset{totalAssets !== 1 ? 's' : ''}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-lg font-semibold">••••••</p>
-            )}
-          </div>
-        </div>
-
         <div className="grid grid-cols-3 gap-2 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <div className="text-center">
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Total Deposits</p>
-            {isVisible ? (
+            {balanceVisible ? (
               <NumberDisplay value={totalDeposits} prefix="$" decimals={2} maxFontSize={16} minFontSize={12} />
             ) : (
               <p className="text-sm font-medium">••••</p>
@@ -369,7 +410,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           </div>
           <div className="text-center">
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Total Withdrawals</p>
-            {isVisible ? (
+            {balanceVisible ? (
               <NumberDisplay value={totalWithdrawals} prefix="$" decimals={2} maxFontSize={16} minFontSize={12} />
             ) : (
               <p className="text-sm font-medium">••••</p>
@@ -377,7 +418,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           </div>
           <div className="text-center">
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Net Flow</p>
-            {isVisible ? (
+            {balanceVisible ? (
               <NumberDisplay value={Math.abs(netFlow)} prefix={netFlow >= 0 ? '+$' : '-$'} decimals={2} maxFontSize={16} minFontSize={12} className={netFlow >= 0 ? 'text-green-500' : 'text-red-500'} />
             ) : (
               <p className="text-sm font-medium">••••</p>

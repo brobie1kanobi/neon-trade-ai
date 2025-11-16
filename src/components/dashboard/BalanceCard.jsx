@@ -1,11 +1,9 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
-import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function BalanceCard({
   title,
@@ -16,82 +14,38 @@ export default function BalanceCard({
   isVisible,
   isPrimary = false,
   changeLabel,
-  wallet = null,
-  balanceType = 'total',
+  isSimMode = true,
+  isConnected = false,
   krakenPnL = null
 }) {
-  const { settings } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
-  
   // CRITICAL: Persistent ref to prevent flashing to zero
   const persistentValueRef = useRef({
     amount: 0,
     change: { value: 0, percentage: 0 }
   });
   
-  const { 
-    isConnected: wsConnected, 
-    usdBalance: wsUsdBalance,
-    totalPortfolioValue: wsTotalValue,
-    totalAssets: wsTotalAssets
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'],
-    subscribeToBalances: !isSimMode,
-    subscribeToOrders: !isSimMode,
-    isSimMode
-  });
-
+  // CRITICAL: Use the amount passed as prop directly (already calculated from WebSocket)
   const displayAmount = React.useMemo(() => {
-    let value;
+    const value = typeof amount === 'number' ? amount : 0;
     
-    if (isSimMode) {
-      value = amount || 0;
-    } else {
-      if (balanceType === 'cash') {
-        value = wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
-      } else if (balanceType === 'portfolio') {
-        const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
-        value = portfolioValue;
-      } else {
-        value = wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
-      }
-    }
-    
-    // CRITICAL: Only update if value is valid (non-zero or first load)
+    // Only update if value is valid (non-zero or first load)
     if (value > 0 || persistentValueRef.current.amount === 0) {
       persistentValueRef.current.amount = value;
     }
     
     return persistentValueRef.current.amount;
-  }, [isSimMode, amount, wsConnected, wsUsdBalance, wsTotalValue, balanceType, wallet]);
+  }, [amount]);
 
   const displayChange = React.useMemo(() => {
-    let changeValue;
+    const changeValue = change || { value: 0, percentage: 0 };
     
-    if (krakenPnL && !isSimMode) {
-      if (changeLabel?.includes('24h')) {
-        changeValue = {
-          value: krakenPnL.pnl_24h || 0,
-          percentage: displayAmount > 0 ? (krakenPnL.pnl_24h / displayAmount * 100) : 0
-        };
-      } else {
-        changeValue = {
-          value: krakenPnL.pnl_lifetime || 0,
-          percentage: displayAmount > 0 ? (krakenPnL.pnl_lifetime / displayAmount * 100) : 0
-        };
-      }
-    } else {
-      changeValue = change || { value: 0, percentage: 0 };
-    }
-    
-    // CRITICAL: Update persistent ref
+    // Update persistent ref
     if (changeValue.value !== 0 || persistentValueRef.current.change.value === 0) {
       persistentValueRef.current.change = changeValue;
     }
     
     return persistentValueRef.current.change;
-  }, [krakenPnL, change, isSimMode, changeLabel, displayAmount]);
+  }, [change]);
 
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
@@ -117,7 +71,7 @@ export default function BalanceCard({
             }
             {!isSimMode &&
               <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
-                {wsConnected && <Wifi className="w-3 h-3" />}
+                {isConnected && <Wifi className="w-3 h-3" />}
                 Live
               </Badge>
             }
@@ -150,11 +104,6 @@ export default function BalanceCard({
                 maxFontSize={isPrimary ? 40 : 28}
                 minFontSize={16}
               />
-              {!isSimMode && wsConnected && balanceType === 'total' && wsTotalAssets > 0 && (
-                <p className="text-xs text-green-600 dark:text-green-400">
-                  ✅ Live • {wsTotalAssets} asset{wsTotalAssets !== 1 ? 's' : ''}
-                </p>
-              )}
             </>
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}

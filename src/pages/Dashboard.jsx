@@ -912,10 +912,11 @@ export default function Dashboard() {
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
+            isConnected={wsConnected}
             changeLabel="24h Realized PnL (Kraken)"
             wallet={wallet}
-            balanceType="total"
             krakenPnL={pnlData}
+            balanceType="total"
           />
         </motion.div>
 
@@ -928,10 +929,11 @@ export default function Dashboard() {
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
+              isConnected={wsConnected}
               changeLabel="Lifetime PnL (Kraken)"
               wallet={wallet}
-              balanceType="cash"
               krakenPnL={pnlData}
+              balanceType="cash"
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -942,10 +944,11 @@ export default function Dashboard() {
               icon={Activity}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
+              isConnected={wsConnected}
               changeLabel="Lifetime PnL (Kraken)"
               wallet={wallet}
-              balanceType="portfolio"
               krakenPnL={pnlData}
+              balanceType="portfolio"
             />
           </motion.div>
         </div>
