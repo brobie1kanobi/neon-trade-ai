@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,10 +18,16 @@ export default function BalanceCard({
   changeLabel,
   wallet = null,
   balanceType = 'total',
-  krakenPnL = null // CRITICAL: Real Kraken PnL data
+  krakenPnL = null
 }) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
+  
+  // CRITICAL: Persistent ref to prevent flashing to zero
+  const persistentValueRef = useRef({
+    amount: 0,
+    change: { value: 0, percentage: 0 }
+  });
   
   const { 
     isConnected: wsConnected, 
@@ -37,39 +43,54 @@ export default function BalanceCard({
   });
 
   const displayAmount = React.useMemo(() => {
+    let value;
+    
     if (isSimMode) {
-      return amount || 0;
-    }
-
-    if (balanceType === 'cash') {
-      return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+      value = amount || 0;
+    } else {
+      if (balanceType === 'cash') {
+        value = wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+      } else if (balanceType === 'portfolio') {
+        const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
+        value = portfolioValue;
+      } else {
+        value = wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
+      }
     }
     
-    if (balanceType === 'portfolio') {
-      const portfolioValue = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
-      return portfolioValue;
+    // CRITICAL: Only update if value is valid (non-zero or first load)
+    if (value > 0 || persistentValueRef.current.amount === 0) {
+      persistentValueRef.current.amount = value;
     }
     
-    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : amount;
+    return persistentValueRef.current.amount;
   }, [isSimMode, amount, wsConnected, wsUsdBalance, wsTotalValue, balanceType, wallet]);
 
-  // CRITICAL: Use REAL Kraken PnL if provided
   const displayChange = React.useMemo(() => {
+    let changeValue;
+    
     if (krakenPnL && !isSimMode) {
-      // For 24h cards, use pnl_24h
       if (changeLabel?.includes('24h')) {
-        return {
+        changeValue = {
           value: krakenPnL.pnl_24h || 0,
           percentage: displayAmount > 0 ? (krakenPnL.pnl_24h / displayAmount * 100) : 0
         };
+      } else {
+        changeValue = {
+          value: krakenPnL.pnl_lifetime || 0,
+          percentage: displayAmount > 0 ? (krakenPnL.pnl_lifetime / displayAmount * 100) : 0
+        };
       }
-      // For lifetime cards, use pnl_lifetime
-      return {
-        value: krakenPnL.pnl_lifetime || 0,
-        percentage: displayAmount > 0 ? (krakenPnL.pnl_lifetime / displayAmount * 100) : 0
-      };
+    } else {
+      changeValue = change || { value: 0, percentage: 0 };
     }
-    return change || { value: 0, percentage: 0 };
+    
+    // CRITICAL: Update persistent ref
+    if (changeValue.value !== 0 || persistentValueRef.current.change.value === 0) {
+      persistentValueRef.current.change = changeValue;
+    }
+    
+    return persistentValueRef.current.change;
   }, [krakenPnL, change, isSimMode, changeLabel, displayAmount]);
 
   const isPositive = displayChange.value >= 0;

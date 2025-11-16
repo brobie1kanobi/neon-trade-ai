@@ -2,9 +2,42 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useKrakenWebSocketManager } from './useKrakenWebSocketManager';
 
 /**
- * HIGH-LEVEL HOOK: Real-time Kraken Data - PRODUCTION VERSION
- * FIXED: Reduced update frequency and API calls
+ * PRODUCTION VERSION: Instant display with localStorage persistence
+ * NO throttling on display updates - show immediately
  */
+
+// CRITICAL: Global localStorage persistence
+const PERSISTENT_CACHE_KEY = 'kraken_balance_cache';
+
+function loadPersistedData() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(PERSISTENT_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    const age = Date.now() - (parsed.timestamp || 0);
+    // Allow stale data up to 24 hours for immediate display
+    if (age < 24 * 60 * 60 * 1000) {
+      console.log('[useRealtimeKrakenData] ✅ Loaded persisted data, age:', (age / 1000).toFixed(0), 's');
+      return parsed.data;
+    }
+  } catch (e) {
+    console.warn('[useRealtimeKrakenData] Failed to load persisted data:', e);
+  }
+  return null;
+}
+
+function persistData(data) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PERSISTENT_CACHE_KEY, JSON.stringify({
+      data,
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.warn('[useRealtimeKrakenData] Failed to persist data:', e);
+  }
+}
 
 export function useRealtimeKrakenData(options = {}) {
   const {
@@ -33,23 +66,29 @@ export function useRealtimeKrakenData(options = {}) {
     subscribeToExecutions: subscribeToExecutions && !isSimMode
   });
 
-  const [data, setData] = useState({
-    balances: {},
-    orders: {},
-    prices: {},
-    usdBalance: 0,
-    totalAssets: 0,
-    totalPortfolioValue: 0,
-    lastUpdated: null
+  // CRITICAL: Initialize with persisted data immediately
+  const persistedData = useRef(loadPersistedData());
+  
+  const [data, setData] = useState(() => {
+    if (persistedData.current) {
+      console.log('[useRealtimeKrakenData] 🚀 IMMEDIATE DISPLAY from cache');
+      return persistedData.current;
+    }
+    return {
+      balances: {},
+      orders: {},
+      prices: {},
+      usdBalance: 0,
+      totalAssets: 0,
+      totalPortfolioValue: 0,
+      lastUpdated: null
+    };
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!persistedData.current);
   const [error, setError] = useState(null);
 
-  const lastUpdateRef = useRef(0);
-  const UPDATE_THROTTLE = 3000; // INCREASED to 3 seconds to reduce updates
-
-  // Process WebSocket data with throttling
+  // CRITICAL: NO throttling - update immediately on every change
   useEffect(() => {
     if (isSimMode) {
       setLoading(false);
@@ -57,14 +96,9 @@ export function useRealtimeKrakenData(options = {}) {
     }
 
     if (!isConnected) {
+      // Keep showing cached data while reconnecting
       return;
     }
-
-    const now = Date.now();
-    if (now - lastUpdateRef.current < UPDATE_THROTTLE) {
-      return;
-    }
-    lastUpdateRef.current = now;
 
     try {
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
@@ -78,9 +112,7 @@ export function useRealtimeKrakenData(options = {}) {
       let totalPortfolioValue = usdBalance;
 
       Object.entries(wsBalances).forEach(([asset, balance]) => {
-        if (asset === 'USD' || asset === 'ZUSD') {
-          return;
-        }
+        if (asset === 'USD' || asset === 'ZUSD') return;
 
         const pairWithUSD = `${asset}/USD`;
         const price = wsPrices[pairWithUSD]?.price || 0;
@@ -90,7 +122,7 @@ export function useRealtimeKrakenData(options = {}) {
         }
       });
 
-      setData({
+      const newData = {
         balances: wsBalances,
         orders: wsOrders,
         prices: wsPrices,
@@ -98,44 +130,35 @@ export function useRealtimeKrakenData(options = {}) {
         totalAssets,
         totalPortfolioValue,
         lastUpdated: new Date().toISOString()
-      });
+      };
 
+      setData(newData);
       setLoading(false);
       setError(null);
+
+      // CRITICAL: Persist immediately for next page load
+      persistData(newData);
 
     } catch (err) {
       setError(err.message);
     }
-  }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices]);
+  }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices, wsUsdBalance]);
 
-  // Handle new executions with debouncing
-  const executionTimeoutRef = useRef(null);
+  // Handle executions
   useEffect(() => {
     if (lastExecution) {
-      if (executionTimeoutRef.current) {
-        clearTimeout(executionTimeoutRef.current);
-      }
+      window.dispatchEvent(new CustomEvent('kraken:trade-executed', {
+        detail: lastExecution
+      }));
 
-      executionTimeoutRef.current = setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('kraken:trade-executed', {
-          detail: lastExecution
-        }));
-
-        window.dispatchEvent(new CustomEvent('app:data-updated', {
-          detail: { 
-            type: 'trade-execution', 
-            source: 'kraken-ws',
-            data: lastExecution 
-          }
-        }));
-      }, 1000);
+      window.dispatchEvent(new CustomEvent('app:data-updated', {
+        detail: { 
+          type: 'trade-execution', 
+          source: 'kraken-ws',
+          data: lastExecution 
+        }
+      }));
     }
-
-    return () => {
-      if (executionTimeoutRef.current) {
-        clearTimeout(executionTimeoutRef.current);
-      }
-    };
   }, [lastExecution]);
 
   const refresh = useCallback(() => {
@@ -143,7 +166,7 @@ export function useRealtimeKrakenData(options = {}) {
     const currentOrders = getAllOrders();
     const currentPrices = getAllPrices();
 
-    setData({
+    const newData = {
       balances: currentBalances,
       orders: currentOrders,
       prices: currentPrices,
@@ -153,7 +176,10 @@ export function useRealtimeKrakenData(options = {}) {
       ).length,
       totalPortfolioValue: calculatePortfolioValue(currentBalances, currentPrices),
       lastUpdated: new Date().toISOString()
-    });
+    };
+
+    setData(newData);
+    persistData(newData);
   }, [getAllBalances, getAllOrders, getAllPrices]);
 
   return {
@@ -188,4 +214,11 @@ function calculatePortfolioValue(balances, prices) {
   });
 
   return total;
+}
+
+// Export function to clear persisted cache
+export function clearKrakenPersistedCache() {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(PERSISTENT_CACHE_KEY);
+  }
 }
