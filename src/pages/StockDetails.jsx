@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -9,9 +10,13 @@ import AssetInfoTabs from "../components/details/AssetInfoTabs";
 import AssetPriceChart from "../components/details/AssetPriceChart";
 import TradeHistory from "../components/portfolio/TradeHistory";
 import { Trade } from "@/entities/all";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function StockDetails() {
   const location = useLocation();
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
   const [assetData, setAssetData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dynamicPriceChange, setDynamicPriceChange] = useState(null);
@@ -56,7 +61,11 @@ export default function StockDetails() {
       try {
         setTradesLoading(true);
         const me = await User.me();
-        const list = await Trade.filter({ created_by: me.email, symbol: (symbol || "").toUpperCase() }, "-created_date", 500);
+        const list = await Trade.filter({ 
+          created_by: me.email, 
+          symbol: (symbol || "").toUpperCase(),
+          is_simulation: isSimMode
+        }, "-created_date", 500);
         if (active) setTrades(list);
       } finally {
         if (active) setTradesLoading(false);
@@ -64,7 +73,7 @@ export default function StockDetails() {
     };
     if (symbol) loadTrades();
     return () => { active = false; };
-  }, [symbol]);
+  }, [symbol, isSimMode]);
 
   const handlePriceUpdate = (data) => {
     if (!data) return;

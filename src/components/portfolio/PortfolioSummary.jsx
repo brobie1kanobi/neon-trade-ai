@@ -26,7 +26,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     isSimMode
   });
 
-  // CRITICAL: Get REAL Kraken PnL
   const { pnlData } = useKrakenPnL(isSimMode);
 
   const currentCashBalance = React.useMemo(() => {
@@ -46,7 +45,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
   const totalValue = currentCashBalance + displayPortfolioValue;
   
-  // CRITICAL: Use REAL Kraken PnL instead of calculated
   const displayChange = {
     value: pnlData.pnl_24h || 0,
     percentage: totalValue > 0 ? (pnlData.pnl_24h / totalValue * 100) : 0

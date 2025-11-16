@@ -11,9 +11,14 @@ import AssetInfoTabs from "../components/details/AssetInfoTabs";
 import AssetPriceChart from "../components/details/AssetPriceChart";
 import { getMarketData } from "@/functions/getMarketData";
 import TradeHistory from "../components/portfolio/TradeHistory";
+import { useSettings } from "@/components/utils/SettingsContext";
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
 export default function CryptoDetails() {
   const location = useLocation();
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
   const [assetData, setAssetData] = useState(null);
   const [holding, setHolding] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,6 +29,15 @@ export default function CryptoDetails() {
 
   const symbol = new URLSearchParams(location.search).get("symbol");
   const assetType = (new URLSearchParams(location.search).get("assetType") || "crypto").toLowerCase();
+
+  // CRITICAL: Get WebSocket holdings for LIVE mode
+  const { balances: wsBalances, isConnected: wsConnected } = useRealtimeKrakenData({
+    subscribeToPrices: false,
+    subscribeToBalances: !isSimMode,
+    subscribeToOrders: false,
+    subscribeToExecutions: false,
+    isSimMode
+  });
 
   const enrichAssetInfo = async (symbolArg, assetTypeArg) => {
     const schema = {
@@ -111,19 +125,51 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     const fetchAssetData = async () => {
       try {
         const user = await User.me();
-        const [{ data: details }, userHoldings] = await Promise.all([
+        let currentHolding = null;
+
+        // CRITICAL: In LIVE mode, get holding from WebSocket, not DB
+        if (!isSimMode && wsConnected && wsBalances) {
+          const wsBalance = wsBalances[symbol?.toUpperCase()];
+          if (wsBalance && wsBalance.balance > 0.00001) {
+            currentHolding = {
+              symbol: symbol.toUpperCase(),
+              quantity: wsBalance.balance,
+              average_cost_price: 0, // WebSocket balances don't typically include this
+              asset_type: assetType,
+              is_simulation: false
+            };
+            console.log('[CryptoDetails] Using WebSocket holding for', symbol);
+          }
+        }
+        
+        const promises = [
           getMarketData({
             action: 'getAssetDetails',
             payload: { symbol: symbol, assetType: assetType }
-          }),
-          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase() })
-        ]);
+          })
+        ];
 
-        if (userHoldings.length > 0) {
-          setHolding(userHoldings[0]);
-        } else {
-          setHolding(null);
+        if (!currentHolding) { // If WS didn't provide a holding, add DB holding fetch to promises
+          promises.push(Holding.filter({
+            created_by: user.email,
+            symbol: symbol.toUpperCase(),
+            is_simulation: isSimMode
+          }));
         }
+
+        const results = await Promise.all(promises);
+
+        const detailsResult = results[0];
+        const details = detailsResult.data;
+
+        if (!currentHolding && results.length > 1) { // If WS holding wasn't set and DB holding was fetched
+          const dbHoldingsResult = results[1];
+          if (dbHoldingsResult && dbHoldingsResult.length > 0) {
+            currentHolding = dbHoldingsResult[0];
+          }
+        }
+        
+        setHolding(currentHolding);
 
         if (!details) {
           throw new Error("Failed to fetch asset details.");
@@ -168,9 +214,9 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
 
     fetchAssetData();
-  }, [symbol, assetType]);
+  }, [symbol, assetType, isSimMode, wsConnected, wsBalances]); // Add isSimMode, wsConnected, wsBalances to dependencies
 
-  // Load full trade history for this asset (fast, before chart)
+  // Load trade history filtered by mode
   useEffect(() => {
     let active = true;
     const loadTrades = async () => {
@@ -178,7 +224,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
         setTradesLoading(true);
         const user = await User.me();
         const list = await Trade.filter(
-          { created_by: user.email, symbol: (symbol || "").toUpperCase() },
+          { created_by: user.email, symbol: (symbol || "").toUpperCase(), is_simulation: isSimMode },
           "-created_date",
           500
         );
@@ -193,7 +239,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
     if (symbol) loadTrades();
     return () => { active = false; };
-  }, [symbol]);
+  }, [symbol, isSimMode]);
 
   const handlePriceUpdate = (priceData) => {
       setAssetData(prev => ({...prev, price: priceData.price}));
