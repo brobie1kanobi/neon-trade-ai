@@ -940,7 +940,7 @@ export default function Dashboard() {
     
   const currentPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : (wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue);
+    : (wsConnected && wsTotalValue >= 0 ? (wsTotalValue - wsUsdBalance) : portfolioMarketValue);
     
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
@@ -1008,6 +1008,8 @@ export default function Dashboard() {
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="24h Realized PnL (sales)"
+            wallet={wallet}
+            balanceType="total"
           />
         </motion.div>
 
@@ -1020,6 +1022,8 @@ export default function Dashboard() {
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
+              wallet={wallet}
+              balanceType="cash"
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1031,6 +1035,8 @@ export default function Dashboard() {
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
+              wallet={wallet}
+              balanceType="portfolio"
             />
           </motion.div>
         </div>
