@@ -682,8 +682,6 @@ export default function Portfolio() {
             }
           }}
           krakenData={krakenData}
-          holdings={detailedHoldings}
-          prices={isSimMode ? {} : wsPrices}
         />
       </motion.div>
 

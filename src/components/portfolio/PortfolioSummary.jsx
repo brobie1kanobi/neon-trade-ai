@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
@@ -10,7 +9,7 @@ import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData"
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
 
-export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick, holdings = [], prices = {} }) {
+export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick }) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
@@ -18,9 +17,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
-    totalAssets: wsTotalAssets,
-    balances: wsBalances,
-    prices: wsPrices
+    totalAssets: wsTotalAssets
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
@@ -143,57 +140,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               />
             </div>
           </div>
-
-          {/* NEW: Holdings Breakdown Grid */}
-          {holdings && holdings.length > 0 && (
-            <div className="pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>Your Holdings</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {holdings.slice(0, 4).map((holding) => {
-                  const symbol = holding.symbol;
-                  const pair = `${symbol}/USD`;
-                  const priceData = (isSimMode ? prices : wsPrices)[pair] || {};
-                  const currentPrice = priceData.price || holding.currentPrice || 0;
-                  const change24h = priceData.change_24h || 0;
-                  const quantity = holding.quantity || 0;
-                  const currentValue = quantity * currentPrice;
-
-                  return (
-                    <div key={symbol} className="p-2 rounded-lg border" style={{ 
-                      backgroundColor: 'var(--secondary-bg)',
-                      borderColor: 'var(--border-color)'
-                    }}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{symbol}</span>
-                        <span className={`text-xs ${change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 text-xs">
-                        <div>
-                          <p style={{ color: 'var(--text-secondary)' }}>Price</p>
-                          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>${currentPrice.toFixed(2)}</p>
-                        </div>
-                        <div>
-                          <p style={{ color: 'var(--text-secondary)' }}>Value</p>
-                          <p className="font-medium neon-text">${currentValue.toFixed(2)}</p>
-                        </div>
-                      </div>
-                      <div className="mt-1 pt-1 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                        <p style={{ color: 'var(--text-secondary)' }}>Holdings</p>
-                        <p className="font-medium text-xs" style={{ color: 'var(--text-primary)' }}>{quantity.toFixed(6)} {symbol}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {holdings.length > 4 && (
-                <p className="text-xs text-center mt-2" style={{ color: 'var(--text-secondary)' }}>
-                  +{holdings.length - 4} more asset{holdings.length - 4 !== 1 ? 's' : ''}
-                </p>
-              )}
-            </div>
-          )}
 
           <div className="flex flex-col items-center gap-2 pt-2">
             <div className="flex items-center gap-2 flex-wrap justify-center">

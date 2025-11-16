@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,7 @@ import { invalidatePriceCache } from "@/components/hooks/usePriceData";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
-export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, onSyncComplete, holdings = [], prices = {} }) {
+export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, onSyncComplete }) {
   const { settings } = useSettings();
   const [isVisible, setIsVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -34,8 +33,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     balances: wsBalances,
     totalAssets: wsTotalAssets,
     lastUpdated: wsLastUpdated,
-    refresh: wsRefresh,
-    prices: wsPrices
+    refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
@@ -240,12 +238,12 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 )}
               </div>
             )}
-          </div >
+          </div>
           <Button variant="ghost" size="icon" onClick={() => setIsVisible(!isVisible)} className="h-8 w-8">
             {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </Button>
-        </div >
-      </CardHeader >
+        </div>
+      </CardHeader>
       <CardContent className="space-y-6">
         {!isSimMode && wsConnected && totalBalance > 0 && (
           <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
@@ -359,57 +357,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             )}
           </div>
         </div>
-
-        {/* NEW: Holdings Breakdown Grid */}
-        {holdings && holdings.length > 0 && (
-          <div className="pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-            <p className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>Your Holdings</p>
-            <div className="grid grid-cols-1 gap-2">
-              {holdings.slice(0, 3).map((holding) => {
-                const symbol = holding.symbol;
-                const pair = `${symbol}/USD`;
-                const priceData = (isSimMode ? prices : wsPrices)[pair] || {};
-                const currentPrice = priceData.price || holding.currentPrice || 0;
-                const change24h = priceData.change_24h || 0;
-                const quantity = holding.quantity || 0;
-                const currentValue = quantity * currentPrice;
-
-                return (
-                  <div key={symbol} className="p-2 rounded-lg border" style={{ 
-                    backgroundColor: 'var(--secondary-bg)',
-                    borderColor: 'var(--border-color)'
-                  }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{symbol}</span>
-                      <span className={`text-xs ${change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 text-xs">
-                      <div>
-                        <p style={{ color: 'var(--text-secondary)' }}>Price</p>
-                        <p className="font-medium" style={{ color: 'var(--text-primary)' }}>${currentPrice.toFixed(2)}</p>
-                      </div>
-                      <div>
-                        <p style={{ color: 'var(--text-secondary)' }}>Holdings</p>
-                        <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{quantity.toFixed(4)}</p>
-                      </div>
-                      <div>
-                        <p style={{ color: 'var(--text-secondary)' }}>Value</p>
-                        <p className="font-medium neon-text">${currentValue.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {holdings.length > 3 && (
-              <p className="text-xs text-center mt-2" style={{ color: 'var(--text-secondary)' }}>
-                +{holdings.length - 3} more asset{holdings.length - 3 !== 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="grid grid-cols-3 gap-2 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <div className="text-center">
