@@ -693,7 +693,7 @@ export default function Dashboard() {
           type: tradeType,
           quantity: correctedTradeData.quantity, // Added quantity to lastTrade for stricter check
           total_value: totalCost,
-          timestamp: Date.24();
+          timestamp: Date.now()
         };
 
         // Add trade via addTrade (this should ideally trigger a refetchTrades or update trades cache)
