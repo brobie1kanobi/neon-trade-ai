@@ -458,41 +458,20 @@ export default function Dashboard() {
     return holdings;
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
-  // CRITICAL: Calculate cash and portfolio values correctly
-  const currentCashBalance = React.useMemo(() => {
+  // CRITICAL: Calculate values from WebSocket
+  const currentCashBalance = useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: Use WebSocket balance first, then Kraken API, then DB
-    const wsBalance = (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : null;
-    const krakenBalance = pnlData?.usd_balance; // Assuming pnlData provides this
-    const dbBalance = wallet?.real_cash_balance || 0;
-    
-    console.log('[Dashboard] Cash balance sources:', { wsBalance, krakenBalance, dbBalance });
-    return wsBalance ?? krakenBalance ?? dbBalance;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance, pnlData]);
-    
-  const currentPortfolioValue = React.useMemo(() => {
+    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
+
+  const currentPortfolioValue = useMemo(() => {
     if (isSimMode) {
       return currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
     }
-    // LIVE MODE: Use WebSocket total - cash
-    if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
-      const portfolioOnly = wsTotalValue - wsUsdBalance;
-      console.log('[Dashboard] Portfolio from WS:', { total: wsTotalValue, cash: wsUsdBalance, portfolio: portfolioOnly });
-      return Math.max(0, portfolioOnly);
-    }
-    // Fallback to PnL data or Kraken API
-    const krakenTotal = pnlData?.total_crypto_value; // Assuming pnlData provides this
-    if (krakenTotal !== undefined) { // Check for undefined, as 0 is a valid value
-      console.log('[Dashboard] Portfolio from Kraken API:', krakenTotal);
-      return krakenTotal;
-    }
-    // Final fallback to holdings
-    const holdingsSum = currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-    console.log('[Dashboard] Portfolio from holdings sum:', holdingsSum);
-    return holdingsSum;
-  }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance, pnlData]);
+    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+  }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
