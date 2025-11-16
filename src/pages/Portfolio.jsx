@@ -16,7 +16,7 @@ import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData"; // Added import
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
 // GLOBAL CACHE to prevent duplicate API calls
 if (typeof window !== 'undefined') {
@@ -35,7 +35,8 @@ export default function Portfolio() {
   const [settings, setSettings] = useState(null);
   const [user, setUser] = useState(null);
   const [holdings, setHoldings] = useState([]);
-  const [detailedHoldings, setDetailedHoldings] = useState([]);
+  // detailedHoldings is now a useMemo, no longer a state variable directly set by an effect.
+  // const [detailedHoldings, setDetailedHoldings] = useState([]);
   const [isCalculatingValue, setIsCalculatingValue] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showDataSync, setShowDataSync] = useState(false);
@@ -57,6 +58,7 @@ export default function Portfolio() {
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets,
     balances: wsBalances,
+    prices: wsPrices, // Added wsPrices from useRealtimeKrakenData
     isConnected: wsConnected,
     loading: wsLoading
   } = useRealtimeKrakenData({
@@ -330,21 +332,27 @@ export default function Portfolio() {
       if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
         const wsHoldings = Object.entries(wsBalances)
           .filter(([asset, data]) => {
-            if (asset === 'USD' || asset === 'ZUSD') return false; // Filter out cash balances
-            return data.balance > 0.00001; // Only include assets with a meaningful balance
+            if (asset === 'USD' || asset === 'ZUSD') return false;
+            return data.balance > 0.00001;
           })
-          .map(([asset, data]) => ({
-            symbol: asset,
-            quantity: data.balance,
-            average_cost_price: 0, // WebSocket doesn't provide average cost directly
-            asset_type: 'crypto',
-            currentPrice: 0, // Will be filled by usePriceData hook later
-            costBasis: 0,
-            currentValue: 0,
-            gainLoss: 0,
-            gainLossPercent: 0,
-            is_simulation: false
-          }));
+          .map(([asset, data]) => {
+            // Get price from WebSocket prices
+            const pair = `${asset}/USD`;
+            const currentPrice = wsPrices?.[pair]?.price || 0; // Use wsPrices for current price
+            
+            return {
+              symbol: asset,
+              quantity: data.balance,
+              average_cost_price: 0, // We don't have historical cost basis from WebSocket for this source
+              asset_type: 'crypto',
+              currentPrice: currentPrice,
+              costBasis: 0, // No cost basis from WebSocket balance feed
+              currentValue: data.balance * currentPrice,
+              gainLoss: 0,
+              gainLossPercent: 0,
+              is_simulation: false
+            };
+          });
         
         if (wsHoldings.length > 0) {
           console.log('[Portfolio] Using WebSocket holdings:', wsHoldings.length);
@@ -370,9 +378,9 @@ export default function Portfolio() {
       }
       
       console.log('[Portfolio] No WebSocket or Kraken API holdings, using local (empty)');
-      return holdings;
+      return holdings; // Fallback to local holdings (which might be empty)
     }
-  }, [isSimMode, holdings, krakenData, wsConnected, wsBalances]);
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]); // Added wsPrices to dependencies
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
@@ -381,110 +389,117 @@ export default function Portfolio() {
 
   const { priceData, loading: pricesLoading } = usePriceData(allSymbols);
 
-  // Calculate detailed holdings with prices
+  // CRITICAL: Calculate detailed holdings with current prices
+  const detailedHoldings = React.useMemo(() => {
+    if (!effectiveHoldings || effectiveHoldings.length === 0) return [];
+
+    return effectiveHoldings.map(holding => {
+      let currentPrice = holding.currentPrice || 0; // Start with price already in effectiveHolding (from Kraken API or WS if applicable)
+      
+      // For SIM mode, use priceData (from usePriceData hook)
+      if (isSimMode) {
+        const priceInfo = priceData?.find(p => p.symbol === holding.symbol);
+        currentPrice = priceInfo?.price || priceInfo?.current_price || currentPrice;
+      }
+      // For LIVE mode, if currentPrice was not already set by WS in effectiveHoldings, and wsPrices is available, use it.
+      // This ensures that `currentPrice` from WS is prioritized.
+      else if (wsConnected && wsPrices) {
+        const pair = `${holding.symbol}/USD`;
+        currentPrice = wsPrices[pair]?.price || currentPrice;
+      }
+
+      const currentValue = holding.quantity * currentPrice;
+      const costBasis = holding.costBasis || (holding.quantity * (holding.average_cost_price || 0));
+      const gainLoss = currentValue - costBasis;
+      const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+
+      return {
+        ...holding,
+        currentPrice,
+        currentValue,
+        costBasis,
+        gainLoss,
+        gainLossPercent
+      };
+    });
+  }, [effectiveHoldings, isSimMode, wsConnected, wsPrices, priceData]);
+
+  // CRITICAL: Calculate 24hr and lifetime PnL based on detailed holdings
   useEffect(() => {
-    if (!effectiveHoldings || effectiveHoldings.length === 0) {
-        console.log('[Portfolio] No holdings to process');
-        setDetailedHoldings([]);
-        setPortfolio24hrChange({ value: 0, percentage: 0 });
-        setLifetimeChange({ value: 0, percentage: 0 });
-        setIsCalculatingValue(false);
-        return;
+    if (!detailedHoldings || detailedHoldings.length === 0) {
+      setPortfolio24hrChange({ value: 0, percentage: 0 });
+      setLifetimeChange({ value: 0, percentage: 0 });
+      setIsCalculatingValue(false);
+      return;
     }
 
     setIsCalculatingValue(true);
 
     try {
-        console.log('[Portfolio] Processing', effectiveHoldings.length, 'holdings with', priceData?.length || 0, 'prices');
-
-        // If LIVE mode and Kraken data already has prices, use them directly
-        // OR if WebSocket is connected and has total assets, assume its data is used
-        if (!isSimMode && (krakenData?.holdings || (wsConnected && wsTotalAssets > 0))) {
-          const updated = effectiveHoldings.map(h => {
-            const priceInfo = priceData?.find(p => p.symbol === h.symbol);
-            const currentPrice = priceInfo?.price || priceInfo?.current_price || h.currentPrice || h.average_cost_price || 0; // Use WS prices if available
-            const currentValue = h.quantity * currentPrice;
-            const costBasis = h.costBasis || (h.quantity * h.average_cost_price);
-            const gainLoss = currentValue - costBasis;
-            const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
-            
-            return {
-              ...h,
-              currentPrice: currentPrice,
-              currentValue: currentValue,
-              costBasis: costBasis,
-              gainLoss: gainLoss,
-              gainLossPercent: gainLossPercent
-            };
-          });
-          
-          setDetailedHoldings(updated);
-          
-          const currentTotalValue = updated.reduce((sum, h) => sum + h.currentValue, 0);
-          const totalCostBasis = updated.reduce((sum, h) => sum + h.costBasis, 0);
-          
-          // Calculate lifetime PnL
-          const lifetimePnL = currentTotalValue - totalCostBasis;
-          const lifetimePct = totalCostBasis > 0 ? (lifetimePnL / totalCostBasis) * 100 : 0;
-          
-          setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-          setPortfolio24hrChange({ value: 0, percentage: 0 }); // TODO: Calculate from Kraken if available
-          
-          console.log('[Portfolio] LIVE calculated:', {
-            totalValue: currentTotalValue.toFixed(2),
-            costBasis: totalCostBasis.toFixed(2),
-            pnl: lifetimePnL.toFixed(2)
-          });
-          
+      const currentTotalValue = detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+      let total24hrChangeValue = 0;
+      
+      // Calculate 24h change
+      if (isSimMode) {
+        detailedHoldings.forEach(h => {
+          const priceInfo = priceData?.find(p => p.symbol === h.symbol);
+          const pctRaw = priceInfo?.price_change_percentage_24h ?? priceInfo?.change ?? 0;
+          const pct = typeof pctRaw === 'string' ? parseFloat(String(pctRaw).replace('%', '')) : (typeof pctRaw === 'number' ? pctRaw : 0);
+          // If current value is available, apply percentage change to it to estimate 24hr change value
+          total24hrChangeValue += (h.currentValue || 0) * (pct / 100);
+        });
+      } else {
+        // For LIVE mode, try to get 24hr change from krakenData if available
+        if (krakenData?.portfolio_24hr_change_usd !== undefined) {
+          total24hrChangeValue = krakenData.portfolio_24hr_change_usd;
         } else {
-          // SIM MODE: Fetch prices and calculate
-          const updatedHoldings = effectiveHoldings.map(holding => {
-              const priceInfo = priceData?.find(p => p.symbol === holding.symbol);
-              const currentPrice = priceInfo?.price || priceInfo?.current_price || holding.average_cost_price || 0;
-              const currentValue = holding.quantity * currentPrice;
-              const costBasis = holding.quantity * holding.average_cost_price;
-              const gainLoss = currentValue - costBasis;
-              const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
-              
-              return {
-                  ...holding,
-                  currentPrice,
-                  currentValue,
-                  costBasis,
-                  gainLoss,
-                  gainLossPercent
-              };
+          // If not in krakenData, try to calculate from individual holdings if they have 24h price change info from WS
+          detailedHoldings.forEach(h => {
+            const priceInfo = wsPrices?.[`${h.symbol}/USD`];
+            const pctRaw = priceInfo?.change_24h_percent ?? 0; // Assuming WS prices might have 24h percentage change
+            const pct = typeof pctRaw === 'string' ? parseFloat(String(pctRaw).replace('%', '')) : (typeof pctRaw === 'number' ? pctRaw : 0);
+            total24hrChangeValue += (h.currentValue || 0) * (pct / 100);
           });
-          
-          setDetailedHoldings(updatedHoldings);
-
-          const currentTotalValue = updatedHoldings.reduce((sum, h) => sum + h.currentValue, 0);
-          
-          // Calculate 24h change
-          let totalDelta24h = 0;
-          updatedHoldings.forEach(h => {
-              const priceInfo = priceData?.find(p => p.symbol === h.symbol);
-              const pctRaw = priceInfo?.price_change_percentage_24h ?? priceInfo?.change ?? 0;
-              const pct = typeof pctRaw === 'string' ? parseFloat(String(pctRaw).replace('%', '')) : (typeof pctRaw === 'number' ? pctRaw : 0);
-              totalDelta24h += (h.currentValue || 0) * (pct / 100);
-          });
-          const prevTotal = currentTotalValue - totalDelta24h;
-          const pct24h = prevTotal > 0 ? (totalDelta24h / prevTotal) * 100 : 0;
-          setPortfolio24hrChange({ value: totalDelta24h, percentage: pct24h });
-
-          // Calculate lifetime PnL
-          const totalBuyCost = trades.filter(t => t.type === 'buy' && t.is_simulation === isSimMode).reduce((sum, t) => sum + (t.total_value || 0), 0);
-          const totalSellProceeds = trades.filter(t => t.type === 'sell' && t.is_simulation === isSimMode).reduce((sum, t) => sum + (t.total_value || 0), 0);
-          const lifetimePnL = totalSellProceeds + currentTotalValue - totalBuyCost;
-          const lifetimePct = totalBuyCost > 0 ? (lifetimePnL / totalBuyCost) * 100 : 0;
-          setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
         }
+      }
+
+      const prevTotal24hr = currentTotalValue - total24hrChangeValue;
+      const pct24h = prevTotal24hr > 0 ? (total24hrChangeValue / prevTotal24hr) * 100 : 0;
+      setPortfolio24hrChange({ value: total24hrChangeValue, percentage: pct24h });
+
+      // Calculate lifetime PnL
+      let lifetimePnLValue = 0;
+      let totalBuyCost = 0;
+
+      if (isSimMode) {
+        // In sim mode, calculate based on trades and current holdings
+        totalBuyCost = trades.filter(t => t.type === 'buy' && t.is_simulation === isSimMode).reduce((sum, t) => sum + (t.total_value || 0), 0);
+        const totalSellProceeds = trades.filter(t => t.type === 'sell' && t.is_simulation === isSimMode).reduce((sum, t) => sum + (t.total_value || 0), 0);
+        lifetimePnLValue = totalSellProceeds + currentTotalValue - totalBuyCost;
+      } else {
+        // In live mode, use krakenData's total PnL if available
+        if (krakenData?.total_unrealized_pnl_usd !== undefined) {
+          lifetimePnLValue = krakenData.total_unrealized_pnl_usd;
+          // Use Kraken's total cost basis or sum from detailed holdings if not available
+          totalBuyCost = krakenData.total_cost_basis_usd || detailedHoldings.reduce((sum, h) => sum + (h.costBasis || 0), 0);
+        } else {
+          // If not from Kraken, sum up individual holding PnLs
+          lifetimePnLValue = detailedHoldings.reduce((sum, h) => sum + (h.gainLoss || 0), 0);
+          totalBuyCost = detailedHoldings.reduce((sum, h) => sum + (h.costBasis || 0), 0);
+        }
+      }
+
+      const lifetimePct = totalBuyCost > 0 ? (lifetimePnLValue / totalBuyCost) * 100 : 0;
+      setLifetimeChange({ value: lifetimePnLValue, percentage: lifetimePct });
+
     } catch (err) {
-        console.error("[Portfolio] Failed to calculate values:", err);
+      console.error("[Portfolio] Failed to calculate PnL values:", err);
+      setPortfolio24hrChange({ value: 0, percentage: 0 });
+      setLifetimeChange({ value: 0, percentage: 0 });
     } finally {
-        setIsCalculatingValue(false);
+      setIsCalculatingValue(false);
     }
-  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData, wsConnected, wsTotalAssets]);
+  }, [detailedHoldings, isSimMode, priceData, krakenData, wsPrices, trades]); // Dependencies adjusted
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;
@@ -655,7 +670,7 @@ export default function Portfolio() {
           wallet={wallet}
           trades={trades}
           currentPortfolioValue={currentPortfolioValue}
-          isLoading={isCalculatingValue || krakenLoading || wsLoading}
+          isLoading={isCalculatingValue || krakenLoading || pricesLoading || wsLoading}
           isSimMode={isSimMode}
           change24hr={portfolio24hrChange}
           lifetimeChange={lifetimeChange}

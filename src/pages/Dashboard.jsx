@@ -361,19 +361,21 @@ export default function Dashboard() {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const touchStartY = useRef(0);
 
-  const {
-    isConnected: wsConnected,
+  // CRITICAL: Use WebSocket data for LIVE mode
+  const { 
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
-    totalAssets: wsTotalAssets,
     balances: wsBalances,
+    prices: wsPrices,
+    isConnected: wsConnected,
+    totalAssets: wsTotalAssets,
     refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
     subscribeToBalances: !isSimMode,
-    subscribeToOrders: !isSimMode,
-    subscribeToExecutions: !isSimMode,
+    subscribeToOrders: false,
+    subscribeToExecutions: false,
     isSimMode
   });
 
@@ -416,47 +418,60 @@ export default function Dashboard() {
     staleTime: 30000
   });
 
-  const effectiveHoldings = useMemo(() => {
-    if (isSimMode || !wsConnected || !wsBalances) {
+  // CRITICAL: Calculate current holdings from WebSocket in LIVE mode
+  const currentHoldings = useMemo(() => {
+    if (isSimMode) {
       return holdings;
     }
-
-    const wsHoldings = Object.entries(wsBalances)
-      .filter(([asset, data]) => {
-        if (asset === 'USD' || asset === 'ZUSD') return false;
-        return data.balance > 0.00001;
-      })
-      .map(([asset, data]) => ({
-        symbol: asset,
-        asset_type: 'crypto',
-        quantity: data.balance,
-        average_cost_price: 0, // Kraken balances typically don't include average cost, it's calculated on trades.
-        is_simulation: false
-      }));
-
-    return wsHoldings.length > 0 ? wsHoldings : holdings;
-  }, [isSimMode, wsConnected, wsBalances, holdings]);
-
-  const portfolioMarketValue = useMemo(() => {
-    if (isSimMode) {
-      if (effectiveHoldings.length === 0) return 0;
-      // In sim mode, we don't have real-time prices for every asset from WS.
-      // The PerformanceChart expects 'currentPrice' on holdings, so we might need a separate price data hook
-      // or rely on a simplified calculation for `portfolioMarketValue` here.
-      // For this specific value, let's assume average_cost_price is a reasonable proxy if no other price is available for sim.
-      // (The actual PerformanceChart will handle its own price fetching if not provided with 'currentPrice')
-      return effectiveHoldings.reduce((sum, h) => sum + ((h.quantity || 0) * (h.average_cost_price || 0)), 0);
-    } else {
-      // In live mode, wsTotalValue is the full portfolio including cash, so we subtract cash.
-      return (wsConnected && wsTotalValue >= 0 ? (wsTotalValue - wsUsdBalance) : 0);
+    
+    // LIVE MODE: Use WebSocket balances
+    if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+      const wsHoldings = Object.entries(wsBalances)
+        .filter(([asset, data]) => {
+          if (asset === 'USD' || asset === 'ZUSD') return false;
+          return data.balance > 0.00001;
+        })
+        .map(([asset, data]) => {
+          const pair = `${asset}/USD`;
+          const currentPrice = wsPrices[pair]?.price || 0;
+          const costBasis = data.balance * currentPrice; // Use current price as cost basis since we don't have historical data
+          
+          return {
+            symbol: asset,
+            quantity: data.balance,
+            average_cost_price: currentPrice,
+            currentPrice: currentPrice,
+            currentValue: data.balance * currentPrice,
+            costBasis: costBasis,
+            gainLoss: 0,
+            gainLossPercent: 0,
+            asset_type: 'crypto',
+            is_simulation: false
+          };
+        });
+      
+      if (wsHoldings.length > 0) {
+        return wsHoldings;
+      }
     }
-  }, [isSimMode, effectiveHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
+    
+    return holdings;
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
-  const currentCashBalance = isSimMode
-    ? (wallet?.cash_balance || 0)
-    : (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : wallet?.real_cash_balance || 0);
+  // CRITICAL: Calculate values from WebSocket
+  const currentCashBalance = useMemo(() => {
+    if (isSimMode) {
+      return wallet?.cash_balance || 0;
+    }
+    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
-  const currentPortfolioValue = portfolioMarketValue;
+  const currentPortfolioValue = useMemo(() => {
+    if (isSimMode) {
+      return currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+    }
+    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+  }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
@@ -678,7 +693,7 @@ export default function Dashboard() {
           type: tradeType,
           quantity: correctedTradeData.quantity, // Added quantity to lastTrade for stricter check
           total_value: totalCost,
-          timestamp: Date.now()
+          timestamp: Date.24();
         };
 
         // Add trade via addTrade (this should ideally trigger a refetchTrades or update trades cache)
@@ -834,12 +849,12 @@ export default function Dashboard() {
     [user, settings, refetchWallet, refetchHoldings, refetchTrades, wsRefresh, refreshPnL]
   );
 
-  useAutoTrader(settings, user, handleTradeExecuted, wallet, effectiveHoldings, lifetimeChange, isSimMode);
+  useAutoTrader(settings, user, handleTradeExecuted, wallet, currentHoldings, lifetimeChange, isSimMode);
 
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
 
-  if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
+  if (isLoading && !wallet && !user && trades.length === 0 && currentHoldings.length === 0) {
     return (
       <div className="p-4 space-y-4">
         <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
@@ -953,7 +968,7 @@ export default function Dashboard() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-        <PerformanceChart trades={trades} holdings={effectiveHoldings} wallet={wallet} isSimMode={isSimMode} krakenPnL={pnlData} />
+        <PerformanceChart trades={trades} holdings={currentHoldings} wallet={wallet} isSimMode={isSimMode} krakenPnL={pnlData} />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
