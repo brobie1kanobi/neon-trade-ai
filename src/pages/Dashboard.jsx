@@ -24,6 +24,7 @@ import TradeDetailsModal from "@/components/dashboard/TradeDetailsModal"; // Upd
 import CryptoMarketOverview from "@/components/dashboard/CryptoMarketOverview"; // Updated import path style
 import CryptoPriceChart from "@/components/dashboard/CryptoPriceChart"; // Updated import path style
 import StockPriceChart from "@/components/dashboard/StockPriceChart"; // Updated import path style
+import HoldingsBreakdown from "@/components/dashboard/HoldingsBreakdown";
 
 const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange, isSimMode) => {
   const isRunningRef = useRef(false);
@@ -470,7 +471,7 @@ export default function Dashboard() {
     if (isSimMode) {
       return currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
     }
-    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h => sum + (h.currentValue || 0), 0);
   }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalBalance = currentCashBalance + currentPortfolioValue;
@@ -953,6 +954,10 @@ export default function Dashboard() {
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
         <QuickActions />
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+        <HoldingsBreakdown holdings={currentHoldings} prices={wsPrices} isSimMode={isSimMode} />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
