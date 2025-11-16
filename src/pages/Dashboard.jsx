@@ -4,6 +4,7 @@ import { DollarSign, Activity } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useSettings } from "../components/utils/SettingsContext";
 import { base44 } from "@/api/base44Client";
 
@@ -515,21 +516,34 @@ export default function Dashboard() {
       const isSimModeLocal = settings?.sim_trading_mode !== false;
       const tradeType = (tradeData.type || "").toLowerCase();
 
+      // CRITICAL FIX: Stricter duplicate detection with 10-second window
       if (tradeLock.lastTrade) {
         const timeSince = Date.now() - tradeLock.lastTrade.timestamp;
         const isSameSymbol = tradeLock.lastTrade.symbol === tradeData.symbol;
         const isSameType = tradeLock.lastTrade.type === tradeType;
+        const isSameQuantity = Math.abs(tradeLock.lastTrade.quantity - (tradeData.quantity || 0)) < 0.000001; // Added quantity check
         const isSameAmount = Math.abs(tradeLock.lastTrade.total_value - (tradeData.total_value || 0)) < 0.01;
         
-        if (timeSince < 5000 && isSameSymbol && isSameType && isSameAmount) {
+        // CRITICAL: Block duplicate trades within 10 seconds with same parameters
+        if (timeSince < 10000 && isSameSymbol && isSameType && isSameQuantity && isSameAmount) {
+          console.error('[Dashboard] 🚫 DUPLICATE TRADE BLOCKED:', {
+            symbol: tradeData.symbol,
+            type: tradeType,
+            timeSince: `${(timeSince / 1000).toFixed(1)}s`,
+            lastTradeTimestamp: tradeLock.lastTrade.timestamp,
+            currentTradeTimestamp: Date.now()
+          });
+          
           toast.error("Duplicate trade blocked", {
-            description: `${tradeData.symbol} ${tradeType} was just executed`
+            description: `${tradeData.symbol} ${tradeType} was just executed ${(timeSince / 1000).toFixed(1)}s ago`
           });
           return;
         }
       }
 
+      // CRITICAL FIX: If another trade is being processed, queue this one
       if (tradeLock.isLocked) {
+        console.log('[Dashboard] Trade locked, queueing current trade...');
         return new Promise((resolve) => {
           tradeLock.queue.push({ tradeData, resolve });
         });
@@ -553,6 +567,7 @@ export default function Dashboard() {
 
         if (totalCost <= 0 || !isFinite(totalCost)) {
           toast.error("Trade rejected - Invalid amount");
+          tradeLock.isLocked = false; // UNLOCK on early exit
           return;
         }
 
@@ -569,6 +584,7 @@ export default function Dashboard() {
             toast.error("Trade rejected - Insufficient funds", {
               description: `Need $${totalCost.toFixed(2)}, but only $${currentCash.toFixed(2)} available`
             });
+            tradeLock.isLocked = false; // UNLOCK on early exit
             return;
           }
 
@@ -577,6 +593,7 @@ export default function Dashboard() {
             toast.error("Trade rejected", {
               description: "This would cause a negative balance"
             });
+            tradeLock.isLocked = false; // UNLOCK on early exit
             return;
           }
         }
@@ -595,6 +612,7 @@ export default function Dashboard() {
             toast.error("Trade rejected - No holdings", {
               description: `You don't own any ${correctedTradeData.symbol}`
             });
+            tradeLock.isLocked = false; // UNLOCK on early exit
             return;
           }
 
@@ -602,13 +620,16 @@ export default function Dashboard() {
             toast.error("Trade rejected - Insufficient holdings", {
               description: `You only own ${holding.quantity.toFixed(4)} ${correctedTradeData.symbol}`
             });
+            tradeLock.isLocked = false; // UNLOCK on early exit
             return;
           }
         }
 
+        // CRITICAL: Record BEFORE execution to prevent duplicates
         tradeLock.lastTrade = {
           symbol: correctedTradeData.symbol,
           type: tradeType,
+          quantity: correctedTradeData.quantity, // Added quantity to lastTrade for stricter check
           total_value: totalCost,
           timestamp: Date.now()
         };
@@ -751,6 +772,7 @@ export default function Dashboard() {
         
         if (tradeLock.queue.length > 0) {
           const next = tradeLock.queue.shift();
+          // Added a small delay to prevent immediate re-locking, giving the UI a moment
           setTimeout(() => {
             handleTradeExecuted(next.tradeData).then(next.resolve);
           }, 1000);
