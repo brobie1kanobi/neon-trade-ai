@@ -471,7 +471,7 @@ export default function Dashboard() {
     if (isSimMode) {
       return currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
     }
-    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h => sum + (h.currentValue || 0), 0);
+    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
   }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalBalance = currentCashBalance + currentPortfolioValue;
