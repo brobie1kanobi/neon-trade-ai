@@ -187,6 +187,82 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     setIsScrubbing(false);
   }, []);
 
+  // Custom tick formatter based on timeframe
+  const getXAxisTicks = useCallback(() => {
+    if (!chartData || chartData.length === 0) return [];
+    
+    const times = chartData.map(d => new Date(d.time).getTime());
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    
+    const ticks = [];
+    
+    if (timeframe === '1d') {
+      // Each hour for 24 hours
+      const hourMs = 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += hourMs) {
+        ticks.push(new Date(t).toISOString());
+      }
+    } else if (timeframe === '7d') {
+      // Every 12 hours and each day
+      const twelveHourMs = 12 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += twelveHourMs) {
+        ticks.push(new Date(t).toISOString());
+      }
+    } else if (timeframe === '1m') {
+      // Each week beginning and 15th day
+      const startDate = new Date(minTime);
+      let current = new Date(startDate);
+      current.setHours(0,0,0,0); // Normalize to start of day
+
+      // Add weekly ticks
+      while (current.getTime() <= maxTime) {
+          ticks.push(current.toISOString());
+          current.setDate(current.getDate() + 7); // Move to next week
+      }
+
+      // Ensure 15th is added if relevant
+      const tempDate = new Date(minTime);
+      tempDate.setDate(15);
+      if (tempDate.getTime() >= minTime && tempDate.getTime() <= maxTime) {
+          ticks.push(tempDate.toISOString());
+      }
+      
+    } else if (timeframe === '3m') {
+      // Weekly ticks
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += weekMs) {
+        ticks.push(new Date(t).toISOString());
+      }
+    } else if (timeframe === '1y') {
+      // Each month
+      const startDate = new Date(minTime);
+      let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      
+      while (current.getTime() <= maxTime) {
+        ticks.push(current.toISOString());
+        current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+      }
+    }
+    
+    // Filter out duplicate ticks (e.g., if multiple calculations land on the same timestamp)
+    // and sort them.
+    return Array.from(new Set(ticks)).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  }, [chartData, timeframe]);
+
+  const formatXAxisLabel = useCallback((t) => {
+    const date = new Date(t);
+    
+    if (timeframe === '1d') {
+      // Only show time for 1D
+      return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    } else if (timeframe === '7d') {
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' });
+    } else {
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+  }, [timeframe]);
+
   const CrosshairCursor = ({ points, height }) => {
     if (!points || !points[0]) return null;
     const x = points[0].x;
@@ -339,8 +415,9 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                       <XAxis
                       dataKey="time"
+                      ticks={getXAxisTicks()}
                       tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickFormatter={(t) => new Date(t).toLocaleDateString(undefined, days <= 2 ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' })}
+                      tickFormatter={formatXAxisLabel}
                       axisLine={false}
                       tickLine={false} />
 
