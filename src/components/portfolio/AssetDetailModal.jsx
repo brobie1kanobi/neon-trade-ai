@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -340,88 +340,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       <XAxis
                         dataKey="time"
                         tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                        tickFormatter={(t) => {
-                          const date = new Date(t);
-                          if (timeframe === "1d") {
-                            // 1D: Show only hours (no date)
-                            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-                          } else if (timeframe === "7d") {
-                            // 7D: Show date and time
-                            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                          } else if (timeframe === "1m") {
-                            // 1M: Show date
-                            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                          } else if (timeframe === "3m") {
-                            // 3M: Show date
-                            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                          } else if (timeframe === "1y") {
-                            // 1Y: Show month
-                            return date.toLocaleDateString(undefined, { month: 'short' });
-                          }
-                          return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                        }}
-                        ticks={(() => {
-                          if (!chartData || chartData.length === 0) return [];
-                          
-                          const times = chartData.map(d => new Date(d.time).getTime());
-                          if (times.length === 0) return [];
-
-                          const minTime = Math.min(...times);
-                          const maxTime = Math.max(...times);
-                          const ticks = [];
-
-                          if (timeframe === "1d") {
-                            // 1D: Mark each hour
-                            const startHour = new Date(minTime);
-                            startHour.setMinutes(0, 0, 0);
-                            startHour.setSeconds(0, 0);
-                            for (let h = startHour.getTime(); h <= maxTime; h += 3600000) { // 1 hour
-                              ticks.push(new Date(h).toISOString());
-                            }
-                          } else if (timeframe === "7d") {
-                            // 7D: Mark each day
-                            const startDate = new Date(minTime);
-                            startDate.setHours(0, 0, 0, 0);
-                            for (let d = startDate.getTime(); d <= maxTime; d += 24 * 3600000) { // 1 day
-                              ticks.push(new Date(d).toISOString());
-                            }
-                          } else if (timeframe === "1m") {
-                            // 1M: Mark week beginnings and 15th day
-                            const current = new Date(minTime);
-                            current.setHours(0, 0, 0, 0);
-                            let firstDayAdded = false;
-                            while (current.getTime() <= maxTime) {
-                                // Add first day of the period always
-                                if (!firstDayAdded) {
-                                  ticks.push(current.toISOString());
-                                  firstDayAdded = true;
-                                } else if (current.getDate() === 1 || current.getDate() === 8 || current.getDate() === 15 || current.getDate() === 22) {
-                                  ticks.push(current.toISOString());
-                                }
-                                current.setDate(current.getDate() + 1);
-                            }
-                          } else if (timeframe === "3m") {
-                            // 3M: Mark beginning of each month
-                            const current = new Date(minTime);
-                            current.setHours(0, 0, 0, 0);
-                            current.setDate(1); // Start from the first day of the month
-                            while (current.getTime() <= maxTime) {
-                                ticks.push(current.toISOString());
-                                current.setMonth(current.getMonth() + 1);
-                            }
-                          } else if (timeframe === "1y") {
-                            // 1Y: Mark each month
-                            const current = new Date(minTime);
-                            current.setHours(0, 0, 0, 0);
-                            current.setDate(1); // Start from the first day of the month
-                            while (current.getTime() <= maxTime) {
-                              ticks.push(current.toISOString());
-                              current.setMonth(current.getMonth() + 1);
-                            }
-                          }
-
-                          return ticks;
-                        })()}
+                        tickFormatter={(t) => new Date(t).toLocaleDateString(undefined, days <= 2 ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' })}
                         axisLine={false}
                         tickLine={false}
                       />
