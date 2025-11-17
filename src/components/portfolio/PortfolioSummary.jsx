@@ -8,6 +8,9 @@ import { base44 } from "@/api/base44Client";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
+import { toast } from "sonner";
+import { invalidateCache } from "@/components/hooks/useDataFetching";
+import { invalidatePriceCache } from "@/components/hooks/usePriceData";
 
 export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, change24hr, lifetimeChange, onSyncClick }) {
   const { settings } = useSettings();
@@ -16,7 +19,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   const { 
     isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
-    totalAssets: wsTotalAssets
+    totalAssets: wsTotalAssets,
+    refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
     priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
@@ -27,7 +31,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
   const { pnlData } = useKrakenPnL(isSimMode);
 
-  // CRITICAL: Use direct calculation from parent (like AssetAllocation)
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
@@ -35,7 +38,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
   }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
-  // CRITICAL: Use passed portfolio value from parent calculation
   const displayPortfolioValue = currentPortfolioValue || 0;
 
   const totalValue = currentCashBalance + displayPortfolioValue;
@@ -53,19 +55,58 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   const isPositive = displayChange.value >= 0;
   const isLifetimePositive = lifetime.value >= 0;
 
-  const [isRepairing, setIsRepairing] = React.useState(false);
-  const handleRepair = async () => {
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  
+  const handleSync = async () => {
+    if (isSyncing) return;
+    
     try {
-      setIsRepairing(true);
-      const res = await base44.functions.invoke('repairMyPortfolio', {});
-      window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio_summary' } }));
-      setTimeout(() => window.location.reload(), 800);
-      return res;
+      setIsSyncing(true);
+      
+      if (isSimMode) {
+        // Sim mode: repair portfolio
+        toast.info('Syncing portfolio data...');
+        await base44.functions.invoke('repairMyPortfolio', {});
+      } else {
+        // LIVE MODE: Sync Kraken balance and holdings
+        toast.info('Syncing Kraken account...', { duration: 3000 });
+        
+        const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
+        const syncData = syncRes?.data || syncRes;
+        
+        if (!syncData?.success) {
+          throw new Error(syncData?.error || 'Sync failed');
+        }
+        
+        toast.success('✅ Kraken synced!', {
+          description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
+          duration: 4000
+        });
+        
+        // Invalidate all caches
+        invalidateCache();
+        invalidatePriceCache();
+        
+        // Refresh WebSocket
+        await new Promise(resolve => setTimeout(resolve, 500));
+        wsRefresh();
+      }
+      
+      // Trigger app-wide data update
+      window.dispatchEvent(new CustomEvent('app:data-updated', { 
+        detail: { type: 'portfolio-sync', source: 'portfolio_summary' } 
+      }));
+      
+      // Force reload after sync
+      setTimeout(() => window.location.reload(), 1000);
+      
+    } catch (error) {
+      console.error('Sync error:', error);
+      toast.error('Sync failed', { description: error.message });
     } finally {
-      setIsRepairing(false);
+      setIsSyncing(false);
     }
   };
-  const onClick = onSyncClick || handleRepair;
 
   return (
     <Card className="border-2 neon-glow" style={{ 
@@ -165,11 +206,11 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
         <div className="pt-4">
           <Button
-            onClick={onClick}
-            disabled={isRepairing}
+            onClick={handleSync}
+            disabled={isSyncing}
             className="w-full neon-glow bg-green-600 hover:bg-green-700"
           >
-            {isRepairing ? 'Syncing...' : 'Sync Portfolio Data'}
+            {isSyncing ? 'Syncing...' : (isSimMode ? 'Sync Portfolio Data' : 'Sync Kraken Holdings')}
           </Button>
         </div>
       </CardContent>
