@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,37 +15,11 @@ export default function BalanceCard({
   isPrimary = false,
   changeLabel,
   isSimMode = true,
-  isConnected = false,
-  krakenPnL = null
+  isConnected = false
 }) {
-  // CRITICAL: Persistent ref to prevent flashing to zero
-  const persistentValueRef = useRef({
-    amount: 0,
-    change: { value: 0, percentage: 0 }
-  });
-  
-  // CRITICAL: Use the amount passed as prop directly (already calculated from WebSocket)
-  const displayAmount = React.useMemo(() => {
-    const value = typeof amount === 'number' ? amount : 0;
-    
-    // Only update if value is valid (non-zero or first load)
-    if (value > 0 || persistentValueRef.current.amount === 0) {
-      persistentValueRef.current.amount = value;
-    }
-    
-    return persistentValueRef.current.amount;
-  }, [amount]);
-
-  const displayChange = React.useMemo(() => {
-    const changeValue = change || { value: 0, percentage: 0 };
-    
-    // Update persistent ref
-    if (changeValue.value !== 0 || persistentValueRef.current.change.value === 0) {
-      persistentValueRef.current.change = changeValue;
-    }
-    
-    return persistentValueRef.current.change;
-  }, [change]);
+  // CRITICAL: Use amount directly - no caching, no refs
+  const displayAmount = typeof amount === 'number' ? amount : 0;
+  const displayChange = change || { value: 0, percentage: 0 };
 
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
