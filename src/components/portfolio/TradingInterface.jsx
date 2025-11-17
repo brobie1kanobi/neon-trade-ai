@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowUpCircle, ArrowDownCircle, Search, Save, Loader2, Settings as SettingsIcon, Bot, ShoppingCart } from "lucide-react";
+import { Zap, ArrowUpCircle, ArrowDownCircle, Search, Save, Loader2, Settings as SettingsIcon, Bot, ShoppingCart } from "lucide-react";
+import { InvokeLLM } from "@/integrations/Core";
 import { UserSettings, User, ConditionalOrder } from "@/entities/all";
 import TradeConfirmationDialog from "./TradeConfirmationDialog";
 import AdvancedOrderModal from "./AdvancedOrderModal";

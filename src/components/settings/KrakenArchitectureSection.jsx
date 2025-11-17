@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronUp, Zap, Radio, Activity, Wifi } from 'lucide-react';
+import { ChevronDown, ChevronUp, Zap, Radio, RefreshCw, Activity, Wifi, Code } from 'lucide-react';
 import WebSocketTester from './WebSocketTester';
 
 export default function KrakenArchitectureSection() {

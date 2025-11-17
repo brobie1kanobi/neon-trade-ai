@@ -1,3 +1,4 @@
+import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Zap, Database, Radio, RefreshCw, Activity, Wallet, TrendingUp } from 'lucide-react';

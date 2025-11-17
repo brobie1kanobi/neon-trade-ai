@@ -1,3 +1,4 @@
+import React from "react";
 
 export default function TypingIndicator({ text = "Thinking..." }) {
   return (

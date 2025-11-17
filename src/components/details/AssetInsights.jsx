@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Newspaper, BarChart, BrainCircuit } from "lucide-react";
+import { Loader2, Zap, Newspaper, BarChart, BrainCircuit } from "lucide-react";
 import { InvokeLLM } from "@/integrations/Core";
 import ReactMarkdown from 'react-markdown';
 

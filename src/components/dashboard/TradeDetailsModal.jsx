@@ -1,6 +1,7 @@
 
+import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, Hash, DollarSign, Package, Banknote, TrendingUp, TrendingDown } from "lucide-react";
+import { X, Calendar, Hash, DollarSign, Package, Banknote, TrendingUp, TrendingDown } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useSettings } from "@/components/utils/SettingsContext"; // Updated import path

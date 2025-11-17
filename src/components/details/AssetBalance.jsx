@@ -1,6 +1,7 @@
 
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Wallet, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, DollarSign, PieChart } from "lucide-react";
 
 export default function AssetBalance({ holding, assetData }) {
     if (!holding || holding.quantity <= 0) {

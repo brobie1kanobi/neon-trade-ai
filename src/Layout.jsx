@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Home, PieChart, Wallet, Settings, Mic, RefreshCw } from "lucide-react";
@@ -8,6 +8,7 @@ import WelcomeScreen from "./components/welcome/WelcomeScreen";
 import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
 import PushManager from "./components/utils/PushManager";
 import { Toaster } from "@/components/ui/sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 

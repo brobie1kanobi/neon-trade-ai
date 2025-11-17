@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { UserSettings } from "@/entities/UserSettings";
 import { User } from "@/entities/User";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Bitcoin, TrendingUp, Loader2, Save, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";

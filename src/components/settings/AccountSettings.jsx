@@ -1,4 +1,5 @@
 
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { User as UserIcon, LogOut, Trash2 } from "lucide-react";

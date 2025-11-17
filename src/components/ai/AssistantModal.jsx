@@ -11,6 +11,7 @@ import { User, UserSettings } from "@/entities/all";
 import { useToast } from "@/components/ui/use-toast";
 import TypingIndicator from "./TypingIndicator";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { base44 } from "@/api/base44Client";
 import useSpeechRecognition from "./hooks/useSpeechRecognition";
 
 export default function AssistantModal({ isOpen, onClose }) {
