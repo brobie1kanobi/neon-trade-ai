@@ -189,7 +189,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
 
   // Custom tick formatter based on timeframe
   const getXAxisTicks = useCallback(() => {
-    if (!chartData || chartData.length === 0) return [];
+    if (!chartData || chartData.length === 0) return undefined;
     
     const times = chartData.map(d => new Date(d.time).getTime());
     const minTime = Math.min(...times);
@@ -200,65 +200,56 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     if (timeframe === '1d') {
       // Each hour for 24 hours
       const hourMs = 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += hourMs) {
+      const startHour = Math.floor(minTime / hourMs) * hourMs;
+      for (let t = startHour; t <= maxTime; t += hourMs) {
         ticks.push(new Date(t).toISOString());
       }
     } else if (timeframe === '7d') {
       // Every 12 hours and each day
       const twelveHourMs = 12 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += twelveHourMs) {
+      const start = Math.floor(minTime / twelveHourMs) * twelveHourMs;
+      for (let t = start; t <= maxTime; t += twelveHourMs) {
         ticks.push(new Date(t).toISOString());
       }
     } else if (timeframe === '1m') {
-      // Each week beginning and 15th day
-      const startDate = new Date(minTime);
-      let current = new Date(startDate);
-      current.setHours(0,0,0,0); // Normalize to start of day
-
-      // Add weekly ticks
-      while (current.getTime() <= maxTime) {
-          ticks.push(current.toISOString());
-          current.setDate(current.getDate() + 7); // Move to next week
-      }
-
-      // Ensure 15th is added if relevant
-      const tempDate = new Date(minTime);
-      tempDate.setDate(15);
-      if (tempDate.getTime() >= minTime && tempDate.getTime() <= maxTime) {
-          ticks.push(tempDate.toISOString());
-      }
-      
-    } else if (timeframe === '3m') {
-      // Weekly ticks
+      // Each week beginning
       const weekMs = 7 * 24 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += weekMs) {
+      const start = Math.floor(minTime / weekMs) * weekMs;
+      for (let t = start; t <= maxTime; t += weekMs) {
+        ticks.push(new Date(t).toISOString());
+      }
+    } else if (timeframe === '3m') {
+      // Weekly
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      const start = Math.floor(minTime / weekMs) * weekMs;
+      for (let t = start; t <= maxTime; t += weekMs) {
         ticks.push(new Date(t).toISOString());
       }
     } else if (timeframe === '1y') {
-      // Each month
+      // Monthly
       const startDate = new Date(minTime);
-      let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      let currentMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1); 
       
-      while (current.getTime() <= maxTime) {
-        ticks.push(current.toISOString());
-        current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+      while (currentMonth.getTime() <= maxTime) {
+        ticks.push(currentMonth.toISOString());
+        currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
       }
     }
     
-    // Filter out duplicate ticks (e.g., if multiple calculations land on the same timestamp)
-    // and sort them.
-    return Array.from(new Set(ticks)).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    return ticks.length > 0 ? ticks : undefined;
   }, [chartData, timeframe]);
 
   const formatXAxisLabel = useCallback((t) => {
     const date = new Date(t);
     
     if (timeframe === '1d') {
-      // Only show time for 1D
-      return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      // Only show time for 1D (no date)
+      return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     } else if (timeframe === '7d') {
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' });
+      // Show date for 7D
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } else {
+      // Show date for all other timeframes
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     }
   }, [timeframe]);
@@ -300,7 +291,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
       <DialogContent className="sm:max-w-4xl h-[80vh]" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--text-primary)' }}>
-            {asset.symbol} - {assetInfo?.name || asset.symbol}
+            {asset.symbol} - ( {assetInfo?.name || asset.symbol} )
           </DialogTitle>
         </DialogHeader>
 
@@ -418,8 +409,8 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       ticks={getXAxisTicks()}
                       tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
                       tickFormatter={formatXAxisLabel}
-                      axisLine={false}
-                      tickLine={false} />
+                      axisLine={{ stroke: 'var(--border-color)' }}
+                      tickLine={{ stroke: 'var(--border-color)' }} />
 
                       <YAxis
                       domain={yDomain}
