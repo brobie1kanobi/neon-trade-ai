@@ -188,70 +188,28 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
   }, []);
 
   // Custom tick formatter based on timeframe
-  const getXAxisTicks = useCallback(() => {
-    if (!chartData || chartData.length === 0) return undefined;
-    
-    const times = chartData.map(d => new Date(d.time).getTime());
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    
-    const ticks = [];
-    
-    if (timeframe === '1d') {
-      // Each hour for 24 hours
-      const hourMs = 60 * 60 * 1000;
-      const startHour = Math.floor(minTime / hourMs) * hourMs;
-      for (let t = startHour; t <= maxTime; t += hourMs) {
-        ticks.push(new Date(t).toISOString());
-      }
-    } else if (timeframe === '7d') {
-      // Every 12 hours and each day
-      const twelveHourMs = 12 * 60 * 60 * 1000;
-      const start = Math.floor(minTime / twelveHourMs) * twelveHourMs;
-      for (let t = start; t <= maxTime; t += twelveHourMs) {
-        ticks.push(new Date(t).toISOString());
-      }
-    } else if (timeframe === '1m') {
-      // Each week beginning
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      const start = Math.floor(minTime / weekMs) * weekMs;
-      for (let t = start; t <= maxTime; t += weekMs) {
-        ticks.push(new Date(t).toISOString());
-      }
-    } else if (timeframe === '3m') {
-      // Weekly
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      const start = Math.floor(minTime / weekMs) * weekMs;
-      for (let t = start; t <= maxTime; t += weekMs) {
-        ticks.push(new Date(t).toISOString());
-      }
-    } else if (timeframe === '1y') {
-      // Monthly
-      const startDate = new Date(minTime);
-      let currentMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1); 
-      
-      while (currentMonth.getTime() <= maxTime) {
-        ticks.push(currentMonth.toISOString());
-        currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-      }
-    }
-    
-    return ticks.length > 0 ? ticks : undefined;
-  }, [chartData, timeframe]);
-
   const formatXAxisLabel = useCallback((t) => {
     const date = new Date(t);
     
     if (timeframe === '1d') {
       // Only show time for 1D (no date)
-      return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
     } else if (timeframe === '7d') {
       // Show date for 7D
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } else {
       // Show date for all other timeframes
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
+  }, [timeframe]);
+
+  const getXAxisTickCount = useCallback(() => {
+    if (timeframe === '1d') return 24; // Every hour
+    if (timeframe === '7d') return 14; // Every 12 hours
+    if (timeframe === '1m') return 8; // Weekly + 15th
+    if (timeframe === '3m') return 12; // Weekly
+    if (timeframe === '1y') return 12; // Monthly
+    return 6;
   }, [timeframe]);
 
   const CrosshairCursor = ({ points, height }) => {
@@ -406,11 +364,12 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                       <XAxis
                       dataKey="time"
-                      ticks={getXAxisTicks()}
+                      tickCount={getXAxisTickCount()}
                       tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
                       tickFormatter={formatXAxisLabel}
                       axisLine={{ stroke: 'var(--border-color)' }}
-                      tickLine={{ stroke: 'var(--border-color)' }} />
+                      tickLine={{ stroke: 'var(--border-color)' }}
+                      interval="preserveStartEnd" />
 
                       <YAxis
                       domain={yDomain}
