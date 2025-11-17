@@ -187,6 +187,63 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     setIsScrubbing(false);
   }, []);
 
+  // Custom X-axis tick generation based on timeframe
+  const getXAxisTicks = useCallback(() => {
+    if (!chartData || chartData.length === 0) return [];
+    
+    const times = chartData.map(d => new Date(d.time).getTime());
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    const ticks = [];
+    
+    if (timeframe === '1d') {
+      // Mark each hour of the past 24 hours
+      const hourMs = 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += hourMs) {
+        ticks.push(t);
+      }
+    } else if (timeframe === '7d') {
+      // Every 12 hours
+      const twelveHourMs = 12 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += twelveHourMs) {
+        ticks.push(t);
+      }
+    } else if (timeframe === '1m') {
+      // Each week beginning + 15th day
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += weekMs) {
+        ticks.push(t);
+      }
+      // Add 15th day markers
+      const fifteenthDayMs = 15 * 24 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += fifteenthDayMs) {
+        ticks.push(t);
+      }
+    } else if (timeframe === '3m') {
+      // Weekly ticks
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      for (let t = minTime; t <= maxTime; t += weekMs) {
+        ticks.push(t);
+      }
+    } else if (timeframe === '1y') {
+      // Monthly ticks
+      const start = new Date(minTime);
+      const end = new Date(maxTime);
+      const current = new Date(start.getFullYear(), start.getMonth(), 1);
+      
+      while (current <= end) {
+        ticks.push(current.getTime());
+        current.setMonth(current.getMonth() + 1);
+      }
+    }
+    
+    // Convert timestamps back to ISO strings and sort
+    return [...new Set(ticks)]
+      .sort((a, b) => a - b)
+      .map(t => new Date(t).toISOString());
+  }, [chartData, timeframe]);
+
+
   // Custom tick formatter based on timeframe
   const formatXAxisLabel = useCallback((t) => {
     const date = new Date(t);
@@ -203,14 +260,6 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     }
   }, [timeframe]);
 
-  const getXAxisTickCount = useCallback(() => {
-    if (timeframe === '1d') return 24; // Every hour
-    if (timeframe === '7d') return 14; // Every 12 hours
-    if (timeframe === '1m') return 8; // Weekly + 15th
-    if (timeframe === '3m') return 12; // Weekly
-    if (timeframe === '1y') return 12; // Monthly
-    return 6;
-  }, [timeframe]);
 
   const CrosshairCursor = ({ points, height }) => {
     if (!points || !points[0]) return null;
@@ -364,12 +413,11 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                       <XAxis
                       dataKey="time"
-                      tickCount={getXAxisTickCount()}
+                      ticks={getXAxisTicks()}
                       tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
                       tickFormatter={formatXAxisLabel}
                       axisLine={{ stroke: 'var(--border-color)' }}
-                      tickLine={{ stroke: 'var(--border-color)' }}
-                      interval="preserveStartEnd" />
+                      tickLine={{ stroke: 'var(--border-color)' }} />
 
                       <YAxis
                       domain={yDomain}
