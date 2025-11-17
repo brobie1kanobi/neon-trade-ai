@@ -434,7 +434,6 @@ export default function Dashboard() {
         .map(([asset, data]) => {
           const pair = `${asset}/USD`;
           const currentPrice = wsPrices[pair]?.price || 0;
-          const costBasis = data.balance * currentPrice; // Use current price as cost basis since we don't have historical data
           
           return {
             symbol: asset,
@@ -442,7 +441,7 @@ export default function Dashboard() {
             average_cost_price: currentPrice,
             currentPrice: currentPrice,
             currentValue: data.balance * currentPrice,
-            costBasis: costBasis,
+            costBasis: data.balance * currentPrice,
             gainLoss: 0,
             gainLossPercent: 0,
             asset_type: 'crypto',
@@ -457,6 +456,12 @@ export default function Dashboard() {
     
     return holdings;
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
+  
+  // CRITICAL: Calculate portfolio value from holdings (like AssetAllocation)
+  const currentPortfolioValue = useMemo(() => {
+    if (!currentHoldings || currentHoldings.length === 0) return 0;
+    return currentHoldings.reduce((sum, holding) => sum + (holding.currentValue || 0), 0);
+  }, [currentHoldings]);
 
   // CRITICAL: Calculate values from WebSocket
   const currentCashBalance = useMemo(() => {
@@ -465,13 +470,6 @@ export default function Dashboard() {
     }
     return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
   }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
-
-  const currentPortfolioValue = useMemo(() => {
-    if (isSimMode) {
-      return currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-    }
-    return wsConnected && wsTotalValue >= 0 ? (wsTotalValue - (wsUsdBalance || 0)) : currentHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-  }, [isSimMode, currentHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalBalance = currentCashBalance + currentPortfolioValue;
 

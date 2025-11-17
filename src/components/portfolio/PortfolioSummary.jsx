@@ -16,7 +16,6 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   const { 
     isConnected: wsConnected, 
     usdBalance: wsUsdBalance,
-    totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
@@ -28,6 +27,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
   const { pnlData } = useKrakenPnL(isSimMode);
 
+  // CRITICAL: Use direct calculation from parent (like AssetAllocation)
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
@@ -35,13 +35,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
   }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
-  const displayPortfolioValue = React.useMemo(() => {
-    if (isSimMode) {
-      return currentPortfolioValue || 0;
-    }
-    const portfolioOnly = wsTotalValue - (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : 0);
-    return portfolioOnly;
-  }, [isSimMode, currentPortfolioValue, wsTotalValue, wsConnected, wsUsdBalance]);
+  // CRITICAL: Use passed portfolio value from parent calculation
+  const displayPortfolioValue = currentPortfolioValue || 0;
 
   const totalValue = currentCashBalance + displayPortfolioValue;
   

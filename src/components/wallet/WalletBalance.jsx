@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,12 +13,11 @@ import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData"
 
 export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, onSyncComplete }) {
   const { settings } = useSettings();
-  const [balanceVisible, setBalanceVisible] = useState(true); // Renamed from isVisible
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
   
-  // CRITICAL: Persistent state to prevent flashing to zero
   const persistentDataRef = useRef({
     cash: 0,
     portfolio: 0,
@@ -30,8 +28,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
-    totalPortfolioValue: wsTotalValue,
-    balances: wsBalances,
     totalAssets: wsTotalAssets,
     lastUpdated: wsLastUpdated,
     refresh: wsRefresh
@@ -44,7 +40,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     isSimMode
   });
 
-  // CRITICAL: Auto-sync on first WebSocket connection (only once per session)
   useEffect(() => {
     if (!isSimMode && wsConnected && !hasAutoSynced) {
       const sessionKey = 'kraken_auto_synced';
@@ -53,7 +48,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       if (!alreadySynced) {
         console.log('[WalletBalance] 🔄 Auto-syncing on WebSocket connection...');
         
-        // Small delay to ensure WebSocket is fully ready
         setTimeout(async () => {
           try {
             const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
@@ -62,7 +56,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             if (syncData?.success) {
               console.log('[WalletBalance] ✅ Auto-sync complete');
               
-              // Update persistent ref
               if (syncData.usdBalance >= 0) {
                 persistentDataRef.current.cash = syncData.usdBalance;
               }
@@ -89,7 +82,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     }
   }, [wsConnected, isSimMode, hasAutoSynced, onSyncComplete, wsRefresh]);
 
-  // CRITICAL: Calculate display values and PERSIST them
+  // CRITICAL: Use direct calculation (like AssetAllocation)
   const displayCash = React.useMemo(() => {
     let value;
     
@@ -101,7 +94,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       value = wsConnected && krakenUSD >= 0 ? krakenUSD : dbCash;
     }
     
-    // CRITICAL: Only update if value is valid (non-zero or first load)
     if (value > 0 || persistentDataRef.current.cash === 0) {
       persistentDataRef.current.cash = value;
     }
@@ -109,27 +101,19 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     return persistentDataRef.current.cash;
   }, [isSimMode, wallet, wsUsdBalance, wsConnected]);
 
+  // CRITICAL: Use passed portfolio value from parent calculation
   const displayPortfolioValue = React.useMemo(() => {
-    let value;
+    const value = portfolioMarketValue || 0;
     
-    if (isSimMode) {
-      value = portfolioMarketValue;
-    } else {
-      const wsPortfolio = wsTotalValue - (wsUsdBalance || 0);
-      value = wsConnected && wsPortfolio >= 0 ? wsPortfolio : portfolioMarketValue;
-    }
-    
-    // CRITICAL: Only update if value is valid
     if (value > 0 || persistentDataRef.current.portfolio === 0) {
       persistentDataRef.current.portfolio = value;
     }
     
     return persistentDataRef.current.portfolio;
-  }, [isSimMode, wsTotalValue, portfolioMarketValue, wsConnected, wsUsdBalance]);
+  }, [portfolioMarketValue]);
 
   const totalBalance = displayCash + displayPortfolioValue;
   
-  // CRITICAL: Persist total and assets
   useEffect(() => {
     if (totalBalance > 0) {
       persistentDataRef.current.total = totalBalance;
@@ -167,7 +151,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       clearTimeout(syncTimeout);
 
       if (syncData?.success) {
-        // CRITICAL: Update persistent ref BEFORE showing toast
         if (syncData.usdBalance >= 0) {
           persistentDataRef.current.cash = syncData.usdBalance;
         }
@@ -210,12 +193,11 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   };
 
   const connectionStatus = isSimMode
-    ? 'connected' // Sim mode is always 'connected' in a demo sense
+    ? 'connected'
     : wsConnected
       ? 'connected'
       : 'disconnected';
 
-  // CRITICAL: Only show sync button when NOT connected or there's an error
   const showSyncButton = !isSimMode && (!wsConnected || syncError);
 
   return (
@@ -230,11 +212,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
             {isSimMode ? (
               <Badge variant="outline" className="text-xs">Demo</Badge>
             ) : (
-              // Simplified primary badge, detailed connection status moved to Total Balance card
               <Badge className="bg-green-100 text-green-800 text-xs">Live</Badge>
             )}
           </div>
-          {/* Visibility toggle button moved inside the new 'Total Balance' card */}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -298,7 +278,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
               
               {balanceVisible ? (
                 <NumberDisplay
-                  value={totalBalance} // Using existing totalBalance
+                  value={totalBalance}
                   prefix="$"
                   decimals={2}
                   className="neon-text max-w-full"
@@ -324,7 +304,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 </div>
                 {balanceVisible ? (
                   <NumberDisplay
-                    value={displayCash} // Using existing displayCash
+                    value={displayCash}
                     prefix="$"
                     decimals={2}
                     className="max-w-full"
@@ -347,7 +327,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 </div>
                 {balanceVisible ? (
                   <NumberDisplay
-                    value={displayPortfolioValue} // Using existing displayPortfolioValue
+                    value={displayPortfolioValue}
                     prefix="$"
                     decimals={2}
                     className="max-w-full"
