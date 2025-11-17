@@ -187,109 +187,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     setIsScrubbing(false);
   }, []);
 
-  // Generate custom ticks for X-axis based on timeframe
-  const getXAxisTicks = useCallback(() => {
-    if (!chartData || chartData.length === 0) return undefined;
-    
-    const times = chartData.map(d => new Date(d.time).getTime());
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    let ticks = [];
-    
-    if (timeframe === '1d') {
-      // Mark each hour
-      const startDate = new Date(minTime);
-      startDate.setMinutes(0, 0, 0);
-      let current = startDate.getTime();
-      
-      while (current <= maxTime) {
-        ticks.push(new Date(current).toISOString());
-        current += 60 * 60 * 1000; // Add 1 hour
-      }
-    } else if (timeframe === '7d') {
-      // Every 12 hours
-      const startDate = new Date(minTime);
-      startDate.setHours(Math.floor(startDate.getHours() / 12) * 12, 0, 0, 0);
-      let current = startDate.getTime();
-      
-      while (current <= maxTime) {
-        ticks.push(new Date(current).toISOString());
-        current += 12 * 60 * 60 * 1000; // Add 12 hours
-      }
-    } else if (timeframe === '1m') {
-      // Each week beginning and 15th day
-      const uniqueTicks = new Set();
-      const startDate = new Date(minTime);
-      startDate.setHours(0, 0, 0, 0);
-      
-      let current = new Date(startDate);
-      current.setDate(1); // Start of month for iteration
-      
-      while (current.getTime() <= maxTime + (7 * 24 * 60 * 60 * 1000)) { // Go slightly beyond maxTime
-        // Add start of week (Monday)
-        const weekStart = new Date(current);
-        weekStart.setDate(current.getDate() - current.getDay() + (current.getDay() === 0 ? -6 : 1));
-        weekStart.setHours(0,0,0,0);
-        
-        if (weekStart.getTime() >= minTime && weekStart.getTime() <= maxTime) {
-          uniqueTicks.add(weekStart.toISOString());
-        }
-        
-        // Add 15th of month
-        const fifteenth = new Date(current.getFullYear(), current.getMonth(), 15);
-        fifteenth.setHours(0,0,0,0);
-        if (fifteenth.getTime() >= minTime && fifteenth.getTime() <= maxTime) {
-          uniqueTicks.add(fifteenth.toISOString());
-        }
-        
-        // Move to next week
-        current.setDate(current.getDate() + 7);
-      }
-      
-      ticks = [...uniqueTicks].sort();
-    } else if (timeframe === '3m') {
-      // Beginning of each month and weekly
-      const uniqueTicks = new Set();
-      const startDate = new Date(minTime);
-      startDate.setHours(0, 0, 0, 0);
-      
-      let current = new Date(startDate);
-      
-      while (current.getTime() <= maxTime + (7 * 24 * 60 * 60 * 1000)) { // Go slightly beyond maxTime
-        // Add start of month
-        if (current.getDate() === 1 && current.getTime() >= minTime && current.getTime() <= maxTime) {
-          uniqueTicks.add(current.toISOString());
-        }
-        
-        // Add weekly ticks (Monday)
-        const weekStart = new Date(current);
-        weekStart.setDate(current.getDate() - current.getDay() + (current.getDay() === 0 ? -6 : 1));
-        weekStart.setHours(0,0,0,0);
-        
-        if (weekStart.getTime() >= minTime && weekStart.getTime() <= maxTime) {
-          uniqueTicks.add(weekStart.toISOString());
-        }
-        
-        // Move to next day to ensure all weeks/months are hit
-        current.setDate(current.getDate() + 1);
-      }
-      
-      ticks = [...uniqueTicks].sort();
-    } else if (timeframe === '1y') {
-      // Each month
-      const startDate = new Date(minTime);
-      let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1, 0, 0, 0, 0);
-      
-      while (current.getTime() <= maxTime) {
-        ticks.push(current.toISOString());
-        current.setMonth(current.getMonth() + 1);
-      }
-    }
-    
-    return ticks;
-  }, [chartData, timeframe]);
-
-  // Format X-axis labels based on timeframe
+  // Custom tick formatter based on timeframe
   const formatXAxisLabel = useCallback((t) => {
     const date = new Date(t);
     
@@ -299,15 +197,19 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     } else if (timeframe === '7d') {
       // Show date for 7D
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } else if (timeframe === '1m' || timeframe === '3m') {
-      // For 1M/3M, show Month and Day
+    } else {
+      // Show date for all other timeframes
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } else if (timeframe === '1y') {
-      // For 1Y, show Month and Year
-      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     }
-    // Default fallback
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }, [timeframe]);
+
+  const getXAxisTickCount = useCallback(() => {
+    if (timeframe === '1d') return 24; // Every hour
+    if (timeframe === '7d') return 14; // Every 12 hours
+    if (timeframe === '1m') return 8; // Weekly + 15th
+    if (timeframe === '3m') return 12; // Weekly
+    if (timeframe === '1y') return 12; // Monthly
+    return 6;
   }, [timeframe]);
 
   const CrosshairCursor = ({ points, height }) => {
@@ -462,13 +364,12 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                       <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                       <XAxis
                       dataKey="time"
-                      type="category"
-                      ticks={getXAxisTicks()}
+                      tickCount={getXAxisTickCount()}
                       tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
                       tickFormatter={formatXAxisLabel}
                       axisLine={{ stroke: 'var(--border-color)' }}
                       tickLine={{ stroke: 'var(--border-color)' }}
-                      domain={['dataMin', 'dataMax']} />
+                      interval="preserveStartEnd" />
 
                       <YAxis
                       domain={yDomain}
