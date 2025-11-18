@@ -145,20 +145,19 @@ export default function Portfolio() {
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <PortfolioSummary
+          user={user}
           wallet={wallet}
+          holdings={holdings}
           trades={trades}
           currentPortfolioValue={currentPortfolioValue}
           isLoading={isLoading}
           isSimMode={isSimMode}
-          change24hr={portfolio24hrChange}
+          currentCashBalance={currentCashBalance}
+          totalValue={totalValue}
+          portfolio24hrChange={portfolio24hrChange}
           lifetimeChange={lifetimeChange}
-          onSyncClick={() => {
-            if (!isSimMode) {
-              refresh();
-            } else {
-              setShowDataSync(true);
-            }
-          }}
+          wsConnected={wsConnected}
+          refresh={refresh}
         />
       </motion.div>
 
