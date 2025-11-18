@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { DollarSign, Activity, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
