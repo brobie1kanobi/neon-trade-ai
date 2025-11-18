@@ -11,6 +11,7 @@ import { usePortfolioData } from "@/components/hooks/usePortfolioData";
 
 export default function Dashboard() {
   const [selectedTrade, setSelectedTrade] = useState(null);
+  const [balanceVisible, setBalanceVisible] = useState(true);
   
   const {
     user,
@@ -57,8 +58,10 @@ export default function Dashboard() {
             title="Total Balance"
             amount={totalValue}
             change={portfolio24hrChange.percentage}
+            onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
+            isVisible={balanceVisible}
             isPrimary={true}
-            isDemo={isSimMode}
+            isSimMode={isSimMode}
             isConnected={!isSimMode && wsConnected}
           />
         </motion.div>
@@ -69,7 +72,8 @@ export default function Dashboard() {
               title="Cash"
               amount={currentCashBalance}
               change={lifetimeChange.percentage}
-              isDemo={isSimMode}
+              isVisible={balanceVisible}
+              isSimMode={isSimMode}
               isConnected={!isSimMode && wsConnected}
             />
           </motion.div>
@@ -78,7 +82,8 @@ export default function Dashboard() {
               title="Portfolio"
               amount={currentPortfolioValue}
               change={lifetimeChange.percentage}
-              isDemo={isSimMode}
+              isVisible={balanceVisible}
+              isSimMode={isSimMode}
               isConnected={!isSimMode && wsConnected}
             />
           </motion.div>
