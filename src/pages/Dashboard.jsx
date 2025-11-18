@@ -1,28 +1,20 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { DollarSign, Activity, RefreshCw } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { DollarSign, Activity } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query"; // Added useQuery
 import { base44 } from "@/api/base44Client";
-
-// Import entities used directly by useAutoTrader
 import { ConditionalOrder, AutoBuyPreference } from "@/entities/all";
 
-// Import centralized hooks with direct file paths
-import { invalidateCache } from "@/components/hooks/useDataFetching";
-import { invalidatePriceCache } from "@/components/hooks/usePriceData"; // Added invalidatePriceCache
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
-import { useSettings } from "@/components/utils/SettingsContext"; // Updated import path style
-import { useKrakenPnL } from "@/components/hooks/useKrakenPnL"; // Added useKrakenPnL
+import { usePortfolioData } from "@/components/hooks/usePortfolioData";
 
-import BalanceCard from "@/components/dashboard/BalanceCard"; // Updated import path style
-import RecentTrades from "@/components/dashboard/RecentTrades"; // Updated import path style
-import PerformanceChart from "@/components/dashboard/PerformanceChart"; // Updated import path style
-import QuickActions from "@/components/dashboard/QuickActions"; // Updated import path style
-import TradeDetailsModal from "@/components/dashboard/TradeDetailsModal"; // Updated import path style
-import CryptoMarketOverview from "@/components/dashboard/CryptoMarketOverview"; // Updated import path style
-import CryptoPriceChart from "@/components/dashboard/CryptoPriceChart"; // Updated import path style
-import StockPriceChart from "@/components/dashboard/StockPriceChart"; // Updated import path style
+import BalanceCard from "@/components/dashboard/BalanceCard";
+import RecentTrades from "@/components/dashboard/RecentTrades";
+import PerformanceChart from "@/components/dashboard/PerformanceChart";
+import QuickActions from "@/components/dashboard/QuickActions";
+import TradeDetailsModal from "@/components/dashboard/TradeDetailsModal";
+import CryptoMarketOverview from "@/components/dashboard/CryptoMarketOverview";
+import CryptoPriceChart from "@/components/dashboard/CryptoPriceChart";
+import StockPriceChart from "@/components/dashboard/StockPriceChart";
 
 const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange, isSimMode) => {
   const isRunningRef = useRef(false);
@@ -348,8 +340,22 @@ if (typeof window !== 'undefined') {
 }
 
 export default function Dashboard() {
-  const { settings, user, isLoading: settingsLoading } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
+  const {
+    user,
+    wallet,
+    holdings,
+    trades,
+    settings,
+    isSimMode,
+    currentCashBalance,
+    currentPortfolioValue,
+    totalValue,
+    portfolio24hrChange,
+    lifetimeChange,
+    wsConnected,
+    isLoading,
+    refresh
+  } = usePortfolioData();
 
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -360,139 +366,10 @@ export default function Dashboard() {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const touchStartY = useRef(0);
 
-  // CRITICAL: Use WebSocket data for LIVE mode
-  const { 
-    usdBalance: wsUsdBalance,
-    totalPortfolioValue: wsTotalValue,
-    balances: wsBalances,
-    prices: wsPrices,
-    isConnected: wsConnected,
-    totalAssets: wsTotalAssets,
-    refresh: wsRefresh
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
-    subscribeToBalances: !isSimMode,
-    subscribeToOrders: false,
-    subscribeToExecutions: false,
-    isSimMode
-  });
-
-  // CRITICAL: Fetch REAL Kraken PnL
-  const { pnlData, isLoading: pnlLoading, refresh: refreshPnL } = useKrakenPnL(isSimMode);
-
-  const { data: wallet, refetch: refetchWallet, isLoading: walletLoading } = useQuery({
-    queryKey: ['wallet', user?.email],
-    queryFn: async () => {
-      const wallets = await base44.entities.Wallet.filter({ created_by: user.email });
-      return wallets[0] || null;
-    },
-    enabled: !!user?.email,
-    staleTime: 30000
-  });
-
-  const { data: trades = [], refetch: refetchTrades, isLoading: tradesLoading } = useQuery({
-    queryKey: ['trades', user?.email, isSimMode],
-    queryFn: async () => {
-      return await base44.entities.Trade.filter({
-        created_by: user.email,
-        is_simulation: isSimMode
-      });
-    },
-    enabled: !!user?.email,
-    initialData: [],
-    staleTime: 30000
-  });
-
-  const { data: holdings = [], refetch: refetchHoldings, isLoading: holdingsLoading } = useQuery({
-    queryKey: ['holdings', user?.email, isSimMode],
-    queryFn: async () => {
-      return await base44.entities.Holding.filter({
-        created_by: user.email,
-        is_simulation: isSimMode
-      });
-    },
-    enabled: !!user?.email,
-    initialData: [],
-    staleTime: 30000
-  });
-
-  // CRITICAL: Calculate current holdings from WebSocket in LIVE mode
-  const currentHoldings = useMemo(() => {
-    if (isSimMode) {
-      return holdings;
-    }
-    
-    // LIVE MODE: Use WebSocket balances
-    if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-      const wsHoldings = Object.entries(wsBalances)
-        .filter(([asset, data]) => {
-          if (asset === 'USD' || asset === 'ZUSD') return false;
-          return data.balance > 0.00001;
-        })
-        .map(([asset, data]) => {
-          const pair = `${asset}/USD`;
-          const currentPrice = wsPrices[pair]?.price || 0;
-          
-          return {
-            symbol: asset,
-            quantity: data.balance,
-            average_cost_price: currentPrice,
-            currentPrice: currentPrice,
-            currentValue: data.balance * currentPrice,
-            costBasis: data.balance * currentPrice,
-            gainLoss: 0,
-            gainLossPercent: 0,
-            asset_type: 'crypto',
-            is_simulation: false
-          };
-        });
-      
-      if (wsHoldings.length > 0) {
-        return wsHoldings;
-      }
-    }
-    
-    return holdings;
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
-  
-  // CRITICAL: Calculate portfolio value from holdings (like AssetAllocation)
-  const currentPortfolioValue = useMemo(() => {
-    if (!currentHoldings || currentHoldings.length === 0) return 0;
-    return currentHoldings.reduce((sum, holding) => sum + (holding.currentValue || 0), 0);
-  }, [currentHoldings]);
-
-  // CRITICAL: Calculate values from WebSocket
-  const currentCashBalance = useMemo(() => {
-    if (isSimMode) {
-      return wallet?.cash_balance || 0;
-    }
-    return wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
-
-  const totalBalance = currentCashBalance + currentPortfolioValue;
-
-  // CRITICAL: Use REAL Kraken PnL data instead of calculated values
-  const realized24h = {
-    value: pnlData?.pnl_24h || 0,
-    percentage: (pnlData?.total_value_24h_ago > 0 && pnlData?.pnl_24h !== undefined)
-      ? (pnlData.pnl_24h / pnlData.total_value_24h_ago) * 100
-      : 0
-  };
-
-  const lifetimeChange = {
-    value: pnlData?.pnl_lifetime || 0,
-    percentage: (pnlData?.initial_capital > 0 && pnlData?.pnl_lifetime !== undefined)
-      ? (pnlData.pnl_lifetime / pnlData.initial_capital) * 100
-      : 0
-  };
-
-  const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
-  const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
-  const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
+  const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || wsConnected;
+  const hasRealHoldings = holdings.some(h => h.is_simulation === false);
+  const hasRealTrades = trades.some(t => t.is_simulation === false);
   const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
-
-  const isLoading = settingsLoading || walletLoading || tradesLoading || holdingsLoading || pnlLoading;
 
   useEffect(() => {
     const cryptoSym = (settings?.watched_crypto && settings.watched_crypto[0]) || "BTC";
@@ -516,25 +393,14 @@ export default function Dashboard() {
   // Removed useEffect for location.search / timestamp as useQuery handles cache.
 
   useEffect(() => {
-    const handleRefreshEvents = () => {
-      // Trigger all relevant refetches
-      invalidateCache(); // Invalidate general base44 cache
-      invalidatePriceCache(); // Invalidate price data cache for any manual price fetches
-      refetchWallet();
-      refetchHoldings();
-      refetchTrades();
-      wsRefresh(); // Refresh WebSocket data
-      refreshPnL(); // Refresh PnL data
-    };
-
+    const handleRefreshEvents = () => refresh();
     window.addEventListener('kraken:synced', handleRefreshEvents);
-    window.addEventListener('trade:completed', handleRefreshEvents); // Listen to our own custom event as well
-
+    window.addEventListener('trade:completed', handleRefreshEvents);
     return () => {
       window.removeEventListener('kraken:synced', handleRefreshEvents);
       window.removeEventListener('trade:completed', handleRefreshEvents);
     };
-  }, [refetchWallet, refetchHoldings, refetchTrades, wsRefresh, refreshPnL]);
+  }, [refresh]);
 
 
   const handleTouchStart = (e) => touchStartY.current = e.touches[0].clientY;
@@ -551,19 +417,11 @@ export default function Dashboard() {
   const handleTouchEnd = () => {
     if (pullDistance > 60) {
       setIsPullRefreshing(true);
-      invalidateCache();
-      invalidatePriceCache(); // Invalidate any price caches
-      const refreshPromises = [
-        refetchWallet(),
-        refetchHoldings(),
-        refetchTrades(),
-        wsRefresh(), // Trigger WebSocket refresh
-        refreshPnL(), // Trigger PnL refresh
-      ];
-      Promise.all(refreshPromises).finally(() => {
+      refresh();
+      setTimeout(() => {
         setIsPullRefreshing(false);
         setPullDistance(0);
-      });
+      }, 1000);
     } else {
       setPullDistance(0);
     }
@@ -574,7 +432,7 @@ export default function Dashboard() {
       if (!user?.email) return;
 
       const tradeLock = window.__tradeLock;
-      const isSimModeLocal = settings?.sim_trading_mode !== false;
+      const isSimModeLocal = isSimMode;
       const tradeType = (tradeData.type || "").toLowerCase();
 
       // CRITICAL FIX: Stricter duplicate detection with 10-second window
@@ -613,12 +471,11 @@ export default function Dashboard() {
       tradeLock.isLocked = true;
 
       try {
-        // Use refetch for the freshest wallet data
-        const { data: freshWallet } = await refetchWallet();
-
-        if (!freshWallet) {
+        if (!wallet) {
           throw new Error("Wallet not found");
         }
+
+        const freshWallet = wallet;
 
         const currentCash = isSimModeLocal
           ? (freshWallet.cash_balance || 0)
@@ -660,10 +517,7 @@ export default function Dashboard() {
         }
 
         if (tradeType === "sell") {
-          // Use refetch for the freshest holdings data
-          const { data: freshHoldings } = await refetchHoldings();
-
-          const holding = freshHoldings.find(
+          const holding = holdings.find(
             h => (h.symbol || "").toUpperCase() === (correctedTradeData.symbol || "").toUpperCase()
           );
 
@@ -715,10 +569,7 @@ export default function Dashboard() {
 
         await base44.entities.Wallet.update(freshWallet.id, walletUpdate);
 
-        // Fetch current holdings again after wallet update for accurate state.
-        const { data: currentHoldingsAfterTrade } = await refetchHoldings();
-
-        const existingHolding = currentHoldingsAfterTrade.find(
+        const existingHolding = holdings.find(
           (h) =>
             (h.symbol || "").toUpperCase() === (correctedTradeData.symbol || "").toUpperCase()
         );
@@ -762,17 +613,7 @@ export default function Dashboard() {
           }
         }
 
-        // Invalidate all relevant caches and refetch data
-        invalidateCache();
-        invalidatePriceCache(); // Invalidate price data as holdings changed
-        const refreshPromises = [
-          refetchWallet(),
-          refetchHoldings(),
-          refetchTrades(),
-          wsRefresh(), // Refresh WebSocket data
-          refreshPnL() // Refresh PnL data
-        ];
-        await Promise.all(refreshPromises);
+        refresh();
 
         window.dispatchEvent(new CustomEvent('trade:completed', {
           detail: { timestamp: Date.now(), trade: correctedTradeData }
@@ -821,16 +662,7 @@ export default function Dashboard() {
           await base44.functions.invoke("reconcileWallet", { mode: isSimModeLocal ? "sim" : "real" });
         } catch (_e) {}
 
-        invalidateCache();
-        invalidatePriceCache();
-        const refreshPromises = [
-          refetchWallet(),
-          refetchHoldings(),
-          refetchTrades(),
-          wsRefresh(), // Refresh WebSocket data
-          refreshPnL() // Refresh PnL data
-        ];
-        await Promise.all(refreshPromises);
+        refresh();
       } finally {
         tradeLock.isLocked = false;
 
@@ -843,15 +675,15 @@ export default function Dashboard() {
         }
       }
     },
-    [user, settings, refetchWallet, refetchHoldings, refetchTrades, wsRefresh, refreshPnL]
+    [user, wallet, holdings, isSimMode, refresh]
   );
 
-  useAutoTrader(settings, user, handleTradeExecuted, wallet, currentHoldings, lifetimeChange, isSimMode);
+  useAutoTrader(settings, user, handleTradeExecuted, wallet, holdings, lifetimeChange, isSimMode);
 
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
 
-  if (isLoading && !wallet && !user && trades.length === 0 && currentHoldings.length === 0) {
+  if (isLoading && !wallet && !user && trades.length === 0 && holdings.length === 0) {
     return (
       <div className="p-4 space-y-4">
         <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
@@ -903,17 +735,14 @@ export default function Dashboard() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <BalanceCard
             title="Total Balance"
-            amount={balanceVisible ? (showZerosInLive ? 0 : totalBalance) : null}
-            change={showZerosInLive ? { value: 0, percentage: 0 } : realized24h}
+            amount={balanceVisible ? (showZerosInLive ? 0 : totalValue) : null}
+            change={showZerosInLive ? { value: 0, percentage: 0 } : portfolio24hrChange}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
             isConnected={wsConnected}
-            changeLabel="24h Realized PnL (Kraken)"
-            wallet={wallet}
-            krakenPnL={pnlData}
-            balanceType="total"
+            changeLabel="24h Change"
           />
         </motion.div>
 
@@ -927,10 +756,7 @@ export default function Dashboard() {
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               isConnected={wsConnected}
-              changeLabel="Lifetime PnL (Kraken)"
-              wallet={wallet}
-              krakenPnL={pnlData}
-              balanceType="cash"
+              changeLabel="Lifetime Change"
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -942,10 +768,7 @@ export default function Dashboard() {
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               isConnected={wsConnected}
-              changeLabel="Lifetime PnL (Kraken)"
-              wallet={wallet}
-              krakenPnL={pnlData}
-              balanceType="portfolio"
+              changeLabel="Lifetime Change"
             />
           </motion.div>
         </div>
@@ -968,7 +791,7 @@ export default function Dashboard() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-        <PerformanceChart trades={trades} holdings={currentHoldings} wallet={wallet} isSimMode={isSimMode} krakenPnL={pnlData} />
+        <PerformanceChart trades={trades} holdings={holdings} wallet={wallet} isSimMode={isSimMode} />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
