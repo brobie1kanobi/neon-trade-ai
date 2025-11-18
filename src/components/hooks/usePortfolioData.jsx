@@ -181,7 +181,7 @@ export function usePortfolioData() {
     };
   }, [pnlData.pnl_lifetime, totalValue]);
 
-  // Load data function
+  // Load data function with better error handling
   const loadData = useCallback(async (force = false) => {
     const now = Date.now();
 
@@ -219,43 +219,22 @@ export function usePortfolioData() {
 
     const fetchPromise = (async () => {
       try {
-        const [currentUser, userSettingsResult, userWalletArr, userHoldingsArr, userTradesArr] = await Promise.all([
-          Promise.race([
-            base44.auth.me(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
-          ]),
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              return UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Settings timeout')), 5000))
-          ]),
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              return Wallet.filter({ created_by: u.email }, "-updated_date", 1);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet timeout')), 5000))
-          ]),
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-              const simMode = s[0]?.sim_trading_mode !== false;
-              return Holding.filter({ created_by: u.email, is_simulation: simMode }, "-updated_date", 500);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings timeout')), 8000))
-          ]),
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-              const simMode = s[0]?.sim_trading_mode !== false;
-              return Trade.filter({ created_by: u.email, is_simulation: simMode }, "-created_date", 200);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 8000))
-          ])
+        // Fetch user first (critical)
+        const currentUser = await Promise.race([
+          base44.auth.me(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
+        ]);
+
+        // Fetch settings and wallet in parallel
+        const [userSettingsResult, userWalletArr] = await Promise.all([
+          UserSettings.filter({ created_by: currentUser.email }, "-updated_date", 1).catch(err => {
+            console.warn('[usePortfolioData] Settings failed:', err);
+            return [{ sim_trading_mode: true }];
+          }),
+          Wallet.filter({ created_by: currentUser.email }, "-updated_date", 1).catch(err => {
+            console.warn('[usePortfolioData] Wallet failed:', err);
+            return [];
+          })
         ]);
 
         const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
@@ -267,9 +246,29 @@ export function usePortfolioData() {
           currentSettings.sim_trading_mode = true;
         }
 
-        let currentWallet = userWalletArr[0];
         const effectiveSimMode = currentSettings.sim_trading_mode !== false;
 
+        // Fetch holdings and trades with better timeout handling
+        const [userHoldingsArr, userTradesArr] = await Promise.all([
+          Promise.race([
+            Holding.filter({ created_by: currentUser.email, is_simulation: effectiveSimMode }, "-updated_date", 500),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings timeout')), 15000))
+          ]).catch(err => {
+            console.warn('[usePortfolioData] Holdings failed:', err.message);
+            setError(err.message);
+            return [];
+          }),
+          Promise.race([
+            Trade.filter({ created_by: currentUser.email, is_simulation: effectiveSimMode }, "-created_date", 200),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 15000))
+          ]).catch(err => {
+            console.warn('[usePortfolioData] Trades failed:', err.message);
+            return [];
+          })
+        ]);
+
+        // Create wallet if needed
+        let currentWallet = userWalletArr[0];
         if (effectiveSimMode && !currentWallet) {
           currentWallet = await Wallet.create({
             cash_balance: 10000,
@@ -320,7 +319,9 @@ export function usePortfolioData() {
       setWallet(result.wallet);
       setHoldings(result.holdings);
       setTrades(result.trades);
-      setError(null);
+      if (result.holdings.length > 0 || result.trades.length > 0) {
+        setError(null);
+      }
     } catch (err) {
       console.error('[usePortfolioData] Error:', err);
       setError(err.message);
