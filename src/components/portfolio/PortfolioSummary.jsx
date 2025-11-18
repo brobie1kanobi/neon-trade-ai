@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import { invalidateCache } from "@/components/hooks/useDataFetching";
-import { invalidatePriceCache, invalidatePortfolioCache } from "@/components/hooks/usePortfolioData";
+import { invalidatePriceCache } from "@/components/hooks/usePriceData";
+import { invalidatePortfolioCache } from "@/components/hooks/usePortfolioData";
 
 export default function PortfolioSummary({
   user,
