@@ -1,47 +1,38 @@
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Wallet, TrendingUp, TrendingDown, DollarSign, Eye, EyeOff, RefreshCw, Wifi } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
-import { invalidateCache } from "@/components/hooks/useDataFetching";
-import { invalidatePortfolioCache, usePortfolioData } from "@/components/hooks/usePortfolioData";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 
-export default function WalletBalance({ onBalanceUpdate }) {
-  const [showBalance, setShowBalance] = useState(true);
+export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue, wsConnected, onSyncComplete }) {
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState(null);
 
-  const {
-    wallet,
-    isSimMode,
-    currentCashBalance,
-    currentPortfolioValue,
-    totalValue,
-    wsConnected,
-    holdings,
-    refresh
-  } = usePortfolioData();
+  const currentCashBalance = isSimMode 
+    ? (wallet?.cash_balance || 0) 
+    : (wallet?.real_cash_balance || 0);
 
-  const handleManualSync = async () => {
+  const totalDeposits = isSimMode 
+    ? (wallet?.total_deposits || 0) 
+    : (wallet?.real_total_deposits || 0);
+
+  const totalWithdrawals = isSimMode 
+    ? (wallet?.total_withdrawals || 0) 
+    : (wallet?.real_total_withdrawals || 0);
+
+  const netFlow = totalDeposits - totalWithdrawals;
+  const totalValue = currentCashBalance + (portfolioMarketValue || 0);
+
+  const handleSync = async () => {
     if (isSyncing) return;
     
     setIsSyncing(true);
-    setSyncError(null);
-    
-    const timeoutId = setTimeout(() => {
-      setIsSyncing(false);
-      setSyncError('Sync timeout - trying again may help');
-      toast.error('Sync timeout');
-    }, 15000);
-    
     try {
-      if (isSimMode) {
-        toast.info('Repairing portfolio...');
-        await base44.functions.invoke('repairMyPortfolio', {});
-        toast.success('Portfolio repaired');
-      } else {
+      if (!isSimMode) {
+        toast.info('Syncing Kraken account...', { duration: 3000 });
         const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
         const syncData = syncRes?.data || syncRes;
         
@@ -49,158 +40,146 @@ export default function WalletBalance({ onBalanceUpdate }) {
           throw new Error(syncData?.error || 'Sync failed');
         }
         
-        toast.success('✅ Synced with Kraken', {
+        toast.success('✅ Kraken synced!', {
           description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
           duration: 4000
         });
       }
       
-      invalidateCache();
-      invalidatePortfolioCache();
-      refresh();
-      if (onBalanceUpdate) onBalanceUpdate();
-      
-      window.dispatchEvent(new CustomEvent('app:data-updated', {
-        detail: { type: 'wallet-sync', source: 'wallet_balance' }
-      }));
+      if (onSyncComplete) {
+        onSyncComplete();
+      }
     } catch (error) {
       console.error('Sync error:', error);
-      setSyncError(error.message || 'Sync failed');
       toast.error('Sync failed', { description: error.message });
     } finally {
-      clearTimeout(timeoutId);
       setIsSyncing(false);
     }
   };
 
-  const connectionStatus = !isSimMode && wsConnected ? 'connected' : 'demo';
-
   return (
-    <Card className="border-2 neon-glow" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--neon-green)' }}>
+    <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            Wallet
-            {connectionStatus === 'connected' && (
-              <Wifi className="w-4 h-4 text-green-500" />
-            )}
-            {connectionStatus === 'demo' && (
-              <span className="text-xs font-normal text-gray-500">(Demo)</span>
-            )}
+            <Wallet className="w-5 h-5" />
+            Wallet Balance
           </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowBalance(!showBalance)}
-          >
-            {showBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            {!isSimMode && (
+              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
+                {wsConnected && <Wifi className="w-3 h-3" />}
+                Live Mode
+              </Badge>
+            )}
+            {isSimMode && (
+              <Badge variant="outline" className="text-xs">
+                Demo Mode
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setBalanceVisible(!balanceVisible)}
+              className="h-8 w-8"
+            >
+              {balanceVisible ? (
+                <EyeOff className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+              ) : (
+                <Eye className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+              )}
+            </Button>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="text-center">
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Total Balance</p>
-          {showBalance ? (
-            <NumberDisplay
-              value={totalValue}
-              prefix="$"
-              decimals={2}
-              className="mx-auto max-w-[min(90vw,420px)]"
-              maxFontSize={48}
-              minFontSize={20}
-            />
-          ) : (
-            <p className="text-4xl font-bold">••••••</p>
-          )}
-        </div>
-
-        {!isSimMode && wsConnected && (
-          <div className="flex items-center justify-center gap-2 text-xs text-green-600 dark:text-green-400 mb-2">
-            <Wifi className="w-3 h-3" />
-            <span>Live • {holdings.length} asset{holdings.length !== 1 ? 's' : ''}</span>
-          </div>
-        )}
-
+      <CardContent className="space-y-6">
         <div className="grid grid-cols-2 gap-4">
-          <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Available Cash</p>
-            {showBalance ? (
+          <div className="space-y-2">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Balance</p>
+            {balanceVisible ? (
+              <NumberDisplay
+                value={totalValue}
+                prefix="$"
+                decimals={2}
+                className="max-w-full"
+                maxFontSize={28}
+                minFontSize={16}
+              />
+            ) : (
+              <p className="text-2xl font-bold">••••••</p>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Available Cash</p>
+            {balanceVisible ? (
               <NumberDisplay
                 value={currentCashBalance}
                 prefix="$"
                 decimals={2}
-                className="mx-auto max-w-[160px]"
-                maxFontSize={20}
-                minFontSize={12}
+                className="max-w-full"
+                maxFontSize={28}
+                minFontSize={16}
               />
             ) : (
-              <p className="text-lg font-bold">••••</p>
+              <p className="text-2xl font-bold">••••••</p>
             )}
           </div>
+        </div>
 
-          <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Portfolio Value</p>
-            {showBalance ? (
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="space-y-1">
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Portfolio Value</p>
+            {balanceVisible ? (
               <NumberDisplay
-                value={currentPortfolioValue}
+                value={portfolioMarketValue || 0}
                 prefix="$"
                 decimals={2}
-                className="mx-auto max-w-[180px]"
+                className="max-w-full"
                 maxFontSize={20}
-                minFontSize={12}
+                minFontSize={14}
               />
             ) : (
-              <p className="text-lg font-bold">••••</p>
+              <p className="text-lg font-semibold">••••••</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Net Flow</p>
+            {balanceVisible ? (
+              <div className="flex items-center gap-1">
+                {netFlow >= 0 ? (
+                  <TrendingUp className="w-4 h-4 text-green-500" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-red-500" />
+                )}
+                <NumberDisplay
+                  value={Math.abs(netFlow)}
+                  prefix={netFlow >= 0 ? '+$' : '-$'}
+                  decimals={2}
+                  className="max-w-full"
+                  maxFontSize={20}
+                  minFontSize={14}
+                  tone={netFlow >= 0 ? 'positive' : 'negative'}
+                />
+              </div>
+            ) : (
+              <p className="text-lg font-semibold">••••••</p>
             )}
           </div>
         </div>
 
-        {(!wsConnected || syncError) && !isSimMode && (
+        {!isSimMode && (
           <Button
-            onClick={handleManualSync}
+            onClick={handleSync}
             disabled={isSyncing}
-            variant="outline"
-            size="sm"
-            className="w-full"
+            className="w-full neon-glow bg-green-600 hover:bg-green-700"
+            variant="default"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Syncing...' : 'Sync with Kraken'}
+            {isSyncing ? 'Syncing...' : 'Sync Kraken Balance'}
           </Button>
         )}
-
-        <div className="grid grid-cols-3 gap-2 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="text-center">
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Deposits</p>
-            {showBalance ? (
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                ${(isSimMode ? (wallet?.total_deposits || 0) : (wallet?.real_total_deposits || 0)).toFixed(2)}
-              </p>
-            ) : (
-              <p className="text-sm">••••</p>
-            )}
-          </div>
-          <div className="text-center">
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Withdrawals</p>
-            {showBalance ? (
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                ${(isSimMode ? (wallet?.total_withdrawals || 0) : (wallet?.real_total_withdrawals || 0)).toFixed(2)}
-              </p>
-            ) : (
-              <p className="text-sm">••••</p>
-            )}
-          </div>
-          <div className="text-center">
-            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Net Flow</p>
-            {showBalance ? (
-              <p className="text-sm font-semibold text-green-500">
-                ${((isSimMode ? (wallet?.total_deposits || 0) : (wallet?.real_total_deposits || 0)) - 
-                  (isSimMode ? (wallet?.total_withdrawals || 0) : (wallet?.real_total_withdrawals || 0))).toFixed(2)}
-              </p>
-            ) : (
-              <p className="text-sm">••••</p>
-            )}
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
