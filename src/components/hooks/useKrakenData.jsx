@@ -265,11 +265,19 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: ALWAYS auto-fetch on mount in LIVE mode
+  // CRITICAL: Only fetch in LIVE mode when needed
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (!isSimMode && !hasFetchedRef.current) {
+    // CRITICAL: Skip ALL operations in sim mode
+    if (isSimMode) {
+      setKrakenData(null);
+      setConnected(false);
+      setLoading(false);
+      return () => { isMountedRef.current = false; };
+    }
+
+    if (!hasFetchedRef.current && autoFetch) {
       console.log('[useKrakenData] 🚀 Initial fetch on mount (LIVE mode)');
       hasFetchedRef.current = true;
       
@@ -281,9 +289,9 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
         setLoading(true); // Show loading while fetching fresh
       }
       
-      // ALWAYS fetch fresh data on mount
+      // Fetch fresh data on mount
       fetchData(true);
-    } else if (autoFetch && !isSimMode && GLOBAL_CACHE.data) {
+    } else if (autoFetch && GLOBAL_CACHE.data) {
       // If not first mount but autoFetch is true, use cache immediately
       setKrakenData(GLOBAL_CACHE.data);
       setConnected(true);

@@ -45,7 +45,8 @@ export function usePortfolioData() {
     isSimMode
   });
 
-  const { krakenData, loading: krakenLoading, refresh: refreshKraken } = useKrakenData(isSimMode, true);
+  // CRITICAL: Only use Kraken hooks in LIVE mode
+  const { krakenData, loading: krakenLoading, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
   const { pnlData } = useKrakenPnL(isSimMode);
 
   // CRITICAL: Merge holdings from different sources

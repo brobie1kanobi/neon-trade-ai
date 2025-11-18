@@ -39,6 +39,7 @@ export default function PortfolioSummary({
       if (isSimMode) {
         toast.info('Syncing portfolio data...');
         await base44.functions.invoke('repairMyPortfolio', {});
+        toast.success('Portfolio synced!');
       } else {
         toast.info('Syncing Kraken account...', { duration: 3000 });
         

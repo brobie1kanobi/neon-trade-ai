@@ -27,24 +27,22 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
   const totalValue = currentCashBalance + (portfolioMarketValue || 0);
 
   const handleSync = async () => {
-    if (isSyncing) return;
+    if (isSyncing || isSimMode) return; // CRITICAL: Never sync in sim mode
     
     setIsSyncing(true);
     try {
-      if (!isSimMode) {
-        toast.info('Syncing Kraken account...', { duration: 3000 });
-        const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
-        const syncData = syncRes?.data || syncRes;
-        
-        if (!syncData?.success) {
-          throw new Error(syncData?.error || 'Sync failed');
-        }
-        
-        toast.success('✅ Kraken synced!', {
-          description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
-          duration: 4000
-        });
+      toast.info('Syncing Kraken account...', { duration: 3000 });
+      const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
+      const syncData = syncRes?.data || syncRes;
+      
+      if (!syncData?.success) {
+        throw new Error(syncData?.error || 'Sync failed');
       }
+      
+      toast.success('✅ Kraken synced!', {
+        description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
+        duration: 4000
+      });
       
       if (onSyncComplete) {
         onSyncComplete();
