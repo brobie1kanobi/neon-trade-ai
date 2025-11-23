@@ -49,6 +49,8 @@ export function useRealtimeKrakenData(options = {}) {
     isSimMode = false
   } = options;
 
+  const [subscribedPrices, setSubscribedPrices] = useState(new Set(priceSymbols));
+
   const {
     isConnected,
     prices: wsPrices,
@@ -57,7 +59,8 @@ export function useRealtimeKrakenData(options = {}) {
     lastExecution,
     getAllBalances,
     getAllOrders,
-    getAllPrices
+    getAllPrices,
+    subscribeToPrices: wsPriceSubscribe
   } = useKrakenWebSocketManager({
     subscribeToPrices: subscribeToPrices && !isSimMode,
     priceSymbols,
@@ -87,6 +90,27 @@ export function useRealtimeKrakenData(options = {}) {
 
   const [loading, setLoading] = useState(!persistedData.current);
   const [error, setError] = useState(null);
+
+  // CRITICAL: Dynamically subscribe to prices for ALL assets in balance
+  useEffect(() => {
+    if (isSimMode || !isConnected || !subscribeToPrices) return;
+    if (!wsBalances || Object.keys(wsBalances).length === 0) return;
+
+    const assetsInBalance = Object.keys(wsBalances).filter(asset => {
+      if (asset === 'USD' || asset === 'ZUSD') return false;
+      const balance = wsBalances[asset]?.balance || 0;
+      return balance > 0.00001;
+    });
+
+    const newPairs = assetsInBalance.map(asset => `${asset}/USD`);
+    const unsubscribedPairs = newPairs.filter(pair => !subscribedPrices.has(pair));
+
+    if (unsubscribedPairs.length > 0) {
+      console.log('[useRealtimeKrakenData] 📡 Subscribing to prices for NEW assets:', unsubscribedPairs);
+      wsPriceSubscribe(unsubscribedPairs);
+      setSubscribedPrices(prev => new Set([...prev, ...unsubscribedPairs]));
+    }
+  }, [isSimMode, isConnected, subscribeToPrices, wsBalances, wsPriceSubscribe, subscribedPrices]);
 
   // CRITICAL: Update immediately when WebSocket data changes
   useEffect(() => {
