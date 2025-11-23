@@ -38,7 +38,7 @@ export function usePortfolioData() {
     refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOGE/USD', 'DOT/USD', 'LINK/USD', 'LTC/USD', 'XLM/USD', 'AVAX/USD', 'MATIC/USD', 'ATOM/USD', 'UNI/USD', 'AAVE/USD'],
     subscribeToBalances: !isSimMode,
     subscribeToOrders: false,
     subscribeToExecutions: false,
@@ -150,7 +150,9 @@ export function usePortfolioData() {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    return (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
+    const value = (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
+    console.log('[usePortfolioData] 💰 Cash Balance:', value.toFixed(2), '(wsConnected:', wsConnected, 'wsUsdBalance:', wsUsdBalance, ')');
+    return value;
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
 
   const currentPortfolioValue = useMemo(() => {
@@ -158,11 +160,15 @@ export function usePortfolioData() {
       return detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
     }
     // LIVE MODE: Use WebSocket total - cash
-    if (wsConnected && wsTotalValue >= 0) {
-      return wsTotalValue - (wsUsdBalance || 0);
+    if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
+      const portfolioValue = wsTotalValue - wsUsdBalance;
+      console.log('[usePortfolioData] 📊 Portfolio Value:', portfolioValue.toFixed(2), '(total:', wsTotalValue.toFixed(2), '- cash:', wsUsdBalance.toFixed(2), ')');
+      return portfolioValue;
     }
     // Fallback to Kraken API
-    return krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+    const fallback = krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+    console.log('[usePortfolioData] 📊 Portfolio Value (fallback):', fallback.toFixed(2));
+    return fallback;
   }, [isSimMode, detailedHoldings, wsConnected, wsTotalValue, wsUsdBalance, krakenData]);
 
   const totalValue = currentCashBalance + currentPortfolioValue;

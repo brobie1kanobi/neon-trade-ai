@@ -88,7 +88,7 @@ export function useRealtimeKrakenData(options = {}) {
   const [loading, setLoading] = useState(!persistedData.current);
   const [error, setError] = useState(null);
 
-  // CRITICAL: NO throttling - update immediately on every change
+  // CRITICAL: Update immediately when WebSocket data changes
   useEffect(() => {
     if (isSimMode) {
       setLoading(false);
@@ -101,8 +101,15 @@ export function useRealtimeKrakenData(options = {}) {
     }
 
     try {
-      // CRITICAL FIX: Calculate usdBalance from wsBalances
-      const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
+      // CRITICAL FIX: Try all possible USD keys
+      const usdBalance = wsBalances['USD']?.available 
+        || wsBalances['ZUSD']?.available 
+        || wsBalances['USD']?.balance
+        || wsBalances['ZUSD']?.balance
+        || 0;
+
+      console.log('[useRealtimeKrakenData] 💰 USD Balance:', usdBalance.toFixed(2));
+      console.log('[useRealtimeKrakenData] 📊 All balances:', Object.keys(wsBalances));
 
       const totalAssets = Object.keys(wsBalances).filter(asset => {
         if (asset === 'USD' || asset === 'ZUSD') return false;
@@ -111,17 +118,24 @@ export function useRealtimeKrakenData(options = {}) {
       }).length;
 
       let totalPortfolioValue = usdBalance;
+      let cryptoValue = 0;
 
       Object.entries(wsBalances).forEach(([asset, balance]) => {
         if (asset === 'USD' || asset === 'ZUSD') return;
 
         const pairWithUSD = `${asset}/USD`;
         const price = wsPrices[pairWithUSD]?.price || 0;
+        const assetBalance = balance.balance || 0;
 
-        if (price > 0) {
-          totalPortfolioValue += balance.balance * price;
+        if (price > 0 && assetBalance > 0) {
+          const value = assetBalance * price;
+          cryptoValue += value;
+          totalPortfolioValue += value;
+          console.log(`[useRealtimeKrakenData] ${asset}: ${assetBalance.toFixed(4)} × $${price.toFixed(2)} = $${value.toFixed(2)}`);
         }
       });
+
+      console.log('[useRealtimeKrakenData] 📈 Total Portfolio:', totalPortfolioValue.toFixed(2), '(Cash:', usdBalance.toFixed(2), '+ Crypto:', cryptoValue.toFixed(2), ')');
 
       const newData = {
         balances: wsBalances,
@@ -141,6 +155,7 @@ export function useRealtimeKrakenData(options = {}) {
       persistData(newData);
 
     } catch (err) {
+      console.error('[useRealtimeKrakenData] Error:', err);
       setError(err.message);
     }
   }, [isSimMode, isConnected, wsBalances, wsOrders, wsPrices]);
