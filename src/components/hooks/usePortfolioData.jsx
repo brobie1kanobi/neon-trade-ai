@@ -57,6 +57,8 @@ export function usePortfolioData() {
 
     // LIVE MODE: Use WebSocket holdings if available
     if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+      console.log('[usePortfolioData] 🔄 Building holdings from WebSocket balances:', Object.keys(wsBalances));
+      
       const wsHoldings = Object.entries(wsBalances)
         .filter(([asset, data]) => {
           if (asset === 'USD' || asset === 'ZUSD') return false;
@@ -65,6 +67,9 @@ export function usePortfolioData() {
         .map(([asset, data]) => {
           const pair = `${asset}/USD`;
           const currentPrice = wsPrices?.[pair]?.price || 0;
+          const currentValue = data.balance * currentPrice;
+
+          console.log(`[usePortfolioData] ➡️ ${asset}: ${data.balance.toFixed(6)} × $${currentPrice.toFixed(2)} = $${currentValue.toFixed(2)}`);
 
           return {
             symbol: asset,
@@ -73,12 +78,14 @@ export function usePortfolioData() {
             asset_type: 'crypto',
             currentPrice: currentPrice,
             costBasis: 0,
-            currentValue: data.balance * currentPrice,
+            currentValue: currentValue,
             gainLoss: 0,
             gainLossPercent: 0,
             is_simulation: false
           };
         });
+
+      console.log('[usePortfolioData] ✅ Total holdings from WebSocket:', wsHoldings.length);
 
       if (wsHoldings.length > 0) {
         return wsHoldings;
@@ -87,6 +94,7 @@ export function usePortfolioData() {
 
     // Fallback to Kraken API holdings
     if (krakenData?.holdings && krakenData.holdings.length > 0) {
+      console.log('[usePortfolioData] 📦 Using Kraken API holdings (fallback):', krakenData.holdings.length);
       return krakenData.holdings.map(kh => ({
         symbol: kh.symbol,
         quantity: kh.quantity,
@@ -101,6 +109,7 @@ export function usePortfolioData() {
       }));
     }
 
+    console.log('[usePortfolioData] ⚠️ No holdings found, using database holdings');
     return holdings;
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
 
