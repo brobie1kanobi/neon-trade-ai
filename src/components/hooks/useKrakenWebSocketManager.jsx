@@ -519,6 +519,11 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToExecutions, isConnected]);
 
+  const subscribeToPrices = useCallback((symbols) => {
+    if (!isConnected || !symbols || symbols.length === 0) return;
+    subscribe('ticker', { symbol: symbols });
+  }, [isConnected]);
+
   return {
     isConnected,
     prices,
@@ -527,6 +532,7 @@ export function useKrakenWebSocketManager(options = {}) {
     lastExecution,
     subscribe: useCallback((channel, params) => subscribe(channel, params), []),
     unsubscribe: useCallback((channel, params) => unsubscribe(channel, params), []),
+    subscribeToPrices,
     getAllPrices: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.prices), []),
     getAllBalances: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.balances), []),
     getAllOrders: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.orders), [])
