@@ -49,7 +49,9 @@ const GLOBAL_WS_STATE = {
   activeSubscriptions: new Set(),
   eventListeners: new Map(),
   tokenRefreshInterval: null,
-  pendingSubscriptions: []
+  pendingSubscriptions: [],
+  pendingTokenRequest: null,
+  isConnecting: false
 };
 
 const WS_URL = 'wss://ws.kraken.com/v2';
@@ -69,28 +71,42 @@ function emitEvent(eventName, data) {
 }
 
 async function refreshToken() {
-  try {
-    console.log('[KrakenWS] 🔄 Refreshing WebSocket token...');
-    
-    const response = await Promise.race([
-      base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 5000))
-    ]);
-    
-    const data = response?.data || response;
-    
-    if (data?.success && data?.token) {
-      GLOBAL_WS_STATE.token = data.token;
-      GLOBAL_WS_STATE.tokenExpiry = Date.now() + (data.expires_in || 900) * 1000;
-      console.log('[KrakenWS] ✅ Token refreshed');
-      return true;
-    }
-    
-    return false;
-  } catch (error) {
-    console.error('[KrakenWS] Token refresh failed:', error.message);
-    return false;
+  // CRITICAL: Deduplicate token requests
+  if (GLOBAL_WS_STATE.pendingTokenRequest) {
+    console.log('[KrakenWS] ⏳ Waiting for pending token request...');
+    return GLOBAL_WS_STATE.pendingTokenRequest;
   }
+
+  const tokenPromise = (async () => {
+    try {
+      console.log('[KrakenWS] 🔄 Refreshing WebSocket token...');
+      
+      const response = await Promise.race([
+        base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 5000))
+      ]);
+      
+      const data = response?.data || response;
+      
+      if (data?.success && data?.token) {
+        GLOBAL_WS_STATE.token = data.token;
+        GLOBAL_WS_STATE.tokenExpiry = Date.now() + (data.expires_in || 900) * 1000;
+        console.log('[KrakenWS] ✅ Token refreshed, expires in', data.expires_in || 900, 's');
+        GLOBAL_WS_STATE.pendingTokenRequest = null;
+        return true;
+      }
+      
+      GLOBAL_WS_STATE.pendingTokenRequest = null;
+      return false;
+    } catch (error) {
+      console.error('[KrakenWS] Token refresh failed:', error.message);
+      GLOBAL_WS_STATE.pendingTokenRequest = null;
+      return false;
+    }
+  })();
+
+  GLOBAL_WS_STATE.pendingTokenRequest = tokenPromise;
+  return tokenPromise;
 }
 
 function setupTokenRefresh() {
@@ -128,19 +144,35 @@ function safeSend(message) {
 }
 
 async function connectWebSocket() {
-  if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
+  // CRITICAL: Prevent duplicate connections
+  if (GLOBAL_WS_STATE.isConnecting) {
+    console.log('[KrakenWS] ⏳ Connection already in progress');
     return;
   }
 
+  if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
+    console.log('[KrakenWS] ✅ Already connected');
+    return;
+  }
+
+  GLOBAL_WS_STATE.isConnecting = true;
+
   try {
+    // Only fetch token if expired or missing
     if (!GLOBAL_WS_STATE.token || (GLOBAL_WS_STATE.tokenExpiry && Date.now() >= GLOBAL_WS_STATE.tokenExpiry)) {
+      console.log('[KrakenWS] Token expired or missing, refreshing...');
       const refreshed = await refreshToken();
       if (!refreshed) {
+        GLOBAL_WS_STATE.isConnecting = false;
         emitEvent('error', { message: 'Account not connected', fatal: true });
         return;
       }
+    } else {
+      const remaining = Math.floor((GLOBAL_WS_STATE.tokenExpiry - Date.now()) / 1000);
+      console.log('[KrakenWS] ✅ Using existing token (expires in', remaining, 's)');
     }
 
+    // Setup token refresh ONCE
     if (!GLOBAL_WS_STATE.tokenRefreshInterval) {
       setupTokenRefresh();
     }
@@ -150,6 +182,7 @@ async function connectWebSocket() {
     ws.onopen = () => {
       console.log('[KrakenWS] ✅ Connected');
       GLOBAL_WS_STATE.isConnected = true;
+      GLOBAL_WS_STATE.isConnecting = false;
       GLOBAL_WS_STATE.reconnectAttempts = 0;
       emitEvent('connected', {});
       
@@ -179,11 +212,13 @@ async function connectWebSocket() {
 
     ws.onclose = () => {
       GLOBAL_WS_STATE.isConnected = false;
+      GLOBAL_WS_STATE.isConnecting = false;
       GLOBAL_WS_STATE.ws = null;
       emitEvent('disconnected', {});
       
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
+        console.log('[KrakenWS] 🔄 Reconnecting in', RECONNECT_DELAY / 1000, 's (attempt', GLOBAL_WS_STATE.reconnectAttempts, '/', MAX_RECONNECT_ATTEMPTS, ')');
         setTimeout(connectWebSocket, RECONNECT_DELAY);
       }
     };
@@ -193,6 +228,7 @@ async function connectWebSocket() {
   } catch (error) {
     console.error('[KrakenWS] Connect error:', error.message);
     GLOBAL_WS_STATE.isConnected = false;
+    GLOBAL_WS_STATE.isConnecting = false;
     
     if (error.message.includes('not connected') || error.message.includes('token')) {
       emitEvent('error', { message: error.message, fatal: true });
@@ -342,7 +378,10 @@ export function useKrakenWebSocketManager(options = {}) {
   const [lastExecution, setLastExecution] = useState(null);
 
   useEffect(() => {
-    connectWebSocket();
+    // CRITICAL: Only connect once globally
+    if (!GLOBAL_WS_STATE.isConnected && !GLOBAL_WS_STATE.isConnecting) {
+      connectWebSocket();
+    }
   }, []);
 
   useEffect(() => {
