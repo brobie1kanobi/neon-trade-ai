@@ -43,27 +43,34 @@ export function usePortfolioData() {
     isSimMode
   });
 
-  // CRITICAL: Build holdings ONLY from WebSocket data (no duplicate API calls)
+  // CRITICAL: Build holdings from WebSocket data for live mode
   const effectiveHoldings = useMemo(() => {
     if (isSimMode) {
+      console.log('[usePortfolioData] SIM MODE - using DB holdings:', holdings.length);
       return holdings;
     }
 
-    // LIVE MODE: Use WebSocket holdings ONLY
-    if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+    // LIVE MODE: Use WebSocket holdings
+    console.log('[usePortfolioData] LIVE MODE - wsConnected:', wsConnected, 'wsBalances keys:', Object.keys(wsBalances || {}));
+    
+    if (wsBalances && Object.keys(wsBalances).length > 0) {
       const wsHoldings = Object.entries(wsBalances)
         .filter(([asset, data]) => {
           if (asset === 'USD' || asset === 'ZUSD') return false;
-          return data.balance > 0.00001;
+          const hasBalance = (data?.balance || 0) > 0.00001;
+          console.log(`[usePortfolioData] Asset ${asset}: balance=${data?.balance}, included=${hasBalance}`);
+          return hasBalance;
         })
         .map(([asset, data]) => {
           const pair = `${asset}/USD`;
           const currentPrice = wsPrices?.[pair]?.price || 0;
-          const currentValue = data.balance * currentPrice;
+          const currentValue = (data?.balance || 0) * currentPrice;
+
+          console.log(`[usePortfolioData] Building holding: ${asset} qty=${data?.balance} price=${currentPrice} value=${currentValue}`);
 
           return {
             symbol: asset,
-            quantity: data.balance,
+            quantity: data?.balance || 0,
             average_cost_price: 0,
             asset_type: 'crypto',
             currentPrice: currentPrice,
@@ -75,11 +82,14 @@ export function usePortfolioData() {
           };
         });
 
+      console.log('[usePortfolioData] Built', wsHoldings.length, 'holdings from WebSocket');
+      
       if (wsHoldings.length > 0) {
         return wsHoldings;
       }
     }
 
+    console.log('[usePortfolioData] No WS balances, falling back to DB holdings:', holdings.length);
     return holdings;
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
