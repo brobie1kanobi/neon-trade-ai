@@ -124,24 +124,23 @@ export function usePortfolioData() {
     });
   }, [effectiveHoldings, isSimMode, wsConnected, wsPrices, priceData]);
 
-  // CRITICAL: Calculate cash and portfolio values from WebSocket ONLY
+  // CRITICAL: Calculate cash and portfolio values - USE SAME LOGIC AS ASSET ALLOCATION
   const currentCashBalance = useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    return (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (wallet?.real_cash_balance || 0);
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
+    // LIVE MODE: Prefer WebSocket USD balance
+    if (wsConnected && wsBalances) {
+      const usdBal = wsBalances['USD']?.balance || wsBalances['ZUSD']?.balance || 0;
+      if (usdBal > 0) return usdBal;
+    }
+    return wsUsdBalance >= 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+  }, [isSimMode, wallet, wsConnected, wsBalances, wsUsdBalance]);
 
   const currentPortfolioValue = useMemo(() => {
-    if (isSimMode) {
-      return detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-    }
-    // LIVE MODE: Calculate from holdings
-    if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
-      return wsTotalValue - wsUsdBalance;
-    }
+    // CRITICAL: Calculate from detailedHoldings (same source as Asset Allocation)
     return detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-  }, [isSimMode, detailedHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
+  }, [detailedHoldings]);
 
   const totalValue = currentCashBalance + currentPortfolioValue;
 

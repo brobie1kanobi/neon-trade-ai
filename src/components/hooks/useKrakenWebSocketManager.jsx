@@ -73,26 +73,30 @@ function emitEvent(eventName, data) {
 }
 
 async function refreshToken() {
-  // CRITICAL: Check if we already have a valid token
-  if (GLOBAL_WS_STATE.token && GLOBAL_WS_STATE.tokenExpiry && Date.now() < GLOBAL_WS_STATE.tokenExpiry - 60000) {
+  // CRITICAL: Check if we already have a valid token (30s buffer)
+  if (GLOBAL_WS_STATE.token && GLOBAL_WS_STATE.tokenExpiry && Date.now() < GLOBAL_WS_STATE.tokenExpiry - 30000) {
     console.log('[KrakenWS] ✅ Using existing valid token');
     return true;
+  }
+
+  // CRITICAL: If there's already a pending request, wait for it instead of creating another
+  if (GLOBAL_WS_STATE.pendingTokenRequest) {
+    console.log('[KrakenWS] ⏳ Waiting for existing pending token request...');
+    try {
+      return await GLOBAL_WS_STATE.pendingTokenRequest;
+    } catch (e) {
+      console.warn('[KrakenWS] Pending token request failed:', e.message);
+      GLOBAL_WS_STATE.pendingTokenRequest = null;
+      globalTokenLock = false;
+    }
   }
 
   // CRITICAL: Global lock to prevent ANY duplicate token requests
   if (globalTokenLock) {
     console.log('[KrakenWS] 🔒 Token request blocked - already in progress');
-    if (GLOBAL_WS_STATE.pendingTokenRequest) {
-      return GLOBAL_WS_STATE.pendingTokenRequest;
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait a bit and check if token became available
+    await new Promise(resolve => setTimeout(resolve, 500));
     return GLOBAL_WS_STATE.token ? true : false;
-  }
-
-  // Double-check pending request
-  if (GLOBAL_WS_STATE.pendingTokenRequest) {
-    console.log('[KrakenWS] ⏳ Waiting for pending token request...');
-    return GLOBAL_WS_STATE.pendingTokenRequest;
   }
 
   globalTokenLock = true;
@@ -103,7 +107,7 @@ async function refreshToken() {
       
       const response = await Promise.race([
         base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 8000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 10000))
       ]);
       
       const data = response?.data || response;
@@ -112,19 +116,17 @@ async function refreshToken() {
         GLOBAL_WS_STATE.token = data.token;
         GLOBAL_WS_STATE.tokenExpiry = Date.now() + (data.expires_in || 900) * 1000;
         console.log('[KrakenWS] ✅ Token refreshed, expires in', data.expires_in || 900, 's');
-        GLOBAL_WS_STATE.pendingTokenRequest = null;
-        globalTokenLock = false;
         return true;
       }
       
-      GLOBAL_WS_STATE.pendingTokenRequest = null;
-      globalTokenLock = false;
+      console.warn('[KrakenWS] Token response invalid:', data?.error || 'No token received');
       return false;
     } catch (error) {
       console.error('[KrakenWS] Token refresh failed:', error.message);
+      return false;
+    } finally {
       GLOBAL_WS_STATE.pendingTokenRequest = null;
       globalTokenLock = false;
-      return false;
     }
   })();
 
