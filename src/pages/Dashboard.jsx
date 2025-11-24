@@ -7,7 +7,7 @@ import QuickActions from "../components/dashboard/QuickActions";
 import RecentTrades from "../components/dashboard/RecentTrades";
 import TradeDetailsModal from "../components/dashboard/TradeDetailsModal";
 import PerformanceChart from "../components/dashboard/PerformanceChart";
-import { useAppData } from "@/components/utils/AppDataProvider";
+import { usePortfolioData } from "@/components/hooks/usePortfolioData";
 
 export default function Dashboard() {
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -26,7 +26,7 @@ export default function Dashboard() {
     lifetimeChange,
     wsConnected,
     isLoading
-  } = useAppData();
+  } = usePortfolioData();
 
   if (isLoading || !user) {
     return (
