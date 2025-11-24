@@ -9,7 +9,7 @@ import PushManager from "./components/utils/PushManager";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
-import { AppDataProvider, useAppData } from "./components/utils/AppDataProvider";
+import { AppDataProvider } from "./components/utils/AppDataProvider";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 
 function LayoutContent({ children, currentPageName }) {
@@ -292,19 +292,12 @@ function LayoutContent({ children, currentPageName }) {
     </div>);
 }
 
-function LayoutWrapper({ children, currentPageName }) {
-  const { user } = useAppData();
-  return (
-    <SettingsProvider user={user}>
-      <LayoutContent children={children} currentPageName={currentPageName} />
-    </SettingsProvider>
-  );
-}
-
 export default function Layout({ children, currentPageName }) {
   return (
-    <AppDataProvider>
-      <LayoutWrapper children={children} currentPageName={currentPageName} />
-    </AppDataProvider>
+    <SettingsProvider>
+      <AppDataProvider>
+        <LayoutContent children={children} currentPageName={currentPageName} />
+      </AppDataProvider>
+    </SettingsProvider>
   );
 }

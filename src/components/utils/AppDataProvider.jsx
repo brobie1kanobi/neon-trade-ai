@@ -189,17 +189,15 @@ export function AppDataProvider({ children }) {
     
     // Prevent rapid refetches
     if (!force && lastFetch && (now - lastFetch) < 10000) {
-      console.log('[AppDataProvider] ⏭️ Skipping fetch, too recent');
+      console.log('[AppDataProvider] Skipping fetch, too recent');
       return;
     }
 
     setIsLoading(true);
-    console.log('[AppDataProvider] 🔄 SINGLE FETCH - Loading all data...');
+    console.log('[AppDataProvider] 🔄 Fetching data...');
 
     try {
-      console.log('[AppDataProvider] 📞 Calling base44.auth.me()');
       const currentUser = await base44.auth.me();
-      console.log('[AppDataProvider] ✅ User fetched:', currentUser.email);
 
       const [userSettingsResult, userWalletArr] = await Promise.all([
         UserSettings.filter({ created_by: currentUser.email }, "-updated_date", 1).catch(() => [{ sim_trading_mode: true }]),
@@ -289,20 +287,6 @@ export function AppDataProvider({ children }) {
     error,
     refresh
   };
-
-  // Don't render children until user is loaded
-  if (!user && isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4 overflow-hidden" style={{ boxShadow: '0 0 10px rgba(57, 255, 20, 0.5)' }}>
-            <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68b9d30ff048d7f24e2fe484/83b0737a9_7fed9c694_a365a9198_logo.png" alt="NeonTrade Logo" className="object-contain w-full h-full" />
-          </div>
-          <p className="text-lg" style={{ color: '#39FF14' }}>Loading your NeonTrade AI...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <AppDataContext.Provider value={value}>
