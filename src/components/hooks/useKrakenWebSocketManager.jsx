@@ -57,7 +57,9 @@ const GLOBAL_WS_STATE = {
   isConnecting: false
 };
 
-const WS_URL = 'wss://ws.kraken.com/v2';
+// CRITICAL: Use authenticated WebSocket URL for balance/order channels
+const WS_URL_PUBLIC = 'wss://ws.kraken.com/v2';
+const WS_URL_AUTH = 'wss://ws-auth.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
 
@@ -188,7 +190,8 @@ async function connectWebSocket() {
       console.log('[KrakenWS] ✅ Using existing token');
     }
 
-    const ws = new WebSocket(WS_URL);
+    // CRITICAL: Must use authenticated URL for balance subscriptions
+    const ws = new WebSocket(WS_URL_AUTH);
 
     ws.onopen = () => {
       console.log('[KrakenWS] ✅ Connected');
@@ -292,30 +295,65 @@ function handleTickerUpdate(data) {
 
 function handleBalanceSnapshot(data) {
   console.log('[KrakenWS] 📦 Balance SNAPSHOT received:', data?.length, 'items');
+  console.log('[KrakenWS] 📦 Raw snapshot data:', JSON.stringify(data));
+  
   if (!data || !Array.isArray(data)) {
     console.warn('[KrakenWS] Invalid balance snapshot data:', data);
     return;
   }
-  data.forEach(balance => {
-    const { asset, balance: amount, available } = balance;
+  
+  data.forEach(item => {
+    // KRAKEN V2 API FORMAT: { asset: "BTC", balance: 1.2, wallets: [...] }
+    const asset = item.asset;
+    const totalBalance = parseFloat(item.balance) || 0;
+    
+    // Get spot wallet balance (main trading wallet)
+    let spotBalance = totalBalance;
+    if (item.wallets && Array.isArray(item.wallets)) {
+      const spotWallet = item.wallets.find(w => w.type === 'spot' && w.id === 'main');
+      if (spotWallet) {
+        spotBalance = parseFloat(spotWallet.balance) || totalBalance;
+      }
+    }
+    
     const normalized = normalizeKrakenSymbol(asset);
-    console.log(`[KrakenWS] 💰 Balance: ${asset} → ${normalized} = ${amount}`);
+    console.log(`[KrakenWS] 💰 Balance: ${asset} → ${normalized} = ${totalBalance} (spot: ${spotBalance})`);
+    
     GLOBAL_WS_STATE.balances.set(normalized, {
-      asset: normalized, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
+      asset: normalized, 
+      balance: totalBalance,
+      available: spotBalance,
+      timestamp: Date.now()
     });
   });
-  console.log('[KrakenWS] 📊 Total balances now:', GLOBAL_WS_STATE.balances.size);
+  
+  console.log('[KrakenWS] 📊 Total balances now:', GLOBAL_WS_STATE.balances.size, 'assets:', Array.from(GLOBAL_WS_STATE.balances.keys()));
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
 }
 
 function handleBalanceUpdate(data) {
-  data.forEach(balance => {
-    const { asset, balance: amount, available } = balance;
+  console.log('[KrakenWS] 📬 Balance UPDATE received:', data?.length, 'items');
+  
+  data.forEach(item => {
+    // KRAKEN V2 UPDATE FORMAT: { asset: "BTC", balance: 1.2, amount: 0.01, ... }
+    const asset = item.asset;
+    const newBalance = parseFloat(item.balance) || 0;
+    
     const normalized = normalizeKrakenSymbol(asset);
+    console.log(`[KrakenWS] 💰 Update: ${asset} → ${normalized} = ${newBalance}`);
+    
+    // Get existing or create new
+    const existing = GLOBAL_WS_STATE.balances.get(normalized) || {};
+    
     GLOBAL_WS_STATE.balances.set(normalized, {
-      asset: normalized, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
+      ...existing,
+      asset: normalized, 
+      balance: newBalance,
+      available: newBalance, // Updates reflect available balance
+      timestamp: Date.now()
     });
   });
+  
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
 }
 
