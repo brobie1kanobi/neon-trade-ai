@@ -73,6 +73,12 @@ function emitEvent(eventName, data) {
 }
 
 async function refreshToken() {
+  // CRITICAL: Check if we already have a valid token
+  if (GLOBAL_WS_STATE.token && GLOBAL_WS_STATE.tokenExpiry && Date.now() < GLOBAL_WS_STATE.tokenExpiry - 60000) {
+    console.log('[KrakenWS] ✅ Using existing valid token');
+    return true;
+  }
+
   // CRITICAL: Global lock to prevent ANY duplicate token requests
   if (globalTokenLock) {
     console.log('[KrakenWS] 🔒 Token request blocked - already in progress');
@@ -80,7 +86,7 @@ async function refreshToken() {
       return GLOBAL_WS_STATE.pendingTokenRequest;
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
-    return false;
+    return GLOBAL_WS_STATE.token ? true : false;
   }
 
   // Double-check pending request
