@@ -290,6 +290,20 @@ export function AppDataProvider({ children }) {
     refresh
   };
 
+  // Don't render children until user is loaded
+  if (!user && isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4 overflow-hidden" style={{ boxShadow: '0 0 10px rgba(57, 255, 20, 0.5)' }}>
+            <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68b9d30ff048d7f24e2fe484/83b0737a9_7fed9c694_a365a9198_logo.png" alt="NeonTrade Logo" className="object-contain w-full h-full" />
+          </div>
+          <p className="text-lg" style={{ color: '#39FF14' }}>Loading your NeonTrade AI...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppDataContext.Provider value={value}>
       {children}
