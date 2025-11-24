@@ -115,24 +115,21 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
 }
 
 Deno.serve(async (req) => {
-  const startTime = Date.now();
-  
-  // CRITICAL: 10-SECOND TIMEOUT for entire request
-  const globalTimeout = setTimeout(() => {
-    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (10s)');
-  }, 10000);
-
   try {
     const base44 = createClientFromRequest(req);
     
-    // FASTER auth check
-    const user = await Promise.race([
-      base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
-    ]);
+    // Auth check with timeout
+    let user;
+    try {
+      user = await Promise.race([
+        base44.auth.me(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 3000))
+      ]);
+    } catch (authErr) {
+      return Response.json({ error: 'Auth failed: ' + authErr.message, success: false }, { status: 401 });
+    }
 
     if (!user) {
-      clearTimeout(globalTimeout);
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
 
@@ -140,7 +137,6 @@ Deno.serve(async (req) => {
     const isCreator = !!user?.is_creator;
     
     if (!isAdmin && !isCreator) {
-      clearTimeout(globalTimeout);
       return Response.json({ error: 'Access denied', success: false }, { status: 403 });
     }
 
@@ -148,25 +144,28 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch (e) {
-      // Ignore parse errors for GET-like requests
+      // Ignore parse errors
     }
 
     const { action, payload } = body;
     if (!action) {
-      clearTimeout(globalTimeout);
       return Response.json({ error: 'Missing action', success: false }, { status: 400 });
     }
 
     console.log('[krakenApi] Action:', action, 'User:', user.email);
 
-    // All actions share same connection fetch
-    const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection fetch timeout')), 2000))
-    ]);
+    // Fetch connection with timeout
+    let connections;
+    try {
+      connections = await Promise.race([
+        base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('DB timeout')), 3000))
+      ]);
+    } catch (dbErr) {
+      return Response.json({ error: 'Database error: ' + dbErr.message, success: false }, { status: 200 });
+    }
 
     if (action === 'status') {
-      clearTimeout(globalTimeout);
       return Response.json({
         connected: connections?.length > 0,
         success: true,
@@ -178,7 +177,6 @@ Deno.serve(async (req) => {
       if (connections.length > 0) {
         await base44.asServiceRole.entities.KrakenConnection.delete(connections[0].id);
       }
-      clearTimeout(globalTimeout);
       return Response.json({ success: true }, { status: 200 });
     }
 
@@ -219,13 +217,11 @@ Deno.serve(async (req) => {
       }
 
       console.log('[krakenApi] ✅ Connection verified');
-      clearTimeout(globalTimeout);
       return Response.json({ success: true }, { status: 200 });
     }
 
     // CRITICAL: Check if connected for all other actions
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeout);
       return Response.json({ 
         error: 'Kraken account not connected', 
         success: false, 
@@ -245,7 +241,6 @@ Deno.serve(async (req) => {
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
-      clearTimeout(globalTimeout);
       return Response.json({ success: true, balance: result.result || {} }, { status: 200 });
     }
 
@@ -264,7 +259,6 @@ Deno.serve(async (req) => {
         trades.push({ txid, ...trade });
       }
 
-      clearTimeout(globalTimeout);
       return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
     }
 
@@ -284,7 +278,6 @@ Deno.serve(async (req) => {
         throw new Error('Failed to get WebSocket token from Kraken');
       }
 
-      clearTimeout(globalTimeout);
       return Response.json({
         success: true,
         wsUrl: 'wss://ws-auth.kraken.com/v2',
@@ -293,11 +286,9 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
-    clearTimeout(globalTimeout);
     return Response.json({ error: 'Unknown action', success: false }, { status: 400 });
 
   } catch (error) {
-    clearTimeout(globalTimeout);
     console.error('[krakenApi] ❌ Error:', error.message);
     
     // CRITICAL: Return 200 with success=false instead of 500
