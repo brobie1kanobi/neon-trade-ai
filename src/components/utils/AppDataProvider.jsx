@@ -189,15 +189,17 @@ export function AppDataProvider({ children }) {
     
     // Prevent rapid refetches
     if (!force && lastFetch && (now - lastFetch) < 10000) {
-      console.log('[AppDataProvider] Skipping fetch, too recent');
+      console.log('[AppDataProvider] ⏭️ Skipping fetch, too recent');
       return;
     }
 
     setIsLoading(true);
-    console.log('[AppDataProvider] 🔄 Fetching data...');
+    console.log('[AppDataProvider] 🔄 SINGLE FETCH - Loading all data...');
 
     try {
+      console.log('[AppDataProvider] 📞 Calling base44.auth.me()');
       const currentUser = await base44.auth.me();
+      console.log('[AppDataProvider] ✅ User fetched:', currentUser.email);
 
       const [userSettingsResult, userWalletArr] = await Promise.all([
         UserSettings.filter({ created_by: currentUser.email }, "-updated_date", 1).catch(() => [{ sim_trading_mode: true }]),

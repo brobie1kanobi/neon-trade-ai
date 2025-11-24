@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { UserSettings } from "@/entities/all";
-import { useUser } from "@/components/hooks/useUser";
 import { getCached, invalidateCache } from "@/components/hooks/useDataFetching";
 
 const SettingsContext = createContext();
@@ -14,13 +13,19 @@ export const useSettings = () => {
   return context;
 };
 
-export const SettingsProvider = ({ children }) => {
+export const SettingsProvider = ({ children, user: providedUser }) => {
   const [settings, setSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [lastFetch, setLastFetch] = useState(0);
-  
-  // Use centralized user hook
-  const { user } = useUser();
+  const [user, setUser] = useState(providedUser);
+
+  // CRITICAL: Only fetch user if not provided
+  useEffect(() => {
+    if (!providedUser && !user) {
+      base44.auth.me().then(setUser).catch(() => setUser(null));
+    } else if (providedUser) {
+      setUser(providedUser);
+    }
+  }, [providedUser, user]);
 
   const loadSettings = useCallback(async (force = false) => {
     if (!user?.email) {
