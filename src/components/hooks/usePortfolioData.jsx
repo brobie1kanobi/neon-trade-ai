@@ -348,7 +348,7 @@ export function usePortfolioData() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, []);
 
   // Listen for data updates
   useEffect(() => {
@@ -359,7 +359,7 @@ export function usePortfolioData() {
     };
     window.addEventListener('app:data-updated', onDataUpdated);
     return () => window.removeEventListener('app:data-updated', onDataUpdated);
-  }, [loadData]);
+  }, []);
 
   const refresh = useCallback(() => {
     GLOBAL_CACHE.data = null;

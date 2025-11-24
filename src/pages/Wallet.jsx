@@ -178,7 +178,7 @@ export default function WalletPage() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading && !wallet && !user) {
     return (
       <div className="p-4 space-y-4">
         <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
