@@ -346,8 +346,8 @@ export function usePortfolioData() {
     wsConnected,
     wsTotalAssets,
 
-    // States
-    isLoading: isLoading || wsLoading || pricesLoading,
+    // States - CRITICAL: Don't wait for WebSocket in sim mode
+    isLoading: isLoading || (pricesLoading && effectiveHoldings.length > 0),
     error,
 
     // Actions

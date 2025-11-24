@@ -88,7 +88,12 @@ export function useRealtimeKrakenData(options = {}) {
     };
   });
 
-  const [loading, setLoading] = useState(!persistedData.current);
+  // CRITICAL: Never block loading - start with false if sim mode or has cached data
+  const [loading, setLoading] = useState(() => {
+    if (isSimMode) return false;
+    if (persistedData.current) return false;
+    return true;
+  });
   const [error, setError] = useState(null);
 
   // CRITICAL: Dynamically subscribe to prices for ALL assets in balance
@@ -119,8 +124,12 @@ export function useRealtimeKrakenData(options = {}) {
       return;
     }
 
+    // CRITICAL: Set loading false even if not connected yet (use cached data)
     if (!isConnected) {
-      // Keep showing cached data while reconnecting
+      // Keep showing cached data while reconnecting, but don't block UI
+      if (persistedData.current) {
+        setLoading(false);
+      }
       return;
     }
 
