@@ -11,12 +11,11 @@ import DataSync from "../components/portfolio/DataSync";
 import OpenAndConditionalOrders from "../components/portfolio/OpenAndConditionalOrders";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
-import { usePortfolioData, invalidatePortfolioCache } from "@/components/hooks/usePortfolioData";
+import { useAppData } from "@/components/utils/AppDataProvider";
 
 export default function Portfolio() {
   const [showDataSync, setShowDataSync] = useState(false);
 
-  // CRITICAL: Use centralized portfolio data hook
   const {
     user,
     wallet,
@@ -32,7 +31,7 @@ export default function Portfolio() {
     isLoading,
     error,
     refresh
-  } = usePortfolioData();
+  } = useAppData();
 
 
 
@@ -85,9 +84,6 @@ export default function Portfolio() {
         }
       }
 
-      invalidatePortfolioCache();
-      refresh();
-      
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'trade', source: 'portfolio' } }));
     } catch (err) {
       console.error("Error executing trade:", err);
@@ -98,8 +94,7 @@ export default function Portfolio() {
 
   const handleSyncComplete = () => {
     setShowDataSync(false);
-    invalidatePortfolioCache();
-    refresh();
+    window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'sync', source: 'portfolio' } }));
   };
 
   if (isLoading && !wallet && !user) {
@@ -131,8 +126,7 @@ export default function Portfolio() {
           wallet={wallet} 
           isSimMode={isSimMode}
           onRepairComplete={() => {
-            invalidatePortfolioCache();
-            setTimeout(() => refresh(), 500);
+            window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio' } }));
           }}
         />
       </motion.div>

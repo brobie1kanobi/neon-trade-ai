@@ -9,14 +9,13 @@ import BankConnection from "../components/wallet/BankConnection";
 import TransactionForm from "../components/wallet/TransactionForm";
 import TransactionHistory from "../components/wallet/TransactionHistory";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
-import { usePortfolioData, invalidatePortfolioCache } from "@/components/hooks/usePortfolioData";
+import { useAppData } from "@/components/utils/AppDataProvider";
 
 export default function WalletPage() {
   const [transactions, setTransactions] = useState([]);
   const [activeAction, setActiveAction] = useState(null);
   const [lastLoadTime, setLastLoadTime] = useState(0);
 
-  // CRITICAL: Use centralized portfolio data
   const {
     user,
     wallet,
@@ -26,7 +25,7 @@ export default function WalletPage() {
     wsConnected,
     isLoading,
     refresh
-  } = usePortfolioData();
+  } = useAppData();
 
   const loadTransactions = useCallback(async () => {
     if (!user) return;
@@ -47,8 +46,7 @@ export default function WalletPage() {
         toast.success("Payment successful! Your funds have been added to your account.");
         window.history.replaceState({}, '', window.location.pathname);
         setTimeout(() => {
-          invalidatePortfolioCache();
-          refresh();
+          window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'payment', source: 'wallet' } }));
         }, 1000);
       } else if (paymentStatus === 'cancelled') {
         toast.info("Payment was cancelled.");
@@ -76,21 +74,17 @@ export default function WalletPage() {
   useEffect(() => {
     const handleSync = () => {
       console.log('[Wallet] Sync event detected, refreshing...');
-      invalidatePortfolioCache();
-      refresh();
       setTimeout(() => loadTransactions(), 500);
     };
 
     window.addEventListener('kraken:synced', handleSync);
     window.addEventListener('trade:completed', handleSync);
-    window.addEventListener('app:data-updated', handleSync);
     
     return () => {
       window.removeEventListener('kraken:synced', handleSync);
       window.removeEventListener('trade:completed', handleSync);
-      window.removeEventListener('app:data-updated', handleSync);
     };
-  }, [refresh, loadTransactions]);
+  }, [loadTransactions]);
 
   const executeTransaction = async (transactionData) => {
     if (!user || !wallet) return;
@@ -143,8 +137,6 @@ export default function WalletPage() {
         await base44.entities.Wallet.update(wallet.id, updateData);
       }
       
-      invalidatePortfolioCache();
-      refresh();
       await loadTransactions();
       setActiveAction(null);
 
@@ -199,8 +191,7 @@ export default function WalletPage() {
           wallet={wallet} 
           isSimMode={isSimMode}
           onRepairComplete={() => {
-            invalidatePortfolioCache();
-            setTimeout(() => refresh(), 500);
+            window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'wallet' } }));
           }}
         />
       </motion.div>
@@ -216,8 +207,7 @@ export default function WalletPage() {
           wsConnected={wsConnected}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
-            invalidatePortfolioCache();
-            setTimeout(() => refresh(), 500);
+            window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'sync', source: 'wallet' } }));
           }}
         />
       </motion.div>
@@ -230,8 +220,7 @@ export default function WalletPage() {
         <BankConnection 
           settings={settings} 
           onConnectionChange={() => {
-            invalidatePortfolioCache();
-            refresh();
+            window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'bank', source: 'wallet' } }));
           }}
           onQuickAction={setActiveAction}
           isSimMode={isSimMode} 
