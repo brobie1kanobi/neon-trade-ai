@@ -14,8 +14,8 @@ import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
-  const { user: appUser } = useAppData();
-  const { settings, user, isLoading, updateSetting } = useSettings();
+  const settingsContext = useSettings();
+  const { settings, user, isLoading, updateSetting } = settingsContext || {};
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -24,6 +24,20 @@ function LayoutContent({ children, currentPageName }) {
 
   // This state controls the one-time splash screen for the session
   const [showInitialSplash, setShowInitialSplash] = useState(() => !sessionStorage.getItem('appInitialized'));
+
+  // Show loading if settings not ready
+  if (!settingsContext) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-lg flex items-center justify-center neon-glow mx-auto mb-4 overflow-hidden">
+            <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68b9d30ff048d7f24e2fe484/83b0737a9_7fed9c694_a365a9198_logo.png" alt="NeonTrade Logo" className="object-contain w-full h-full" />
+          </div>
+          <p className="text-lime-400 text-lg">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   
   // Enforce SIM globally on app load (admin = all users, non-admin = self)
   // REMOVED: const [simNormalized, setSimNormalized] = useState(false);
