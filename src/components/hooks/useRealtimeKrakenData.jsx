@@ -119,6 +119,8 @@ export function useRealtimeKrakenData(options = {}) {
 
   // CRITICAL: Update immediately when WebSocket data changes
   useEffect(() => {
+    console.log('[useRealtimeKrakenData] 🔄 Effect triggered - isSimMode:', isSimMode, 'isConnected:', isConnected, 'wsBalances keys:', Object.keys(wsBalances || {}));
+    
     if (isSimMode) {
       setLoading(false);
       return;
@@ -126,10 +128,18 @@ export function useRealtimeKrakenData(options = {}) {
 
     // CRITICAL: Set loading false even if not connected yet (use cached data)
     if (!isConnected) {
+      console.log('[useRealtimeKrakenData] ⏳ Not connected yet, using cached data');
       // Keep showing cached data while reconnecting, but don't block UI
       if (persistedData.current) {
         setLoading(false);
       }
+      return;
+    }
+
+    // CRITICAL: Check if we have any balance data
+    if (!wsBalances || Object.keys(wsBalances).length === 0) {
+      console.log('[useRealtimeKrakenData] ⚠️ Connected but no balances yet');
+      setLoading(false);
       return;
     }
 
