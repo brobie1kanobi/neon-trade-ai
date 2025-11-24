@@ -259,6 +259,11 @@ async function connectWebSocket() {
 function handleMessage(message) {
   const { channel, type, data } = message;
 
+  // Log all non-ticker messages for debugging
+  if (channel !== 'ticker') {
+    console.log(`[KrakenWS] 📨 Message: channel=${channel}, type=${type}, data=`, data?.length || data);
+  }
+
   if (type === 'update') {
     if (channel === 'ticker') handleTickerUpdate(data);
     else if (channel === 'balances') handleBalanceUpdate(data);
@@ -268,7 +273,9 @@ function handleMessage(message) {
     if (channel === 'balances') handleBalanceSnapshot(data);
     else if (channel === 'openOrders') handleOrderSnapshot(data);
   } else if (type === 'error') {
-    console.error('[KrakenWS] Subscription error:', message);
+    console.error('[KrakenWS] ❌ Subscription error:', message);
+  } else if (type === 'subscribe') {
+    console.log(`[KrakenWS] ✅ Subscribed to ${channel}`);
   }
 }
 
@@ -284,13 +291,20 @@ function handleTickerUpdate(data) {
 }
 
 function handleBalanceSnapshot(data) {
+  console.log('[KrakenWS] 📦 Balance SNAPSHOT received:', data?.length, 'items');
+  if (!data || !Array.isArray(data)) {
+    console.warn('[KrakenWS] Invalid balance snapshot data:', data);
+    return;
+  }
   data.forEach(balance => {
     const { asset, balance: amount, available } = balance;
     const normalized = normalizeKrakenSymbol(asset);
+    console.log(`[KrakenWS] 💰 Balance: ${asset} → ${normalized} = ${amount}`);
     GLOBAL_WS_STATE.balances.set(normalized, {
       asset: normalized, balance: parseFloat(amount), available: parseFloat(available), timestamp: Date.now()
     });
   });
+  console.log('[KrakenWS] 📊 Total balances now:', GLOBAL_WS_STATE.balances.size);
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
 }
 
@@ -352,12 +366,17 @@ function subscribe(channel, params = {}) {
 
   if (['balances', 'executions', 'openOrders'].includes(channel)) {
     subscription.params.token = GLOBAL_WS_STATE.token;
+    console.log(`[KrakenWS] 🔐 Adding token to ${channel} subscription`);
   }
 
+  console.log(`[KrakenWS] 📤 Sending subscription:`, channel, params);
   const sent = safeSend(subscription);
   
   if (sent || GLOBAL_WS_STATE.ws?.readyState === WebSocket.CONNECTING) {
     GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
+    console.log(`[KrakenWS] ✅ Subscription ${channel} queued/sent`);
+  } else {
+    console.warn(`[KrakenWS] ⚠️ Failed to send ${channel} subscription`);
   }
 }
 
@@ -448,9 +467,13 @@ export function useKrakenWebSocketManager(options = {}) {
   useEffect(() => {
     if (!subscribeToBalances || !isConnected) return;
     
+    console.log('[KrakenWS] 🔔 Subscribing to balances channel...');
     subscribe('balances');
 
-    const handleBalancesUpdated = (data) => setBalances(data);
+    const handleBalancesUpdated = (data) => {
+      console.log('[KrakenWS] 📬 Balances updated in hook:', Object.keys(data || {}).length, 'assets');
+      setBalances(data);
+    };
 
     GLOBAL_WS_STATE.eventListeners.set('balancesUpdated', [
       ...(GLOBAL_WS_STATE.eventListeners.get('balancesUpdated') || []),
