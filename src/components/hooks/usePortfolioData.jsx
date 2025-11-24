@@ -3,8 +3,6 @@ import { base44 } from '@/api/base44Client';
 import { Wallet, UserSettings, Holding, Trade } from '@/entities/all';
 import { useRealtimeKrakenData } from './useRealtimeKrakenData';
 import { usePriceData } from './usePriceData';
-import { useKrakenData } from './useKrakenData';
-import { useKrakenPnL } from './useKrakenPnL';
 
 // CRITICAL: Global cache to prevent duplicate requests
 const GLOBAL_CACHE = {
@@ -45,20 +43,14 @@ export function usePortfolioData() {
     isSimMode
   });
 
-  // CRITICAL: Only use Kraken hooks in LIVE mode
-  const { krakenData, loading: krakenLoading, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
-  const { pnlData } = useKrakenPnL(isSimMode);
-
-  // CRITICAL: Merge holdings from different sources
+  // CRITICAL: Build holdings ONLY from WebSocket data (no duplicate API calls)
   const effectiveHoldings = useMemo(() => {
     if (isSimMode) {
       return holdings;
     }
 
-    // LIVE MODE: Use WebSocket holdings if available
+    // LIVE MODE: Use WebSocket holdings ONLY
     if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-      console.log('[usePortfolioData] 🔄 Building holdings from WebSocket balances:', Object.keys(wsBalances));
-      
       const wsHoldings = Object.entries(wsBalances)
         .filter(([asset, data]) => {
           if (asset === 'USD' || asset === 'ZUSD') return false;
@@ -68,8 +60,6 @@ export function usePortfolioData() {
           const pair = `${asset}/USD`;
           const currentPrice = wsPrices?.[pair]?.price || 0;
           const currentValue = data.balance * currentPrice;
-
-          console.log(`[usePortfolioData] ➡️ ${asset}: ${data.balance.toFixed(6)} × $${currentPrice.toFixed(2)} = $${currentValue.toFixed(2)}`);
 
           return {
             symbol: asset,
@@ -85,33 +75,13 @@ export function usePortfolioData() {
           };
         });
 
-      console.log('[usePortfolioData] ✅ Total holdings from WebSocket:', wsHoldings.length);
-
       if (wsHoldings.length > 0) {
         return wsHoldings;
       }
     }
 
-    // Fallback to Kraken API holdings
-    if (krakenData?.holdings && krakenData.holdings.length > 0) {
-      console.log('[usePortfolioData] 📦 Using Kraken API holdings (fallback):', krakenData.holdings.length);
-      return krakenData.holdings.map(kh => ({
-        symbol: kh.symbol,
-        quantity: kh.quantity,
-        average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
-        asset_type: 'crypto',
-        currentPrice: kh.current_price_usd,
-        costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
-        currentValue: kh.total_value_usd,
-        gainLoss: kh.unrealized_pnl || 0,
-        gainLossPercent: kh.pnl_percent || 0,
-        is_simulation: false
-      }));
-    }
-
-    console.log('[usePortfolioData] ⚠️ No holdings found, using database holdings');
     return holdings;
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
   // Get all symbols for price fetching
   const allSymbols = useMemo(() => {
@@ -154,48 +124,35 @@ export function usePortfolioData() {
     });
   }, [effectiveHoldings, isSimMode, wsConnected, wsPrices, priceData]);
 
-  // CRITICAL: Calculate cash and portfolio values
+  // CRITICAL: Calculate cash and portfolio values from WebSocket ONLY
   const currentCashBalance = useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    const value = (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
-    console.log('[usePortfolioData] 💰 Cash Balance:', value.toFixed(2), '(wsConnected:', wsConnected, 'wsUsdBalance:', wsUsdBalance, ')');
-    return value;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
+    return (wsConnected && wsUsdBalance >= 0) ? wsUsdBalance : (wallet?.real_cash_balance || 0);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
 
   const currentPortfolioValue = useMemo(() => {
     if (isSimMode) {
       return detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
     }
-    // LIVE MODE: Use WebSocket total - cash
+    // LIVE MODE: Calculate from holdings
     if (wsConnected && wsTotalValue >= 0 && wsUsdBalance >= 0) {
-      const portfolioValue = wsTotalValue - wsUsdBalance;
-      console.log('[usePortfolioData] 📊 Portfolio Value:', portfolioValue.toFixed(2), '(total:', wsTotalValue.toFixed(2), '- cash:', wsUsdBalance.toFixed(2), ')');
-      return portfolioValue;
+      return wsTotalValue - wsUsdBalance;
     }
-    // Fallback to Kraken API
-    const fallback = krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-    console.log('[usePortfolioData] 📊 Portfolio Value (fallback):', fallback.toFixed(2));
-    return fallback;
-  }, [isSimMode, detailedHoldings, wsConnected, wsTotalValue, wsUsdBalance, krakenData]);
+    return detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+  }, [isSimMode, detailedHoldings, wsConnected, wsTotalValue, wsUsdBalance]);
 
   const totalValue = currentCashBalance + currentPortfolioValue;
 
-  // CRITICAL: Calculate PnL
+  // PnL - simplified (no separate API call)
   const portfolio24hrChange = useMemo(() => {
-    return {
-      value: pnlData.pnl_24h || 0,
-      percentage: totalValue > 0 ? (pnlData.pnl_24h / totalValue * 100) : 0
-    };
-  }, [pnlData.pnl_24h, totalValue]);
+    return { value: 0, percentage: 0 };
+  }, []);
 
   const lifetimeChange = useMemo(() => {
-    return {
-      value: pnlData.pnl_lifetime || 0,
-      percentage: totalValue > 0 ? (pnlData.pnl_lifetime / totalValue * 100) : 0
-    };
-  }, [pnlData.pnl_lifetime, totalValue]);
+    return { value: 0, percentage: 0 };
+  }, []);
 
   // Load data function with better error handling
   const loadData = useCallback(async (force = false) => {
@@ -367,9 +324,8 @@ export function usePortfolioData() {
     loadData(true);
     if (!isSimMode) {
       wsRefresh();
-      refreshKraken();
     }
-  }, [loadData, isSimMode, wsRefresh, refreshKraken]);
+  }, [loadData, isSimMode, wsRefresh]);
 
   return {
     // Core data
@@ -392,7 +348,7 @@ export function usePortfolioData() {
     wsTotalAssets,
 
     // States
-    isLoading: isLoading || wsLoading || krakenLoading || pricesLoading,
+    isLoading: isLoading || wsLoading || pricesLoading,
     error,
 
     // Actions
