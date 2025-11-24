@@ -16,6 +16,7 @@ export const useSettings = () => {
 export const SettingsProvider = ({ children, user: providedUser }) => {
   const [settings, setSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastFetch, setLastFetch] = useState(0);
   const [user, setUser] = useState(providedUser);
 
   // CRITICAL: Only fetch user if not provided
