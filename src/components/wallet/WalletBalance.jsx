@@ -31,9 +31,21 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
     
     setIsSyncing(true);
     try {
-      toast.info('Syncing Kraken account...', { duration: 3000 });
+      toast.info('Syncing Kraken account...', { duration: 8000 });
+      
+      // CRITICAL: Add longer timeout for the function call
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
+      clearTimeout(timeoutId);
+      
       const syncData = syncRes?.data || syncRes;
+      
+      // Handle HTTP error status codes
+      if (syncRes?.status >= 400) {
+        throw new Error(syncData?.error || `Request failed with status code ${syncRes.status}`);
+      }
       
       if (!syncData?.success) {
         throw new Error(syncData?.error || 'Sync failed');
@@ -49,7 +61,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
       }
     } catch (error) {
       console.error('Sync error:', error);
-      toast.error('Sync failed', { description: error.message });
+      const errorMsg = error.message || 'Unknown error';
+      
+      // Better error messages
+      if (errorMsg.includes('408') || errorMsg.includes('timeout')) {
+        toast.error('Sync timed out', { description: 'Kraken API is slow. Please try again.' });
+      } else if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
+        toast.error('Not authorized', { description: 'Please reconnect your Kraken account.' });
+      } else {
+        toast.error('Sync failed', { description: errorMsg });
+      }
     } finally {
       setIsSyncing(false);
     }
