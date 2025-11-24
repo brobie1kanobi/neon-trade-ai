@@ -52,7 +52,6 @@ const GLOBAL_WS_STATE = {
   executions: [],
   activeSubscriptions: new Set(),
   eventListeners: new Map(),
-  tokenRefreshInterval: null,
   pendingSubscriptions: [],
   pendingTokenRequest: null,
   isConnecting: false
@@ -61,7 +60,6 @@ const GLOBAL_WS_STATE = {
 const WS_URL = 'wss://ws.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
-const TOKEN_REFRESH_INTERVAL = 12 * 60 * 1000;
 
 function emitEvent(eventName, data) {
   const listeners = GLOBAL_WS_STATE.eventListeners.get(eventName) || [];
@@ -128,22 +126,7 @@ async function refreshToken() {
   return tokenPromise;
 }
 
-function setupTokenRefresh() {
-  if (GLOBAL_WS_STATE.tokenRefreshInterval) {
-    clearInterval(GLOBAL_WS_STATE.tokenRefreshInterval);
-  }
-  
-  GLOBAL_WS_STATE.tokenRefreshInterval = setInterval(async () => {
-    const refreshed = await refreshToken();
-    
-    if (refreshed && GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
-      console.log('[KrakenWS] Reconnecting with fresh token...');
-      GLOBAL_WS_STATE.ws.close();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      connectWebSocket();
-    }
-  }, TOKEN_REFRESH_INTERVAL);
-}
+// REMOVED: No automatic token refresh - only refresh on connection failure
 
 function safeSend(message) {
   if (!GLOBAL_WS_STATE.ws) {
@@ -183,23 +166,18 @@ async function connectWebSocket() {
   GLOBAL_WS_STATE.isConnecting = true;
 
   try {
-    // Only fetch token if expired or missing
-    if (!GLOBAL_WS_STATE.token || (GLOBAL_WS_STATE.tokenExpiry && Date.now() >= GLOBAL_WS_STATE.tokenExpiry)) {
-      console.log('[KrakenWS] Token expired or missing, refreshing...');
+    // Only fetch token if missing (NOT on expiry - WebSocket stays connected)
+    if (!GLOBAL_WS_STATE.token) {
+      console.log('[KrakenWS] No token found, fetching initial token...');
       const refreshed = await refreshToken();
       if (!refreshed) {
         GLOBAL_WS_STATE.isConnecting = false;
+        globalConnectLock = false;
         emitEvent('error', { message: 'Account not connected', fatal: true });
         return;
       }
     } else {
-      const remaining = Math.floor((GLOBAL_WS_STATE.tokenExpiry - Date.now()) / 1000);
-      console.log('[KrakenWS] ✅ Using existing token (expires in', remaining, 's)');
-    }
-
-    // Setup token refresh ONCE
-    if (!GLOBAL_WS_STATE.tokenRefreshInterval) {
-      setupTokenRefresh();
+      console.log('[KrakenWS] ✅ Using existing token');
     }
 
     const ws = new WebSocket(WS_URL);
@@ -540,11 +518,6 @@ export function useKrakenWebSocketManager(options = {}) {
 }
 
 export function disconnectKrakenWebSocket() {
-  if (GLOBAL_WS_STATE.tokenRefreshInterval) {
-    clearInterval(GLOBAL_WS_STATE.tokenRefreshInterval);
-    GLOBAL_WS_STATE.tokenRefreshInterval = null;
-  }
-  
   if (GLOBAL_WS_STATE.ws) {
     GLOBAL_WS_STATE.ws.close();
     GLOBAL_WS_STATE.ws = null;
