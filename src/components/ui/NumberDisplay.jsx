@@ -71,6 +71,25 @@ export default function NumberDisplay({
       ? negativeClass 
       : neutralClass;
 
+  // Show loading spinner instead of $0.00
+  if (isLoading) {
+    return (
+      <div 
+        ref={containerRef} 
+        className={`overflow-hidden flex items-center gap-2 ${className}`}
+        style={{ width: '100%', height: 'auto' }}
+      >
+        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-secondary)' }} />
+        <span 
+          className="font-bold whitespace-nowrap"
+          style={{ fontSize: `${minFontSize}px`, color: 'var(--text-secondary)' }}
+        >
+          {prefix}---{suffix}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div 
       ref={containerRef} 
