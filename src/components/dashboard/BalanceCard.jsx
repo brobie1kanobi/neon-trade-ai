@@ -1,6 +1,6 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Eye, EyeOff, TrendingUp, TrendingDown, Wifi } from "lucide-react";
+import { Eye, EyeOff, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
@@ -13,18 +13,11 @@ export default function BalanceCard({
   onToggleVisibility,
   isVisible,
   isPrimary = false,
-  changeLabel,
   isSimMode = true,
-  isConnected = false,
-  isLoading = false
+  changeLabel
 }) {
-  // CRITICAL: Use amount directly - no caching, no refs
-  const displayAmount = typeof amount === 'number' ? amount : 0;
+  // Use actual change data if provided, otherwise default to positive zero
   const displayChange = change || { value: 0, percentage: 0 };
-  
-  // CRITICAL: Show loading for LIVE mode when values are 0 and not connected
-  const showLoadingForZero = !isSimMode && !isConnected;
-
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
   const changePct = typeof displayChange.percentage === 'number' ? displayChange.percentage : 0;
@@ -48,8 +41,7 @@ export default function BalanceCard({
               </Badge>
             }
             {!isSimMode &&
-              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
-                {isConnected && <Wifi className="w-3 h-3" />}
+              <Badge className="bg-green-100 text-green-800 text-xs">
                 Live
               </Badge>
             }
@@ -73,18 +65,14 @@ export default function BalanceCard({
         
         <div className="space-y-1">
           {isVisible ? (
-            <>
-              <NumberDisplay
-                value={displayAmount}
-                prefix="$"
-                decimals={2}
-                className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
-                maxFontSize={isPrimary ? 40 : 28}
-                minFontSize={16}
-                loading={isLoading}
-                showLoadingForZero={showLoadingForZero}
-              />
-            </>
+            <NumberDisplay
+              value={amount || 0}
+              prefix="$"
+              decimals={2}
+              className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
+              maxFontSize={isPrimary ? 40 : 28}
+              minFontSize={16}
+            />
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}
               style={{ color: isPrimary ? 'var(--neon-green)' : 'var(--text-primary)' }}>
@@ -103,7 +91,7 @@ export default function BalanceCard({
                 {(changeValue >= 0 ? '+' : '-')}${Math.abs(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({changePct >= 0 ? '+' : '-'}{Math.abs(changePct).toFixed(2)}%)
               </span>
               <span className="text-xs ml-1" style={{ color: 'var(--text-secondary)' }}>
-                {changeLabel || (isSimMode ? 'Demo' : 'Live')}
+                {changeLabel ? changeLabel : (isSimMode ? 'Demo Lifetime' : 'Live Lifetime')}
               </span>
             </div>
           }

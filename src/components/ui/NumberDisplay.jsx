@@ -1,108 +1,89 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 
+import React from "react";
+
+/**
+ * NumberDisplay
+ * - Formats numbers with thousands separators and fixed decimals
+ * - Auto-shrinks font size to keep content inside its container on all screens
+ */
 export default function NumberDisplay({
   value,
-  prefix = '',
-  suffix = '',
+  prefix = "",
+  suffix = "",
   decimals = 2,
-  className = '',
-  maxFontSize = 32,
-  minFontSize = 14,
-  tone = 'neutral',
-  positiveClass = 'text-green-500',
-  negativeClass = 'text-red-500',
-  neutralClass = '',
-  loading = false,
-  showLoadingForZero = false
+  className = "",
+  maxFontSize = 40,
+  minFontSize = 16,
+  locale = "en-US",
+  title, // optional tooltip title
+  // New: color tone control
+  tone, // 'positive' | 'negative' | 'neutral' | undefined
+  positiveClass = "text-green-500",
+  negativeClass = "text-red-500",
+  neutralClass = ""
 }) {
-  const containerRef = useRef(null);
-  const textRef = useRef(null);
-  const [fontSize, setFontSize] = useState(maxFontSize);
+  const containerRef = React.useRef(null);
+  const textRef = React.useRef(null);
+  const [fontSize, setFontSize] = React.useState(maxFontSize);
 
-  // CRITICAL: Show loading indicator if value is 0 and showLoadingForZero is true
-  const isLoading = loading || (showLoadingForZero && (value === 0 || value === null || value === undefined));
+  const formatted = React.useMemo(() => {
+    const num = typeof value === "number" ? value : Number(value || 0);
+    const fixed = num.toLocaleString(locale, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+    return `${prefix}${fixed}${suffix}`;
+  }, [value, prefix, suffix, decimals, locale]);
 
-  const formattedValue = typeof value === 'number' 
-    ? value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-    : '---';
+  React.useEffect(() => {
+    if (!containerRef.current || !textRef.current) return;
+    const container = containerRef.current;
+    const text = textRef.current;
 
-  const fullText = `${prefix}${formattedValue}${suffix}`;
-
-  useEffect(() => {
-    const adjustFontSize = () => {
-      const container = containerRef.current;
-      const text = textRef.current;
-      
-      if (!container || !text) return;
-
+    const fit = () => {
+      // Start at max and shrink down as needed
       let currentSize = maxFontSize;
       text.style.fontSize = `${currentSize}px`;
-      
-      let attempts = 0;
-      while (
-        (text.scrollWidth > container.clientWidth || text.scrollHeight > container.clientHeight) &&
-        currentSize > minFontSize &&
-        attempts < 50
-      ) {
-        currentSize -= 1;
+      // Small padding tolerance
+      const padding = 8;
+
+      // Prevent infinite loops; cap iterations
+      let guard = 0;
+      while (guard < 20) {
+        const cWidth = container.clientWidth - padding;
+        const tWidth = text.scrollWidth;
+        if (tWidth <= cWidth || currentSize <= minFontSize) break;
+        currentSize = Math.max(minFontSize, Math.floor(currentSize * 0.9));
         text.style.fontSize = `${currentSize}px`;
-        attempts++;
+        guard += 1;
       }
-      
       setFontSize(currentSize);
     };
 
-    const resizeObserver = new ResizeObserver(adjustFontSize);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+    fit();
 
-    adjustFontSize();
+    const ro = new ResizeObserver(() => {
+      fit();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [formatted, maxFontSize, minFontSize]);
 
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [formattedValue, maxFontSize, minFontSize]);
-
-  const toneClass = tone === 'positive' 
-    ? positiveClass 
-    : tone === 'negative' 
-      ? negativeClass 
+  // New: determine inner text color by tone if provided
+  const toneClass = tone === 'positive'
+    ? positiveClass
+    : tone === 'negative'
+      ? negativeClass
       : neutralClass;
 
-  // Show loading spinner instead of $0.00
-  if (isLoading) {
-    return (
-      <div 
-        ref={containerRef} 
-        className={`overflow-hidden flex items-center gap-2 ${className}`}
-        style={{ width: '100%', height: 'auto' }}
-      >
-        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-secondary)' }} />
-        <span 
-          className="font-bold whitespace-nowrap"
-          style={{ fontSize: `${minFontSize}px`, color: 'var(--text-secondary)' }}
-        >
-          {prefix}---{suffix}
-        </span>
-      </div>
-    );
-  }
-
   return (
-    <div 
-      ref={containerRef} 
-      className={`overflow-hidden ${className}`}
-      style={{ width: '100%', height: 'auto' }}
-    >
+    <div ref={containerRef} className={`w-full overflow-hidden ${className}`} title={title || formatted}>
       <span
         ref={textRef}
-        className={`font-bold whitespace-nowrap ${toneClass}`}
-        style={{ fontSize: `${fontSize}px`, display: 'inline-block' }}
-        title={fullText}
+        className={toneClass}
+        style={{ fontSize: `${fontSize}px`, lineHeight: 1.1, display: "inline-block", whiteSpace: "nowrap" }}
       >
-        {fullText}
+        {formatted}
       </span>
     </div>
   );

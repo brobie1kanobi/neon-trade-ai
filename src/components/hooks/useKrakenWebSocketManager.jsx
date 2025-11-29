@@ -1,214 +1,113 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
- * PRODUCTION KRAKEN WEBSOCKET - FIXED asset normalization & conditional orders
+ * CENTRALIZED KRAKEN WEBSOCKET MANAGER
+ * 
+ * Handles ALL Kraken WebSocket v2 subscriptions:
+ * - Ticker (prices) - EXISTING
+ * - Balances - NEW
+ * - Executions (trades) - NEW
+ * - Open Orders - NEW
+ * 
+ * Based on: https://docs.kraken.com/api/docs/websocket-v2/
  */
 
-// CRITICAL: Normalize Kraken asset codes (XXRP → XRP, XXBT → BTC)
-function normalizeKrakenSymbol(symbol) {
-  if (!symbol) return symbol;
-  
-  let normalized = symbol;
-  
-  // Remove X/Z prefixes
-  if (symbol.startsWith('X') && symbol.length > 3) {
-    normalized = symbol.substring(1);
-  }
-  if (symbol.startsWith('Z') && symbol.length > 3) {
-    normalized = symbol.substring(1);
-  }
-  
-  // Map to standard symbols
-  const map = {
-    'XBT': 'BTC',
-    'XDG': 'DOGE',
-    'XRP': 'XRP',
-    'ETH': 'ETH',
-    'SOL': 'SOL',
-    'ADA': 'ADA',
-    'DOT': 'DOT',
-    'DOGE': 'DOGE',
-    'LINK': 'LINK',
-    'USD': 'USD'
-  };
-  
-  return map[normalized] || normalized;
-}
-
-// CRITICAL: Global singleton state to prevent duplicate connections
-let globalConnectLock = false;
-let globalTokenLock = false;
-
+// GLOBAL STATE - shared across ALL hooks
 const GLOBAL_WS_STATE = {
   ws: null,
   isConnected: false,
   token: null,
-  tokenExpiry: null,
   reconnectAttempts: 0,
+  subscribers: new Map(),
+  
+  // Data stores
   prices: new Map(),
   balances: new Map(),
   orders: new Map(),
   executions: [],
+  
+  // Subscription tracking
   activeSubscriptions: new Set(),
-  eventListeners: new Map(),
-  pendingSubscriptions: [],
-  pendingTokenRequest: null,
-  isConnecting: false
+  
+  // Event emitter
+  eventListeners: new Map()
 };
 
-// CRITICAL: Use authenticated WebSocket URL for balance/order channels
-const WS_URL_PUBLIC = 'wss://ws.kraken.com/v2';
-const WS_URL_AUTH = 'wss://ws-auth.kraken.com/v2';
+const WS_URL = 'wss://ws.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
 
+/**
+ * Emit custom events to all listeners
+ */
 function emitEvent(eventName, data) {
   const listeners = GLOBAL_WS_STATE.eventListeners.get(eventName) || [];
   listeners.forEach(callback => {
     try {
       callback(data);
     } catch (e) {
-      console.error('[KrakenWS] Event error:', e);
+      console.error('[KrakenWSManager] Event callback error:', e);
     }
   });
 }
 
-async function refreshToken() {
-  // CRITICAL: Check if we already have a valid token (30s buffer)
-  if (GLOBAL_WS_STATE.token && GLOBAL_WS_STATE.tokenExpiry && Date.now() < GLOBAL_WS_STATE.tokenExpiry - 30000) {
-    console.log('[KrakenWS] ✅ Using existing valid token');
-    return true;
+/**
+ * Connect to Kraken WebSocket v2
+ */
+async function connectWebSocket() {
+  if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
+    console.log('[KrakenWSManager] Already connected');
+    return;
   }
 
-  // CRITICAL: If there's already a pending request, wait for it instead of creating another
-  if (GLOBAL_WS_STATE.pendingTokenRequest) {
-    console.log('[KrakenWS] ⏳ Waiting for existing pending token request...');
-    try {
-      return await GLOBAL_WS_STATE.pendingTokenRequest;
-    } catch (e) {
-      console.warn('[KrakenWS] Pending token request failed:', e.message);
-      GLOBAL_WS_STATE.pendingTokenRequest = null;
-      globalTokenLock = false;
-    }
-  }
+  console.log('[KrakenWSManager] Connecting to Kraken WebSocket v2...');
 
-  // CRITICAL: Global lock to prevent ANY duplicate token requests
-  if (globalTokenLock) {
-    console.log('[KrakenWS] 🔒 Token request blocked - already in progress');
-    // Wait a bit and check if token became available
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return GLOBAL_WS_STATE.token ? true : false;
-  }
-
-  globalTokenLock = true;
-
-  const tokenPromise = (async () => {
-    try {
-      console.log('[KrakenWS] 🔄 Refreshing WebSocket token...');
+  try {
+    // FIXED: Get WebSocket token with correct action name
+    if (!GLOBAL_WS_STATE.token) {
+      console.log('[KrakenWSManager] Requesting WebSocket token...');
       
-      const response = await Promise.race([
-        base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Token timeout')), 10000))
-      ]);
+      const response = await base44.functions.invoke('krakenApi', { 
+        action: 'getWebSocketUrl'  // ✅ FIXED: Correct action name
+      });
       
       const data = response?.data || response;
       
+      console.log('[KrakenWSManager] Token response:', { 
+        success: data?.success, 
+        hasToken: !!data?.token,
+        connected: data?.connected 
+      });
+      
       if (data?.success && data?.token) {
         GLOBAL_WS_STATE.token = data.token;
-        GLOBAL_WS_STATE.tokenExpiry = Date.now() + (data.expires_in || 900) * 1000;
-        console.log('[KrakenWS] ✅ Token refreshed, expires in', data.expires_in || 900, 's');
-        return true;
+        console.log('[KrakenWSManager] ✅ Got WebSocket token');
+      } else {
+        // CRITICAL: Handle "not connected" gracefully
+        if (data?.connected === false) {
+          console.warn('[KrakenWSManager] ⚠️ Kraken account not connected');
+          throw new Error('Kraken account not connected');
+        }
+        throw new Error(data?.error || 'Failed to get WebSocket token');
       }
-      
-      console.warn('[KrakenWS] Token response invalid:', data?.error || 'No token received');
-      return false;
-    } catch (error) {
-      console.error('[KrakenWS] Token refresh failed:', error.message);
-      return false;
-    } finally {
-      GLOBAL_WS_STATE.pendingTokenRequest = null;
-      globalTokenLock = false;
-    }
-  })();
-
-  GLOBAL_WS_STATE.pendingTokenRequest = tokenPromise;
-  return tokenPromise;
-}
-
-// REMOVED: No automatic token refresh - only refresh on connection failure
-
-function safeSend(message) {
-  if (!GLOBAL_WS_STATE.ws) {
-    GLOBAL_WS_STATE.pendingSubscriptions.push(message);
-    return false;
-  }
-
-  if (GLOBAL_WS_STATE.ws.readyState === WebSocket.OPEN) {
-    GLOBAL_WS_STATE.ws.send(JSON.stringify(message));
-    return true;
-  } else if (GLOBAL_WS_STATE.ws.readyState === WebSocket.CONNECTING) {
-    GLOBAL_WS_STATE.pendingSubscriptions.push(message);
-    return false;
-  }
-  
-  return false;
-}
-
-async function connectWebSocket() {
-  // CRITICAL: Global lock prevents ANY duplicate connections
-  if (globalConnectLock) {
-    console.log('[KrakenWS] 🔒 Connection blocked - already in progress globally');
-    return;
-  }
-
-  if (GLOBAL_WS_STATE.isConnecting) {
-    console.log('[KrakenWS] ⏳ Connection already in progress');
-    return;
-  }
-
-  if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
-    console.log('[KrakenWS] ✅ Already connected');
-    return;
-  }
-
-  globalConnectLock = true;
-  GLOBAL_WS_STATE.isConnecting = true;
-
-  try {
-    // Only fetch token if missing (NOT on expiry - WebSocket stays connected)
-    if (!GLOBAL_WS_STATE.token) {
-      console.log('[KrakenWS] No token found, fetching initial token...');
-      const refreshed = await refreshToken();
-      if (!refreshed) {
-        GLOBAL_WS_STATE.isConnecting = false;
-        globalConnectLock = false;
-        emitEvent('error', { message: 'Account not connected', fatal: true });
-        return;
-      }
-    } else {
-      console.log('[KrakenWS] ✅ Using existing token');
     }
 
-    // CRITICAL: Must use authenticated URL for balance subscriptions
-    const ws = new WebSocket(WS_URL_AUTH);
+    // Create WebSocket connection
+    const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-      console.log('[KrakenWS] ✅ Connected');
+      console.log('[KrakenWSManager] ✅ WebSocket connected');
       GLOBAL_WS_STATE.isConnected = true;
-      GLOBAL_WS_STATE.isConnecting = false;
-      globalConnectLock = false;
       GLOBAL_WS_STATE.reconnectAttempts = 0;
+      
       emitEvent('connected', {});
       
-      setTimeout(() => {
-        if (GLOBAL_WS_STATE.pendingSubscriptions.length > 0) {
-          GLOBAL_WS_STATE.pendingSubscriptions.forEach(sub => safeSend(sub));
-          GLOBAL_WS_STATE.pendingSubscriptions = [];
-        }
-        
-        GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => safeSend(sub));
-      }, 100);
+      // Resubscribe to all active subscriptions
+      GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
+        ws.send(JSON.stringify(sub));
+      });
     };
 
     ws.onmessage = (event) => {
@@ -216,25 +115,26 @@ async function connectWebSocket() {
         const message = JSON.parse(event.data);
         handleMessage(message);
       } catch (e) {
-        console.error('[KrakenWS] Parse error:', e);
+        console.error('[KrakenWSManager] Message parse error:', e);
       }
     };
 
     ws.onerror = (error) => {
-      console.error('[KrakenWS] Error:', error.message || 'Unknown');
+      console.error('[KrakenWSManager] WebSocket error:', error);
       emitEvent('error', error);
     };
 
     ws.onclose = () => {
+      console.log('[KrakenWSManager] WebSocket closed');
       GLOBAL_WS_STATE.isConnected = false;
-      GLOBAL_WS_STATE.isConnecting = false;
-      globalConnectLock = false;
       GLOBAL_WS_STATE.ws = null;
+      
       emitEvent('disconnected', {});
       
+      // Auto-reconnect
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
-        console.log('[KrakenWS] 🔄 Reconnecting in', RECONNECT_DELAY / 1000, 's (attempt', GLOBAL_WS_STATE.reconnectAttempts, '/', MAX_RECONNECT_ATTEMPTS, ')');
+        console.log(`[KrakenWSManager] Reconnecting (attempt ${GLOBAL_WS_STATE.reconnectAttempts})...`);
         setTimeout(connectWebSocket, RECONNECT_DELAY);
       }
     };
@@ -242,16 +142,17 @@ async function connectWebSocket() {
     GLOBAL_WS_STATE.ws = ws;
 
   } catch (error) {
-    console.error('[KrakenWS] Connect error:', error.message);
+    console.error('[KrakenWSManager] Connection error:', error.message);
     GLOBAL_WS_STATE.isConnected = false;
-    GLOBAL_WS_STATE.isConnecting = false;
-    globalConnectLock = false;
     
-    if (error.message.includes('not connected') || error.message.includes('token')) {
-      emitEvent('error', { message: error.message, fatal: true });
+    // Don't retry if Kraken not connected
+    if (error.message.includes('not connected')) {
+      console.warn('[KrakenWSManager] ❌ Kraken not connected - stopping retries');
+      emitEvent('error', { message: 'Kraken account not connected', fatal: true });
       return;
     }
     
+    // Retry for other errors
     if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       GLOBAL_WS_STATE.reconnectAttempts++;
       setTimeout(connectWebSocket, RECONNECT_DELAY);
@@ -259,97 +160,88 @@ async function connectWebSocket() {
   }
 }
 
+/**
+ * Handle incoming WebSocket messages
+ */
 function handleMessage(message) {
   const { channel, type, data } = message;
 
-  // Log all non-ticker messages for debugging
-  if (channel !== 'ticker') {
-    console.log(`[KrakenWS] 📨 Message: channel=${channel}, type=${type}, data=`, data?.length || data);
-  }
-
+  // Handle different message types
   if (type === 'update') {
-    if (channel === 'ticker') handleTickerUpdate(data);
-    else if (channel === 'balances') handleBalanceUpdate(data);
-    else if (channel === 'executions') handleExecutionUpdate(data);
-    else if (channel === 'openOrders') handleOrderUpdate(data);
+    if (channel === 'ticker') {
+      handleTickerUpdate(data);
+    } else if (channel === 'balances') {
+      handleBalanceUpdate(data);
+    } else if (channel === 'executions') {
+      handleExecutionUpdate(data);
+    } else if (channel === 'openOrders') {
+      handleOrderUpdate(data);
+    }
   } else if (type === 'snapshot') {
-    if (channel === 'balances') handleBalanceSnapshot(data);
-    else if (channel === 'openOrders') handleOrderSnapshot(data);
+    if (channel === 'balances') {
+      handleBalanceSnapshot(data);
+    } else if (channel === 'openOrders') {
+      handleOrderSnapshot(data);
+    }
+  } else if (type === 'subscribed') {
+    console.log('[KrakenWSManager] ✅ Subscribed to', channel);
   } else if (type === 'error') {
-    console.error('[KrakenWS] ❌ Subscription error:', message);
-  } else if (type === 'subscribe') {
-    console.log(`[KrakenWS] ✅ Subscribed to ${channel}`);
+    console.error('[KrakenWSManager] Subscription error:', message);
   }
 }
 
+/**
+ * Handle ticker updates (prices)
+ */
 function handleTickerUpdate(data) {
   data.forEach(ticker => {
     const { symbol, last, bid, ask, change_24h, volume_24h } = ticker;
-    const normalized = normalizeKrakenSymbol(symbol);
-    GLOBAL_WS_STATE.prices.set(normalized, {
-      symbol: normalized, price: last, bid, ask, change_24h, volume_24h, timestamp: Date.now()
+    
+    GLOBAL_WS_STATE.prices.set(symbol, {
+      symbol,
+      price: last,
+      bid,
+      ask,
+      change_24h,
+      volume_24h,
+      timestamp: Date.now()
     });
   });
+  
   emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
 }
 
+/**
+ * Handle balance snapshot (full balance data)
+ */
 function handleBalanceSnapshot(data) {
-  console.log('[KrakenWS] 📦 Balance SNAPSHOT received:', data?.length, 'items');
-  console.log('[KrakenWS] 📦 Raw snapshot data:', JSON.stringify(data));
+  console.log('[KrakenWSManager] 💰 Balance snapshot:', data);
   
-  if (!data || !Array.isArray(data)) {
-    console.warn('[KrakenWS] Invalid balance snapshot data:', data);
-    return;
-  }
-  
-  data.forEach(item => {
-    // KRAKEN V2 API FORMAT: { asset: "BTC", balance: 1.2, wallets: [...] }
-    const asset = item.asset;
-    const totalBalance = parseFloat(item.balance) || 0;
-    
-    // Get spot wallet balance (main trading wallet)
-    let spotBalance = totalBalance;
-    if (item.wallets && Array.isArray(item.wallets)) {
-      const spotWallet = item.wallets.find(w => w.type === 'spot' && w.id === 'main');
-      if (spotWallet) {
-        spotBalance = parseFloat(spotWallet.balance) || totalBalance;
-      }
-    }
-    
-    const normalized = normalizeKrakenSymbol(asset);
-    console.log(`[KrakenWS] 💰 Balance: ${asset} → ${normalized} = ${totalBalance} (spot: ${spotBalance})`);
-    
-    GLOBAL_WS_STATE.balances.set(normalized, {
-      asset: normalized, 
-      balance: totalBalance,
-      available: spotBalance,
+  data.forEach(balance => {
+    const { asset, balance: amount, available } = balance;
+    GLOBAL_WS_STATE.balances.set(asset, {
+      asset,
+      balance: parseFloat(amount),
+      available: parseFloat(available),
       timestamp: Date.now()
     });
   });
   
-  console.log('[KrakenWS] 📊 Total balances now:', GLOBAL_WS_STATE.balances.size, 'assets:', Array.from(GLOBAL_WS_STATE.balances.keys()));
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
 }
 
+/**
+ * Handle balance updates (incremental changes)
+ */
 function handleBalanceUpdate(data) {
-  console.log('[KrakenWS] 📬 Balance UPDATE received:', data?.length, 'items');
+  console.log('[KrakenWSManager] 💰 Balance update:', data);
   
-  data.forEach(item => {
-    // KRAKEN V2 UPDATE FORMAT: { asset: "BTC", balance: 1.2, amount: 0.01, ... }
-    const asset = item.asset;
-    const newBalance = parseFloat(item.balance) || 0;
-    
-    const normalized = normalizeKrakenSymbol(asset);
-    console.log(`[KrakenWS] 💰 Update: ${asset} → ${normalized} = ${newBalance}`);
-    
-    // Get existing or create new
-    const existing = GLOBAL_WS_STATE.balances.get(normalized) || {};
-    
-    GLOBAL_WS_STATE.balances.set(normalized, {
-      ...existing,
-      asset: normalized, 
-      balance: newBalance,
-      available: newBalance, // Updates reflect available balance
+  data.forEach(balance => {
+    const { asset, balance: amount, available } = balance;
+    GLOBAL_WS_STATE.balances.set(asset, {
+      asset,
+      balance: parseFloat(amount),
+      available: parseFloat(available),
       timestamp: Date.now()
     });
   });
@@ -357,75 +249,104 @@ function handleBalanceUpdate(data) {
   emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
 }
 
+/**
+ * Handle order snapshot (full open orders)
+ */
 function handleOrderSnapshot(data) {
+  console.log('[KrakenWSManager] 📋 Orders snapshot:', data);
+  
   GLOBAL_WS_STATE.orders.clear();
   data.forEach(order => {
-    // CRITICAL: Normalize symbol in order
-    const normalizedOrder = {
-      ...order,
-      symbol: normalizeKrakenSymbol(order.symbol)
-    };
-    GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
+    GLOBAL_WS_STATE.orders.set(order.order_id, order);
   });
+  
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
 }
 
+/**
+ * Handle order updates (new/changed/closed orders)
+ */
 function handleOrderUpdate(data) {
+  console.log('[KrakenWSManager] 📋 Order update:', data);
+  
   data.forEach(order => {
-    const normalizedOrder = {
-      ...order,
-      symbol: normalizeKrakenSymbol(order.symbol)
-    };
-    
     if (order.status === 'closed' || order.status === 'canceled') {
       GLOBAL_WS_STATE.orders.delete(order.order_id);
     } else {
-      GLOBAL_WS_STATE.orders.set(order.order_id, normalizedOrder);
+      GLOBAL_WS_STATE.orders.set(order.order_id, order);
     }
   });
+  
   emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
 }
 
+/**
+ * Handle execution updates (trade fills)
+ */
 function handleExecutionUpdate(data) {
+  console.log('[KrakenWSManager] ✅ Execution:', data);
+  
   data.forEach(execution => {
-    GLOBAL_WS_STATE.executions.push({ ...execution, timestamp: Date.now() });
+    GLOBAL_WS_STATE.executions.push({
+      ...execution,
+      timestamp: Date.now()
+    });
+    
+    // Keep only last 100 executions
     if (GLOBAL_WS_STATE.executions.length > 100) {
       GLOBAL_WS_STATE.executions.shift();
     }
   });
+  
   emitEvent('executionReceived', data);
 }
 
+/**
+ * Subscribe to a channel
+ */
 function subscribe(channel, params = {}) {
+  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
+    console.warn('[KrakenWSManager] Not connected, queuing subscription');
+    return;
+  }
+
   const subscription = {
     method: 'subscribe',
-    params: { channel, ...params }
+    params: {
+      channel,
+      ...params
+    }
   };
 
+  // Add token for authenticated channels
   if (['balances', 'executions', 'openOrders'].includes(channel)) {
     subscription.params.token = GLOBAL_WS_STATE.token;
-    console.log(`[KrakenWS] 🔐 Adding token to ${channel} subscription`);
   }
 
-  console.log(`[KrakenWS] 📤 Sending subscription:`, channel, params);
-  const sent = safeSend(subscription);
-  
-  if (sent || GLOBAL_WS_STATE.ws?.readyState === WebSocket.CONNECTING) {
-    GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
-    console.log(`[KrakenWS] ✅ Subscription ${channel} queued/sent`);
-  } else {
-    console.warn(`[KrakenWS] ⚠️ Failed to send ${channel} subscription`);
-  }
+  console.log('[KrakenWSManager] Subscribing to', channel);
+  GLOBAL_WS_STATE.ws.send(JSON.stringify(subscription));
+  GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
 }
 
+/**
+ * Unsubscribe from a channel
+ */
 function unsubscribe(channel, params = {}) {
+  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
+    return;
+  }
+
   const unsubscription = {
     method: 'unsubscribe',
-    params: { channel, ...params }
+    params: {
+      channel,
+      ...params
+    }
   };
 
-  safeSend(unsubscription);
+  GLOBAL_WS_STATE.ws.send(JSON.stringify(unsubscription));
   
+  // Remove from active subscriptions
   GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
     if (sub.params.channel === channel) {
       GLOBAL_WS_STATE.activeSubscriptions.delete(sub);
@@ -433,6 +354,9 @@ function unsubscribe(channel, params = {}) {
   });
 }
 
+/**
+ * React hook for using the WebSocket manager
+ */
 export function useKrakenWebSocketManager(options = {}) {
   const {
     subscribeToPrices = false,
@@ -448,13 +372,14 @@ export function useKrakenWebSocketManager(options = {}) {
   const [orders, setOrders] = useState({});
   const [lastExecution, setLastExecution] = useState(null);
 
+  const subscriberIdRef = useRef(Symbol());
+
+  // Connect on mount
   useEffect(() => {
-    // CRITICAL: Only connect once globally
-    if (!GLOBAL_WS_STATE.isConnected && !GLOBAL_WS_STATE.isConnecting) {
-      connectWebSocket();
-    }
+    connectWebSocket();
   }, []);
 
+  // Handle connection state changes
   useEffect(() => {
     const handleConnected = () => setIsConnected(true);
     const handleDisconnected = () => setIsConnected(false);
@@ -470,6 +395,7 @@ export function useKrakenWebSocketManager(options = {}) {
     ]);
 
     return () => {
+      // Cleanup
       const connectedListeners = GLOBAL_WS_STATE.eventListeners.get('connected') || [];
       GLOBAL_WS_STATE.eventListeners.set('connected', 
         connectedListeners.filter(cb => cb !== handleConnected)
@@ -482,12 +408,21 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, []);
 
+  // Subscribe to prices
   useEffect(() => {
-    if (!subscribeToPrices || !isConnected || priceSymbols.length === 0) return;
-    
-    subscribe('ticker', { symbol: priceSymbols });
+    if (!subscribeToPrices || !isConnected || priceSymbols.length === 0) {
+      return;
+    }
 
-    const handlePricesUpdated = (data) => setPrices(data);
+    console.log('[KrakenWSManager] Subscribing to prices for', priceSymbols.length, 'symbols');
+    
+    subscribe('ticker', {
+      symbol: priceSymbols
+    });
+
+    const handlePricesUpdated = (data) => {
+      setPrices(data);
+    };
 
     GLOBAL_WS_STATE.eventListeners.set('pricesUpdated', [
       ...(GLOBAL_WS_STATE.eventListeners.get('pricesUpdated') || []),
@@ -502,14 +437,17 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToPrices, isConnected, priceSymbols.join(',')]);
 
+  // Subscribe to balances
   useEffect(() => {
-    if (!subscribeToBalances || !isConnected) return;
+    if (!subscribeToBalances || !isConnected) {
+      return;
+    }
+
+    console.log('[KrakenWSManager] Subscribing to balances');
     
-    console.log('[KrakenWS] 🔔 Subscribing to balances channel...');
     subscribe('balances');
 
     const handleBalancesUpdated = (data) => {
-      console.log('[KrakenWS] 📬 Balances updated in hook:', Object.keys(data || {}).length, 'assets');
       setBalances(data);
     };
 
@@ -526,12 +464,19 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToBalances, isConnected]);
 
+  // Subscribe to orders
   useEffect(() => {
-    if (!subscribeToOrders || !isConnected) return;
+    if (!subscribeToOrders || !isConnected) {
+      return;
+    }
+
+    console.log('[KrakenWSManager] Subscribing to orders');
     
     subscribe('openOrders');
 
-    const handleOrdersUpdated = (data) => setOrders(data);
+    const handleOrdersUpdated = (data) => {
+      setOrders(data);
+    };
 
     GLOBAL_WS_STATE.eventListeners.set('ordersUpdated', [
       ...(GLOBAL_WS_STATE.eventListeners.get('ordersUpdated') || []),
@@ -546,12 +491,19 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToOrders, isConnected]);
 
+  // Subscribe to executions
   useEffect(() => {
-    if (!subscribeToExecutions || !isConnected) return;
+    if (!subscribeToExecutions || !isConnected) {
+      return;
+    }
+
+    console.log('[KrakenWSManager] Subscribing to executions');
     
     subscribe('executions');
 
-    const handleExecutionReceived = (data) => setLastExecution(data[0] || null);
+    const handleExecutionReceived = (data) => {
+      setLastExecution(data[0] || null);
+    };
 
     GLOBAL_WS_STATE.eventListeners.set('executionReceived', [
       ...(GLOBAL_WS_STATE.eventListeners.get('executionReceived') || []),
@@ -566,26 +518,27 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToExecutions, isConnected]);
 
-  const subscribeToNewPrices = useCallback((symbols) => {
-    if (!isConnected || !symbols || symbols.length === 0) return;
-    subscribe('ticker', { symbol: symbols });
-  }, [isConnected]);
-
   return {
     isConnected,
     prices,
     balances,
     orders,
     lastExecution,
+    
+    // Manual subscription methods
     subscribe: useCallback((channel, params) => subscribe(channel, params), []),
     unsubscribe: useCallback((channel, params) => unsubscribe(channel, params), []),
-    subscribeToPrices: subscribeToNewPrices,
+    
+    // Get current data
     getAllPrices: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.prices), []),
     getAllBalances: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.balances), []),
     getAllOrders: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.orders), [])
   };
 }
 
+/**
+ * Disconnect and cleanup
+ */
 export function disconnectKrakenWebSocket() {
   if (GLOBAL_WS_STATE.ws) {
     GLOBAL_WS_STATE.ws.close();
@@ -594,12 +547,10 @@ export function disconnectKrakenWebSocket() {
   
   GLOBAL_WS_STATE.isConnected = false;
   GLOBAL_WS_STATE.token = null;
-  GLOBAL_WS_STATE.tokenExpiry = null;
   GLOBAL_WS_STATE.prices.clear();
   GLOBAL_WS_STATE.balances.clear();
   GLOBAL_WS_STATE.orders.clear();
   GLOBAL_WS_STATE.executions = [];
   GLOBAL_WS_STATE.activeSubscriptions.clear();
   GLOBAL_WS_STATE.eventListeners.clear();
-  GLOBAL_WS_STATE.pendingSubscriptions = [];
 }

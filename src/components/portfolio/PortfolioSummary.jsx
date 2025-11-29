@@ -1,76 +1,36 @@
+
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
-import { toast } from "sonner";
-import { invalidateCache } from "@/components/hooks/useDataFetching";
-import { invalidatePriceCache } from "@/components/hooks/usePriceData";
-import { invalidatePortfolioCache } from "@/components/hooks/usePortfolioData";
 
-export default function PortfolioSummary({
-  user,
-  wallet,
-  holdings,
-  trades,
-  isSimMode,
-  currentCashBalance,
-  currentPortfolioValue,
-  totalValue,
-  portfolio24hrChange,
-  lifetimeChange,
-  wsConnected,
-  isLoading,
-  refresh
-}) {
-  const isPositive = portfolio24hrChange.value >= 0;
-  const isLifetimePositive = lifetimeChange.value >= 0;
-
-  const [isSyncing, setIsSyncing] = React.useState(false);
+export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, isSimMode = true, change24hr, lifetimeChange, onSyncClick }) {
+  const currentCashBalance = isSimMode ? (wallet?.cash_balance || 0) : (wallet?.real_cash_balance || 0);
+  const totalValue = currentCashBalance + (currentPortfolioValue || 0);
   
-  const handleSync = async () => {
-    if (isSyncing) return;
-    
+  const displayChange = change24hr || { value: 0, percentage: 0 };
+  const isPositive = displayChange.value >= 0;
+  const lifetime = lifetimeChange || { value: 0, percentage: 0 };
+  const isLifetimePositive = lifetime.value >= 0;
+
+  // Fallback repair handler (user-only) if onSyncClick not provided by the page
+  const [isRepairing, setIsRepairing] = React.useState(false);
+  const handleRepair = async () => {
     try {
-      setIsSyncing(true);
-      
-      if (isSimMode) {
-        toast.info('Syncing portfolio data...');
-        await base44.functions.invoke('repairMyPortfolio', {});
-        toast.success('Portfolio synced!');
-      } else {
-        toast.info('Syncing Kraken account...', { duration: 3000 });
-        
-        const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
-        const syncData = syncRes?.data || syncRes;
-        
-        if (!syncData?.success) {
-          throw new Error(syncData?.error || 'Sync failed');
-        }
-        
-        toast.success('✅ Kraken synced!', {
-          description: `$${syncData.usdBalance?.toFixed(2)} USD, ${syncData.holdings?.length || 0} assets`,
-          duration: 4000
-        });
-      }
-      
-      invalidateCache();
-      invalidatePriceCache();
-      invalidatePortfolioCache();
-      refresh();
-      
-      window.dispatchEvent(new CustomEvent('app:data-updated', { 
-        detail: { type: 'portfolio-sync', source: 'portfolio_summary' } 
-      }));
-    } catch (error) {
-      console.error('Sync error:', error);
-      toast.error('Sync failed', { description: error.message });
+      setIsRepairing(true);
+      const res = await base44.functions.invoke('repairMyPortfolio', {});
+      // Broadcast and soft refresh
+      window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio_summary' } }));
+      setTimeout(() => window.location.reload(), 800);
+      return res;
     } finally {
-      setIsSyncing(false);
+      setIsRepairing(false);
     }
   };
+  const onClick = onSyncClick || handleRepair;
 
   return (
     <Card className="border-2 neon-glow" style={{ 
@@ -89,8 +49,7 @@ export default function PortfolioSummary({
               </Badge>
             )}
             {!isSimMode && (
-              <Badge className="bg-green-100 text-green-800 text-xs flex items-center gap-1">
-                {wsConnected && <Wifi className="w-3 h-3" />}
+              <Badge className="bg-green-100 text-green-800 text-xs">
                 Live Mode
               </Badge>
             )}
@@ -100,6 +59,7 @@ export default function PortfolioSummary({
             <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
               Total Portfolio Value
             </p>
+            {/* Show immediately; don't block on isLoading */}
             <NumberDisplay
               value={totalValue}
               prefix="$"
@@ -107,15 +67,9 @@ export default function PortfolioSummary({
               className="mx-auto max-w-[min(90vw,420px)]"
               maxFontSize={40}
               minFontSize={18}
-              tone={lifetimeChange.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
-              loading={isLoading || isSyncing}
-              showLoadingForZero={!isSimMode && !wsConnected}
+              // New: colorize by lifetime PnL sign (green profit, red loss)
+              tone={lifetime.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
             />
-            {!isSimMode && wsConnected && holdings.length > 0 && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                ✅ Live WebSocket • {holdings.length} asset{holdings.length !== 1 ? 's' : ''}
-              </p>
-            )}
           </div>
           
           <div className="flex items-center justify-center gap-6 flex-wrap">
@@ -128,21 +82,18 @@ export default function PortfolioSummary({
                 className="mx-auto max-w-[160px]"
                 maxFontSize={20}
                 minFontSize={12}
-                loading={isLoading || isSyncing}
-                showLoadingForZero={!isSimMode && !wsConnected}
               />
             </div>
             <div className="text-center min-w-[140px]">
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
+            
               <NumberDisplay
-                value={currentPortfolioValue}
+                value={currentPortfolioValue || 0}
                 prefix="$"
                 decimals={2}
                 className="mx-auto max-w-[180px]"
                 maxFontSize={20}
                 minFontSize={12}
-                loading={isLoading || isSyncing}
-                showLoadingForZero={!isSimMode && !wsConnected}
               />
             </div>
           </div>
@@ -155,9 +106,9 @@ export default function PortfolioSummary({
                 <TrendingDown className="w-4 h-4 text-red-500" />
               )}
               <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                {isPositive ? '+' : ''}${portfolio24hrChange.value.toFixed(2)} ({portfolio24hrChange.percentage.toFixed(1)}%)
+                {isPositive ? '+' : ''}${displayChange.value.toFixed(2)} ({displayChange.percentage.toFixed(1)}%)
               </span>
-              <span className="text-xs text-gray-500">24h (Kraken)</span>
+              <span className="text-xs text-gray-500">24h</span>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap justify-center">
@@ -167,20 +118,21 @@ export default function PortfolioSummary({
                 <TrendingDown className="w-4 h-4 text-red-500" />
               )}
               <span className={`text-sm font-medium ${isLifetimePositive ? 'text-green-500' : 'text-red-500'}`}>
-                {isLifetimePositive ? '+' : ''}${lifetimeChange.value.toFixed(2)} ({lifetimeChange.percentage.toFixed(1)}%)
+                {isLifetimePositive ? '+' : ''}${lifetime.value.toFixed(2)} ({lifetime.percentage.toFixed(1)}%)
               </span>
-              <span className="text-xs text-gray-500">Lifetime (Kraken)</span>
+              <span className="text-xs text-gray-500">Lifetime</span>
             </div>
           </div>
         </div>
 
+        {/* Persistent sync button at bottom */}
         <div className="pt-4">
           <Button
-            onClick={handleSync}
-            disabled={isSyncing}
+            onClick={onClick}
+            disabled={isRepairing}
             className="w-full neon-glow bg-green-600 hover:bg-green-700"
           >
-            {isSyncing ? 'Syncing...' : (isSimMode ? 'Sync Portfolio Data' : 'Sync Kraken Holdings')}
+            {isRepairing ? 'Syncing...' : 'Sync Portfolio Data'}
           </Button>
         </div>
       </CardContent>

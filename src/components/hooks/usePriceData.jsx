@@ -4,155 +4,117 @@ import { useKrakenWebSocket } from './useKrakenWebSocket';
 import { useSettings } from '../utils/SettingsContext';
 
 /**
- * CRITICAL FIX: Single global request manager - NO DUPLICATES
+ * Centralized price data hook - UNIFIED APPROACH
+ * - Uses WebSocket for LIVE mode (real-time Kraken data)
+ * - Uses REST API for SIM mode (market data)
+ * - Prevents duplicate API calls with global cache
  */
 
-const GLOBAL_REQUEST_MANAGER = {
-  cache: new Map(),
-  inflightRequest: null,
-  lastRequestTime: 0,
-  pendingSymbols: new Set(),
-  subscribers: new Map(),
-  requestTimer: null
+// GLOBAL CACHE - shared across all component instances
+const globalPriceCache = {
+  data: null,
+  timestamp: 0,
+  pendingRequest: null,
+  subscribers: new Set()
 };
 
-const CACHE_TTL = 120000; // 2 minutes
-const MIN_REQUEST_INTERVAL = 2000; // Minimum 2 seconds between requests
-
-function notifySubscribers(data) {
-  GLOBAL_REQUEST_MANAGER.subscribers.forEach((callback) => {
-    callback(data);
-  });
-}
-
-async function executeSingleRequest() {
-  if (GLOBAL_REQUEST_MANAGER.inflightRequest) {
-    console.log('[usePriceData] ⚠️ Request already in flight, waiting...');
-    return GLOBAL_REQUEST_MANAGER.inflightRequest;
-  }
-
-  const symbols = Array.from(GLOBAL_REQUEST_MANAGER.pendingSymbols);
-  GLOBAL_REQUEST_MANAGER.pendingSymbols.clear();
-
-  if (symbols.length === 0) return;
-
-  const now = Date.now();
-  const timeSinceLastRequest = now - GLOBAL_REQUEST_MANAGER.lastRequestTime;
-  
-  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
-    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-    console.log(`[usePriceData] ⏰ Waiting ${waitTime}ms before next request`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-
-  console.log('[usePriceData] 🚀 SINGLE request for', symbols.length, 'symbols');
-  GLOBAL_REQUEST_MANAGER.lastRequestTime = Date.now();
-
-  const cryptoSymbols = [];
-  const stockSymbols = [];
-
-  symbols.forEach(sym => {
-    const upper = sym.toUpperCase();
-    if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
-      stockSymbols.push(upper);
-    } else {
-      cryptoSymbols.push(upper);
-    }
-  });
-
-  const requestPromise = (async () => {
-    try {
-      const response = await Promise.race([
-        base44.functions.invoke('getMarketData', {
-          action: 'getWatchlistData',
-          payload: { cryptoSymbols, stockSymbols }
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-      ]);
-
-      const data = Array.isArray(response?.data) ? response.data : [];
-      
-      // Cache ALL symbols
-      const cacheTime = Date.now();
-      data.forEach(item => {
-        GLOBAL_REQUEST_MANAGER.cache.set(item.symbol, {
-          data: item,
-          timestamp: cacheTime
-        });
-      });
-      
-      // Also cache empty results for symbols that weren't found
-      symbols.forEach(sym => {
-        if (!data.find(d => d.symbol.toUpperCase() === sym.toUpperCase())) {
-          GLOBAL_REQUEST_MANAGER.cache.set(sym, {
-            data: null,
-            timestamp: cacheTime
-          });
-        }
-      });
-
-      notifySubscribers(data);
-      console.log('[usePriceData] ✅ Request complete:', data.length, 'prices');
-      
-      return data;
-    } catch (error) {
-      console.error('[usePriceData] ❌ Request error:', error.message);
-      notifySubscribers([]);
-      return [];
-    } finally {
-      GLOBAL_REQUEST_MANAGER.inflightRequest = null;
-    }
-  })();
-
-  GLOBAL_REQUEST_MANAGER.inflightRequest = requestPromise;
-  return requestPromise;
-}
-
-function scheduleRequest() {
-  if (GLOBAL_REQUEST_MANAGER.requestTimer) {
-    clearTimeout(GLOBAL_REQUEST_MANAGER.requestTimer);
-  }
-
-  GLOBAL_REQUEST_MANAGER.requestTimer = setTimeout(() => {
-    executeSingleRequest();
-  }, 100); // Very short delay to batch rapid calls
-}
-
-function requestPrices(symbols) {
-  if (!symbols || symbols.length === 0) return;
-
-  const now = Date.now();
-  let needsFetch = false;
-
-  symbols.forEach(symbol => {
-    const cached = GLOBAL_REQUEST_MANAGER.cache.get(symbol);
-    if (!cached || (now - cached.timestamp) > CACHE_TTL) {
-      GLOBAL_REQUEST_MANAGER.pendingSymbols.add(symbol);
-      needsFetch = true;
-    }
-  });
-
-  if (needsFetch) {
-    scheduleRequest();
-  }
-}
+const CACHE_TTL = 60000; // 1 minute cache for REST API
 
 export function usePriceData(symbols = []) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  const [priceData, setPriceData] = useState([]);
+  const [priceData, setPriceData] = useState(globalPriceCache.data || []);
   const [loading, setLoading] = useState(false);
   const subscriberIdRef = useRef(Symbol());
 
+  // WebSocket for LIVE mode
   const { 
     prices: wsPrices, 
     isConnected: wsConnected,
     getAllPrices: wsGetAllPrices 
   } = useKrakenWebSocket(symbols, !isSimMode && symbols.length > 0);
 
+  // REST API fetch for SIM mode
+  const fetchPricesREST = useCallback(async (force = false) => {
+    const now = Date.now();
+    
+    // Return cached data if fresh
+    if (!force && globalPriceCache.data && (now - globalPriceCache.timestamp) < CACHE_TTL) {
+      console.log('[usePriceData] Using cached REST data');
+      return globalPriceCache.data;
+    }
+
+    // If there's already a pending request, wait for it
+    if (globalPriceCache.pendingRequest) {
+      console.log('[usePriceData] Waiting for pending REST request');
+      return globalPriceCache.pendingRequest;
+    }
+
+    // No symbols? Return empty
+    if (!symbols || symbols.length === 0) {
+      return [];
+    }
+
+    console.log('[usePriceData] Fetching REST prices for', symbols.length, 'symbols');
+    setLoading(true);
+
+    try {
+      // Separate crypto and stocks
+      const cryptoSymbols = [];
+      const stockSymbols = [];
+      
+      symbols.forEach(sym => {
+        if (sym && typeof sym === 'string') {
+          const upper = sym.toUpperCase();
+          if (['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(upper)) {
+            stockSymbols.push(upper);
+          } else {
+            cryptoSymbols.push(upper);
+          }
+        }
+      });
+
+      // Create the fetch promise
+      const fetchPromise = base44.functions.invoke('getMarketData', {
+        action: 'getWatchlistData',
+        payload: { cryptoSymbols, stockSymbols }
+      }).then(response => {
+        const data = Array.isArray(response?.data) ? response.data : [];
+        
+        // Update global cache
+        globalPriceCache.data = data;
+        globalPriceCache.timestamp = Date.now();
+        globalPriceCache.pendingRequest = null;
+        
+        // Notify all subscribers
+        globalPriceCache.subscribers.forEach(callback => callback(data));
+        
+        console.log('[usePriceData] Fetched', data.length, 'REST prices');
+        return data;
+      }).catch(error => {
+        console.error('[usePriceData] REST Error:', error);
+        globalPriceCache.pendingRequest = null;
+        return [];
+      });
+
+      // Store pending request
+      globalPriceCache.pendingRequest = fetchPromise;
+      
+      const data = await fetchPromise;
+      setPriceData(data);
+      return data;
+      
+    } finally {
+      setLoading(false);
+    }
+  }, [symbols.join(',')]);
+
+  // Convert WebSocket prices to REST format
   const convertWSToREST = useCallback(() => {
-    if (!wsPrices || Object.keys(wsPrices).length === 0) return [];
+    if (!wsPrices || Object.keys(wsPrices).length === 0) {
+      return [];
+    }
     
     return Object.values(wsPrices).map(ws => ({
       symbol: ws.symbol,
@@ -163,75 +125,62 @@ export function usePriceData(symbols = []) {
     }));
   }, [wsPrices]);
 
-  // Subscribe to global updates (SIM MODE ONLY)
+  // Subscribe to global REST updates (for SIM mode)
   useEffect(() => {
-    if (!isSimMode || symbols.length === 0) return;
-
-    const handleUpdate = (data) => {
-      const filtered = data.filter(item => 
-        symbols.some(s => s.toUpperCase() === (item.symbol || '').toUpperCase())
-      );
+    if (isSimMode) {
+      const handleUpdate = (data) => {
+        setPriceData(data);
+      };
       
-      if (filtered.length > 0) {
-        setPriceData(filtered);
-        setLoading(false);
-      }
-    };
+      globalPriceCache.subscribers.add(handleUpdate);
+      
+      return () => {
+        globalPriceCache.subscribers.delete(handleUpdate);
+      };
+    }
+  }, [isSimMode]);
 
-    const id = subscriberIdRef.current;
-    GLOBAL_REQUEST_MANAGER.subscribers.set(id, handleUpdate);
-
-    // Check cache immediately
-    const cached = [];
-    let allCached = true;
-    const now = Date.now();
-
-    symbols.forEach(symbol => {
-      const entry = GLOBAL_REQUEST_MANAGER.cache.get(symbol);
-      if (entry && (now - entry.timestamp) < CACHE_TTL && entry.data) {
-        cached.push(entry.data);
-      } else {
-        allCached = false;
-      }
-    });
-
-    if (cached.length > 0) {
-      setPriceData(cached);
-      setLoading(false);
+  // Main data fetching logic
+  useEffect(() => {
+    if (!symbols || symbols.length === 0) {
+      return;
     }
 
-    if (!allCached) {
-      setLoading(true);
-      requestPrices(symbols);
+    if (isSimMode) {
+      // SIM MODE: Use REST API with caching
+      fetchPricesREST();
+    } else {
+      // LIVE MODE: Use WebSocket (real-time)
+      console.log('[usePriceData] LIVE mode - using WebSocket for', symbols.length, 'symbols');
+      
+      // Convert WebSocket prices to REST format and update
+      const wsData = convertWSToREST();
+      if (wsData.length > 0) {
+        setPriceData(wsData);
+        console.log('[usePriceData] Updated from WebSocket:', wsData.length, 'prices');
+      }
     }
+  }, [symbols.join(','), isSimMode, fetchPricesREST, convertWSToREST, wsConnected]);
 
-    return () => {
-      GLOBAL_REQUEST_MANAGER.subscribers.delete(id);
-    };
-  }, [symbols.join(','), isSimMode]);
-
-  // LIVE MODE: Use WebSocket
+  // Update when WebSocket prices change (LIVE mode only)
   useEffect(() => {
     if (!isSimMode && wsPrices && Object.keys(wsPrices).length > 0) {
       const wsData = convertWSToREST();
       setPriceData(wsData);
-      setLoading(false);
+      console.log('[usePriceData] WebSocket update:', Object.keys(wsPrices).length, 'symbols');
     }
   }, [isSimMode, wsPrices, convertWSToREST]);
 
   const refresh = useCallback(() => {
     if (isSimMode) {
-      // Clear cache for these symbols
-      symbols.forEach(symbol => GLOBAL_REQUEST_MANAGER.cache.delete(symbol));
-      setLoading(true);
-      requestPrices(symbols);
-      return Promise.resolve();
+      return fetchPricesREST(true);
     } else {
+      // For WebSocket, just convert current prices
       const wsData = convertWSToREST();
       setPriceData(wsData);
       return Promise.resolve(wsData);
     }
-  }, [isSimMode, symbols, convertWSToREST]);
+  }, [isSimMode, fetchPricesREST, convertWSToREST]);
 
   return {
     priceData,
@@ -241,12 +190,18 @@ export function usePriceData(symbols = []) {
   };
 }
 
+// Helper function to get price for specific symbol
+export function getPriceForSymbol(symbol) {
+  if (!globalPriceCache.data) return null;
+  return globalPriceCache.data.find(p => 
+    (p.symbol || '').toUpperCase() === (symbol || '').toUpperCase()
+  );
+}
+
+// Helper to invalidate cache (call after Kraken sync)
 export function invalidatePriceCache() {
-  console.log('[usePriceData] 🗑️ Clearing ALL cache');
-  GLOBAL_REQUEST_MANAGER.cache.clear();
-  GLOBAL_REQUEST_MANAGER.pendingSymbols.clear();
-  if (GLOBAL_REQUEST_MANAGER.requestTimer) {
-    clearTimeout(GLOBAL_REQUEST_MANAGER.requestTimer);
-    GLOBAL_REQUEST_MANAGER.requestTimer = null;
-  }
+  console.log('[usePriceData] Invalidating price cache');
+  globalPriceCache.data = null;
+  globalPriceCache.timestamp = 0;
+  globalPriceCache.pendingRequest = null;
 }

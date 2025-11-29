@@ -90,7 +90,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
         });
         if (!mounted) return;
 
-        const processed = Array.isArray(data) ? data.map((p) => ({
+        const processed = Array.isArray(data) ? data.map(p => ({
           time: new Date(p.time).toISOString(),
           price: Number(p.price)
         })) : [];
@@ -109,7 +109,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     if (asset?.symbol && isOpen) {
       loadChart();
     }
-    return () => {mounted = false;};
+    return () => { mounted = false; };
   }, [asset?.symbol, assetType, days, currentPrice, isOpen]);
 
   // Compute period P/L based on user's quantity and prices
@@ -120,13 +120,13 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     }
     const diff = periodEndPrice - periodStartPrice;
     const value = quantity * diff;
-    const percent = periodStartPrice > 0 ? diff / periodStartPrice * 100 : 0;
+    const percent = periodStartPrice > 0 ? (diff / periodStartPrice) * 100 : 0;
     return { value, percent };
   }, [quantity, periodStartPrice, periodEndPrice])(); // Immediately invoke useCallback
 
   // Auto-zoom Y-axis to movement in timeframe
   const yDomain = useCallback(() => {
-    const prices = (chartData || []).map((d) => d.price).filter((v) => typeof v === "number" && isFinite(v));
+    const prices = (chartData || []).map(d => d.price).filter(v => typeof v === "number" && isFinite(v));
     if (prices.length === 0) {
       const base = currentPrice || 1;
       return [base * 0.995, base * 1.005]; // tiny band around current
@@ -148,7 +148,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-12))));
     const normalized = raw / power;
     let nice;
-    if (normalized <= 1) nice = 1;else if (normalized <= 2) nice = 2;else if (normalized <= 2.5) nice = 2.5;else if (normalized <= 5) nice = 5;else nice = 10;
+    if (normalized <= 1) nice = 1; else if (normalized <= 2) nice = 2; else if (normalized <= 2.5) nice = 2.5; else if (normalized <= 5) nice = 5; else nice = 10;
     const step = nice * power;
     const start = Math.ceil(lower / step) * step;
     const ticks = [];
@@ -168,7 +168,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
   const handleClick = useCallback((state) => {
     const idx = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : null;
     if (idx == null) return;
-    setPinnedIndex((prev) => prev === idx ? null : idx);
+    setPinnedIndex(prev => prev === idx ? null : idx);
   }, []);
 
   const handleTouchStart = useCallback(() => {
@@ -187,80 +187,6 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     setIsScrubbing(false);
   }, []);
 
-  // Custom X-axis tick generation based on timeframe
-  const getXAxisTicks = useCallback(() => {
-    if (!chartData || chartData.length === 0) return [];
-    
-    const times = chartData.map(d => new Date(d.time).getTime());
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    const ticks = [];
-    
-    if (timeframe === '1d') {
-      // Mark each hour of the past 24 hours
-      const hourMs = 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += hourMs) {
-        ticks.push(t);
-      }
-    } else if (timeframe === '7d') {
-      // Every 12 hours
-      const twelveHourMs = 12 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += twelveHourMs) {
-        ticks.push(t);
-      }
-    } else if (timeframe === '1m') {
-      // Each week beginning + 15th day
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += weekMs) {
-        ticks.push(t);
-      }
-      // Add 15th day markers
-      const fifteenthDayMs = 15 * 24 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += fifteenthDayMs) {
-        ticks.push(t);
-      }
-    } else if (timeframe === '3m') {
-      // Weekly ticks
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      for (let t = minTime; t <= maxTime; t += weekMs) {
-        ticks.push(t);
-      }
-    } else if (timeframe === '1y') {
-      // Monthly ticks
-      const start = new Date(minTime);
-      const end = new Date(maxTime);
-      const current = new Date(start.getFullYear(), start.getMonth(), 1);
-      
-      while (current <= end) {
-        ticks.push(current.getTime());
-        current.setMonth(current.getMonth() + 1);
-      }
-    }
-    
-    // Convert timestamps back to ISO strings and sort
-    return [...new Set(ticks)]
-      .sort((a, b) => a - b)
-      .map(t => new Date(t).toISOString());
-  }, [chartData, timeframe]);
-
-
-  // Custom tick formatter based on timeframe
-  const formatXAxisLabel = useCallback((t) => {
-    const date = new Date(t);
-    
-    if (timeframe === '1d') {
-      // Only show time for 1D (no date)
-      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    } else if (timeframe === '7d') {
-      // Show date for 7D
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } else {
-      // Show date for all other timeframes
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-  }, [timeframe]);
-
-
   const CrosshairCursor = ({ points, height }) => {
     if (!points || !points[0]) return null;
     const x = points[0].x;
@@ -274,19 +200,19 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
         <div className="bg-gray-900 text-white p-2 rounded-md text-xs">
           <div>{new Date(label).toLocaleString()}</div>
           <div className="font-semibold text-lime-400">${Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</div>
-        </div>);
-
+        </div>
+      );
     }
     return null;
   };
 
   const tfButtons = [
-  { label: "1D", value: "1d" },
-  { label: "7D", value: "7d" },
-  { label: "1M", value: "1m" },
-  { label: "3M", value: "3m" },
-  { label: "1Y", value: "1y" }];
-
+    { label: "1D", value: "1d" },
+    { label: "7D", value: "7d" },
+    { label: "1M", value: "1m" },
+    { label: "3M", value: "3m" },
+    { label: "1Y", value: "1y" }
+  ];
 
   if (!asset) return null;
 
@@ -298,7 +224,7 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
       <DialogContent className="sm:max-w-4xl h-[80vh]" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--text-primary)' }}>
-            {asset.symbol} - ( {assetInfo?.name || asset.symbol} )
+            {asset.symbol} - {assetInfo?.name || asset.symbol}
           </DialogTitle>
         </DialogHeader>
 
@@ -316,11 +242,11 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
                 <div>
                   <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>24h Change</p>
                   <div className="flex items-center gap-1">
-                    {isPositive ?
-                    <TrendingUp className="w-4 h-4 text-green-500" /> :
-
-                    <TrendingDown className="w-4 h-4 text-red-500" />
-                    }
+                    {isPositive ? (
+                      <TrendingUp className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <TrendingDown className="w-4 h-4 text-red-500" />
+                    )}
                     <span className={`font-bold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                       {assetInfo?.change_24h ? `${isPositive ? '+' : ''}${assetInfo.change_24h.toFixed(2)}%` : '---'}
                     </span>
@@ -347,13 +273,13 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
             <CardContent className="p-4">
               {/* Timeframe selector */}
               <div className="flex gap-1 mb-3 overflow-x-auto">
-                {tfButtons.map((tf) =>
-                <Button
-                  key={tf.value}
-                  variant={timeframe === tf.value ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setTimeframe(tf.value)}
-                  className={`shrink-0 ${timeframe === tf.value ? "bg-green-600 text-white neon-glow hover:bg-green-700" : "text-gray-600 dark:text-gray-400 hover:bg-gray-800"}`}>
+                {tfButtons.map(tf =>
+                  <Button
+                    key={tf.value}
+                    variant={timeframe === tf.value ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setTimeframe(tf.value)}
+                    className={`shrink-0 ${timeframe === tf.value ? "bg-green-600 text-white neon-glow hover:bg-green-700" : "text-gray-600 dark:text-gray-400 hover:bg-gray-800"}`}>
                     {tf.label}
                   </Button>
                 )}
@@ -391,81 +317,80 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
               </div>
 
               {/* Auto-zoomed chart with crosshair, hover and snap */}
-              <div className="bg-slate-950 p-4 rounded-lg dark:bg-slate-800 h-56 sm:h-64 border"
-
-              style={{ borderColor: 'var(--border-color)' }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchEnd}>
-
-                {isLoadingChart ?
-                <div className="h-full flex items-center justify-center">
+              <div
+                className="bg-slate-100 dark:bg-slate-800 p-4 h-56 sm:h-64 rounded-lg border"
+                style={{ borderColor: 'var(--border-color)' }}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+              >
+                {isLoadingChart ? (
+                  <div className="h-full flex items-center justify-center">
                     <div className="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" />
-                  </div> :
-
-                <ResponsiveContainer width="100%" height="100%">
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
                     <LineChart
-                    data={chartData}
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
-                    onClick={handleClick} className="bg-stone-50 recharts-surface">
-
+                      data={chartData}
+                      onMouseMove={handleMouseMove}
+                      onMouseLeave={handleMouseLeave}
+                      onClick={handleClick}
+                    >
                       <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                       <XAxis
-                      dataKey="time"
-                      ticks={getXAxisTicks()}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickFormatter={formatXAxisLabel}
-                      axisLine={{ stroke: 'var(--border-color)' }}
-                      tickLine={{ stroke: 'var(--border-color)' }} />
-
+                        dataKey="time"
+                        tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
+                        tickFormatter={(t) => new Date(t).toLocaleDateString(undefined, days <= 2 ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' })}
+                        axisLine={false}
+                        tickLine={false}
+                      />
                       <YAxis
-                      domain={yDomain}
-                      ticks={yTicks}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickFormatter={(v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })}`}
-                      axisLine={false}
-                      tickLine={false}
-                      width={60} />
-
-                      {periodStartPrice != null &&
-                    <ReferenceLine
-                      y={periodStartPrice}
-                      stroke="#94a3b8"
-                      strokeDasharray="3 3"
-                      label={{ value: `Start: $${Number(periodStartPrice).toFixed(2)}`, position: "topRight", fontSize: 10, fill: "#94a3b8" }} />
-
-                    }
+                        domain={yDomain}
+                        ticks={yTicks}
+                        tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
+                        tickFormatter={(v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })}`}
+                        axisLine={false}
+                        tickLine={false}
+                        width={60}
+                      />
+                      {periodStartPrice != null && (
+                        <ReferenceLine
+                          y={periodStartPrice}
+                          stroke="#94a3b8"
+                          strokeDasharray="3 3"
+                          label={{ value: `Start: $${Number(periodStartPrice).toFixed(2)}`, position: "topRight", fontSize: 10, fill: "#94a3b8" }}
+                        />
+                      )}
                       <Tooltip content={<CustomTooltip />} cursor={<CrosshairCursor />} />
                       <Line
-                      type="monotone"
-                      dataKey="price"
-                      stroke={periodPnL.value >= 0 ? '#39FF14' : '#ef4444'}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={pinnedIndex != null || hoverIndex != null ? { r: 4, fill: '#39FF14', stroke: '#ffffff', strokeWidth: 2 } : false} />
-
-                      {pinnedIndex != null && chartData[pinnedIndex] &&
-                    <>
+                        type="monotone"
+                        dataKey="price"
+                        stroke={periodPnL.value >= 0 ? '#39FF14' : '#ef4444'}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={(pinnedIndex != null || hoverIndex != null) ? { r: 4, fill: '#39FF14', stroke: '#ffffff', strokeWidth: 2 } : false}
+                      />
+                      {pinnedIndex != null && chartData[pinnedIndex] && (
+                        <>
                           <ReferenceLine x={chartData[pinnedIndex].time} stroke="rgba(57,255,20,0.35)" />
                           <ReferenceDot
-                        x={chartData[pinnedIndex].time}
-                        y={chartData[pinnedIndex].price}
-                        r={5}
-                        fill="#39FF14"
-                        stroke="#ffffff"
-                        strokeWidth={2} />
-
+                            x={chartData[pinnedIndex].time}
+                            y={chartData[pinnedIndex].price}
+                            r={5}
+                            fill="#39FF14"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                          />
                         </>
-                    }
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
-                }
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
       </DialogContent>
-    </Dialog>);
-
+    </Dialog>
+  );
 }

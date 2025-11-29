@@ -20,44 +20,41 @@ function withTimeout(promise, ms, fallback = null) {
 // Global hard timeout for the entire function execution
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  
+  // CRITICAL: Hard 8-second timeout for entire function (increased from 3s)
+  const timeoutResponse = new Promise((resolve) =>
+    setTimeout(() => {
+      console.warn('[getMarketData] ⏰ Function timeout (8s) - returning empty array');
+      resolve(Response.json([], { status: 200 }));
+    }, 8000)
+  );
 
   try {
-    const result = await handleRequest(req, startTime);
+    const resultPromise = handleRequest(req, startTime);
+    const result = await Promise.race([resultPromise, timeoutResponse]);
+    
     const duration = Date.now() - startTime;
     console.log(`[getMarketData] ✅ Completed in ${duration}ms`);
+    
     return result;
   } catch (error) {
-    console.error('[getMarketData] ❌ Fatal error:', error.message);
-    return Response.json([], { status: 200 });
+    console.error('[getMarketData] ❌ Fatal error:', error);
+    return Response.json({ error: 'Internal error' }, { status: 500 });
   }
 });
 
 async function handleRequest(req, startTime) {
   try {
+    // SECURITY FIX: Auth check with timeout - RETURN EMPTY ARRAY IF UNAUTHORIZED (not 401)
     const base44 = createClientFromRequest(req);
-    
-    let user;
-    try {
-      user = await Promise.race([
-        base44.auth.me(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
-      ]);
-    } catch (authErr) {
-      console.warn('[getMarketData] Auth failed:', authErr.message);
-      return Response.json([], { status: 200 });
-    }
+    const user = await withTimeout(base44.auth.me(), 1500, null);
     
     if (!user) {
       console.warn('[getMarketData] Unauthorized - returning empty array');
       return Response.json([], { status: 200 });
     }
 
-    let body = {};
-    try {
-      body = await req.json();
-    } catch (e) {
-      // Ignore JSON parse errors
-    }
+    const body = await withTimeout(req.json(), 500, {});
     const { action, payload = {} } = body;
 
     console.log(`[getMarketData] Action: ${action}, User: ${user.email}`);

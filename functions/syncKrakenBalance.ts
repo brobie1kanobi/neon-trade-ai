@@ -1,3 +1,4 @@
+
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
@@ -5,8 +6,8 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
  * SECURITY FIX: Returns 401 for unauthorized users
  */
 
-const BALANCE_TIMEOUT_MS = 12000; // 12 seconds max
-const TRADES_TIMEOUT_MS = 15000; // 15 seconds max
+const BALANCE_TIMEOUT_MS = 6000; // 6 seconds max
+const TRADES_TIMEOUT_MS = 8000; // 8 seconds max
 
 function parseKrakenAsset(krakenCode) {
   let symbol = krakenCode;
@@ -44,22 +45,22 @@ async function fetchWithTimeout(promise, timeoutMs, errorMessage) {
 Deno.serve(async (req) => {
   const startTime = Date.now();
   
-  // CRITICAL: 25-second HARD timeout for entire function
+  // CRITICAL: 10-second HARD timeout for entire function
   const globalTimeout = setTimeout(() => {
-    console.error('[syncKrakenBalance] ⏰ GLOBAL TIMEOUT (25s)');
-  }, 25000);
+    console.error('[syncKrakenBalance] ⏰ GLOBAL TIMEOUT (10s)');
+  }, 10000);
   
   try {
     const result = await Promise.race([
       handleSync(req, startTime),
       new Promise((resolve) => setTimeout(() => {
-        console.warn('[syncKrakenBalance] ⏰ Function timeout after 25s');
+        console.warn('[syncKrakenBalance] ⏰ Function timeout');
         resolve(Response.json({ 
           error: 'Sync timeout - please try again',
           success: false,
           duration: Date.now() - startTime
-        }, { status: 408 }));
-      }, 25000)) // Increased from 10s to 25s
+        }, { status: 408 })); // SECURITY FIX: Use 408 Request Timeout instead of 200
+      }, 10000))
     ]);
     
     clearTimeout(globalTimeout);
