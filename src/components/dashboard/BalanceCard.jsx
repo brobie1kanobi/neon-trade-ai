@@ -15,11 +15,15 @@ export default function BalanceCard({
   isPrimary = false,
   changeLabel,
   isSimMode = true,
-  isConnected = false
+  isConnected = false,
+  isLoading = false
 }) {
   // CRITICAL: Use amount directly - no caching, no refs
   const displayAmount = typeof amount === 'number' ? amount : 0;
   const displayChange = change || { value: 0, percentage: 0 };
+  
+  // CRITICAL: Show loading for LIVE mode when values are 0 and not connected
+  const showLoadingForZero = !isSimMode && !isConnected;
 
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
@@ -77,6 +81,8 @@ export default function BalanceCard({
                 className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
                 maxFontSize={isPrimary ? 40 : 28}
                 minFontSize={16}
+                loading={isLoading}
+                showLoadingForZero={showLoadingForZero}
               />
             </>
           ) : (

@@ -108,6 +108,8 @@ export default function PortfolioSummary({
               maxFontSize={40}
               minFontSize={18}
               tone={lifetimeChange.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
+              loading={isLoading || isSyncing}
+              showLoadingForZero={!isSimMode && !wsConnected}
             />
             {!isSimMode && wsConnected && holdings.length > 0 && (
               <p className="text-xs text-green-600 dark:text-green-400 mt-1">
@@ -126,6 +128,8 @@ export default function PortfolioSummary({
                 className="mx-auto max-w-[160px]"
                 maxFontSize={20}
                 minFontSize={12}
+                loading={isLoading || isSyncing}
+                showLoadingForZero={!isSimMode && !wsConnected}
               />
             </div>
             <div className="text-center min-w-[140px]">
@@ -137,6 +141,8 @@ export default function PortfolioSummary({
                 className="mx-auto max-w-[180px]"
                 maxFontSize={20}
                 minFontSize={12}
+                loading={isLoading || isSyncing}
+                showLoadingForZero={!isSimMode && !wsConnected}
               />
             </div>
           </div>
