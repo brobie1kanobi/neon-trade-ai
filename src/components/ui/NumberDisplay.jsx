@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 
 export default function NumberDisplay({
   value,
@@ -11,15 +12,20 @@ export default function NumberDisplay({
   tone = 'neutral',
   positiveClass = 'text-green-500',
   negativeClass = 'text-red-500',
-  neutralClass = ''
+  neutralClass = '',
+  loading = false,
+  showLoadingForZero = false
 }) {
   const containerRef = useRef(null);
   const textRef = useRef(null);
   const [fontSize, setFontSize] = useState(maxFontSize);
 
+  // CRITICAL: Show loading indicator if value is 0 and showLoadingForZero is true
+  const isLoading = loading || (showLoadingForZero && (value === 0 || value === null || value === undefined));
+
   const formattedValue = typeof value === 'number' 
     ? value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-    : '0.00';
+    : '---';
 
   const fullText = `${prefix}${formattedValue}${suffix}`;
 
