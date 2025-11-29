@@ -7,13 +7,16 @@ import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 
-export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue, wsConnected, onSyncComplete }) {
+export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue, wsConnected, onSyncComplete, isLoading = false }) {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (wallet?.real_cash_balance || 0);
+  
+  // CRITICAL: Show loading for LIVE mode when values are 0 and not connected
+  const showLoadingForZero = !isSimMode && !wsConnected;
 
   const totalDeposits = isSimMode 
     ? (wallet?.total_deposits || 0) 
@@ -123,6 +126,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
                 className="max-w-full"
                 maxFontSize={28}
                 minFontSize={16}
+                loading={isLoading || isSyncing}
+                showLoadingForZero={showLoadingForZero}
               />
             ) : (
               <p className="text-2xl font-bold">••••••</p>
@@ -139,6 +144,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
                 className="max-w-full"
                 maxFontSize={28}
                 minFontSize={16}
+                loading={isLoading || isSyncing}
+                showLoadingForZero={showLoadingForZero}
               />
             ) : (
               <p className="text-2xl font-bold">••••••</p>
@@ -157,6 +164,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue,
                 className="max-w-full"
                 maxFontSize={20}
                 minFontSize={14}
+                loading={isLoading || isSyncing}
+                showLoadingForZero={showLoadingForZero}
               />
             ) : (
               <p className="text-lg font-semibold">••••••</p>
