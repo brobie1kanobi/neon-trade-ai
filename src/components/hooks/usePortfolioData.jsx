@@ -24,7 +24,7 @@ export function usePortfolioData() {
 
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // Get WebSocket data for live mode
+  // Get WebSocket data for live mode - subscribe to more crypto pairs
   const {
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
@@ -36,7 +36,15 @@ export function usePortfolioData() {
     refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOGE/USD', 'DOT/USD', 'LINK/USD', 'LTC/USD', 'XLM/USD', 'AVAX/USD', 'MATIC/USD', 'ATOM/USD', 'UNI/USD', 'AAVE/USD'],
+    priceSymbols: [
+      'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOGE/USD', 
+      'DOT/USD', 'LINK/USD', 'LTC/USD', 'XLM/USD', 'AVAX/USD', 'MATIC/USD', 
+      'ATOM/USD', 'UNI/USD', 'AAVE/USD', 'ALGO/USD', 'NEAR/USD', 'FIL/USD',
+      'APE/USD', 'SAND/USD', 'MANA/USD', 'AXS/USD', 'CRV/USD', 'COMP/USD',
+      'MKR/USD', 'SNX/USD', 'SUSHI/USD', 'YFI/USD', 'BAT/USD', 'ENJ/USD',
+      'GRT/USD', 'FTM/USD', 'ONE/USD', 'SHIB/USD', 'PEPE/USD', 'ARB/USD',
+      'OP/USD', 'INJ/USD', 'SUI/USD', 'SEI/USD', 'TIA/USD', 'BONK/USD'
+    ],
     subscribeToBalances: !isSimMode,
     subscribeToOrders: false,
     subscribeToExecutions: false,
@@ -50,27 +58,37 @@ export function usePortfolioData() {
       return holdings;
     }
 
-    // LIVE MODE: Use WebSocket holdings
+    // LIVE MODE: Use WebSocket holdings - ALWAYS show balances even without prices
     console.log('[usePortfolioData] LIVE MODE - wsConnected:', wsConnected, 'wsBalances keys:', Object.keys(wsBalances || {}));
     
     if (wsBalances && Object.keys(wsBalances).length > 0) {
       const wsHoldings = Object.entries(wsBalances)
         .filter(([asset, data]) => {
-          if (asset === 'USD' || asset === 'ZUSD') return false;
-          const hasBalance = (data?.balance || 0) > 0.00001;
-          console.log(`[usePortfolioData] Asset ${asset}: balance=${data?.balance}, included=${hasBalance}`);
+          // Skip USD/stablecoins from holdings list
+          if (asset === 'USD' || asset === 'ZUSD' || asset === 'USDT' || asset === 'USDC') return false;
+          const balance = data?.balance || data?.available || 0;
+          const hasBalance = balance > 0.00001;
           return hasBalance;
         })
         .map(([asset, data]) => {
           const pair = `${asset}/USD`;
-          const currentPrice = wsPrices?.[pair]?.price || 0;
-          const currentValue = (data?.balance || 0) * currentPrice;
+          const balance = data?.balance || data?.available || 0;
+          
+          // Try multiple price sources
+          let currentPrice = 0;
+          if (wsPrices?.[pair]?.price) {
+            currentPrice = wsPrices[pair].price;
+          } else if (wsPrices?.[`X${asset}/ZUSD`]?.price) {
+            currentPrice = wsPrices[`X${asset}/ZUSD`].price;
+          }
+          
+          const currentValue = balance * currentPrice;
 
-          console.log(`[usePortfolioData] Building holding: ${asset} qty=${data?.balance} price=${currentPrice} value=${currentValue}`);
+          console.log(`[usePortfolioData] Asset: ${asset} qty=${balance.toFixed(6)} price=$${currentPrice.toFixed(2)} value=$${currentValue.toFixed(2)}`);
 
           return {
             symbol: asset,
-            quantity: data?.balance || 0,
+            quantity: balance,
             average_cost_price: 0,
             asset_type: 'crypto',
             currentPrice: currentPrice,
@@ -80,16 +98,20 @@ export function usePortfolioData() {
             gainLossPercent: 0,
             is_simulation: false
           };
-        });
+        })
+        .filter(h => h.quantity > 0.00001); // Final filter
 
       console.log('[usePortfolioData] Built', wsHoldings.length, 'holdings from WebSocket');
       
-      if (wsHoldings.length > 0) {
+      // CRITICAL: Return WebSocket holdings even if empty (user sold everything)
+      // Only fall back to DB if WebSocket is not connected
+      if (wsConnected) {
         return wsHoldings;
       }
     }
 
-    console.log('[usePortfolioData] No WS balances, falling back to DB holdings:', holdings.length);
+    // Fallback to DB holdings only when WebSocket is not connected
+    console.log('[usePortfolioData] No WS connection, falling back to DB holdings:', holdings.length);
     return holdings;
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
