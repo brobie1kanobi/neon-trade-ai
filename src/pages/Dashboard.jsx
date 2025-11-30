@@ -970,24 +970,26 @@ export default function Dashboard() {
     }
   }, [isSimMode, currentCashBalance, currentPortfolioValue, totalBalance, wsUsdBalance, wsTotalValue, wsTotalAssets]);
 
-  // LIVE mode detection - check if user has real assets via WebSocket or DB
+  // LIVE mode detection - check if user has real assets via Kraken data
   const hasRealCash = React.useMemo(() => {
     if (isSimMode) return false;
-    return (wsConnected && wsUsdBalance > 0) || Number(wallet?.real_cash_balance || 0) > 0;
-  }, [isSimMode, wsConnected, wsUsdBalance, wallet]);
+    // Check Kraken data first, then DB
+    return wsUsdBalance > 0 || Number(wallet?.real_cash_balance || 0) > 0;
+  }, [isSimMode, wsUsdBalance, wallet]);
   
   const hasRealHoldings = React.useMemo(() => {
     if (isSimMode) return false;
-    return (wsConnected && wsTotalAssets > 0) || (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false));
-  }, [isSimMode, wsConnected, wsTotalAssets, holdings]);
+    // Check Kraken assets first, then DB holdings
+    return wsTotalAssets > 0 || (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false));
+  }, [isSimMode, wsTotalAssets, holdings]);
   
   const hasRealTrades = React.useMemo(() => {
     if (isSimMode) return false;
     return Array.isArray(trades) && trades.some(t => t.is_simulation === false);
   }, [isSimMode, trades]);
   
-  // Only show zeros if in LIVE mode with absolutely no real data
-  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades && !wsConnected;
+  // Show zeros only if LIVE mode AND no data from any source AND still loading
+  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades && wsLoading;
 
   if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
