@@ -40,6 +40,7 @@ export function useRealtimeKrakenData(options = {}) {
     orders: {},
     prices: {},
     usdBalance: 0,
+    cryptoHoldingsValue: 0,
     totalAssets: 0,
     totalPortfolioValue: 0,
     lastUpdated: null
@@ -69,6 +70,7 @@ export function useRealtimeKrakenData(options = {}) {
     lastUpdateRef.current = now;
 
     try {
+      // CRITICAL: USD balance is the cash wallet
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
 
       const totalAssets = Object.keys(wsBalances).filter(asset => {
@@ -77,28 +79,33 @@ export function useRealtimeKrakenData(options = {}) {
         return balance > 0.00001;
       }).length;
 
-      let totalPortfolioValue = usdBalance;
+      // CRITICAL: cryptoHoldingsValue is ONLY crypto assets (NOT including USD)
+      let cryptoHoldingsValue = 0;
 
       Object.entries(wsBalances).forEach(([asset, balance]) => {
         if (asset === 'USD' || asset === 'ZUSD') {
-          return;
+          return; // Skip USD - it's cash wallet, not portfolio
         }
 
         const pairWithUSD = `${asset}/USD`;
         const price = wsPrices[pairWithUSD]?.price || 0;
 
         if (price > 0) {
-          totalPortfolioValue += balance.balance * price;
+          cryptoHoldingsValue += balance.balance * price;
         }
       });
+
+      // totalPortfolioValue = cash + crypto for total balance display
+      const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
       setData({
         balances: wsBalances,
         orders: wsOrders,
         prices: wsPrices,
-        usdBalance,
+        usdBalance,              // Cash Wallet
+        cryptoHoldingsValue,     // Portfolio (crypto only)
         totalAssets,
-        totalPortfolioValue,
+        totalPortfolioValue,     // Total Balance (cash + crypto)
         lastUpdated: new Date().toISOString()
       });
 
@@ -132,15 +139,19 @@ export function useRealtimeKrakenData(options = {}) {
     const currentOrders = getAllOrders();
     const currentPrices = getAllPrices();
 
+    const usdBalance = currentBalances['USD']?.available || currentBalances['ZUSD']?.available || 0;
+    const cryptoHoldingsValue = calculateCryptoValue(currentBalances, currentPrices);
+
     setData({
       balances: currentBalances,
       orders: currentOrders,
       prices: currentPrices,
-      usdBalance: currentBalances['USD']?.available || 0,
+      usdBalance,
+      cryptoHoldingsValue,
       totalAssets: Object.keys(currentBalances).filter(k => 
         k !== 'USD' && k !== 'ZUSD' && (currentBalances[k]?.balance || 0) > 0.00001
       ).length,
-      totalPortfolioValue: calculatePortfolioValue(currentBalances, currentPrices),
+      totalPortfolioValue: usdBalance + cryptoHoldingsValue,
       lastUpdated: new Date().toISOString()
     });
   }, [getAllBalances, getAllOrders, getAllPrices]);
@@ -154,6 +165,7 @@ export function useRealtimeKrakenData(options = {}) {
     orders: data.orders,
     prices: data.prices,
     usdBalance: data.usdBalance,
+    cryptoHoldingsValue: data.cryptoHoldingsValue,
     totalAssets: data.totalAssets,
     totalPortfolioValue: data.totalPortfolioValue,
     lastUpdated: data.lastUpdated,
@@ -161,18 +173,18 @@ export function useRealtimeKrakenData(options = {}) {
   };
 }
 
-function calculatePortfolioValue(balances, prices) {
+// Calculate only crypto holdings value (excludes USD cash)
+function calculateCryptoValue(balances, prices) {
   let total = 0;
 
   Object.entries(balances).forEach(([asset, balance]) => {
     if (asset === 'USD' || asset === 'ZUSD') {
-      total += balance.available || 0;
-    } else {
-      const pairWithUSD = `${asset}/USD`;
-      const price = prices[pairWithUSD]?.price || 0;
-      if (price > 0) {
-        total += balance.balance * price;
-      }
+      return; // Skip USD - that's cash wallet
+    }
+    const pairWithUSD = `${asset}/USD`;
+    const price = prices[pairWithUSD]?.price || 0;
+    if (price > 0) {
+      total += balance.balance * price;
     }
   });
 
