@@ -927,30 +927,48 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket balances in LIVE mode - NEVER mix sim/real data
+  // CRITICAL: Use WebSocket/REST balances in LIVE mode - NEVER mix sim/real data
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: Prefer WebSocket USD balance, fallback to real_cash_balance
-    if (wsConnected && typeof wsUsdBalance === 'number' && wsUsdBalance >= 0) {
+    // LIVE MODE: Use Kraken data (either from WebSocket or initial REST fetch)
+    // wsUsdBalance comes from useRealtimeKrakenData which fetches from Kraken API
+    if (typeof wsUsdBalance === 'number' && wsUsdBalance > 0) {
       return wsUsdBalance;
     }
+    // Fallback to database real_cash_balance
     return wallet?.real_cash_balance || 0;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
+  }, [isSimMode, wallet, wsUsdBalance]);
     
   const currentPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return portfolioMarketValue;
     }
-    // LIVE MODE: Prefer WebSocket total portfolio value
-    if (wsConnected && typeof wsTotalValue === 'number' && wsTotalValue >= 0) {
+    // LIVE MODE: Use Kraken portfolio value (includes all crypto holdings)
+    // wsTotalValue is calculated from Kraken balances * market prices
+    if (typeof wsTotalValue === 'number' && wsTotalValue > 0) {
       return wsTotalValue;
     }
+    // Fallback to calculated portfolio value
     return portfolioMarketValue;
-  }, [isSimMode, portfolioMarketValue, wsConnected, wsTotalValue]);
+  }, [isSimMode, portfolioMarketValue, wsTotalValue]);
     
   const totalBalance = currentCashBalance + currentPortfolioValue;
+  
+  // Debug: Log the final values being displayed
+  useEffect(() => {
+    if (!isSimMode) {
+      console.log('[Dashboard] LIVE Display Values:', {
+        currentCashBalance,
+        currentPortfolioValue,
+        totalBalance,
+        wsUsdBalance,
+        wsTotalValue,
+        wsTotalAssets
+      });
+    }
+  }, [isSimMode, currentCashBalance, currentPortfolioValue, totalBalance, wsUsdBalance, wsTotalValue, wsTotalAssets]);
 
   // LIVE mode detection - check if user has real assets via WebSocket or DB
   const hasRealCash = React.useMemo(() => {
