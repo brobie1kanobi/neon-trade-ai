@@ -190,11 +190,19 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               if (!isSimMode) {
                 try {
                   const krakenResponse = await Promise.race([
-                    base44.functions.invoke('krakenTrade', { action: 'place_order', symbol: symU, side: 'sell', quantity: sellQuantity, orderType: 'market' }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 15000))
+                    base44.functions.invoke('krakenTrade', { 
+                      action: 'place_order', 
+                      symbol: symU, 
+                      side: 'sell', 
+                      quantity: sellQuantity, 
+                      orderType: 'market',
+                      timeInForce: 'ioc' // Immediate-or-cancel for auto-trades
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
                   ]);
-                  if (!krakenResponse?.data?.success) throw new Error(krakenResponse?.data?.error || 'Kraken trade failed');
-                  toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken`, duration: 5000 });
+                  const krakenData = krakenResponse?.data || krakenResponse;
+                  if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
+                  toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenData.order_id || 'submitted'})`, duration: 5000 });
                   await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
                 } catch (krakenError) {
                   const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
@@ -285,11 +293,19 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             if (!isSimMode) {
               try {
                 const krakenResponse = await Promise.race([
-                  base44.functions.invoke('krakenTrade', { action: 'place_order', symbol: sym, side: 'buy', quantity: finalQty, orderType: 'market' }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 15000))
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: sym, 
+                    side: 'buy', 
+                    quantity: finalQty, 
+                    orderType: 'market',
+                    timeInForce: 'ioc' // Immediate-or-cancel for auto-trades
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
                 ]);
-                if (!krakenResponse?.data?.success) throw new Error(krakenResponse?.data?.error || 'Kraken trade failed');
-                toast.success("🟢 LIVE Auto-Buy Executed", { description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken`, duration: 5000 });
+                const krakenData = krakenResponse?.data || krakenResponse;
+                if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
+                toast.success("🟢 LIVE Auto-Buy Executed", { description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken (Order: ${krakenData.order_id || 'submitted'})`, duration: 5000 });
                 await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
               } catch (krakenError) {
                 console.error(`[AutoTrader] Kraken buy failed:`, krakenError);
