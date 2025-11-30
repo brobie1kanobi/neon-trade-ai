@@ -266,6 +266,8 @@ Deno.serve(async (req) => {
         {}
       );
 
+      checkTimeout();
+
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
       // Parse balances and return in standardized format
@@ -286,7 +288,7 @@ Deno.serve(async (req) => {
         balances[normalizedAsset] = parseFloat(amount) || 0;
       }
 
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ 
         success: true, 
         balance: balances,
