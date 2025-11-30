@@ -14,18 +14,13 @@ export default function BalanceCard({
   isVisible,
   isPrimary = false,
   isSimMode = true,
-  changeLabel,
-  isLiveConnected = false // NEW: WebSocket connection indicator
+  changeLabel
 }) {
-  // CRITICAL: Use actual change data if provided, otherwise default to positive zero
-  // Ensure we're displaying REAL data in LIVE mode, not sim data
+  // Use actual change data if provided, otherwise default to positive zero
   const displayChange = change || { value: 0, percentage: 0 };
   const isPositive = displayChange.value >= 0;
   const changeValue = typeof displayChange.value === 'number' ? displayChange.value : 0;
   const changePct = typeof displayChange.percentage === 'number' ? displayChange.percentage : 0;
-  
-  // Validate amount is a proper number
-  const displayAmount = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
 
   return (
     <Card className={`border-2 transition-all duration-300 ${
@@ -40,15 +35,16 @@ export default function BalanceCard({
             <h3 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
               {title}
             </h3>
-            {isSimMode ? (
+            {isSimMode &&
               <Badge variant="outline" className="text-xs">
                 Demo
               </Badge>
-            ) : (
-              <Badge className={`text-xs ${isLiveConnected ? 'bg-green-500 text-white' : 'bg-green-100 text-green-800'}`}>
-                {isLiveConnected ? '🟢 Live' : 'Live'}
+            }
+            {!isSimMode &&
+              <Badge className="bg-green-100 text-green-800 text-xs">
+                Live
               </Badge>
-            )}
+            }
           </div>
           <div className="flex items-center gap-2">
             {Icon && <Icon className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />}
@@ -70,7 +66,7 @@ export default function BalanceCard({
         <div className="space-y-1">
           {isVisible ? (
             <NumberDisplay
-              value={displayAmount}
+              value={amount || 0}
               prefix="$"
               decimals={2}
               className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}

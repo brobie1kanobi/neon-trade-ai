@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { DollarSign, Activity } from "lucide-react";
 import { motion } from "framer-motion";
@@ -911,49 +912,21 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket balances in LIVE mode - NEVER mix sim/real data
-  const currentCashBalance = React.useMemo(() => {
-    if (isSimMode) {
-      return wallet?.cash_balance || 0;
-    }
-    // LIVE MODE: Prefer WebSocket USD balance, fallback to real_cash_balance
-    if (wsConnected && typeof wsUsdBalance === 'number' && wsUsdBalance >= 0) {
-      return wsUsdBalance;
-    }
-    return wallet?.real_cash_balance || 0;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
+  // CRITICAL: Use WebSocket balances in LIVE mode
+  const currentCashBalance = isSimMode 
+    ? (wallet?.cash_balance || 0) 
+    : (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : wallet?.real_cash_balance || 0);
     
-  const currentPortfolioValue = React.useMemo(() => {
-    if (isSimMode) {
-      return portfolioMarketValue;
-    }
-    // LIVE MODE: Prefer WebSocket total portfolio value
-    if (wsConnected && typeof wsTotalValue === 'number' && wsTotalValue >= 0) {
-      return wsTotalValue;
-    }
-    return portfolioMarketValue;
-  }, [isSimMode, portfolioMarketValue, wsConnected, wsTotalValue]);
+  const currentPortfolioValue = isSimMode
+    ? portfolioMarketValue
+    : (wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue);
     
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  // LIVE mode detection - check if user has real assets via WebSocket or DB
-  const hasRealCash = React.useMemo(() => {
-    if (isSimMode) return false;
-    return (wsConnected && wsUsdBalance > 0) || Number(wallet?.real_cash_balance || 0) > 0;
-  }, [isSimMode, wsConnected, wsUsdBalance, wallet]);
-  
-  const hasRealHoldings = React.useMemo(() => {
-    if (isSimMode) return false;
-    return (wsConnected && wsTotalAssets > 0) || (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false));
-  }, [isSimMode, wsConnected, wsTotalAssets, holdings]);
-  
-  const hasRealTrades = React.useMemo(() => {
-    if (isSimMode) return false;
-    return Array.isArray(trades) && trades.some(t => t.is_simulation === false);
-  }, [isSimMode, trades]);
-  
-  // Only show zeros if in LIVE mode with absolutely no real data
-  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades && !wsConnected;
+  const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
+  const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
+  const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
+  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
 
   if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
@@ -1013,7 +986,6 @@ export default function Dashboard() {
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
-            isLiveConnected={!isSimMode && wsConnected}
             changeLabel="24h Realized PnL (sales)"
           />
         </motion.div>
@@ -1026,8 +998,7 @@ export default function Dashboard() {
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
-              isLiveConnected={!isSimMode && wsConnected}
-              changeLabel={!isSimMode && wsConnected ? "🟢 Kraken USD" : "Live Lifetime"}
+              changeLabel="Live Lifetime"
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1038,8 +1009,7 @@ export default function Dashboard() {
               icon={Activity}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
-              isLiveConnected={!isSimMode && wsConnected}
-              changeLabel={!isSimMode && wsConnected ? `🟢 ${wsTotalAssets} assets` : "Live Lifetime"}
+              changeLabel="Live Lifetime"
             />
           </motion.div>
         </div>
