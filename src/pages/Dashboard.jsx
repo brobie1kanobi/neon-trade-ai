@@ -361,22 +361,38 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Get WebSocket data for LIVE mode
+  // CRITICAL: Get WebSocket data for LIVE mode - this is the PRIMARY source for live balances
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets,
     balances: wsBalances,
-    prices: wsPrices
+    prices: wsPrices,
+    loading: wsLoading,
+    refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD'],
     subscribeToBalances: true,
     subscribeToOrders: true,
     subscribeToExecutions: true,
     isSimMode
   });
+  
+  // Debug log for LIVE mode data flow
+  useEffect(() => {
+    if (!isSimMode) {
+      console.log('[Dashboard LIVE] WebSocket data:', {
+        connected: wsConnected,
+        loading: wsLoading,
+        usdBalance: wsUsdBalance,
+        totalValue: wsTotalValue,
+        totalAssets: wsTotalAssets,
+        balanceCount: Object.keys(wsBalances || {}).length
+      });
+    }
+  }, [isSimMode, wsConnected, wsLoading, wsUsdBalance, wsTotalValue, wsTotalAssets, wsBalances]);
   
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
