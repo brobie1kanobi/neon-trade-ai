@@ -1013,6 +1013,7 @@ export default function Dashboard() {
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
+            isLiveConnected={!isSimMode && wsConnected}
             changeLabel="24h Realized PnL (sales)"
           />
         </motion.div>
@@ -1025,7 +1026,8 @@ export default function Dashboard() {
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
-              changeLabel="Live Lifetime"
+              isLiveConnected={!isSimMode && wsConnected}
+              changeLabel={!isSimMode && wsConnected ? "🟢 Kraken USD" : "Live Lifetime"}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1036,7 +1038,8 @@ export default function Dashboard() {
               icon={Activity}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
-              changeLabel="Live Lifetime"
+              isLiveConnected={!isSimMode && wsConnected}
+              changeLabel={!isSimMode && wsConnected ? `🟢 ${wsTotalAssets} assets` : "Live Lifetime"}
             />
           </motion.div>
         </div>
