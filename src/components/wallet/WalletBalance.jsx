@@ -36,6 +36,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     isSimMode
   });
 
+  // CRITICAL: Cache last known good values to prevent showing $0
+  const lastKnownRef = React.useRef({ cash: null, portfolio: null, total: null });
+
   const displayCash = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
@@ -44,26 +47,49 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     const krakenUSD = wsUsdBalance || 0;
     const dbCash = wallet?.real_cash_balance || 0;
 
-    return wsConnected && krakenUSD >= 0 ? krakenUSD : dbCash;
+    // Use WebSocket if connected AND has data, otherwise use DB value
+    const value = (wsConnected && krakenUSD > 0) ? krakenUSD : dbCash;
+    
+    // Cache valid values
+    if (value > 0) {
+      lastKnownRef.current.cash = value;
+    }
+    
+    // Return cached value if current is 0 but we had data before
+    return value > 0 ? value : (lastKnownRef.current.cash ?? value);
   }, [isSimMode, wallet, wsUsdBalance, wsConnected]);
 
   const displayPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return portfolioMarketValue;
     }
+    
     // CRITICAL: Use cryptoHoldingsValue (NOT wsTotalValue) for Portfolio display
     // Portfolio = crypto holdings only, NOT including USD cash
-    return wsConnected && wsCryptoHoldingsValue >= 0 ? wsCryptoHoldingsValue : portfolioMarketValue;
+    const wsValue = wsCryptoHoldingsValue || 0;
+    const value = (wsConnected && wsValue > 0) ? wsValue : portfolioMarketValue;
+    
+    // Cache valid values
+    if (value > 0) {
+      lastKnownRef.current.portfolio = value;
+    }
+    
+    // Return cached value if current is 0 but we had data before
+    return value > 0 ? value : (lastKnownRef.current.portfolio ?? value);
   }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
 
   // CRITICAL: Total Balance = Cash (USD) + Portfolio (crypto only)
-  // In LIVE mode, use wsTotalValue which is already the sum
   const totalBalance = React.useMemo(() => {
-    if (isSimMode) {
-      return displayCash + displayPortfolioValue;
+    const total = displayCash + displayPortfolioValue;
+    
+    // Cache valid totals
+    if (total > 0) {
+      lastKnownRef.current.total = total;
     }
-    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : (displayCash + displayPortfolioValue);
-  }, [isSimMode, wsConnected, wsTotalValue, displayCash, displayPortfolioValue]);
+    
+    // Return cached value if current is 0 but we had data before
+    return total > 0 ? total : (lastKnownRef.current.total ?? total);
+  }, [displayCash, displayPortfolioValue]);
   
   const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
 
