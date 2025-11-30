@@ -237,23 +237,102 @@ export function useRealtimeKrakenData(options = {}) {
     }
   }, [lastExecution]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
+    if (isSimMode) return;
+
+    // Try WebSocket data first
     const currentBalances = getAllBalances();
     const currentOrders = getAllOrders();
     const currentPrices = getAllPrices();
 
-    setData({
-      balances: currentBalances,
-      orders: currentOrders,
-      prices: currentPrices,
-      usdBalance: currentBalances['USD']?.available || 0,
-      totalAssets: Object.keys(currentBalances).filter(k => 
-        k !== 'USD' && k !== 'ZUSD' && (currentBalances[k]?.balance || 0) > 0.00001
-      ).length,
-      totalPortfolioValue: calculatePortfolioValue(currentBalances, currentPrices),
-      lastUpdated: new Date().toISOString()
-    });
-  }, [getAllBalances, getAllOrders, getAllPrices]);
+    if (Object.keys(currentBalances).length > 0) {
+      setData({
+        balances: currentBalances,
+        orders: currentOrders,
+        prices: currentPrices,
+        usdBalance: currentBalances['USD']?.available || currentBalances['ZUSD']?.available || 0,
+        totalAssets: Object.keys(currentBalances).filter(k => 
+          k !== 'USD' && k !== 'ZUSD' && (currentBalances[k]?.balance || 0) > 0.00001
+        ).length,
+        totalPortfolioValue: calculatePortfolioValue(currentBalances, currentPrices),
+        lastUpdated: new Date().toISOString()
+      });
+      return;
+    }
+
+    // Fallback: Fetch from REST API
+    try {
+      const response = await base44.functions.invoke('krakenApi', { action: 'getBalance' });
+      const result = response?.data || response;
+      
+      if (result?.success && result?.balances) {
+        const krakenBalances = result.balances;
+        const formattedBalances = {};
+        let usdBal = 0;
+        let assetCount = 0;
+        
+        Object.entries(krakenBalances).forEach(([asset, amount]) => {
+          const numAmount = parseFloat(amount) || 0;
+          let normalizedAsset = asset;
+          if (asset === 'ZUSD') normalizedAsset = 'USD';
+          else if (asset === 'XXBT') normalizedAsset = 'BTC';
+          else if (asset === 'XETH') normalizedAsset = 'ETH';
+          else if (asset.startsWith('X') || asset.startsWith('Z')) {
+            normalizedAsset = asset.substring(1);
+          }
+          
+          formattedBalances[normalizedAsset] = {
+            asset: normalizedAsset,
+            balance: numAmount,
+            available: numAmount,
+            timestamp: Date.now()
+          };
+          
+          if (normalizedAsset === 'USD') {
+            usdBal = numAmount;
+          } else if (numAmount > 0.00001) {
+            assetCount++;
+          }
+        });
+
+        // Calculate portfolio value
+        let portfolioValue = usdBal;
+        const cryptoSymbols = Object.keys(formattedBalances).filter(a => a !== 'USD' && formattedBalances[a].balance > 0.00001);
+        
+        if (cryptoSymbols.length > 0) {
+          try {
+            const priceRes = await base44.functions.invoke('getMarketData', {
+              action: 'getWatchlistData',
+              payload: { cryptoSymbols, stockSymbols: [] }
+            });
+            
+            const prices = priceRes?.data || [];
+            cryptoSymbols.forEach(asset => {
+              const priceData = prices.find(p => (p.symbol || '').toUpperCase() === asset.toUpperCase());
+              const price = priceData?.price || 0;
+              if (price > 0) {
+                portfolioValue += formattedBalances[asset].balance * price;
+              }
+            });
+          } catch (e) {
+            console.error('[useRealtimeKrakenData] Refresh price error:', e);
+          }
+        }
+
+        setData({
+          balances: formattedBalances,
+          orders: {},
+          prices: {},
+          usdBalance: usdBal,
+          totalAssets: assetCount,
+          totalPortfolioValue: portfolioValue,
+          lastUpdated: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.error('[useRealtimeKrakenData] Refresh error:', err);
+    }
+  }, [isSimMode, getAllBalances, getAllOrders, getAllPrices]);
 
   return {
     isConnected: !isSimMode && isConnected,
