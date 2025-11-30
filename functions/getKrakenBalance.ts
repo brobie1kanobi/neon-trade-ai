@@ -344,7 +344,7 @@ Deno.serve(async (req) => {
     }, { status: 200 });
 
   } catch (error) {
-    clearTimeout(globalTimeout);
+    clearTimeout(globalTimeoutId);
     console.error('[getKrakenBalance] Error:', error.message);
     
     // CRITICAL: Always return graceful error response with empty data
