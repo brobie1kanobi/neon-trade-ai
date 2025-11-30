@@ -82,7 +82,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
     return Object.values(grouped).
     filter((h) => h.quantity > 0.0000001).
     sort((a, b) => b.currentValue - a.currentValue);
-  }, [allocations]);
+  }, [displayAllocations]);
 
   useEffect(() => {
     if (consolidatedHoldings && consolidatedHoldings.length > 0) {
