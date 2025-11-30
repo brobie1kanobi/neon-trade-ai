@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useKrakenWebSocketManager } from './useKrakenWebSocketManager';
 
 /**
  * HIGH-LEVEL HOOK: Real-time Kraken Data - PRODUCTION VERSION
  * 
  * NO LOGS - Performance optimized
+ * NO THROTTLING - Immediate balance updates
  */
 
 export function useRealtimeKrakenData(options = {}) {
@@ -49,10 +50,7 @@ export function useRealtimeKrakenData(options = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const lastUpdateRef = useRef(0);
-  const UPDATE_THROTTLE = 2000;
-
-  // Process WebSocket data
+  // Process WebSocket data - NO THROTTLING for immediate updates
   useEffect(() => {
     if (isSimMode) {
       setLoading(false);
@@ -62,12 +60,6 @@ export function useRealtimeKrakenData(options = {}) {
     if (!isConnected) {
       return;
     }
-
-    const now = Date.now();
-    if (now - lastUpdateRef.current < UPDATE_THROTTLE) {
-      return;
-    }
-    lastUpdateRef.current = now;
 
     try {
       // CRITICAL: USD balance is the cash wallet
