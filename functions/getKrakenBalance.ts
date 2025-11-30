@@ -248,20 +248,20 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Calculate elapsed time BEFORE attempting cost basis
     const elapsed = Date.now() - startTime;
-    const timeRemaining = 9000 - elapsed; // Leave 1s buffer before 10s timeout
+    const timeRemaining = 7000 - elapsed; // Leave 1s buffer before 8s timeout
 
     let costBasisAvailable = false;
 
-    // CRITICAL: Only try cost basis if we have TIME and RATE LIMIT allows
-    if (timeRemaining > 3000 && limiter.canMakeCall(2)) {
+    // CRITICAL: Only try cost basis if we have TIME and RATE LIMIT allows AND not timed out
+    if (timeRemaining > 2000 && limiter.canMakeCall(2) && !isTimedOut) {
       try {
         console.log('[getKrakenBalance] Attempting cost basis fetch (', Math.floor(timeRemaining / 1000), 's remaining)');
         
         await limiter.waitForCapacity(2);
         limiter.recordCall(2);
         
-        // Use remaining time - 500ms buffer
-        const costBasisTimeout = Math.min(timeRemaining - 500, 3000);
+        // Use remaining time - 500ms buffer, max 2s
+        const costBasisTimeout = Math.min(timeRemaining - 500, 2000);
         
         const tradesResponse = await Promise.race([
           base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' }),
