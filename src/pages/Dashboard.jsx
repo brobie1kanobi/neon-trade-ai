@@ -406,6 +406,13 @@ export default function Dashboard() {
   const [pullDistance, setPullDistance] = useState(0);
   const [enrichedHoldings, setEnrichedHoldings] = useState([]);
   const [lifetimeChange, setLifetimeChange] = useState({ value: 0, percentage: 0 });
+  
+  // CRITICAL: Cache last known good balances to prevent showing $0 during API failures
+  const lastKnownBalancesRef = React.useRef({
+    cash: null,
+    portfolio: null,
+    total: null
+  });
 
   // CRITICAL: Build effective holdings from WebSocket in LIVE mode
   const effectiveHoldings = React.useMemo(() => {
