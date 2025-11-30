@@ -61,6 +61,12 @@ export function useRealtimeKrakenData(options = {}) {
       return;
     }
 
+    // CRITICAL: Only update if we actually have balance data
+    const hasBalanceData = wsBalances && Object.keys(wsBalances).length > 0;
+    if (!hasBalanceData) {
+      return;
+    }
+
     try {
       // CRITICAL: USD balance is the cash wallet
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
@@ -90,16 +96,20 @@ export function useRealtimeKrakenData(options = {}) {
       // totalPortfolioValue = cash + crypto for total balance display
       const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
-      setData({
-        balances: wsBalances,
-        orders: wsOrders,
-        prices: wsPrices,
-        usdBalance,              // Cash Wallet
-        cryptoHoldingsValue,     // Portfolio (crypto only)
-        totalAssets,
-        totalPortfolioValue,     // Total Balance (cash + crypto)
-        lastUpdated: new Date().toISOString()
-      });
+      // CRITICAL: Only update state if we have meaningful data
+      // This prevents showing $0 when WebSocket hasn't received data yet
+      if (usdBalance > 0 || cryptoHoldingsValue > 0 || totalAssets > 0) {
+        setData({
+          balances: wsBalances,
+          orders: wsOrders,
+          prices: wsPrices,
+          usdBalance,              // Cash Wallet
+          cryptoHoldingsValue,     // Portfolio (crypto only)
+          totalAssets,
+          totalPortfolioValue,     // Total Balance (cash + crypto)
+          lastUpdated: new Date().toISOString()
+        });
+      }
 
       setLoading(false);
       setError(null);
