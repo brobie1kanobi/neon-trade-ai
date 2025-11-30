@@ -12,8 +12,8 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
-const API_TIMEOUT = 8000; // 8 second timeout for Kraken API calls
-const MAX_NONCE_RETRIES = 3; // Retry up to 3 times on nonce errors
+const API_TIMEOUT = 5000; // 5 second timeout for Kraken API calls
+const MAX_NONCE_RETRIES = 2; // Retry up to 2 times on nonce errors
 
 // CRITICAL: Nonce counter to prevent duplicate nonces in rapid calls
 let lastNonce = 0;
