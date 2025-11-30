@@ -21,6 +21,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
+    cryptoHoldingsValue: wsCryptoHoldingsValue,
     totalPortfolioValue: wsTotalValue,
     balances: wsBalances,
     totalAssets: wsTotalAssets,
@@ -28,7 +29,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     refresh: wsRefresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD', 'DOGE/USD', 'LTC/USD', 'BCH/USD', 'LINK/USD', 'UNI/USD', 'MATIC/USD', 'ATOM/USD', 'TRX/USD', 'AVAX/USD'],
     subscribeToBalances: true,
     subscribeToOrders: false,
     subscribeToExecutions: true,
@@ -50,11 +51,19 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     if (isSimMode) {
       return portfolioMarketValue;
     }
+    // CRITICAL: Use cryptoHoldingsValue (NOT wsTotalValue) for Portfolio display
+    // Portfolio = crypto holdings only, NOT including USD cash
+    return wsConnected && wsCryptoHoldingsValue >= 0 ? wsCryptoHoldingsValue : portfolioMarketValue;
+  }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
 
-    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue;
-  }, [isSimMode, wsTotalValue, portfolioMarketValue, wsConnected]);
-
-  const totalBalance = displayCash + displayPortfolioValue;
+  // CRITICAL: Total Balance = Cash (USD) + Portfolio (crypto only)
+  // In LIVE mode, use wsTotalValue which is already the sum
+  const totalBalance = React.useMemo(() => {
+    if (isSimMode) {
+      return displayCash + displayPortfolioValue;
+    }
+    return wsConnected && wsTotalValue >= 0 ? wsTotalValue : (displayCash + displayPortfolioValue);
+  }, [isSimMode, wsConnected, wsTotalValue, displayCash, displayPortfolioValue]);
   
   const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
 
