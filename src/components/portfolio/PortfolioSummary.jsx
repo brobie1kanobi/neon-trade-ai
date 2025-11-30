@@ -157,10 +157,10 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
         <div className="pt-4">
           <Button
             onClick={onClick}
-            disabled={isRepairing}
+            disabled={isSyncing}
             className="w-full neon-glow bg-green-600 hover:bg-green-700"
           >
-            {isRepairing ? 'Syncing...' : 'Sync Portfolio Data'}
+            {isSyncing ? 'Syncing...' : (isSimMode ? 'Sync Portfolio Data' : 'Sync Kraken Balance')}
           </Button>
         </div>
       </CardContent>
