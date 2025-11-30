@@ -116,7 +116,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {isLoading ?
+          {/* Only show skeleton if loading AND no cached data */}
+          {isLoading && cachedAllocations.length === 0 && consolidatedHoldings.length === 0 ?
           <div className="space-y-3">
               {[1, 2, 3].map((i) =>
             <div key={i} className="h-20 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
