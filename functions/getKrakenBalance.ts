@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
     
     // CRITICAL: If not connected, return early with success=false
     if (balanceData?.success === false || balanceData?.connected === false) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({
         success: false,
         connected: false,
@@ -171,6 +171,8 @@ Deno.serve(async (req) => {
         total_portfolio_value_usd: 0
       }, { status: 200 });
     }
+    
+    checkTimeout();
     
     let krakenBalance = null;
     if (balanceData?.balance) {
