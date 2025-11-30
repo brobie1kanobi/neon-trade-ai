@@ -512,7 +512,8 @@ export default function Dashboard() {
       const refreshPromises = [
         refreshWallet(),
         refreshHoldings(),
-        refreshPrices()
+        refreshPrices(),
+        !isSimMode ? wsRefresh() : Promise.resolve()
       ];
       Promise.all(refreshPromises).finally(() => {
         setIsPullRefreshing(false);
