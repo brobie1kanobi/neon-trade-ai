@@ -198,9 +198,9 @@ Deno.serve(async (req) => {
       symbols.push(symbol);
     }
 
-    // CRITICAL: Fetch prices with INCREASED timeout (was 1.5s, now 3s)
+    // CRITICAL: Fetch prices - 2s timeout, skip if already timing out
     let prices = {};
-    if (symbols.length > 0) {
+    if (symbols.length > 0 && !isTimedOut) {
       try {
         const pairs = symbols.map(sym => buildKrakenPair(sym)).join(',');
         const priceResponse = await Promise.race([
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
             method: 'GET',
             headers: { 'User-Agent': 'NeonTrade-AI/1.0' }
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
         ]);
 
         if (priceResponse.ok) {
