@@ -245,8 +245,30 @@ Deno.serve(async (req) => {
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
+      // Parse balances and return in standardized format
+      const rawBalances = result.result || {};
+      const balances = {};
+      
+      for (const [asset, amount] of Object.entries(rawBalances)) {
+        // Normalize Kraken asset codes (XXBT -> BTC, ZUSD -> USD)
+        let normalizedAsset = asset;
+        if (asset.startsWith('X') && asset.length === 4) {
+          normalizedAsset = asset.substring(1);
+        }
+        if (asset.startsWith('Z') && asset.length === 4) {
+          normalizedAsset = asset.substring(1);
+        }
+        if (normalizedAsset === 'XBT') normalizedAsset = 'BTC';
+        
+        balances[normalizedAsset] = parseFloat(amount) || 0;
+      }
+
       clearTimeout(globalTimeout);
-      return Response.json({ success: true, balance: result.result || {} }, { status: 200 });
+      return Response.json({ 
+        success: true, 
+        balance: balances,
+        raw_balance: rawBalances 
+      }, { status: 200 });
     }
 
     if (action === 'getTradesHistory') {
@@ -268,7 +290,7 @@ Deno.serve(async (req) => {
       return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
     }
 
-    if (action === 'getWebSocketUrl') {
+    if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       const result = await callKraken(
         connection.api_key, 
         connection.api_secret_encrypted, 
@@ -279,17 +301,66 @@ Deno.serve(async (req) => {
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
       const token = result.result?.token;
+      const expires = result.result?.expires || 900; // Default 15 minutes
       
       if (!token) {
         throw new Error('Failed to get WebSocket token from Kraken');
       }
 
+      console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
+
       clearTimeout(globalTimeout);
       return Response.json({
         success: true,
+        connected: true,
         wsUrl: 'wss://ws-auth.kraken.com/v2',
+        publicWsUrl: 'wss://ws.kraken.com/v2',
         token: token,
-        expires_in: 900
+        expires_in: expires
+      }, { status: 200 });
+    }
+
+    // ACTION: Get open orders
+    if (action === 'getOpenOrders') {
+      const result = await callKraken(
+        connection.api_key, 
+        connection.api_secret_encrypted, 
+        '/0/private/OpenOrders', 
+        {}
+      );
+
+      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+
+      const openOrders = [];
+      for (const [orderId, order] of Object.entries(result.result?.open || {})) {
+        openOrders.push({
+          order_id: orderId,
+          ...order
+        });
+      }
+
+      clearTimeout(globalTimeout);
+      return Response.json({ 
+        success: true, 
+        orders: openOrders,
+        count: openOrders.length 
+      }, { status: 200 });
+    }
+
+    // ACTION: Get asset pairs (for trading info)
+    if (action === 'getAssetPairs') {
+      const pairsToFetch = payload?.pairs || 'BTCUSD,ETHUSD,SOLUSD';
+      
+      // Public endpoint - no auth needed
+      const response = await fetch(`https://api.kraken.com/0/public/AssetPairs?pair=${pairsToFetch}`);
+      const result = await response.json();
+
+      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+
+      clearTimeout(globalTimeout);
+      return Response.json({ 
+        success: true, 
+        pairs: result.result || {} 
       }, { status: 200 });
     }
 
