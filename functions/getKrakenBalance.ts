@@ -103,15 +103,19 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     
+    checkTimeout();
+    
     const user = await Promise.race([
       base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 1500))
     ]);
 
     if (!user) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
+
+    checkTimeout();
 
     const userKey = user.email;
     if (!rateLimiters.has(userKey)) {
@@ -121,11 +125,11 @@ Deno.serve(async (req) => {
 
     const connections = await Promise.race([
       base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
     ]);
 
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({
         error: 'Not connected',
         connected: false,
@@ -133,17 +137,21 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
+    checkTimeout();
+
     // Wait for rate limit capacity (but don't wait forever)
     await Promise.race([
       limiter.waitForCapacity(1),
-      new Promise(resolve => setTimeout(resolve, 2000)) // Max 2s wait
+      new Promise(resolve => setTimeout(resolve, 1000)) // Max 1s wait
     ]);
     limiter.recordCall(1);
 
-    // CRITICAL: Increased timeout from 2500ms to 6000ms
+    checkTimeout();
+
+    // CRITICAL: 4 second timeout for balance fetch
     const balanceResponse = await Promise.race([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 6000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 4000))
     ]);
 
     let balanceData = balanceResponse?.data || balanceResponse;
