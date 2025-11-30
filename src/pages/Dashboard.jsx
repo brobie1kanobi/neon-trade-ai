@@ -935,16 +935,36 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket balances in LIVE mode
+  // CRITICAL: Use WebSocket balances in LIVE mode with fallback caching
   // Cash Wallet = USD balance from Kraken
-  const currentCashBalance = isSimMode 
+  const rawCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : wallet?.real_cash_balance || 0);
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
-  const currentPortfolioValue = isSimMode
+  const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (wsConnected && wsCryptoValue >= 0 ? wsCryptoValue : portfolioMarketValue);
+    
+  // Update cache when we have valid data
+  React.useEffect(() => {
+    if (rawCashBalance > 0 || rawPortfolioValue > 0) {
+      lastKnownBalancesRef.current = {
+        cash: rawCashBalance,
+        portfolio: rawPortfolioValue,
+        total: rawCashBalance + rawPortfolioValue
+      };
+    }
+  }, [rawCashBalance, rawPortfolioValue]);
+  
+  // Use cached values if current values are zero but we had data before
+  const currentCashBalance = rawCashBalance > 0 
+    ? rawCashBalance 
+    : (lastKnownBalancesRef.current.cash ?? rawCashBalance);
+    
+  const currentPortfolioValue = rawPortfolioValue > 0 
+    ? rawPortfolioValue 
+    : (lastKnownBalancesRef.current.portfolio ?? rawPortfolioValue);
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
