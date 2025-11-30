@@ -315,7 +315,7 @@ Deno.serve(async (req) => {
     const totalCostBasis = holdingsWithValues.reduce((sum, h) => sum + (h.total_cost_basis || 0), 0);
     const totalUnrealizedPnL = totalCostBasis > 0 ? totalCryptoValue - totalCostBasis : 0;
 
-    clearTimeout(globalTimeout);
+    clearTimeout(globalTimeoutId);
 
     console.log('[getKrakenBalance] ✅ Success:', {
       duration_ms: Date.now() - startTime,
