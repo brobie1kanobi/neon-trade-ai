@@ -85,11 +85,20 @@ function buildKrakenPair(symbol) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  let isTimedOut = false;
   
-  // CRITICAL: 10-SECOND ABSOLUTE TIMEOUT (increased from 6s)
-  const globalTimeout = setTimeout(() => {
-    console.error('[getKrakenBalance] ⏰ TIMEOUT (10s) - ABORTING');
-  }, 10000);
+  // CRITICAL: 8-SECOND ABSOLUTE TIMEOUT - returns response immediately
+  const globalTimeoutId = setTimeout(() => {
+    console.error('[getKrakenBalance] ⏰ TIMEOUT (8s) - ABORTING');
+    isTimedOut = true;
+  }, 8000);
+  
+  // Helper to check timeout and return early
+  const checkTimeout = () => {
+    if (isTimedOut) {
+      throw new Error('Request timeout - please try again');
+    }
+  };
   
   try {
     const base44 = createClientFromRequest(req);
