@@ -1009,6 +1009,23 @@ export default function Dashboard() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      {/* LIVE Mode Debug Banner - remove in production */}
+      {!isSimMode && (
+        <div className="mb-2 p-2 rounded-lg bg-green-900/30 border border-green-500/50 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-green-400 font-semibold">🟢 LIVE MODE - Kraken Data</span>
+            <span className="text-green-300">
+              {wsLoading ? 'Loading...' : wsConnected ? 'WebSocket Active' : 'REST API'}
+            </span>
+          </div>
+          <div className="mt-1 text-green-200/80 grid grid-cols-3 gap-2">
+            <span>USD: ${wsUsdBalance?.toFixed(2) || '0.00'}</span>
+            <span>Portfolio: ${wsTotalValue?.toFixed(2) || '0.00'}</span>
+            <span>Assets: {wsTotalAssets || 0}</span>
+          </div>
+        </div>
+      )}
+
       {(pullDistance > 0 || isPullRefreshing) && (
         <div
           className="absolute top-0 left-1/2 transform -translate-x-1/2 flex flex-col items-center z-50"
