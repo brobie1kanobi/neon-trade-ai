@@ -361,38 +361,22 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Get WebSocket data for LIVE mode - this is the PRIMARY source for live balances
+  // CRITICAL: Get WebSocket data for LIVE mode
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets,
     balances: wsBalances,
-    prices: wsPrices,
-    loading: wsLoading,
-    refresh: wsRefresh
+    prices: wsPrices
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD'],
     subscribeToBalances: true,
     subscribeToOrders: true,
     subscribeToExecutions: true,
     isSimMode
   });
-  
-  // Debug log for LIVE mode data flow
-  useEffect(() => {
-    if (!isSimMode) {
-      console.log('[Dashboard LIVE] WebSocket data:', {
-        connected: wsConnected,
-        loading: wsLoading,
-        usdBalance: wsUsdBalance,
-        totalValue: wsTotalValue,
-        totalAssets: wsTotalAssets,
-        balanceCount: Object.keys(wsBalances || {}).length
-      });
-    }
-  }, [isSimMode, wsConnected, wsLoading, wsUsdBalance, wsTotalValue, wsTotalAssets, wsBalances]);
   
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -512,8 +496,7 @@ export default function Dashboard() {
       const refreshPromises = [
         refreshWallet(),
         refreshHoldings(),
-        refreshPrices(),
-        !isSimMode ? wsRefresh() : Promise.resolve()
+        refreshPrices()
       ];
       Promise.all(refreshPromises).finally(() => {
         setIsPullRefreshing(false);
@@ -928,69 +911,49 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket/REST balances in LIVE mode - NEVER mix sim/real data
+  // CRITICAL: Use WebSocket balances in LIVE mode - NEVER mix sim/real data
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: Use Kraken data (either from WebSocket or initial REST fetch)
-    // wsUsdBalance comes from useRealtimeKrakenData which fetches from Kraken API
-    if (typeof wsUsdBalance === 'number' && wsUsdBalance > 0) {
+    // LIVE MODE: Prefer WebSocket USD balance, fallback to real_cash_balance
+    if (wsConnected && typeof wsUsdBalance === 'number' && wsUsdBalance >= 0) {
       return wsUsdBalance;
     }
-    // Fallback to database real_cash_balance
     return wallet?.real_cash_balance || 0;
-  }, [isSimMode, wallet, wsUsdBalance]);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance]);
     
   const currentPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return portfolioMarketValue;
     }
-    // LIVE MODE: Use Kraken portfolio value (includes all crypto holdings)
-    // wsTotalValue is calculated from Kraken balances * market prices
-    if (typeof wsTotalValue === 'number' && wsTotalValue > 0) {
+    // LIVE MODE: Prefer WebSocket total portfolio value
+    if (wsConnected && typeof wsTotalValue === 'number' && wsTotalValue >= 0) {
       return wsTotalValue;
     }
-    // Fallback to calculated portfolio value
     return portfolioMarketValue;
-  }, [isSimMode, portfolioMarketValue, wsTotalValue]);
+  }, [isSimMode, portfolioMarketValue, wsConnected, wsTotalValue]);
     
   const totalBalance = currentCashBalance + currentPortfolioValue;
-  
-  // Debug: Log the final values being displayed
-  useEffect(() => {
-    if (!isSimMode) {
-      console.log('[Dashboard] LIVE Display Values:', {
-        currentCashBalance,
-        currentPortfolioValue,
-        totalBalance,
-        wsUsdBalance,
-        wsTotalValue,
-        wsTotalAssets
-      });
-    }
-  }, [isSimMode, currentCashBalance, currentPortfolioValue, totalBalance, wsUsdBalance, wsTotalValue, wsTotalAssets]);
 
-  // LIVE mode detection - check if user has real assets via Kraken data
+  // LIVE mode detection - check if user has real assets via WebSocket or DB
   const hasRealCash = React.useMemo(() => {
     if (isSimMode) return false;
-    // Check Kraken data first, then DB
-    return wsUsdBalance > 0 || Number(wallet?.real_cash_balance || 0) > 0;
-  }, [isSimMode, wsUsdBalance, wallet]);
+    return (wsConnected && wsUsdBalance > 0) || Number(wallet?.real_cash_balance || 0) > 0;
+  }, [isSimMode, wsConnected, wsUsdBalance, wallet]);
   
   const hasRealHoldings = React.useMemo(() => {
     if (isSimMode) return false;
-    // Check Kraken assets first, then DB holdings
-    return wsTotalAssets > 0 || (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false));
-  }, [isSimMode, wsTotalAssets, holdings]);
+    return (wsConnected && wsTotalAssets > 0) || (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false));
+  }, [isSimMode, wsConnected, wsTotalAssets, holdings]);
   
   const hasRealTrades = React.useMemo(() => {
     if (isSimMode) return false;
     return Array.isArray(trades) && trades.some(t => t.is_simulation === false);
   }, [isSimMode, trades]);
   
-  // Show zeros only if LIVE mode AND no data from any source AND still loading
-  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades && wsLoading;
+  // Only show zeros if in LIVE mode with absolutely no real data
+  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades && !wsConnected;
 
   if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
@@ -1010,23 +973,6 @@ export default function Dashboard() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* LIVE Mode Debug Banner - remove in production */}
-      {!isSimMode && (
-        <div className="mb-2 p-2 rounded-lg bg-green-900/30 border border-green-500/50 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-green-400 font-semibold">🟢 LIVE MODE - Kraken Data</span>
-            <span className="text-green-300">
-              {wsLoading ? 'Loading...' : wsConnected ? 'WebSocket Active' : 'REST API'}
-            </span>
-          </div>
-          <div className="mt-1 text-green-200/80 grid grid-cols-3 gap-2">
-            <span>USD: ${wsUsdBalance?.toFixed(2) || '0.00'}</span>
-            <span>Portfolio: ${wsTotalValue?.toFixed(2) || '0.00'}</span>
-            <span>Assets: {wsTotalAssets || 0}</span>
-          </div>
-        </div>
-      )}
-
       {(pullDistance > 0 || isPullRefreshing) && (
         <div
           className="absolute top-0 left-1/2 transform -translate-x-1/2 flex flex-col items-center z-50"
