@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { DollarSign, Activity } from "lucide-react";
 import { motion } from "framer-motion";
@@ -366,13 +365,14 @@ export default function Dashboard() {
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
+    cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets,
     balances: wsBalances,
     prices: wsPrices
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD'],
+    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD', 'DOGE/USD'],
     subscribeToBalances: true,
     subscribeToOrders: true,
     subscribeToExecutions: true,
@@ -913,14 +913,17 @@ export default function Dashboard() {
   }, [compute24hChange]);
 
   // CRITICAL: Use WebSocket balances in LIVE mode
+  // Cash Wallet = USD balance from Kraken
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (wsConnected && wsUsdBalance >= 0 ? wsUsdBalance : wallet?.real_cash_balance || 0);
-    
+  
+  // Portfolio = ONLY crypto holdings (NOT including cash)
   const currentPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : (wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue);
+    : (wsConnected && wsCryptoValue >= 0 ? wsCryptoValue : portfolioMarketValue);
     
+  // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
   const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
