@@ -304,6 +304,8 @@ Deno.serve(async (req) => {
         { type: 'all' }
       );
 
+      checkTimeout();
+
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
       const trades = [];
@@ -311,7 +313,7 @@ Deno.serve(async (req) => {
         trades.push({ txid, ...trade });
       }
 
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
     }
 
@@ -322,6 +324,8 @@ Deno.serve(async (req) => {
         '/0/private/GetWebSocketsToken', 
         {}
       );
+
+      checkTimeout();
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -334,7 +338,7 @@ Deno.serve(async (req) => {
 
       console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
 
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({
         success: true,
         connected: true,
@@ -354,6 +358,8 @@ Deno.serve(async (req) => {
         {}
       );
 
+      checkTimeout();
+
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
       const openOrders = [];
@@ -364,7 +370,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ 
         success: true, 
         orders: openOrders,
@@ -376,24 +382,35 @@ Deno.serve(async (req) => {
     if (action === 'getAssetPairs') {
       const pairsToFetch = payload?.pairs || 'BTCUSD,ETHUSD,SOLUSD';
       
-      // Public endpoint - no auth needed
-      const response = await fetch(`https://api.kraken.com/0/public/AssetPairs?pair=${pairsToFetch}`);
-      const result = await response.json();
+      // Public endpoint - no auth needed, 2s timeout
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 2000);
+      
+      try {
+        const response = await fetch(`https://api.kraken.com/0/public/AssetPairs?pair=${pairsToFetch}`, {
+          signal: controller.signal
+        });
+        clearTimeout(fetchTimeout);
+        const result = await response.json();
 
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+        if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
-      clearTimeout(globalTimeout);
-      return Response.json({ 
-        success: true, 
-        pairs: result.result || {} 
-      }, { status: 200 });
+        clearTimeout(globalTimeoutId);
+        return Response.json({ 
+          success: true, 
+          pairs: result.result || {} 
+        }, { status: 200 });
+      } catch (fetchErr) {
+        clearTimeout(fetchTimeout);
+        throw fetchErr;
+      }
     }
 
-    clearTimeout(globalTimeout);
+    clearTimeout(globalTimeoutId);
     return Response.json({ error: 'Unknown action', success: false }, { status: 400 });
 
   } catch (error) {
-    clearTimeout(globalTimeout);
+    clearTimeout(globalTimeoutId);
     console.error('[krakenApi] ❌ Error:', error.message);
     
     // CRITICAL: Return 200 with success=false instead of 500
