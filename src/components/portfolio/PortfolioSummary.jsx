@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrendingUp, TrendingDown } from "lucide-react";
@@ -16,21 +15,50 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   const lifetime = lifetimeChange || { value: 0, percentage: 0 };
   const isLifetimePositive = lifetime.value >= 0;
 
-  // Fallback repair handler (user-only) if onSyncClick not provided by the page
-  const [isRepairing, setIsRepairing] = React.useState(false);
-  const handleRepair = async () => {
+  // Sync handler - refreshes holdings and balances
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  
+  const handleSync = async () => {
+    if (isSyncing) return;
+    
+    setIsSyncing(true);
     try {
-      setIsRepairing(true);
-      const res = await base44.functions.invoke('repairMyPortfolio', {});
-      // Broadcast and soft refresh
-      window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'repair', source: 'portfolio_summary' } }));
-      setTimeout(() => window.location.reload(), 800);
-      return res;
+      if (isSimMode) {
+        // SIM MODE: Repair portfolio data
+        await base44.functions.invoke('repairMyPortfolio', {});
+      } else {
+        // LIVE MODE: Sync from Kraken
+        const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
+        const syncData = syncRes?.data || syncRes;
+        
+        if (!syncData?.success) {
+          throw new Error(syncData?.error || 'Sync failed');
+        }
+        
+        // Dispatch sync event for WebSocket refresh
+        window.dispatchEvent(new CustomEvent('kraken:synced', {
+          detail: { holdings: syncData.holdings, usdBalance: syncData.usdBalance }
+        }));
+      }
+      
+      // Broadcast data update
+      window.dispatchEvent(new CustomEvent('app:data-updated', { 
+        detail: { type: 'sync', source: 'portfolio_summary' } 
+      }));
+      
+      // Refresh page after brief delay
+      setTimeout(() => {
+        window.location.href = window.location.pathname + '?t=' + Date.now();
+      }, 500);
+      
+    } catch (error) {
+      console.error('[PortfolioSummary] Sync error:', error);
     } finally {
-      setIsRepairing(false);
+      setIsSyncing(false);
     }
   };
-  const onClick = onSyncClick || handleRepair;
+  
+  const onClick = onSyncClick || handleSync;
 
   return (
     <Card className="border-2 neon-glow" style={{ 
