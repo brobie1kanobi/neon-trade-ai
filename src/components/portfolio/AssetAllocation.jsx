@@ -18,7 +18,15 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const [totalValue, setTotalValue] = useState(0);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [priceChanges, setPriceChanges] = useState({});
+  const [cachedAllocations, setCachedAllocations] = useState([]);
   const previousPrices = usePrevious(allocations);
+  
+  // CRITICAL: Cache allocations so we keep showing them during refresh
+  useEffect(() => {
+    if (Array.isArray(allocations) && allocations.length > 0) {
+      setCachedAllocations(allocations);
+    }
+  }, [allocations]);
 
   useEffect(() => {
     if (!previousPrices || !allocations) return;
