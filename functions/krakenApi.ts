@@ -118,11 +118,11 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   let isTimedOut = false;
   
-  // CRITICAL: 8-SECOND HARD TIMEOUT - returns response immediately
+  // CRITICAL: 6-SECOND HARD TIMEOUT - returns response immediately
   const globalTimeoutId = setTimeout(() => {
-    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (8s)');
+    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (6s)');
     isTimedOut = true;
-  }, 8000);
+  }, 6000);
 
   // Helper to check timeout
   const checkTimeout = () => {
