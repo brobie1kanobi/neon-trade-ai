@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
     checkTimeout();
 
     if (action === 'status') {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({
         connected: connections?.length > 0,
         success: true,
@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
       if (connections.length > 0) {
         await base44.asServiceRole.entities.KrakenConnection.delete(connections[0].id);
       }
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ success: true }, { status: 200 });
     }
 
