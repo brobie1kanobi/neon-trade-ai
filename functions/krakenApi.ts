@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
       const apiSecret = payload?.apiSecret || payload?.api_secret;
       
       if (!apiKey || !apiSecret) {
-        clearTimeout(globalTimeout);
+        clearTimeout(globalTimeoutId);
         return Response.json({ 
           error: 'Missing API credentials', 
           success: false 
@@ -214,12 +214,16 @@ Deno.serve(async (req) => {
 
       console.log('[krakenApi] Testing connection...');
       
+      checkTimeout();
+      
       // Test connection by fetching balance
       const balanceTest = await callKraken(apiKey, apiSecret, '/0/private/Balance', {});
 
       if (balanceTest.error?.length > 0) {
         throw new Error(balanceTest.error.join(', '));
       }
+
+      checkTimeout();
 
       const connectionData = {
         api_key: apiKey,
@@ -236,13 +240,13 @@ Deno.serve(async (req) => {
       }
 
       console.log('[krakenApi] ✅ Connection verified');
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ success: true }, { status: 200 });
     }
 
     // CRITICAL: Check if connected for all other actions
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ 
         error: 'Kraken account not connected', 
         success: false, 
@@ -251,6 +255,8 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
+    
+    checkTimeout();
 
     if (action === 'getBalance') {
       const result = await callKraken(
