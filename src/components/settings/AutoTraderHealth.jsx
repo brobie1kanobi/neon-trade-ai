@@ -17,8 +17,13 @@ export default function AutoTraderHealth() {
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
 
-  // Listen to WebSocket for real-time balance updates (LIVE mode only)
-  const { isConnected: wsConnected, balances: wsBalances } = useRealtimeKrakenData({
+  // CRITICAL: WebSocket for LIVE mode balances
+  const { 
+    isConnected: wsConnected, 
+    balances: wsBalances,
+    usdBalance: wsUsdBalance,
+    totalPortfolioValue: wsTotalValue 
+  } = useRealtimeKrakenData({
     subscribeToBalances: !isSimMode,
     subscribeToOrders: !isSimMode,
     subscribeToExecutions: !isSimMode,
@@ -30,7 +35,6 @@ export default function AutoTraderHealth() {
       setLoading(true);
       setError(null);
       
-      // CRITICAL: Fast timeout - 5 seconds max
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout after 5s')), 5000)
       );
@@ -43,6 +47,11 @@ export default function AutoTraderHealth() {
       const data = response?.data || response;
       
       if (data?.success && data?.health) {
+        // CRITICAL: In LIVE mode, OVERRIDE wallet_balance with WebSocket data
+        if (!isSimMode && wsConnected && wsUsdBalance >= 0) {
+          data.health.wallet_balance = wsUsdBalance;
+          data.health.wallet_status = wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy';
+        }
         setHealth(data.health);
         setError(null);
       } else {
@@ -52,12 +61,14 @@ export default function AutoTraderHealth() {
       console.error('[AutoTraderHealth] Error:', fetchError.message);
       setError(fetchError.message);
       
-      // Show minimal fallback health
+      // CRITICAL: Use WebSocket data as fallback in LIVE mode
+      const liveBalance = (!isSimMode && wsConnected) ? wsUsdBalance : 0;
+      
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
         sim_trading_mode: isSimMode,
-        wallet_balance: 0,
-        wallet_status: 'unknown',
+        wallet_balance: liveBalance,
+        wallet_status: liveBalance < 0 ? 'critical' : liveBalance < 10 ? 'warning' : 'healthy',
         active_conditional_orders: 0,
         trades_24h: { total: 0, buys: 0, sells: 0, volume: 0 },
         last_check: new Date().toISOString()
@@ -76,19 +87,17 @@ export default function AutoTraderHealth() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-update balance from WebSocket in LIVE mode
+  // CRITICAL: Auto-update balance from WebSocket in LIVE mode
   useEffect(() => {
-    if (!isSimMode && wsBalances && Object.keys(wsBalances).length > 0) {
-      const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
-      
+    if (!isSimMode && wsConnected && wsUsdBalance >= 0) {
       setHealth(prev => prev ? {
         ...prev,
-        wallet_balance: usdBalance,
-        wallet_status: usdBalance < 0 ? 'critical' : usdBalance < 10 ? 'warning' : 'healthy',
+        wallet_balance: wsUsdBalance,
+        wallet_status: wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy',
         last_check: new Date().toISOString()
       } : null);
     }
-  }, [isSimMode, wsBalances]);
+  }, [isSimMode, wsConnected, wsUsdBalance]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
@@ -197,9 +206,17 @@ export default function AutoTraderHealth() {
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Wallet Balance</span>
+          <span className="text-sm font-medium">
+            Wallet Balance
+            {!isSimMode && wsConnected && (
+              <span className="text-xs text-green-600 ml-1">• Live</span>
+            )}
+          </span>
           <div className="text-right">
-            <p className="font-semibold">${health.wallet_balance.toFixed(2)}</p>
+            <p className="font-semibold">
+              ${(health.wallet_balance || 0).toFixed(2)}
+              {!isSimMode && wsConnected && <span className="text-xs text-green-500 ml-1">🟢</span>}
+            </p>
             <Badge variant="outline" className={
               health.wallet_status === 'critical'
                 ? 'text-red-600 border-red-600'
