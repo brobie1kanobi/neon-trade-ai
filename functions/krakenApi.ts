@@ -116,31 +116,44 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  let isTimedOut = false;
   
-  // CRITICAL: 10-SECOND TIMEOUT for entire request
-  const globalTimeout = setTimeout(() => {
-    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (10s)');
-  }, 10000);
+  // CRITICAL: 8-SECOND HARD TIMEOUT - returns response immediately
+  const globalTimeoutId = setTimeout(() => {
+    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (8s)');
+    isTimedOut = true;
+  }, 8000);
+
+  // Helper to check timeout
+  const checkTimeout = () => {
+    if (isTimedOut) {
+      throw new Error('Request timeout - please try again');
+    }
+  };
 
   try {
     const base44 = createClientFromRequest(req);
     
-    // FASTER auth check
+    checkTimeout();
+    
+    // FASTER auth check - 1.5s timeout
     const user = await Promise.race([
       base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 1500))
     ]);
 
     if (!user) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
+
+    checkTimeout();
 
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
     const isCreator = !!user?.is_creator;
     
     if (!isAdmin && !isCreator) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Access denied', success: false }, { status: 403 });
     }
 
@@ -153,17 +166,21 @@ Deno.serve(async (req) => {
 
     const { action, payload } = body;
     if (!action) {
-      clearTimeout(globalTimeout);
+      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Missing action', success: false }, { status: 400 });
     }
 
     console.log('[krakenApi] Action:', action, 'User:', user.email);
 
-    // All actions share same connection fetch
+    checkTimeout();
+
+    // All actions share same connection fetch - 1.5s timeout
     const connections = await Promise.race([
       base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection fetch timeout')), 2000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection fetch timeout')), 1500))
     ]);
+    
+    checkTimeout();
 
     if (action === 'status') {
       clearTimeout(globalTimeout);
