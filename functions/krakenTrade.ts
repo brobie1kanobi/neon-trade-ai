@@ -1,4 +1,3 @@
-
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
@@ -23,10 +22,18 @@ const WS_TIMEOUT = 20000; // 20 second timeout for complex orders
 
 /**
  * Format symbol for Kraken (e.g., "BTC" -> "BTC/USD")
+ * CRITICAL: Uses official Kraken trading pair format
  */
 function formatKrakenSymbol(symbol) {
+  // If already in pair format, return as-is
+  if (symbol.includes('/')) {
+    return symbol.toUpperCase();
+  }
+  
+  // Map common symbols to Kraken pairs
   const symbolMap = {
     'BTC': 'BTC/USD',
+    'XBT': 'BTC/USD', // Kraken alias
     'ETH': 'ETH/USD',
     'XRP': 'XRP/USD',
     'LTC': 'LTC/USD',
@@ -34,15 +41,26 @@ function formatKrakenSymbol(symbol) {
     'ADA': 'ADA/USD',
     'DOT': 'DOT/USD',
     'DOGE': 'DOGE/USD',
+    'XDG': 'DOGE/USD', // Kraken alias
     'LINK': 'LINK/USD',
     'UNI': 'UNI/USD',
     'MATIC': 'MATIC/USD',
+    'POL': 'MATIC/USD', // New Polygon symbol
     'ATOM': 'ATOM/USD',
     'AVAX': 'AVAX/USD',
     'BCH': 'BCH/USD',
     'TRX': 'TRX/USD',
     'SHIB': 'SHIB/USD',
-    'XLM': 'XLM/USD'
+    'XLM': 'XLM/USD',
+    'ALGO': 'ALGO/USD',
+    'FIL': 'FIL/USD',
+    'NEAR': 'NEAR/USD',
+    'APT': 'APT/USD',
+    'ARB': 'ARB/USD',
+    'OP': 'OP/USD',
+    'INJ': 'INJ/USD',
+    'PEPE': 'PEPE/USD',
+    'SUI': 'SUI/USD'
   };
   
   return symbolMap[symbol.toUpperCase()] || `${symbol.toUpperCase()}/USD`;
@@ -196,27 +214,38 @@ function executeKrakenTrade(token, orderParams) {
           const data = JSON.parse(event.data);
           console.log('[krakenTrade] Received:', JSON.stringify(data, null, 2));
           
-          // Check for successful order
-          if (data.method === 'add_order' && data.success) {
+          // Check for successful order - Kraken v2 response format
+          if (data.method === 'add_order') {
             clearTimeout(timeout);
-            if (!isResolved) {
-              isResolved = true;
-              ws.close();
-              resolve({
-                success: true,
-                order_id: data.result?.order_id,
-                order_userref: data.result?.order_userref,
-                client_order_id: data.result?.cl_ord_id,
-                warnings: data.warnings || [],
-                result: data.result,
-                time_in: data.time_in,
-                time_out: data.time_out
-              });
+            
+            if (data.success === true) {
+              if (!isResolved) {
+                isResolved = true;
+                ws.close();
+                resolve({
+                  success: true,
+                  order_id: data.result?.order_id,
+                  order_userref: data.result?.order_userref,
+                  client_order_id: data.result?.cl_ord_id,
+                  warnings: data.warnings || [],
+                  result: data.result,
+                  time_in: data.time_in,
+                  time_out: data.time_out
+                });
+              }
+            } else {
+              // success === false means error
+              if (!isResolved) {
+                isResolved = true;
+                ws.close();
+                reject(new Error(data.error || 'Order failed'));
+              }
             }
+            return;
           }
           
-          // Check for error
-          if (data.error) {
+          // Check for error response (different format)
+          if (data.error && !data.method) {
             clearTimeout(timeout);
             if (!isResolved) {
               isResolved = true;
@@ -458,16 +487,34 @@ Deno.serve(async (req) => {
         }, { status: 400 });
       }
 
-      // CRITICAL: Minimum order validation (Kraken minimums)
+      // CRITICAL: Minimum order validation (Kraken minimums - updated 2024)
       const minOrderSizes = {
         'BTC': 0.0001,
-        'ETH': 0.001,
-        'SOL': 0.01,
-        'XRP': 1.0,
-        'ADA': 1.0,
-        'DOT': 0.1,
-        'DOGE': 10.0,
-        'LINK': 0.1
+        'ETH': 0.004,
+        'SOL': 0.05,
+        'XRP': 10.0,
+        'ADA': 10.0,
+        'DOT': 0.5,
+        'DOGE': 50.0,
+        'LINK': 0.5,
+        'UNI': 0.5,
+        'MATIC': 10.0,
+        'ATOM': 0.5,
+        'AVAX': 0.1,
+        'BCH': 0.002,
+        'LTC': 0.04,
+        'TRX': 50.0,
+        'SHIB': 100000.0,
+        'XLM': 20.0,
+        'ALGO': 10.0,
+        'FIL': 0.2,
+        'NEAR': 1.0,
+        'APT': 0.5,
+        'ARB': 5.0,
+        'OP': 3.0,
+        'INJ': 0.3,
+        'PEPE': 500000.0,
+        'SUI': 3.0
       };
 
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;

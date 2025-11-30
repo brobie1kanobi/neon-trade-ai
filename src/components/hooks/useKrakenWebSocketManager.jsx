@@ -1,26 +1,28 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
- * CENTRALIZED KRAKEN WEBSOCKET MANAGER
+ * CENTRALIZED KRAKEN WEBSOCKET MANAGER - V2 API COMPLIANT
  * 
- * Handles ALL Kraken WebSocket v2 subscriptions:
- * - Ticker (prices) - EXISTING
- * - Balances - NEW
- * - Executions (trades) - NEW
- * - Open Orders - NEW
+ * Based on official Kraken docs:
+ * - wss://ws.kraken.com/v2 (public - tickers)
+ * - wss://ws-auth.kraken.com/v2 (private - balances, executions)
  * 
- * Based on: https://docs.kraken.com/api/docs/websocket-v2/
+ * Channels:
+ * - ticker: Real-time price data
+ * - balances: Account balance snapshots and updates
+ * - executions: Order fills and status updates
  */
 
 // GLOBAL STATE - shared across ALL hooks
 const GLOBAL_WS_STATE = {
-  ws: null,
-  isConnected: false,
+  publicWs: null,
+  privateWs: null,
+  isPublicConnected: false,
+  isPrivateConnected: false,
   token: null,
+  tokenExpiry: 0,
   reconnectAttempts: 0,
-  subscribers: new Map(),
   
   // Data stores
   prices: new Map(),
@@ -29,15 +31,18 @@ const GLOBAL_WS_STATE = {
   executions: [],
   
   // Subscription tracking
-  activeSubscriptions: new Set(),
+  activePublicSubs: new Set(),
+  activePrivateSubs: new Set(),
   
   // Event emitter
   eventListeners: new Map()
 };
 
-const WS_URL = 'wss://ws.kraken.com/v2';
+const PUBLIC_WS_URL = 'wss://ws.kraken.com/v2';
+const PRIVATE_WS_URL = 'wss://ws-auth.kraken.com/v2';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
+const TOKEN_REFRESH_BUFFER = 60000; // Refresh token 1 minute before expiry
 
 /**
  * Emit custom events to all listeners
@@ -48,310 +53,379 @@ function emitEvent(eventName, data) {
     try {
       callback(data);
     } catch (e) {
-      console.error('[KrakenWSManager] Event callback error:', e);
+      // Silent error handling for production
     }
   });
 }
 
 /**
- * Connect to Kraken WebSocket v2
+ * Get or refresh WebSocket token
  */
-async function connectWebSocket() {
-  if (GLOBAL_WS_STATE.ws && GLOBAL_WS_STATE.isConnected) {
-    console.log('[KrakenWSManager] Already connected');
+async function getWebSocketToken() {
+  const now = Date.now();
+  
+  // Return cached token if still valid
+  if (GLOBAL_WS_STATE.token && now < GLOBAL_WS_STATE.tokenExpiry - TOKEN_REFRESH_BUFFER) {
+    return GLOBAL_WS_STATE.token;
+  }
+
+  try {
+    const response = await base44.functions.invoke('krakenApi', { 
+      action: 'getWebSocketUrl'
+    });
+    
+    const data = response?.data || response;
+    
+    if (data?.success && data?.token) {
+      GLOBAL_WS_STATE.token = data.token;
+      // Token valid for 15 minutes (900 seconds)
+      GLOBAL_WS_STATE.tokenExpiry = now + (data.expires_in || 900) * 1000;
+      return data.token;
+    }
+    
+    if (data?.connected === false) {
+      throw new Error('Kraken account not connected');
+    }
+    
+    throw new Error(data?.error || 'Failed to get WebSocket token');
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Connect to PUBLIC WebSocket (ticker/prices)
+ */
+function connectPublicWebSocket(priceSymbols = []) {
+  if (GLOBAL_WS_STATE.publicWs && GLOBAL_WS_STATE.isPublicConnected) {
+    // Already connected, just subscribe to new symbols
+    if (priceSymbols.length > 0) {
+      subscribeToTicker(priceSymbols);
+    }
     return;
   }
 
-  console.log('[KrakenWSManager] Connecting to Kraken WebSocket v2...');
-
   try {
-    // FIXED: Get WebSocket token with correct action name
-    if (!GLOBAL_WS_STATE.token) {
-      console.log('[KrakenWSManager] Requesting WebSocket token...');
-      
-      const response = await base44.functions.invoke('krakenApi', { 
-        action: 'getWebSocketUrl'  // ✅ FIXED: Correct action name
-      });
-      
-      const data = response?.data || response;
-      
-      console.log('[KrakenWSManager] Token response:', { 
-        success: data?.success, 
-        hasToken: !!data?.token,
-        connected: data?.connected 
-      });
-      
-      if (data?.success && data?.token) {
-        GLOBAL_WS_STATE.token = data.token;
-        console.log('[KrakenWSManager] ✅ Got WebSocket token');
-      } else {
-        // CRITICAL: Handle "not connected" gracefully
-        if (data?.connected === false) {
-          console.warn('[KrakenWSManager] ⚠️ Kraken account not connected');
-          throw new Error('Kraken account not connected');
-        }
-        throw new Error(data?.error || 'Failed to get WebSocket token');
-      }
-    }
-
-    // Create WebSocket connection
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(PUBLIC_WS_URL);
 
     ws.onopen = () => {
-      console.log('[KrakenWSManager] ✅ WebSocket connected');
-      GLOBAL_WS_STATE.isConnected = true;
-      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      GLOBAL_WS_STATE.isPublicConnected = true;
+      emitEvent('publicConnected', {});
       
-      emitEvent('connected', {});
-      
-      // Resubscribe to all active subscriptions
-      GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
-        ws.send(JSON.stringify(sub));
-      });
+      // Subscribe to prices if symbols provided
+      if (priceSymbols.length > 0) {
+        subscribeToTicker(priceSymbols);
+      }
     };
 
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        handleMessage(message);
+        handlePublicMessage(message);
       } catch (e) {
-        console.error('[KrakenWSManager] Message parse error:', e);
+        // Silent parse error
       }
     };
 
     ws.onerror = (error) => {
-      console.error('[KrakenWSManager] WebSocket error:', error);
-      emitEvent('error', error);
+      emitEvent('error', { source: 'public', error });
     };
 
     ws.onclose = () => {
-      console.log('[KrakenWSManager] WebSocket closed');
-      GLOBAL_WS_STATE.isConnected = false;
-      GLOBAL_WS_STATE.ws = null;
-      
-      emitEvent('disconnected', {});
+      GLOBAL_WS_STATE.isPublicConnected = false;
+      GLOBAL_WS_STATE.publicWs = null;
+      emitEvent('publicDisconnected', {});
       
       // Auto-reconnect
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
-        console.log(`[KrakenWSManager] Reconnecting (attempt ${GLOBAL_WS_STATE.reconnectAttempts})...`);
-        setTimeout(connectWebSocket, RECONNECT_DELAY);
+        setTimeout(() => connectPublicWebSocket(priceSymbols), RECONNECT_DELAY);
       }
     };
 
-    GLOBAL_WS_STATE.ws = ws;
+    GLOBAL_WS_STATE.publicWs = ws;
 
   } catch (error) {
-    console.error('[KrakenWSManager] Connection error:', error.message);
-    GLOBAL_WS_STATE.isConnected = false;
-    
-    // Don't retry if Kraken not connected
+    emitEvent('error', { source: 'public', error });
+  }
+}
+
+/**
+ * Connect to PRIVATE WebSocket (balances, executions)
+ */
+async function connectPrivateWebSocket() {
+  if (GLOBAL_WS_STATE.privateWs && GLOBAL_WS_STATE.isPrivateConnected) {
+    return;
+  }
+
+  try {
+    // Get fresh token
+    const token = await getWebSocketToken();
+
+    const ws = new WebSocket(PRIVATE_WS_URL);
+
+    ws.onopen = () => {
+      GLOBAL_WS_STATE.isPrivateConnected = true;
+      emitEvent('privateConnected', {});
+      
+      // Subscribe to balances
+      subscribeToBalances(ws, token);
+      
+      // Subscribe to executions
+      subscribeToExecutions(ws, token);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        handlePrivateMessage(message);
+      } catch (e) {
+        // Silent parse error
+      }
+    };
+
+    ws.onerror = (error) => {
+      emitEvent('error', { source: 'private', error });
+    };
+
+    ws.onclose = () => {
+      GLOBAL_WS_STATE.isPrivateConnected = false;
+      GLOBAL_WS_STATE.privateWs = null;
+      emitEvent('privateDisconnected', {});
+      
+      // Auto-reconnect (with token refresh)
+      if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        GLOBAL_WS_STATE.reconnectAttempts++;
+        setTimeout(() => connectPrivateWebSocket(), RECONNECT_DELAY);
+      }
+    };
+
+    GLOBAL_WS_STATE.privateWs = ws;
+
+  } catch (error) {
     if (error.message.includes('not connected')) {
-      console.warn('[KrakenWSManager] ❌ Kraken not connected - stopping retries');
       emitEvent('error', { message: 'Kraken account not connected', fatal: true });
       return;
     }
     
-    // Retry for other errors
     if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       GLOBAL_WS_STATE.reconnectAttempts++;
-      setTimeout(connectWebSocket, RECONNECT_DELAY);
+      setTimeout(() => connectPrivateWebSocket(), RECONNECT_DELAY);
     }
   }
 }
 
 /**
- * Handle incoming WebSocket messages
+ * Subscribe to ticker channel (prices)
+ * Format per Kraken v2 docs
  */
-function handleMessage(message) {
-  const { channel, type, data } = message;
-
-  // Handle different message types
-  if (type === 'update') {
-    if (channel === 'ticker') {
-      handleTickerUpdate(data);
-    } else if (channel === 'balances') {
-      handleBalanceUpdate(data);
-    } else if (channel === 'executions') {
-      handleExecutionUpdate(data);
-    } else if (channel === 'openOrders') {
-      handleOrderUpdate(data);
-    }
-  } else if (type === 'snapshot') {
-    if (channel === 'balances') {
-      handleBalanceSnapshot(data);
-    } else if (channel === 'openOrders') {
-      handleOrderSnapshot(data);
-    }
-  } else if (type === 'subscribed') {
-    console.log('[KrakenWSManager] ✅ Subscribed to', channel);
-  } else if (type === 'error') {
-    console.error('[KrakenWSManager] Subscription error:', message);
-  }
-}
-
-/**
- * Handle ticker updates (prices)
- */
-function handleTickerUpdate(data) {
-  data.forEach(ticker => {
-    const { symbol, last, bid, ask, change_24h, volume_24h } = ticker;
-    
-    GLOBAL_WS_STATE.prices.set(symbol, {
-      symbol,
-      price: last,
-      bid,
-      ask,
-      change_24h,
-      volume_24h,
-      timestamp: Date.now()
-    });
-  });
-  
-  emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
-}
-
-/**
- * Handle balance snapshot (full balance data)
- */
-function handleBalanceSnapshot(data) {
-  console.log('[KrakenWSManager] 💰 Balance snapshot:', data);
-  
-  data.forEach(balance => {
-    const { asset, balance: amount, available } = balance;
-    GLOBAL_WS_STATE.balances.set(asset, {
-      asset,
-      balance: parseFloat(amount),
-      available: parseFloat(available),
-      timestamp: Date.now()
-    });
-  });
-  
-  emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
-}
-
-/**
- * Handle balance updates (incremental changes)
- */
-function handleBalanceUpdate(data) {
-  console.log('[KrakenWSManager] 💰 Balance update:', data);
-  
-  data.forEach(balance => {
-    const { asset, balance: amount, available } = balance;
-    GLOBAL_WS_STATE.balances.set(asset, {
-      asset,
-      balance: parseFloat(amount),
-      available: parseFloat(available),
-      timestamp: Date.now()
-    });
-  });
-  
-  emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
-}
-
-/**
- * Handle order snapshot (full open orders)
- */
-function handleOrderSnapshot(data) {
-  console.log('[KrakenWSManager] 📋 Orders snapshot:', data);
-  
-  GLOBAL_WS_STATE.orders.clear();
-  data.forEach(order => {
-    GLOBAL_WS_STATE.orders.set(order.order_id, order);
-  });
-  
-  emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
-}
-
-/**
- * Handle order updates (new/changed/closed orders)
- */
-function handleOrderUpdate(data) {
-  console.log('[KrakenWSManager] 📋 Order update:', data);
-  
-  data.forEach(order => {
-    if (order.status === 'closed' || order.status === 'canceled') {
-      GLOBAL_WS_STATE.orders.delete(order.order_id);
-    } else {
-      GLOBAL_WS_STATE.orders.set(order.order_id, order);
-    }
-  });
-  
-  emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
-}
-
-/**
- * Handle execution updates (trade fills)
- */
-function handleExecutionUpdate(data) {
-  console.log('[KrakenWSManager] ✅ Execution:', data);
-  
-  data.forEach(execution => {
-    GLOBAL_WS_STATE.executions.push({
-      ...execution,
-      timestamp: Date.now()
-    });
-    
-    // Keep only last 100 executions
-    if (GLOBAL_WS_STATE.executions.length > 100) {
-      GLOBAL_WS_STATE.executions.shift();
-    }
-  });
-  
-  emitEvent('executionReceived', data);
-}
-
-/**
- * Subscribe to a channel
- */
-function subscribe(channel, params = {}) {
-  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
-    console.warn('[KrakenWSManager] Not connected, queuing subscription');
-    return;
-  }
+function subscribeToTicker(symbols) {
+  const ws = GLOBAL_WS_STATE.publicWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   const subscription = {
     method: 'subscribe',
     params: {
-      channel,
-      ...params
+      channel: 'ticker',
+      symbol: symbols
     }
   };
 
-  // Add token for authenticated channels
-  if (['balances', 'executions', 'openOrders'].includes(channel)) {
-    subscription.params.token = GLOBAL_WS_STATE.token;
-  }
-
-  console.log('[KrakenWSManager] Subscribing to', channel);
-  GLOBAL_WS_STATE.ws.send(JSON.stringify(subscription));
-  GLOBAL_WS_STATE.activeSubscriptions.add(subscription);
+  ws.send(JSON.stringify(subscription));
+  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols }));
 }
 
 /**
- * Unsubscribe from a channel
+ * Subscribe to balances channel
+ * Requires token per Kraken v2 docs
  */
-function unsubscribe(channel, params = {}) {
-  if (!GLOBAL_WS_STATE.ws || !GLOBAL_WS_STATE.isConnected) {
-    return;
-  }
+function subscribeToBalances(ws, token) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const unsubscription = {
-    method: 'unsubscribe',
+  const subscription = {
+    method: 'subscribe',
     params: {
-      channel,
-      ...params
+      channel: 'balances',
+      token: token,
+      snapshot: true
     }
   };
 
-  GLOBAL_WS_STATE.ws.send(JSON.stringify(unsubscription));
-  
-  // Remove from active subscriptions
-  GLOBAL_WS_STATE.activeSubscriptions.forEach(sub => {
-    if (sub.params.channel === channel) {
-      GLOBAL_WS_STATE.activeSubscriptions.delete(sub);
+  ws.send(JSON.stringify(subscription));
+  GLOBAL_WS_STATE.activePrivateSubs.add('balances');
+}
+
+/**
+ * Subscribe to executions channel
+ * Requires token per Kraken v2 docs
+ */
+function subscribeToExecutions(ws, token) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const subscription = {
+    method: 'subscribe',
+    params: {
+      channel: 'executions',
+      token: token,
+      snap_orders: true,
+      snap_trades: true
     }
-  });
+  };
+
+  ws.send(JSON.stringify(subscription));
+  GLOBAL_WS_STATE.activePrivateSubs.add('executions');
+}
+
+/**
+ * Handle PUBLIC WebSocket messages
+ */
+function handlePublicMessage(message) {
+  const { channel, type, data } = message;
+
+  // Handle subscription acknowledgments
+  if (message.method === 'subscribe') {
+    if (message.success) {
+      // Subscription confirmed
+    } else if (message.error) {
+      emitEvent('error', { channel, error: message.error });
+    }
+    return;
+  }
+
+  // Handle ticker updates
+  if (channel === 'ticker') {
+    if (type === 'update' && Array.isArray(data)) {
+      data.forEach(ticker => {
+        const { symbol, last, bid, ask, change, change_pct, volume } = ticker;
+        
+        GLOBAL_WS_STATE.prices.set(symbol, {
+          symbol,
+          price: parseFloat(last) || 0,
+          bid: parseFloat(bid) || 0,
+          ask: parseFloat(ask) || 0,
+          change_24h: parseFloat(change_pct) || 0,
+          volume_24h: parseFloat(volume) || 0,
+          timestamp: Date.now()
+        });
+      });
+      
+      emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
+    }
+  }
+}
+
+/**
+ * Handle PRIVATE WebSocket messages
+ */
+function handlePrivateMessage(message) {
+  const { channel, type, data } = message;
+
+  // Handle subscription acknowledgments
+  if (message.method === 'subscribe') {
+    if (message.success) {
+      // Subscription confirmed
+    } else if (message.error) {
+      emitEvent('error', { channel, error: message.error });
+    }
+    return;
+  }
+
+  // Handle balances
+  if (channel === 'balances') {
+    if (type === 'snapshot' && Array.isArray(data)) {
+      // CRITICAL: Parse balance snapshot per Kraken v2 format
+      data.forEach(balance => {
+        const { asset, balance: totalBalance, wallets } = balance;
+        
+        // Get spot wallet balance (main trading wallet)
+        let spotBalance = totalBalance;
+        let availableBalance = totalBalance;
+        
+        if (Array.isArray(wallets)) {
+          const spotWallet = wallets.find(w => w.type === 'spot' && w.id === 'main');
+          if (spotWallet) {
+            spotBalance = spotWallet.balance || 0;
+            availableBalance = spotWallet.balance || 0;
+          }
+        }
+        
+        GLOBAL_WS_STATE.balances.set(asset, {
+          asset,
+          balance: parseFloat(spotBalance) || 0,
+          available: parseFloat(availableBalance) || 0,
+          timestamp: Date.now()
+        });
+      });
+      
+      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+    } else if (type === 'update' && Array.isArray(data)) {
+      // CRITICAL: Handle balance updates (trades, deposits, withdrawals)
+      data.forEach(update => {
+        const { asset, balance: newBalance } = update;
+        
+        GLOBAL_WS_STATE.balances.set(asset, {
+          asset,
+          balance: parseFloat(newBalance) || 0,
+          available: parseFloat(newBalance) || 0,
+          timestamp: Date.now()
+        });
+      });
+      
+      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+    }
+  }
+
+  // Handle executions (order fills and status)
+  if (channel === 'executions') {
+    if ((type === 'snapshot' || type === 'update') && Array.isArray(data)) {
+      data.forEach(execution => {
+        const { exec_type, order_id, exec_id, symbol, side, order_qty, cum_qty, avg_price, last_qty, last_price } = execution;
+        
+        // Track orders
+        if (order_id) {
+          if (exec_type === 'filled' || exec_type === 'canceled' || exec_type === 'expired') {
+            GLOBAL_WS_STATE.orders.delete(order_id);
+          } else {
+            GLOBAL_WS_STATE.orders.set(order_id, {
+              order_id,
+              symbol,
+              side,
+              order_qty,
+              filled_qty: cum_qty || 0,
+              avg_price: avg_price || 0,
+              status: exec_type,
+              timestamp: Date.now()
+            });
+          }
+        }
+        
+        // Track executions (fills)
+        if (exec_type === 'trade' || exec_type === 'filled') {
+          const executionRecord = {
+            exec_id,
+            order_id,
+            symbol,
+            side,
+            quantity: last_qty || cum_qty || order_qty,
+            price: last_price || avg_price,
+            exec_type,
+            timestamp: Date.now()
+          };
+          
+          GLOBAL_WS_STATE.executions.push(executionRecord);
+          
+          // Keep only last 100 executions
+          if (GLOBAL_WS_STATE.executions.length > 100) {
+            GLOBAL_WS_STATE.executions.shift();
+          }
+          
+          emitEvent('executionReceived', [executionRecord]);
+        }
+      });
+      
+      emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
+    }
+  }
 }
 
 /**
@@ -366,157 +440,162 @@ export function useKrakenWebSocketManager(options = {}) {
     subscribeToExecutions = false
   } = options;
 
-  const [isConnected, setIsConnected] = useState(GLOBAL_WS_STATE.isConnected);
+  const [isConnected, setIsConnected] = useState(
+    GLOBAL_WS_STATE.isPublicConnected || GLOBAL_WS_STATE.isPrivateConnected
+  );
   const [prices, setPrices] = useState({});
   const [balances, setBalances] = useState({});
   const [orders, setOrders] = useState({});
   const [lastExecution, setLastExecution] = useState(null);
 
   const subscriberIdRef = useRef(Symbol());
+  const connectAttemptedRef = useRef(false);
 
   // Connect on mount
   useEffect(() => {
-    connectWebSocket();
+    if (connectAttemptedRef.current) return;
+    connectAttemptedRef.current = true;
+
+    // Connect to public WebSocket if price subscription requested
+    if (subscribeToPrices && priceSymbols.length > 0) {
+      connectPublicWebSocket(priceSymbols);
+    }
+
+    // Connect to private WebSocket if any private subscription requested
+    if (subscribeToBalances || subscribeToOrders || subscribeToExecutions) {
+      connectPrivateWebSocket();
+    }
   }, []);
 
   // Handle connection state changes
   useEffect(() => {
-    const handleConnected = () => setIsConnected(true);
-    const handleDisconnected = () => setIsConnected(false);
+    const handlePublicConnected = () => {
+      setIsConnected(true);
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
+    };
+    
+    const handlePrivateConnected = () => {
+      setIsConnected(true);
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
+    };
+    
+    const handlePublicDisconnected = () => {
+      if (!GLOBAL_WS_STATE.isPrivateConnected) {
+        setIsConnected(false);
+      }
+    };
+    
+    const handlePrivateDisconnected = () => {
+      if (!GLOBAL_WS_STATE.isPublicConnected) {
+        setIsConnected(false);
+      }
+    };
 
-    GLOBAL_WS_STATE.eventListeners.set('connected', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('connected') || []),
-      handleConnected
-    ]);
+    // Add listeners
+    const addListener = (event, handler) => {
+      const listeners = GLOBAL_WS_STATE.eventListeners.get(event) || [];
+      GLOBAL_WS_STATE.eventListeners.set(event, [...listeners, handler]);
+    };
 
-    GLOBAL_WS_STATE.eventListeners.set('disconnected', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('disconnected') || []),
-      handleDisconnected
-    ]);
+    addListener('publicConnected', handlePublicConnected);
+    addListener('privateConnected', handlePrivateConnected);
+    addListener('publicDisconnected', handlePublicDisconnected);
+    addListener('privateDisconnected', handlePrivateDisconnected);
 
     return () => {
-      // Cleanup
-      const connectedListeners = GLOBAL_WS_STATE.eventListeners.get('connected') || [];
-      GLOBAL_WS_STATE.eventListeners.set('connected', 
-        connectedListeners.filter(cb => cb !== handleConnected)
-      );
+      // Cleanup listeners
+      const removeListener = (event, handler) => {
+        const listeners = GLOBAL_WS_STATE.eventListeners.get(event) || [];
+        GLOBAL_WS_STATE.eventListeners.set(event, listeners.filter(cb => cb !== handler));
+      };
 
-      const disconnectedListeners = GLOBAL_WS_STATE.eventListeners.get('disconnected') || [];
-      GLOBAL_WS_STATE.eventListeners.set('disconnected', 
-        disconnectedListeners.filter(cb => cb !== handleDisconnected)
-      );
+      removeListener('publicConnected', handlePublicConnected);
+      removeListener('privateConnected', handlePrivateConnected);
+      removeListener('publicDisconnected', handlePublicDisconnected);
+      removeListener('privateDisconnected', handlePrivateDisconnected);
     };
   }, []);
 
-  // Subscribe to prices
+  // Subscribe to price updates
   useEffect(() => {
-    if (!subscribeToPrices || !isConnected || priceSymbols.length === 0) {
-      return;
-    }
-
-    console.log('[KrakenWSManager] Subscribing to prices for', priceSymbols.length, 'symbols');
-    
-    subscribe('ticker', {
-      symbol: priceSymbols
-    });
+    if (!subscribeToPrices) return;
 
     const handlePricesUpdated = (data) => {
       setPrices(data);
     };
 
-    GLOBAL_WS_STATE.eventListeners.set('pricesUpdated', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('pricesUpdated') || []),
-      handlePricesUpdated
-    ]);
+    const listeners = GLOBAL_WS_STATE.eventListeners.get('pricesUpdated') || [];
+    GLOBAL_WS_STATE.eventListeners.set('pricesUpdated', [...listeners, handlePricesUpdated]);
 
-    return () => {
-      const listeners = GLOBAL_WS_STATE.eventListeners.get('pricesUpdated') || [];
-      GLOBAL_WS_STATE.eventListeners.set('pricesUpdated', 
-        listeners.filter(cb => cb !== handlePricesUpdated)
-      );
-    };
-  }, [subscribeToPrices, isConnected, priceSymbols.join(',')]);
-
-  // Subscribe to balances
-  useEffect(() => {
-    if (!subscribeToBalances || !isConnected) {
-      return;
+    // Subscribe to new symbols if already connected
+    if (GLOBAL_WS_STATE.isPublicConnected && priceSymbols.length > 0) {
+      subscribeToTicker(priceSymbols);
     }
 
-    console.log('[KrakenWSManager] Subscribing to balances');
-    
-    subscribe('balances');
+    return () => {
+      const currentListeners = GLOBAL_WS_STATE.eventListeners.get('pricesUpdated') || [];
+      GLOBAL_WS_STATE.eventListeners.set('pricesUpdated', 
+        currentListeners.filter(cb => cb !== handlePricesUpdated)
+      );
+    };
+  }, [subscribeToPrices, priceSymbols.join(',')]);
+
+  // Subscribe to balance updates
+  useEffect(() => {
+    if (!subscribeToBalances) return;
 
     const handleBalancesUpdated = (data) => {
       setBalances(data);
     };
 
-    GLOBAL_WS_STATE.eventListeners.set('balancesUpdated', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('balancesUpdated') || []),
-      handleBalancesUpdated
-    ]);
+    const listeners = GLOBAL_WS_STATE.eventListeners.get('balancesUpdated') || [];
+    GLOBAL_WS_STATE.eventListeners.set('balancesUpdated', [...listeners, handleBalancesUpdated]);
 
     return () => {
-      const listeners = GLOBAL_WS_STATE.eventListeners.get('balancesUpdated') || [];
+      const currentListeners = GLOBAL_WS_STATE.eventListeners.get('balancesUpdated') || [];
       GLOBAL_WS_STATE.eventListeners.set('balancesUpdated', 
-        listeners.filter(cb => cb !== handleBalancesUpdated)
+        currentListeners.filter(cb => cb !== handleBalancesUpdated)
       );
     };
-  }, [subscribeToBalances, isConnected]);
+  }, [subscribeToBalances]);
 
-  // Subscribe to orders
+  // Subscribe to order updates
   useEffect(() => {
-    if (!subscribeToOrders || !isConnected) {
-      return;
-    }
-
-    console.log('[KrakenWSManager] Subscribing to orders');
-    
-    subscribe('openOrders');
+    if (!subscribeToOrders) return;
 
     const handleOrdersUpdated = (data) => {
       setOrders(data);
     };
 
-    GLOBAL_WS_STATE.eventListeners.set('ordersUpdated', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('ordersUpdated') || []),
-      handleOrdersUpdated
-    ]);
+    const listeners = GLOBAL_WS_STATE.eventListeners.get('ordersUpdated') || [];
+    GLOBAL_WS_STATE.eventListeners.set('ordersUpdated', [...listeners, handleOrdersUpdated]);
 
     return () => {
-      const listeners = GLOBAL_WS_STATE.eventListeners.get('ordersUpdated') || [];
+      const currentListeners = GLOBAL_WS_STATE.eventListeners.get('ordersUpdated') || [];
       GLOBAL_WS_STATE.eventListeners.set('ordersUpdated', 
-        listeners.filter(cb => cb !== handleOrdersUpdated)
+        currentListeners.filter(cb => cb !== handleOrdersUpdated)
       );
     };
-  }, [subscribeToOrders, isConnected]);
+  }, [subscribeToOrders]);
 
-  // Subscribe to executions
+  // Subscribe to execution updates
   useEffect(() => {
-    if (!subscribeToExecutions || !isConnected) {
-      return;
-    }
-
-    console.log('[KrakenWSManager] Subscribing to executions');
-    
-    subscribe('executions');
+    if (!subscribeToExecutions) return;
 
     const handleExecutionReceived = (data) => {
       setLastExecution(data[0] || null);
     };
 
-    GLOBAL_WS_STATE.eventListeners.set('executionReceived', [
-      ...(GLOBAL_WS_STATE.eventListeners.get('executionReceived') || []),
-      handleExecutionReceived
-    ]);
+    const listeners = GLOBAL_WS_STATE.eventListeners.get('executionReceived') || [];
+    GLOBAL_WS_STATE.eventListeners.set('executionReceived', [...listeners, handleExecutionReceived]);
 
     return () => {
-      const listeners = GLOBAL_WS_STATE.eventListeners.get('executionReceived') || [];
+      const currentListeners = GLOBAL_WS_STATE.eventListeners.get('executionReceived') || [];
       GLOBAL_WS_STATE.eventListeners.set('executionReceived', 
-        listeners.filter(cb => cb !== handleExecutionReceived)
+        currentListeners.filter(cb => cb !== handleExecutionReceived)
       );
     };
-  }, [subscribeToExecutions, isConnected]);
+  }, [subscribeToExecutions]);
 
   return {
     isConnected,
@@ -526,8 +605,15 @@ export function useKrakenWebSocketManager(options = {}) {
     lastExecution,
     
     // Manual subscription methods
-    subscribe: useCallback((channel, params) => subscribe(channel, params), []),
-    unsubscribe: useCallback((channel, params) => unsubscribe(channel, params), []),
+    subscribe: useCallback((channel, params) => {
+      if (channel === 'ticker' && GLOBAL_WS_STATE.publicWs) {
+        subscribeToTicker(params?.symbols || []);
+      }
+    }, []),
+    
+    unsubscribe: useCallback((channel) => {
+      // Unsubscribe logic if needed
+    }, []),
     
     // Get current data
     getAllPrices: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.prices), []),
@@ -540,17 +626,25 @@ export function useKrakenWebSocketManager(options = {}) {
  * Disconnect and cleanup
  */
 export function disconnectKrakenWebSocket() {
-  if (GLOBAL_WS_STATE.ws) {
-    GLOBAL_WS_STATE.ws.close();
-    GLOBAL_WS_STATE.ws = null;
+  if (GLOBAL_WS_STATE.publicWs) {
+    GLOBAL_WS_STATE.publicWs.close();
+    GLOBAL_WS_STATE.publicWs = null;
   }
   
-  GLOBAL_WS_STATE.isConnected = false;
+  if (GLOBAL_WS_STATE.privateWs) {
+    GLOBAL_WS_STATE.privateWs.close();
+    GLOBAL_WS_STATE.privateWs = null;
+  }
+  
+  GLOBAL_WS_STATE.isPublicConnected = false;
+  GLOBAL_WS_STATE.isPrivateConnected = false;
   GLOBAL_WS_STATE.token = null;
+  GLOBAL_WS_STATE.tokenExpiry = 0;
   GLOBAL_WS_STATE.prices.clear();
   GLOBAL_WS_STATE.balances.clear();
   GLOBAL_WS_STATE.orders.clear();
   GLOBAL_WS_STATE.executions = [];
-  GLOBAL_WS_STATE.activeSubscriptions.clear();
+  GLOBAL_WS_STATE.activePublicSubs.clear();
+  GLOBAL_WS_STATE.activePrivateSubs.clear();
   GLOBAL_WS_STATE.eventListeners.clear();
 }
