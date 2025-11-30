@@ -52,10 +52,13 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
   }, [allocations, previousPrices]);
 
-  const consolidatedHoldings = useMemo(() => {
-    if (!Array.isArray(allocations)) return [];
+  // Use cached allocations when loading to prevent greying out
+  const displayAllocations = isLoading && cachedAllocations.length > 0 ? cachedAllocations : allocations;
 
-    const grouped = allocations.reduce((acc, holding) => {
+  const consolidatedHoldings = useMemo(() => {
+    if (!Array.isArray(displayAllocations)) return [];
+
+    const grouped = displayAllocations.reduce((acc, holding) => {
       const symbol = (holding.symbol || "").toUpperCase();
       if (!acc[symbol]) {
         acc[symbol] = { ...holding };
