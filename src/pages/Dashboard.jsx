@@ -1070,14 +1070,24 @@ export default function Dashboard() {
     const pct = soldCostSum > 0 ? (realizedSum / soldCostSum) * 100 : 0;
     setRealized24h({ value: realizedSum, percentage: pct });
 
-    // CRITICAL: Calculate lifetime PnL correctly
-    // Realized PnL = sum of (sell price - avg cost) * qty for each sell (already calculated above as realizedSum for 24h, need lifetime)
+    // CRITICAL: For LIVE mode, use Kraken API's cost basis data if available
+    if (!isSimMode && krakenApiBalances.loaded && krakenApiBalances.costBasis > 0) {
+      // Use Kraken's calculated unrealized PnL directly
+      const unrealizedPnL = krakenApiBalances.unrealizedPnL || 0;
+      const costBasis = krakenApiBalances.costBasis || 0;
+      const pnlPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0;
+      
+      setLifetimeChange({ value: unrealizedPnL, percentage: pnlPct });
+      return;
+    }
+
+    // SIM MODE or fallback: Calculate lifetime PnL from trades
+    // Realized PnL = sum of (sell price - avg cost) * qty for each sell
     // Unrealized PnL = current market value - remaining cost basis
     
-    // Calculate LIFETIME realized PnL (all sells, not just 24h)
     const stateLifetime = new Map();
     let lifetimeRealizedPnL = 0;
-    let totalCostBasisInvested = 0; // Track total cost basis for percentage calc
+    let totalCostBasisInvested = 0;
     
     for (const t of relevant) {
       const sym = (t.symbol || "").toUpperCase();
@@ -1115,7 +1125,11 @@ export default function Dashboard() {
     // Current market value of holdings
     const currentMarketValue = isSimMode 
       ? Number(portfolioMarketValue || 0)
-      : (wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue);
+      : (
+          (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
+          (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
+          portfolioMarketValue
+        );
     
     // Unrealized PnL = current market value - remaining cost basis
     const unrealizedPnL = currentMarketValue - remainingCostBasis;
