@@ -129,6 +129,93 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           }
           return;
         }
+        // CRITICAL: If cash is very low but we have holdings, sell small amounts to generate cash
+        const totalHoldingsValue = freshHoldings.reduce((sum, h) => {
+          const sym = (h.symbol || "").toUpperCase();
+          const priceData = quoteListForOrders.find(p => p.symbol === sym);
+          return sum + ((h.quantity || 0) * (priceData?.price || 0));
+        }, 0);
+
+        const totalPortfolioValue = cashAvailable + totalHoldingsValue;
+        const isAbove500 = totalPortfolioValue >= 500;
+
+        // If cash is low but we have holdings, sell a small portion to generate trading cash
+        if (cashAvailable < 10 && freshHoldings.length > 0 && !isSimMode) {
+          console.log('[AutoTrader] Low cash, attempting to liquidate small holdings for trading capital');
+
+          // Find the largest holding to sell a small portion
+          let bestHolding = null;
+          let bestValue = 0;
+
+          for (const h of freshHoldings) {
+            const sym = (h.symbol || "").toUpperCase();
+            const priceData = quoteListForOrders.find(p => p.symbol === sym);
+            if (!priceData?.price) continue;
+
+            const holdingValue = (h.quantity || 0) * priceData.price;
+            if (holdingValue > bestValue) {
+              bestValue = holdingValue;
+              bestHolding = { ...h, currentPrice: priceData.price };
+            }
+          }
+
+          if (bestHolding && bestValue > 20) {
+            // Sell 5-10% of the holding to generate cash (min $10-20 worth)
+            const sellPercentage = isAbove500 ? 0.10 : 0.05; // More aggressive when above $500
+            const sellValue = Math.max(15, bestValue * sellPercentage);
+            const sellQty = sellValue / bestHolding.currentPrice;
+
+            // Ensure we don't sell more than we have
+            const actualSellQty = Math.min(sellQty, bestHolding.quantity * 0.15);
+
+            if (actualSellQty > 0) {
+              const symU = (bestHolding.symbol || "").toUpperCase();
+              console.log(`[AutoTrader] Selling ${actualSellQty.toFixed(4)} ${symU} to generate trading cash`);
+
+              try {
+                const krakenResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: symU, 
+                    side: 'sell', 
+                    quantity: actualSellQty, 
+                    orderType: 'market',
+                    timeInForce: 'ioc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
+                ]);
+
+                const krakenData = krakenResponse?.data || krakenResponse;
+                if (krakenData?.success) {
+                  const sellTotal = actualSellQty * bestHolding.currentPrice;
+                  toast.success("🟢 LIVE Auto-Liquidation", { 
+                    description: `Sold ${actualSellQty.toFixed(4)} ${symU} @ $${bestHolding.currentPrice.toFixed(2)} to generate $${sellTotal.toFixed(2)} trading cash`,
+                    duration: 5000 
+                  });
+
+                  await base44.entities.Trade.create({
+                    symbol: symU,
+                    type: "sell",
+                    asset_type: "crypto",
+                    quantity: actualSellQty,
+                    price: bestHolding.currentPrice,
+                    total_value: sellTotal,
+                    is_auto_trade: true,
+                    is_simulation: false,
+                    created_by: user.email,
+                    status: 'executed'
+                  });
+
+                  // Update cash available for subsequent buy operations
+                  cashAvailable += sellTotal;
+                }
+              } catch (sellError) {
+                console.error('[AutoTrader] Liquidation sell failed:', sellError);
+              }
+            }
+          }
+        }
+
         if (cashAvailable < 1) return;
         const isLowBalance = cashAvailable < 10;
         let activeOrders = [];
