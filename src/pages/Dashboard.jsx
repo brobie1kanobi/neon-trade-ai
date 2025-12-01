@@ -522,6 +522,60 @@ export default function Dashboard() {
     portfolio: null,
     total: null
   });
+  
+  // CRITICAL: Fetch Kraken balances via REST API as fallback for LIVE mode
+  const [krakenApiBalances, setKrakenApiBalances] = React.useState({
+    usdBalance: 0,
+    cryptoValue: 0,
+    totalValue: 0,
+    holdings: [],
+    costBasis: 0,
+    unrealizedPnL: 0,
+    loaded: false
+  });
+  
+  // Fetch Kraken balance from REST API (fallback when WebSocket not connected)
+  React.useEffect(() => {
+    if (isSimMode) return;
+    
+    const fetchKrakenBalance = async () => {
+      try {
+        const response = await base44.functions.invoke('getKrakenBalance', {});
+        const data = response?.data || response;
+        
+        if (data?.success && data?.connected) {
+          const newBalances = {
+            usdBalance: data.usd_balance || 0,
+            cryptoValue: data.total_crypto_value_usd || 0,
+            totalValue: data.total_portfolio_value_usd || 0,
+            holdings: data.holdings || [],
+            costBasis: data.total_cost_basis_usd || 0,
+            unrealizedPnL: data.total_unrealized_pnl_usd || 0,
+            loaded: true
+          };
+          setKrakenApiBalances(newBalances);
+          
+          // Also cache these values
+          if (newBalances.usdBalance > 0 || newBalances.cryptoValue > 0) {
+            lastKnownBalancesRef.current = {
+              cash: newBalances.usdBalance,
+              portfolio: newBalances.cryptoValue,
+              total: newBalances.totalValue
+            };
+          }
+        }
+      } catch (err) {
+        console.error('[Dashboard] Kraken balance fetch failed:', err);
+      }
+    };
+    
+    // Fetch immediately
+    fetchKrakenBalance();
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchKrakenBalance, 30000);
+    return () => clearInterval(interval);
+  }, [isSimMode]);
 
   // CRITICAL: Build effective holdings from WebSocket in LIVE mode
   const effectiveHoldings = React.useMemo(() => {
