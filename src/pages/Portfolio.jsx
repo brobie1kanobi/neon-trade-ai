@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import { Trade, Wallet, UserSettings, User, Holding } from "@/entities/all";
 import { motion } from "framer-motion";
@@ -8,7 +7,7 @@ import { InvokeLLM } from "@/integrations/Core";
 import PortfolioSummary from "../components/portfolio/PortfolioSummary";
 import AssetAllocation from "../components/portfolio/AssetAllocation";
 import TradingInterface from "../components/portfolio/TradingInterface";
-import TradeHistory from "../components/portfolio/TradeHistory";
+import OrdersAndHistory from "../components/portfolio/OrdersAndHistory";
 import DataSync from "../components/portfolio/DataSync";
 import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
