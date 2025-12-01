@@ -20,7 +20,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const [priceChanges, setPriceChanges] = useState({});
   const [cachedAllocations, setCachedAllocations] = useState([]);
   const previousPrices = usePrevious(allocations);
-  
+
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
     if (Array.isArray(allocations) && allocations.length > 0) {
@@ -188,7 +188,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
 
                     <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
                       <div>
-                        <span style={{ color: "var(--text-secondary)" }} className="">Current Cost: </span>
+                        <span style={{ color: "var(--text-secondary)" }} className="">Current Price: </span>
                         <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                           ${asset.average_cost_price?.toFixed(2) || "0.00"}
                         </span>
