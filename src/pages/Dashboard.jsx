@@ -117,19 +117,27 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const freshWallets = await base44.entities.Wallet.filter({ created_by: user.email }, "-updated_date", 1);
         const freshWallet = freshWallets[0];
         if (!freshWallet) return;
-        const cashAvailable = isSimMode ? (freshWallet.cash_balance || 0) : (freshWallet.real_cash_balance || 0);
-        if (cashAvailable < 0) {
+        let cashAvailable = isSimMode ? (freshWallet.cash_balance || 0) : (freshWallet.real_cash_balance || 0);
+
+        // CRITICAL: Allow negative balance check to be more lenient - only stop if SEVERELY negative
+        if (cashAvailable < -100) {
           try {
             const settingsRecords = await base44.entities.UserSettings.filter({ created_by: user.email });
             if (settingsRecords[0]) await base44.entities.UserSettings.update(settingsRecords[0].id, { auto_trading_enabled: false });
           } catch (e) {}
-          toast.error("🚨 Auto-Trader Emergency Stop", { description: `Wallet balance is negative ($${cashAvailable.toFixed(2)}). Auto-trading has been disabled. Please reconcile your wallet.`, duration: 10000 });
+          toast.error("🚨 Auto-Trader Emergency Stop", { description: `Wallet balance is severely negative ($${cashAvailable.toFixed(2)}). Auto-trading has been disabled. Please reconcile your wallet.`, duration: 10000 });
           if (settings?.notifications_enabled === true) {
-            base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "🚨 Auto-Trader Emergency Stop", body: `Wallet balance is negative ($${cashAvailable.toFixed(2)}). Auto-trading disabled.`, data: { type: "emergency_stop" } } }).catch(() => {});
+            base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "🚨 Auto-Trader Emergency Stop", body: `Wallet balance is severely negative ($${cashAvailable.toFixed(2)}). Auto-trading disabled.`, data: { type: "emergency_stop" } } }).catch(() => {});
           }
           return;
         }
-        const isLowBalance = cashAvailable < 10;
+
+        // Normalize small negative balances to zero
+        if (cashAvailable < 0) {
+          cashAvailable = 0;
+        }
+        // CRITICAL: Low balance no longer blocks sell orders - only affects buying
+        const isLowBalance = cashAvailable < 1;
         let activeOrders = [];
         if (nowTs >= nextOrdersCheckAtRef.current) {
           activeOrders = await ConditionalOrder.filter({ created_by: user.email, status: "active" });
