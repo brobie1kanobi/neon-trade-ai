@@ -428,6 +428,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           if (total > remainingCash + 1e-6 || total < 1.0 || total > actualCash) continue;
           const tradeDetails = { symbol: sym, type: "buy", asset_type: p.asset_type, quantity: finalQty, price, total_value: total, is_auto_trade: true };
           try {
+            let krakenOrderId = null;
+
             if (!isSimMode) {
               try {
                 const krakenResponse = await Promise.race([
@@ -443,7 +445,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 ]);
                 const krakenData = krakenResponse?.data || krakenResponse;
                 if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
-                toast.success("🟢 LIVE Auto-Buy Executed", { description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken (Order: ${krakenData.order_id || 'submitted'})`, duration: 5000 });
+
+                // CRITICAL: Store Kraken order ID for tracking
+                krakenOrderId = krakenData.order_id || krakenData.txid || null;
+
+                toast.success("🟢 LIVE Auto-Buy Executed", { description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, duration: 5000 });
                 await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
               } catch (krakenError) {
                 console.error(`[AutoTrader] Kraken buy failed:`, krakenError);
@@ -460,7 +466,20 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             }
             remainingCash = Math.max(0, remainingCash - total);
             if (remainingCash < 1.0) break;
-            queueOrderCreate({ symbol: sym, asset_type: p.asset_type, quantity: finalQty, purchase_price: price, gain_margin: parseFloat(settings?.gain_margin ?? 10), loss_margin: parseFloat(settings?.loss_margin ?? 5), status: "active", created_by: user.email, is_simulation: isSimMode });
+
+            // CRITICAL: Include kraken_order_id when creating conditional order
+            queueOrderCreate({ 
+              symbol: sym, 
+              asset_type: p.asset_type, 
+              quantity: finalQty, 
+              purchase_price: price, 
+              gain_margin: parseFloat(settings?.gain_margin ?? 10), 
+              loss_margin: parseFloat(settings?.loss_margin ?? 5), 
+              status: "active", 
+              created_by: user.email, 
+              is_simulation: isSimMode,
+              kraken_order_id: krakenOrderId
+            });
             nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
           } catch (buyError) {
             console.error(`Failed to execute buy for ${sym}:`, buyError);
