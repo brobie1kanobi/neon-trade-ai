@@ -353,16 +353,28 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           checkAndFlushBatch();
         }
         await flushBatchQueue();
-        if (!settings?.auto_trading_enabled || isLowBalance) {
-          if (isLowBalance && !lowBalanceNotifiedRef.current) {
-            if (settings?.notifications_enabled === true) {
-              base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "Auto-Trader: Sell-Only Mode", body: `Cash balance is low ($${cashAvailable.toFixed(2)}). Auto-buying paused until balance exceeds $10.`, data: { type: "low_balance" } } }).catch(() => {});
-            }
-            lowBalanceNotifiedRef.current = true;
-          }
+
+        // CRITICAL: Continue to buying logic - don't return early just because of low balance
+        // The sell orders above have already been processed
+        if (!settings?.auto_trading_enabled) {
           return;
         }
-        if (cashAvailable >= 10 && lowBalanceNotifiedRef.current) lowBalanceNotifiedRef.current = false;
+
+        // Notify user if in low balance mode (but don't stop completely)
+        if (isLowBalance && !lowBalanceNotifiedRef.current) {
+          if (settings?.notifications_enabled === true) {
+            base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "Auto-Trader: Limited Buy Mode", body: `Cash balance is low ($${cashAvailable.toFixed(2)}). Auto-buying limited until balance increases.`, data: { type: "low_balance" } } }).catch(() => {});
+          }
+          lowBalanceNotifiedRef.current = true;
+        }
+        if (cashAvailable >= 1 && lowBalanceNotifiedRef.current) lowBalanceNotifiedRef.current = false;
+
+        // CRITICAL: Skip buy operations if cash is too low, but don't skip entirely
+        if (cashAvailable < 1) {
+          console.log('[AutoTrader] Skipping buy operations - cash too low:', cashAvailable.toFixed(2));
+          return;
+        }
+
         const prefs = await AutoBuyPreference.filter({ created_by: user.email, is_simulation: isSimMode, enabled: true }, "-created_date", 30);
         if (prefs.length === 0) return;
         const cryptoPrefs = [...new Set(prefs.filter(p => p.asset_type === "crypto").map(p => String(p.symbol || "").toUpperCase().trim()))];
