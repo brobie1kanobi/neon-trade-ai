@@ -625,7 +625,15 @@ export default function Portfolio() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        <TradeHistory trades={trades} />
+        <OrdersAndHistory 
+          trades={trades} 
+          isSimMode={isSimMode}
+          onRefresh={() => {
+            window.__portfolioCache.data = null;
+            window.__portfolioCache.timestamp = 0;
+            loadData(true);
+          }}
+        />
       </motion.div>
     </div>
   );
