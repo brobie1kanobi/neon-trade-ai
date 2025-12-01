@@ -1016,20 +1016,61 @@ export default function Dashboard() {
     const pct = soldCostSum > 0 ? (realizedSum / soldCostSum) * 100 : 0;
     setRealized24h({ value: realizedSum, percentage: pct });
 
-    // CRITICAL: Use WebSocket portfolio value in LIVE mode
-    const totalBuyCost = relevant
-      .filter((t) => t.type === "buy")
-      .reduce((sum, t) => sum + (t.total_value || 0), 0);
-    const totalSellProceeds = relevant
-      .filter((t) => t.type === "sell")
-      .reduce((sum, t) => sum + (t.total_value || 0), 0);
+    // CRITICAL: Calculate lifetime PnL correctly
+    // Realized PnL = sum of (sell price - avg cost) * qty for each sell (already calculated above as realizedSum for 24h, need lifetime)
+    // Unrealized PnL = current market value - remaining cost basis
     
+    // Calculate LIFETIME realized PnL (all sells, not just 24h)
+    const stateLifetime = new Map();
+    let lifetimeRealizedPnL = 0;
+    let totalCostBasisInvested = 0; // Track total cost basis for percentage calc
+    
+    for (const t of relevant) {
+      const sym = (t.symbol || "").toUpperCase();
+      const qty = Number(t.quantity) || 0;
+      const price = Number(t.price) || 0;
+      const rec = stateLifetime.get(sym) || { qty: 0, avgCost: 0 };
+
+      if ((t.type || "").toLowerCase() === "buy") {
+        const newQty = rec.qty + qty;
+        const oldCost = rec.avgCost * rec.qty;
+        const newCost = oldCost + qty * price;
+        const newAvg = newQty > 0 ? newCost / newQty : rec.avgCost;
+        stateLifetime.set(sym, { qty: newQty, avgCost: newAvg });
+        totalCostBasisInvested += qty * price;
+      } else if ((t.type || "").toLowerCase() === "sell") {
+        // Realized PnL = (sell price - avg cost) * qty
+        const realizedPnL = (price - (rec.avgCost || 0)) * qty;
+        lifetimeRealizedPnL += realizedPnL;
+
+        const newQty = rec.qty - qty;
+        if (newQty <= 0.0000001) {
+          stateLifetime.delete(sym);
+        } else {
+          stateLifetime.set(sym, { qty: newQty, avgCost: rec.avgCost });
+        }
+      }
+    }
+    
+    // Calculate remaining cost basis (unrealized holdings)
+    let remainingCostBasis = 0;
+    stateLifetime.forEach((rec) => {
+      remainingCostBasis += rec.qty * rec.avgCost;
+    });
+    
+    // Current market value of holdings
     const currentMarketValue = isSimMode 
       ? Number(portfolioMarketValue || 0)
       : (wsConnected && wsTotalValue >= 0 ? wsTotalValue : portfolioMarketValue);
     
-    const lifetimePnL = totalSellProceeds + currentMarketValue - totalBuyCost;
-    const lifetimePct = totalBuyCost > 0 ? (lifetimePnL / totalBuyCost) * 100 : 0;
+    // Unrealized PnL = current market value - remaining cost basis
+    const unrealizedPnL = currentMarketValue - remainingCostBasis;
+    
+    // Total Lifetime PnL = Realized + Unrealized
+    const lifetimePnL = lifetimeRealizedPnL + unrealizedPnL;
+    
+    // Percentage based on total invested cost basis
+    const lifetimePct = totalCostBasisInvested > 0 ? (lifetimePnL / totalCostBasisInvested) * 100 : 0;
     
     setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
 
