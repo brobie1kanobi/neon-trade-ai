@@ -1139,16 +1139,26 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket balances in LIVE mode with fallback caching
+  // CRITICAL: Use WebSocket balances in LIVE mode with REST API fallback
+  // Priority: WebSocket > REST API > Wallet DB > Cache
+  
   // Cash Wallet = USD balance from Kraken
   const rawCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : ((wsConnected && wsUsdBalance > 0) ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+    : (
+        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
+        (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) ? krakenApiBalances.usdBalance :
+        (wallet?.real_cash_balance || 0)
+      );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : ((wsConnected && wsCryptoValue > 0) ? wsCryptoValue : portfolioMarketValue);
+    : (
+        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
+        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
+        portfolioMarketValue
+      );
     
   // Update cache when we have valid data
   React.useEffect(() => {
