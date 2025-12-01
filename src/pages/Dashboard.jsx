@@ -1142,7 +1142,7 @@ export default function Dashboard() {
     
     setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
 
-  }, [trades, settings, portfolioMarketValue, isSimMode, wsTotalValue, wsConnected]);
+  }, [trades, settings, portfolioMarketValue, isSimMode, wsTotalValue, wsConnected, wsCryptoValue, krakenApiBalances]);
 
   useEffect(() => {
     const handleTradeCompleted = () => {
