@@ -431,7 +431,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             }
             remainingCash = Math.max(0, remainingCash - total);
             if (remainingCash < 1.0) break;
-            queueOrderCreate({ symbol: sym, asset_type: p.asset_type, quantity: finalQty, purchase_price: price, gain_margin: parseFloat(settings?.gain_margin ?? 10), loss_margin: parseFloat(settings?.loss_margin ?? 5), status: "active", created_by: user.email });
+            queueOrderCreate({ symbol: sym, asset_type: p.asset_type, quantity: finalQty, purchase_price: price, gain_margin: parseFloat(settings?.gain_margin ?? 10), loss_margin: parseFloat(settings?.loss_margin ?? 5), status: "active", created_by: user.email, is_simulation: isSimMode });
             nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
           } catch (buyError) {
             console.error(`Failed to execute buy for ${sym}:`, buyError);
