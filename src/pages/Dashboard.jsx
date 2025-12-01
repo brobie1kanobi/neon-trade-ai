@@ -256,7 +256,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           }
         }
 
-        if (cashAvailable < 1 && isSimMode) return;
+        // CRITICAL: Don't return early just because cash is low
+        // The bot should ALWAYS check sell conditions on active orders
+        // Only skip buy operations when cash is low
         for (const order of activeOrders) {
           const symU = (order.symbol || "").toUpperCase();
           const priceData = quoteListForOrders.find(p => p.symbol === symU);
@@ -316,8 +318,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   ]);
                   const krakenData = krakenResponse?.data || krakenResponse;
                   if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
-                  toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenData.order_id || 'submitted'})`, duration: 5000 });
+
+                  // CRITICAL: Store Kraken order ID for tracking
+                  const krakenOrderId = krakenData.order_id || krakenData.txid || null;
+
+                  toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, duration: 5000 });
                   await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
+
+                  // Update order with Kraken order ID
+                  queueOrderUpdate(order.id, { status: "executed", kraken_order_id: krakenOrderId });
                 } catch (krakenError) {
                   const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
                   if (isRateLimit) {
@@ -330,8 +339,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               } else {
                 await onTrade(tradeDetails);
                 toast.success("🤖 Auto-Trade Executed", { description: `Sold ${tradeDetails.quantity.toFixed(4)} ${tradeDetails.symbol} @ $${tradeDetails.price.toFixed(2)} (${tradeType}).` });
+                queueOrderUpdate(order.id, { status: "executed" });
               }
-              queueOrderUpdate(order.id, { status: "executed" });
               highestPriceCache.current.delete(order.id);
               if (settings?.notifications_enabled === true) {
                 base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: `${!isSimMode ? '🟢 LIVE' : '💎'} Auto-Sell Executed • ${symU}`, body: `${tradeType.replace("-", " ")}: Sold ${sellQuantity.toFixed(4)} at $${currentPrice.toFixed(2)}`, data: { type: "trade", symbol: symU, tradeType: "sell", reason: tradeType, live: !isSimMode } } }).catch(() => {});
