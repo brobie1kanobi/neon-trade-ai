@@ -38,25 +38,39 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
   const fullDateFmt = is24h ? "MMM d, yyyy HH:mm:ss" : "MMM d, yyyy h:mm:ss a";
 
-  // Load conditional orders
+  // Load conditional orders - CRITICAL: Filter by simulation mode
   const loadOrders = useCallback(async () => {
     if (!user?.email) return;
     
     setIsLoading(true);
     try {
-      const orders = await ConditionalOrder.filter(
+      // CRITICAL: Only load orders matching the current mode (sim vs live)
+      // ConditionalOrder doesn't have is_simulation field, so we need to check
+      // if the order was created in sim mode by looking at related trades or settings
+      const allOrders = await ConditionalOrder.filter(
         { created_by: user.email },
         "-created_date",
         100
       );
       
+      // Filter orders based on simulation mode
+      // Orders created in live mode should only show in live mode and vice versa
+      const modeFilteredOrders = allOrders.filter(o => {
+        // If the order has is_simulation field, use it
+        if (typeof o.is_simulation === 'boolean') {
+          return o.is_simulation === isSimMode;
+        }
+        // For older orders without the field, show in sim mode only (safe default)
+        return isSimMode;
+      });
+      
       // Separate active from executed/cancelled
-      const active = orders.filter(o => o.status === "active");
-      const executed = orders.filter(o => o.status === "executed");
-      const cancelled = orders.filter(o => o.status === "cancelled");
+      const active = modeFilteredOrders.filter(o => o.status === "active");
+      const executed = modeFilteredOrders.filter(o => o.status === "executed");
+      const cancelled = modeFilteredOrders.filter(o => o.status === "cancelled");
       
       setConditionalOrders(active);
-      setOpenOrders(active); // In this context, "open" means active conditional orders
+      setOpenOrders(active);
       setClosedOrders([...executed, ...cancelled]);
       
     } catch (err) {
@@ -64,7 +78,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     } finally {
       setIsLoading(false);
     }
-  }, [user?.email]);
+  }, [user?.email, isSimMode]);
 
   useEffect(() => {
     loadOrders();
