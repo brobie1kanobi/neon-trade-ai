@@ -333,8 +333,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const stockPrefs = [...new Set(prefs.filter(p => p.asset_type === "stock").map(p => String(p.symbol || "").toUpperCase().trim()))];
         const quotesForBuy = await fetchQuotes({ stockSymbols: stockPrefs, cryptoSymbols: cryptoPrefs });
         if (!Array.isArray(quotesForBuy) || quotesForBuy.length === 0) return;
-        const isCashBuildUpMode = lifetimeChange?.percentage >= 10;
-        let remainingCash = isCashBuildUpMode ? cashAvailable * 0.2 : cashAvailable * 0.8;
+        // CRITICAL: When above $500, be more aggressive with trading
+        // Below $500: conservative mode (build up capital)
+        // Above $500: full trading mode (maximize returns)
+        const isCashBuildUpMode = lifetimeChange?.percentage >= 10 || totalPortfolioValue < 500;
+        let remainingCash = isCashBuildUpMode ? cashAvailable * 0.3 : cashAvailable * 0.8;
         if (remainingCash <= 1.0) return;
         let analysisMap = {};
         try {
