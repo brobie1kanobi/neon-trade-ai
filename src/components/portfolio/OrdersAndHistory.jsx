@@ -4,6 +4,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { 
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { 
   History, 
   ArrowUpRight, 
   ArrowDownRight, 
@@ -15,7 +21,8 @@ import {
   RefreshCw,
   TrendingUp,
   TrendingDown,
-  Loader2
+  Loader2,
+  Info
 } from "lucide-react";
 import { format } from "date-fns";
 import { useSettings } from "@/components/utils/SettingsContext";
