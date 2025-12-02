@@ -648,18 +648,22 @@ Deno.serve(async (req) => {
         }, { status: 400 });
       }
 
-      // CRITICAL: Minimum order validation (Kraken minimums - updated 2024)
+      // CRITICAL: Minimum order validation (Kraken minimums - updated Dec 2024)
+      // Source: https://support.kraken.com/hc/en-us/articles/205893708-Minimum-order-size-volume-
       const minOrderSizes = {
         'BTC': 0.0001,
-        'ETH': 0.004,
-        'SOL': 0.05,
+        'XBT': 0.0001,
+        'ETH': 0.005,      // Updated: was 0.004
+        'SOL': 0.1,        // Updated: was 0.05
         'XRP': 10.0,
         'ADA': 10.0,
         'DOT': 0.5,
         'DOGE': 50.0,
+        'XDG': 50.0,       // Kraken alias for DOGE
         'LINK': 0.5,
         'UNI': 0.5,
         'MATIC': 10.0,
+        'POL': 10.0,       // New Polygon symbol
         'ATOM': 0.5,
         'AVAX': 0.1,
         'BCH': 0.002,
@@ -675,7 +679,45 @@ Deno.serve(async (req) => {
         'OP': 3.0,
         'INJ': 0.3,
         'PEPE': 500000.0,
-        'SUI': 3.0
+        'SUI': 3.0,
+        'BABY': 100.0,     // Added BABY token min
+        'FLOKI': 5000.0,   // Added FLOKI
+        'WIF': 1.0,        // Added WIF
+        'BONK': 100000.0,  // Added BONK
+        'RENDER': 0.5,     // Added RENDER
+        'FET': 5.0,        // Added FET
+        'RNDR': 0.5,       // Added RNDR
+        'GRT': 10.0,       // Added GRT
+        'IMX': 2.0,        // Added IMX
+        'SAND': 5.0,       // Added SAND
+        'MANA': 5.0,       // Added MANA
+        'AXS': 0.2,        // Added AXS
+        'ENS': 0.1,        // Added ENS
+        'LDO': 1.0,        // Added LDO
+        'RPL': 0.1,        // Added RPL
+        'CRV': 5.0,        // Added CRV
+        'AAVE': 0.02,      // Added AAVE
+        'MKR': 0.002,      // Added MKR
+        'SNX': 2.0,        // Added SNX
+        'COMP': 0.05,      // Added COMP
+        'YFI': 0.0002,     // Added YFI
+        'SUSHI': 5.0,      // Added SUSHI
+        '1INCH': 5.0,      // Added 1INCH
+        'BAL': 0.5,        // Added BAL
+        'ZRX': 5.0,        // Added ZRX
+        'ENJ': 5.0,        // Added ENJ
+        'CHZ': 50.0,       // Added CHZ
+        'GALA': 50.0,      // Added GALA
+        'APE': 1.0,        // Added APE
+        'BLUR': 10.0,      // Added BLUR
+        'OP': 3.0,
+        'ARB': 5.0,
+        'SEI': 5.0,        // Added SEI
+        'TIA': 0.5,        // Added TIA
+        'JUP': 5.0,        // Added JUP
+        'PYTH': 10.0,      // Added PYTH
+        'WLD': 1.0,        // Added WLD
+        'STRK': 2.0        // Added STRK
       };
 
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
