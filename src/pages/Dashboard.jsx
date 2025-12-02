@@ -849,58 +849,78 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               let stopLossOrderId = null;
               let takeProfitOrderId = null;
 
-              // Place STOP-LOSS order
-              try {
-                console.log('[AutoTrader] Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
-                const slResponse = await Promise.race([
-                  base44.functions.invoke('krakenTrade', { 
-                    action: 'place_order', 
-                    symbol: sym, 
-                    side: 'sell', 
-                    quantity: orderQty, 
-                    orderType: 'stop-loss',
-                    stopPrice: stopLossPrice,
-                    timeInForce: 'gtc'
-                  }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
-                ]);
+              // CRITICAL: Check minimum order sizes before sending bracket orders
+              const minOrderSizesForBuy = {
+                'BTC': 0.0001, 'ETH': 0.005, 'SOL': 0.1, 'XRP': 10.0, 'ADA': 10.0,
+                'DOT': 0.5, 'DOGE': 50.0, 'LINK': 0.5, 'UNI': 0.5, 'MATIC': 10.0,
+                'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.002, 'LTC': 0.04, 'TRX': 50.0,
+                'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.2, 'NEAR': 1.0,
+                'BABY': 100.0, 'FLOKI': 5000.0, 'WIF': 1.0, 'BONK': 100000.0, 'PEPE': 500000.0
+              };
 
-                const slData = slResponse?.data || slResponse;
-                if (slData?.success) {
-                  stopLossOrderId = slData.order_id || slData.txid;
-                  console.log('[AutoTrader] ✅ Kraken stop-loss placed:', stopLossOrderId);
-                } else {
-                  console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
+              const minQtyForBracket = minOrderSizesForBuy[sym] || 0.00001;
+              const skipBracketOrders = orderQty < minQtyForBracket;
+
+              if (skipBracketOrders) {
+                console.warn('[AutoTrader] Order quantity', orderQty, 'below minimum', minQtyForBracket, 'for', sym, '- skipping bracket orders');
+                toast.warning(`⚠️ ${sym} below min for bracket orders`, { 
+                  description: `Need ${minQtyForBracket}+ for SL/TP orders. Position will be monitored locally.`,
+                  duration: 4000
+                });
+              } else {
+                // Place STOP-LOSS order
+                try {
+                  console.log('[AutoTrader] 📤 Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
+                  const slResponse = await Promise.race([
+                    base44.functions.invoke('krakenTrade', { 
+                      action: 'place_order', 
+                      symbol: sym, 
+                      side: 'sell', 
+                      quantity: orderQty, 
+                      orderType: 'stop-loss',
+                      stopPrice: stopLossPrice,
+                      timeInForce: 'gtc'
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
+                  ]);
+
+                  const slData = slResponse?.data || slResponse;
+                  if (slData?.success) {
+                    stopLossOrderId = slData.order_id || slData.txid;
+                    console.log('[AutoTrader] ✅ Kraken stop-loss placed:', stopLossOrderId);
+                  } else {
+                    console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
+                  }
+                } catch (slError) {
+                  console.error('[AutoTrader] Stop-loss error:', slError.message);
                 }
-              } catch (slError) {
-                console.error('[AutoTrader] Stop-loss error:', slError.message);
-              }
 
-              // Place TAKE-PROFIT order
-              try {
-                console.log('[AutoTrader] Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2));
-                const tpResponse = await Promise.race([
-                  base44.functions.invoke('krakenTrade', { 
-                    action: 'place_order', 
-                    symbol: sym, 
-                    side: 'sell', 
-                    quantity: orderQty, 
-                    orderType: 'take-profit',
-                    triggerPrice: takeProfitPrice,
-                    timeInForce: 'gtc'
-                  }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 15000))
-                ]);
+                // Place TAKE-PROFIT order
+                try {
+                  console.log('[AutoTrader] 📤 Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2));
+                  const tpResponse = await Promise.race([
+                    base44.functions.invoke('krakenTrade', { 
+                      action: 'place_order', 
+                      symbol: sym, 
+                      side: 'sell', 
+                      quantity: orderQty, 
+                      orderType: 'take-profit',
+                      triggerPrice: takeProfitPrice,
+                      timeInForce: 'gtc'
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 15000))
+                  ]);
 
-                const tpData = tpResponse?.data || tpResponse;
-                if (tpData?.success) {
-                  takeProfitOrderId = tpData.order_id || tpData.txid;
-                  console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
-                } else {
-                  console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                  const tpData = tpResponse?.data || tpResponse;
+                  if (tpData?.success) {
+                    takeProfitOrderId = tpData.order_id || tpData.txid;
+                    console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
+                  } else {
+                    console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                  }
+                } catch (tpError) {
+                  console.error('[AutoTrader] Take-profit error:', tpError.message);
                 }
-              } catch (tpError) {
-                console.error('[AutoTrader] Take-profit error:', tpError.message);
               }
 
               const hasSL = !!stopLossOrderId;
