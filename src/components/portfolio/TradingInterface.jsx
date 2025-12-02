@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -213,14 +212,132 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
   const handleConfirmTrade = async (tradeData, setConditional) => {
     setIsExecuting(true);
 
-    await onTrade(tradeData);
-
     const currentUser = await User.me();
     const userSettingsList = await UserSettings.filter({ created_by: currentUser.email });
     const userSettings = userSettingsList[0] || {};
 
+    // CRITICAL: For LIVE mode, send order directly to Kraken first
+    if (!isSimMode) {
+      try {
+        console.log('[TradingInterface] LIVE mode - sending order to Kraken:', tradeData);
+        
+        const krakenResponse = await base44.functions.invoke('krakenTrade', {
+          action: 'place_order',
+          symbol: tradeData.symbol,
+          side: tradeData.type, // 'buy' or 'sell'
+          quantity: tradeData.quantity,
+          orderType: 'market',
+          timeInForce: 'gtc'
+        });
+
+        const krakenData = krakenResponse?.data || krakenResponse;
+        console.log('[TradingInterface] Kraken response:', krakenData);
+
+        if (!krakenData?.success) {
+          throw new Error(krakenData?.error || 'Kraken order failed');
+        }
+
+        const krakenOrderId = krakenData.order_id || krakenData.txid || null;
+        
+        toast.success("🟢 LIVE Order Executed", {
+          description: `${tradeData.type === 'buy' ? 'Bought' : 'Sold'} ${tradeData.quantity.toFixed(4)} ${tradeData.symbol} on Kraken`,
+          duration: 5000
+        });
+
+        // Record trade in local database with Kraken order ID
+        await onTrade({
+          ...tradeData,
+          is_simulation: false,
+          kraken_order_id: krakenOrderId
+        });
+
+        // CRITICAL: For LIVE buys with conditional orders, create a local tracking record
+        // The auto-trader will monitor and execute sells via Kraken when conditions are met
+        if (tradeData.type === 'buy' && setConditional) {
+          try {
+            const conditionalOrder = await ConditionalOrder.create({
+              symbol: tradeData.symbol,
+              asset_type: tradeData.asset_type || 'crypto',
+              quantity: tradeData.quantity,
+              purchase_price: tradeData.price,
+              gain_margin: parseFloat(gainMargin),
+              loss_margin: parseFloat(lossMargin),
+              trailing_enabled: true,
+              trailing_margin: parseFloat(lossMargin),
+              highest_price: tradeData.price,
+              status: 'active',
+              is_simulation: false,
+              kraken_order_id: krakenOrderId, // Link to the buy order
+              created_by: currentUser.email
+            });
+
+            console.log('[TradingInterface] ✅ Created LIVE conditional order:', conditionalOrder);
+
+            toast.success("🤖 Auto-Trader Monitoring", {
+              description: `TP: +${gainMargin}% | SL: -${lossMargin}% (trailing enabled)`,
+              duration: 3000
+            });
+
+            if (!autoTradingEnabled) {
+              if (settings?.id) {
+                await UserSettings.update(settings.id, { auto_trading_enabled: true });
+              } else {
+                await UserSettings.create({ auto_trading_enabled: true, created_by: currentUser.email });
+              }
+            }
+          } catch (e) {
+            console.error("[TradingInterface] Failed to create conditional order:", e);
+            toast.error("Warning: Trade executed but auto-sell not set", {
+              description: "You may need to manually sell this position"
+            });
+          }
+        }
+
+      } catch (krakenError) {
+        console.error('[TradingInterface] Kraken order failed:', krakenError);
+        toast.error("🔴 LIVE Order Failed", {
+          description: krakenError.message || 'Failed to execute order on Kraken',
+          duration: 10000
+        });
+        setIsExecuting(false);
+        return; // Don't continue if Kraken order failed
+      }
+    } else {
+      // SIM MODE: Execute locally only
+      await onTrade(tradeData);
+
+      if (tradeData.type === 'buy' && setConditional) {
+        try {
+          await ConditionalOrder.create({
+            symbol: tradeData.symbol,
+            asset_type: tradeData.asset_type || 'crypto',
+            quantity: tradeData.quantity,
+            purchase_price: tradeData.price,
+            gain_margin: parseFloat(gainMargin),
+            loss_margin: parseFloat(lossMargin),
+            trailing_enabled: true,
+            trailing_margin: parseFloat(lossMargin),
+            highest_price: tradeData.price,
+            status: 'active',
+            is_simulation: true,
+            created_by: currentUser.email
+          });
+
+          if (!autoTradingEnabled) {
+            if (settings?.id) {
+              await UserSettings.update(settings.id, { auto_trading_enabled: true });
+            } else {
+              await UserSettings.create({ auto_trading_enabled: true, created_by: currentUser.email });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to create conditional order:", e);
+        }
+      }
+    }
+
     const notificationsEnabled = userSettings.notifications_enabled === true;
-    const tradeNotificationsEnabled = userSettings.notifications_on_trade === true; // Corrected: Using notifications_on_trade
+    const tradeNotificationsEnabled = userSettings.notifications_on_trade === true;
     const appInBackground = typeof document !== 'undefined' && document.visibilityState === "hidden";
 
     if (notificationsEnabled && tradeNotificationsEnabled && appInBackground) {
@@ -228,39 +345,13 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         base44.functions.invoke("pushNotifications", {
           action: "sendNotification",
           payload: {
-            title: `Trade Executed • ${tradeData.symbol}`,
+            title: `${isSimMode ? '💎' : '🟢 LIVE'} Trade Executed • ${tradeData.symbol}`,
             body: `${tradeData.type === "buy" ? "Bought" : "Sold"} ${tradeData.quantity.toFixed(4)} @ $${tradeData.price.toFixed(2)}`,
             data: { type: "trade", symbol: tradeData.symbol }
           }
         }).catch((err) => {
           console.error('[PORTFOLIO] Push notification error:', err);
         });
-      }
-    }
-
-    if (tradeData.type === 'buy' && setConditional) {
-      try {
-        await ConditionalOrder.create({
-          symbol: tradeData.symbol,
-          asset_type: tradeData.asset_type,
-          quantity: tradeData.quantity,
-          purchase_price: tradeData.price,
-          gain_margin: parseFloat(gainMargin),
-          loss_margin: parseFloat(lossMargin),
-          status: 'active',
-          created_by: currentUser.email
-        });
-
-        if (!autoTradingEnabled) {
-          if (settings?.id) {
-            await UserSettings.update(settings.id, { auto_trading_enabled: true });
-          } else {
-            await UserSettings.create({ auto_trading_enabled: true, created_by: currentUser.email });
-          }
-        }
-
-      } catch (e) {
-        console.error("Failed to create conditional order:", e);
       }
     }
 
