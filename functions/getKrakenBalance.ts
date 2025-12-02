@@ -295,6 +295,8 @@ Deno.serve(async (req) => {
             if (costData && costData.totalQty > 0) {
               const avgCost = costData.totalCost / costData.totalQty;
               holding.avg_cost = avgCost;
+              holding.average_cost_price = avgCost;
+              holding.cost_basis_per_unit = avgCost;
               holding.total_cost_basis = holding.quantity * avgCost;
               holding.unrealized_pnl = holding.total_value_usd - holding.total_cost_basis;
               holding.pnl_percent = holding.total_cost_basis > 0 
