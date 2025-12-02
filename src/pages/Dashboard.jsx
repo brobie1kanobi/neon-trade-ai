@@ -113,11 +113,45 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
       const nowTs = Date.now();
       if (nowTs < backoffUntilRef.current || (lastRunRef.current && nowTs - lastRunRef.current < 300000)) return;
       isRunningRef.current = true;
+      
+      console.log('[AutoTrader] Starting trade cycle - isSimMode:', isSimMode);
+      
       try {
+        // CRITICAL: For LIVE mode, fetch Kraken balances directly
+        let krakenHoldings = [];
+        let krakenCashBalance = 0;
+        
+        if (!isSimMode) {
+          try {
+            console.log('[AutoTrader] Fetching Kraken balances...');
+            const krakenResponse = await Promise.race([
+              base44.functions.invoke('getKrakenBalance', {}),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken balance timeout')), 15000))
+            ]);
+            
+            const krakenData = krakenResponse?.data || krakenResponse;
+            console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenData));
+            
+            if (krakenData?.success && krakenData?.connected) {
+              krakenCashBalance = krakenData.usd_balance || 0;
+              krakenHoldings = (krakenData.holdings || []).filter(h => h.quantity > 0.00001);
+              console.log('[AutoTrader] Kraken cash:', krakenCashBalance, 'holdings:', krakenHoldings.length);
+            }
+          } catch (krakenError) {
+            console.error('[AutoTrader] Kraken fetch error:', krakenError.message);
+          }
+        }
+        
         const freshWallets = await base44.entities.Wallet.filter({ created_by: user.email }, "-updated_date", 1);
         const freshWallet = freshWallets[0];
-        if (!freshWallet) return;
-        let cashAvailable = isSimMode ? (freshWallet.cash_balance || 0) : (freshWallet.real_cash_balance || 0);
+        if (!freshWallet && isSimMode) return;
+        
+        // Use Kraken balance for LIVE mode, wallet for SIM mode
+        let cashAvailable = isSimMode 
+          ? (freshWallet?.cash_balance || 0) 
+          : (krakenCashBalance > 0 ? krakenCashBalance : (freshWallet?.real_cash_balance || 0));
+
+        console.log('[AutoTrader] Cash available:', cashAvailable);
 
         // CRITICAL: Allow negative balance check to be more lenient - only stop if SEVERELY negative
         if (cashAvailable < -100) {
@@ -141,9 +175,26 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         // CRITICAL: Always fetch active orders to check for holdings without orders
         let activeOrders = await ConditionalOrder.filter({ created_by: user.email, status: "active", is_simulation: isSimMode });
         nextOrdersCheckAtRef.current = nowTs + 5 * 60 * 1000;
+        
+        console.log('[AutoTrader] Active orders:', activeOrders.length);
 
-        // CRITICAL: Fetch holdings to auto-create conditional orders for assets without them
-        const freshHoldings = await base44.entities.Holding.filter({ created_by: user.email, is_simulation: isSimMode });
+        // CRITICAL: For LIVE mode, use Kraken holdings; for SIM mode, use DB holdings
+        let freshHoldings;
+        if (!isSimMode && krakenHoldings.length > 0) {
+          // Convert Kraken holdings to app format
+          freshHoldings = krakenHoldings.map(h => ({
+            symbol: h.symbol,
+            quantity: h.quantity,
+            average_cost_price: h.cost_basis_per_unit || h.current_price || 0,
+            asset_type: 'crypto',
+            is_simulation: false,
+            created_by: user.email
+          }));
+          console.log('[AutoTrader] Using Kraken holdings:', freshHoldings.length);
+        } else {
+          freshHoldings = await base44.entities.Holding.filter({ created_by: user.email, is_simulation: isSimMode });
+          console.log('[AutoTrader] Using DB holdings:', freshHoldings.length);
+        }
 
         // Find holdings that don't have active conditional orders
         const holdingsWithoutOrders = freshHoldings.filter(holding => {
