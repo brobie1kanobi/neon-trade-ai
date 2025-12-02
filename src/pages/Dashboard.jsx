@@ -285,12 +285,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const cryptoSymbolsForOrders = [...new Set(activeOrders.filter(o => o.asset_type === "crypto").map(o => (o.symbol || "").toUpperCase()))];
 
         // For LIVE mode, also fetch prices for holdings to enable liquidation
-        const holdingSymbols = !isSimMode ? [...new Set(freshHoldings.filter(h => h.asset_type === "crypto").map(h => (h.symbol || "").toUpperCase()))] : [];
+        const holdingSymbols = [...new Set(freshHoldings.map(h => (h.symbol || "").toUpperCase()))];
         const allCryptoSymbols = [...new Set([...cryptoSymbolsForOrders, ...holdingSymbols])];
+
+        console.log('[AutoTrader] Fetching prices for symbols:', allCryptoSymbols);
 
         let quoteListForOrders = [];
         if (stockSymbolsForOrders.length || allCryptoSymbols.length) {
           quoteListForOrders = await fetchQuotes({ stockSymbols: stockSymbolsForOrders, cryptoSymbols: allCryptoSymbols });
+          console.log('[AutoTrader] Got quotes:', quoteListForOrders.length);
         }
 
         // CRITICAL: Calculate total portfolio value for LIVE mode liquidation logic
