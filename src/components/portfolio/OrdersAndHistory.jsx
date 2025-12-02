@@ -628,19 +628,19 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
             <h4 className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>Order Details</h4>
             
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+              <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Symbol</span>
                 <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{order.symbol}</span>
               </div>
-              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+              <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Quantity</span>
                 <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatDisplayQuantity(order.quantity)}</span>
               </div>
-              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+              <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Entry Price</span>
                 <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatPrice(order.purchase_price)}</span>
               </div>
-              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+              <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Status</span>
                 <Badge className={`text-xs ${isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                   {isExecuted ? 'Executed' : 'Cancelled'}
