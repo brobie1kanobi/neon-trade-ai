@@ -637,64 +637,148 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           const total = finalQty * price;
           if (total > remainingCash + 1e-6 || total < 1.0 || total > actualCash) continue;
           const tradeDetails = { symbol: sym, type: "buy", asset_type: p.asset_type, quantity: finalQty, price, total_value: total, is_auto_trade: true };
-          try {
-            let krakenOrderId = null;
+          // CRITICAL: In LIVE mode, ALL buys MUST go through Kraken - no local-only orders
+          if (!isSimMode) {
+            console.log('[AutoTrader] 🟢 LIVE MODE - Sending REAL buy order to Kraken for', sym);
+            try {
+              const krakenResponse = await Promise.race([
+                base44.functions.invoke('krakenTrade', { 
+                  action: 'place_order', 
+                  symbol: sym, 
+                  side: 'buy', 
+                  quantity: finalQty, 
+                  orderType: 'market',
+                  timeInForce: 'ioc'
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
+              ]);
+              
+              const krakenData = krakenResponse?.data || krakenResponse;
+              console.log('[AutoTrader] Kraken buy response:', JSON.stringify(krakenData));
+              
+              if (!krakenData?.success) {
+                throw new Error(krakenData?.error || 'Kraken trade failed');
+              }
 
-            if (!isSimMode) {
+              const krakenBuyOrderId = krakenData.order_id || krakenData.txid || null;
+              console.log('[AutoTrader] ✅ LIVE buy executed on Kraken -', sym, 'order ID:', krakenBuyOrderId);
+
+              toast.success("🟢 LIVE Auto-Buy Executed", { 
+                description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken (Order: ${krakenBuyOrderId || 'submitted'})`, 
+                duration: 5000 
+              });
+              
+              // Record trade in local DB for history
+              await base44.entities.Trade.create({ 
+                ...tradeDetails, 
+                is_simulation: false, 
+                created_by: user.email, 
+                status: 'executed',
+                kraken_order_id: krakenBuyOrderId
+              });
+
+              remainingCash = Math.max(0, remainingCash - total);
+              
+              // CRITICAL: Place REAL Kraken stop-loss order for this buy
+              const stopLossPrice = price * (1 - parseFloat(settings?.loss_margin ?? 5) / 100);
+              let stopLossOrderId = null;
+              
               try {
-                const krakenResponse = await Promise.race([
+                console.log('[AutoTrader] Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
+                const slResponse = await Promise.race([
                   base44.functions.invoke('krakenTrade', { 
                     action: 'place_order', 
                     symbol: sym, 
-                    side: 'buy', 
+                    side: 'sell', 
                     quantity: finalQty, 
-                    orderType: 'market',
-                    timeInForce: 'ioc' // Immediate-or-cancel for auto-trades
+                    orderType: 'stop-loss',
+                    stopPrice: stopLossPrice,
+                    timeInForce: 'gtc'
                   }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
                 ]);
-                const krakenData = krakenResponse?.data || krakenResponse;
-                if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
-
-                // CRITICAL: Store Kraken order ID for tracking
-                krakenOrderId = krakenData.order_id || krakenData.txid || null;
-
-                toast.success("🟢 LIVE Auto-Buy Executed", { description: `Bought ${finalQty.toFixed(4)} ${sym} @ $${price.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, duration: 5000 });
-                await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
-              } catch (krakenError) {
-                console.error(`[AutoTrader] Kraken buy failed:`, krakenError);
-                const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
-                if (isRateLimit) {
-                  failureCountRef.current++;
-                  backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
+                
+                const slData = slResponse?.data || slResponse;
+                if (slData?.success) {
+                  stopLossOrderId = slData.order_id || slData.txid;
+                  console.log('[AutoTrader] ✅ Kraken stop-loss placed:', stopLossOrderId);
+                  
+                  toast.success("🟢 Stop-Loss Set", { 
+                    description: `SL @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) on Kraken`,
+                    duration: 3000 
+                  });
+                } else {
+                  console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
                 }
-                toast.error("🔴 LIVE Trade Failed", { description: `Failed to buy ${sym} on Kraken: ${krakenError.message}`, duration: 10000 });
-                break;
+              } catch (slError) {
+                console.error('[AutoTrader] Stop-loss error:', slError.message);
+                // Continue - we have the buy, stop-loss is optional backup
               }
-            } else {
-              await onTrade(tradeDetails);
-            }
-            remainingCash = Math.max(0, remainingCash - total);
-            if (remainingCash < 1.0) break;
 
-            // CRITICAL: Include kraken_order_id when creating conditional order
-            queueOrderCreate({ 
-              symbol: sym, 
-              asset_type: p.asset_type, 
-              quantity: finalQty, 
-              purchase_price: price, 
-              gain_margin: parseFloat(settings?.gain_margin ?? 10), 
-              loss_margin: parseFloat(settings?.loss_margin ?? 5), 
-              status: "active", 
-              created_by: user.email, 
-              is_simulation: isSimMode,
-              kraken_order_id: krakenOrderId
-            });
-            nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
-          } catch (buyError) {
-            console.error(`Failed to execute buy for ${sym}:`, buyError);
-            console.log('[AutoTrader] Stopping auto-buys due to trade error');
-            break;
+              // Create local conditional order for trailing stop monitoring (backup)
+              queueOrderCreate({ 
+                symbol: sym, 
+                asset_type: p.asset_type, 
+                quantity: finalQty, 
+                purchase_price: price, 
+                gain_margin: parseFloat(settings?.gain_margin ?? 10), 
+                loss_margin: parseFloat(settings?.loss_margin ?? 5),
+                trailing_enabled: true,
+                trailing_margin: parseFloat(settings?.loss_margin ?? 5),
+                highest_price: price,
+                status: "active", 
+                created_by: user.email, 
+                is_simulation: false,
+                kraken_order_id: stopLossOrderId || krakenBuyOrderId
+              });
+              
+              nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
+              
+              if (remainingCash < 1.0) break;
+              
+            } catch (krakenError) {
+              console.error(`[AutoTrader] ❌ Kraken buy failed:`, krakenError.message);
+              const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
+              if (isRateLimit) {
+                failureCountRef.current++;
+                backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
+              }
+              toast.error("🔴 LIVE Trade Failed", { 
+                description: `Failed to buy ${sym} on Kraken: ${krakenError.message}`, 
+                duration: 10000 
+              });
+              // DO NOT create local order - in LIVE mode, only Kraken orders count
+              break;
+            }
+          } else {
+            // SIM MODE: Execute locally only
+            try {
+              await onTrade(tradeDetails);
+              remainingCash = Math.max(0, remainingCash - total);
+              
+              queueOrderCreate({ 
+                symbol: sym, 
+                asset_type: p.asset_type, 
+                quantity: finalQty, 
+                purchase_price: price, 
+                gain_margin: parseFloat(settings?.gain_margin ?? 10), 
+                loss_margin: parseFloat(settings?.loss_margin ?? 5),
+                trailing_enabled: true,
+                trailing_margin: parseFloat(settings?.loss_margin ?? 5),
+                highest_price: price,
+                status: "active", 
+                created_by: user.email, 
+                is_simulation: true
+              });
+              
+              nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
+              
+              if (remainingCash < 1.0) break;
+            } catch (buyError) {
+              console.error(`Failed to execute buy for ${sym}:`, buyError);
+              console.log('[AutoTrader] Stopping auto-buys due to trade error');
+              break;
+            }
           }
           checkAndFlushBatch();
         }
