@@ -208,7 +208,6 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const cryptoSymbolsForOrders = [...new Set(activeOrders.filter(o => o.asset_type === "crypto").map(o => (o.symbol || "").toUpperCase()))];
 
         // For LIVE mode, also fetch prices for holdings to enable liquidation
-        const freshHoldings = await base44.entities.Holding.filter({ created_by: user.email, is_simulation: isSimMode });
         const holdingSymbols = !isSimMode ? [...new Set(freshHoldings.filter(h => h.asset_type === "crypto").map(h => (h.symbol || "").toUpperCase()))] : [];
         const allCryptoSymbols = [...new Set([...cryptoSymbolsForOrders, ...holdingSymbols])];
 
