@@ -111,7 +111,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     const performRuleBasedTrade = async () => {
       if (!settings?.auto_trading_enabled || isRunningRef.current) return;
       const nowTs = Date.now();
-      if (nowTs < backoffUntilRef.current || (lastRunRef.current && nowTs - lastRunRef.current < 300000)) return;
+      // Reduce cooldown to 90 seconds for faster response
+      if (nowTs < backoffUntilRef.current || (lastRunRef.current && nowTs - lastRunRef.current < 90000)) return;
       isRunningRef.current = true;
       
       console.log('[AutoTrader] Starting trade cycle - isSimMode:', isSimMode);
