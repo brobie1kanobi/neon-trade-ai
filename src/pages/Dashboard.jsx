@@ -458,63 +458,106 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             console.log('[AutoTrader] ⚡ SELL TRIGGERED for', symU, '-', tradeType, '- qty:', sellQuantity, '@ $', currentPrice);
             
             const tradeDetails = { symbol: symU, type: "sell", asset_type: order.asset_type || "crypto", quantity: sellQuantity, price: currentPrice, total_value: sellQuantity * currentPrice, is_auto_trade: true };
-            try {
-              if (!isSimMode) {
-                console.log('[AutoTrader] Sending LIVE sell order to Kraken for', symU);
-                try {
-                  const krakenResponse = await Promise.race([
-                    base44.functions.invoke('krakenTrade', { 
-                      action: 'place_order', 
-                      symbol: symU, 
-                      side: 'sell', 
-                      quantity: sellQuantity, 
-                      orderType: 'market',
-                      timeInForce: 'gtc' // Good-till-cancelled for reliability
-                    }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 30000))
-                  ]);
-                  
-                  console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenResponse));
-                  const krakenData = krakenResponse?.data || krakenResponse;
-                  
-                  if (!krakenData?.success) {
-                    throw new Error(krakenData?.error || 'Kraken trade failed - no success flag');
-                  }
-
-                  // CRITICAL: Store Kraken order ID for tracking
-                  const krakenOrderId = krakenData.order_id || krakenData.txid || null;
-
-                  console.log('[AutoTrader] ✅ LIVE sell executed -', symU, 'order ID:', krakenOrderId);
-                  
-                  toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, duration: 5000 });
-                  await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
-
-                  // Update order with Kraken order ID
-                  if (order.id) {
-                    await ConditionalOrder.update(order.id, { status: "executed", kraken_order_id: krakenOrderId });
-                  }
-                } catch (krakenError) {
-                  console.error('[AutoTrader] ❌ Kraken sell failed:', krakenError.message);
-                  const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
-                  if (isRateLimit) {
-                    failureCountRef.current++;
-                    backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
-                  }
-                  toast.error("🔴 LIVE Trade Failed", { description: `Failed to sell ${symU} on Kraken: ${krakenError.message}`, duration: 10000 });
-                  continue;
+            
+            // CRITICAL: In LIVE mode, ALL sells MUST go through Kraken - no local-only orders
+            if (!isSimMode) {
+              console.log('[AutoTrader] 🟢 LIVE MODE - Sending REAL sell order to Kraken for', symU);
+              try {
+                const krakenResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: symU, 
+                    side: 'sell', 
+                    quantity: sellQuantity, 
+                    orderType: 'market',
+                    timeInForce: 'gtc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 30000))
+                ]);
+                
+                console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenResponse));
+                const krakenData = krakenResponse?.data || krakenResponse;
+                
+                if (!krakenData?.success) {
+                  throw new Error(krakenData?.error || 'Kraken trade failed - no success flag');
                 }
-              } else {
+
+                const krakenOrderId = krakenData.order_id || krakenData.txid || null;
+
+                console.log('[AutoTrader] ✅ LIVE sell executed on Kraken -', symU, 'order ID:', krakenOrderId);
+                
+                toast.success("🟢 LIVE Auto-Sell Executed", { 
+                  description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, 
+                  duration: 5000 
+                });
+                
+                // Record trade in local DB for history
+                await base44.entities.Trade.create({ 
+                  ...tradeDetails, 
+                  is_simulation: false, 
+                  created_by: user.email, 
+                  status: 'executed',
+                  kraken_order_id: krakenOrderId
+                });
+
+                // Mark conditional order as executed with Kraken ID
+                if (order.id) {
+                  await ConditionalOrder.update(order.id, { 
+                    status: "executed", 
+                    kraken_order_id: krakenOrderId 
+                  });
+                }
+                
+                highestPriceCache.current.delete(order.id);
+                
+                if (settings?.notifications_enabled === true) {
+                  base44.functions.invoke("pushNotifications", { 
+                    action: "sendNotification", 
+                    payload: { 
+                      title: `🟢 LIVE Auto-Sell Executed • ${symU}`, 
+                      body: `${tradeType.replace("-", " ")}: Sold ${sellQuantity.toFixed(4)} at $${currentPrice.toFixed(2)} on Kraken`,
+                      data: { type: "trade", symbol: symU, tradeType: "sell", reason: tradeType, live: true, kraken_order_id: krakenOrderId }
+                    } 
+                  }).catch(() => {});
+                }
+              } catch (krakenError) {
+                console.error('[AutoTrader] ❌ Kraken sell failed:', krakenError.message);
+                const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
+                if (isRateLimit) {
+                  failureCountRef.current++;
+                  backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
+                }
+                toast.error("🔴 LIVE Trade Failed", { 
+                  description: `Failed to sell ${symU} on Kraken: ${krakenError.message}`, 
+                  duration: 10000 
+                });
+                // DO NOT execute locally - in LIVE mode, only Kraken orders count
+                continue;
+              }
+            } else {
+              // SIM MODE: Execute locally only
+              try {
                 await onTrade(tradeDetails);
-                toast.success("🤖 Auto-Trade Executed", { description: `Sold ${tradeDetails.quantity.toFixed(4)} ${tradeDetails.symbol} @ $${tradeDetails.price.toFixed(2)} (${tradeType}).` });
+                toast.success("🤖 Auto-Trade Executed", { 
+                  description: `Sold ${tradeDetails.quantity.toFixed(4)} ${tradeDetails.symbol} @ $${tradeDetails.price.toFixed(2)} (${tradeType}).` 
+                });
                 queueOrderUpdate(order.id, { status: "executed" });
+                highestPriceCache.current.delete(order.id);
+                
+                if (settings?.notifications_enabled === true) {
+                  base44.functions.invoke("pushNotifications", { 
+                    action: "sendNotification", 
+                    payload: { 
+                      title: `💎 Auto-Sell Executed • ${symU}`, 
+                      body: `${tradeType.replace("-", " ")}: Sold ${sellQuantity.toFixed(4)} at $${currentPrice.toFixed(2)}`,
+                      data: { type: "trade", symbol: symU, tradeType: "sell", reason: tradeType, live: false }
+                    } 
+                  }).catch(() => {});
+                }
+              } catch (tradeError) {
+                console.error(`Failed to execute sell for ${symU}:`, tradeError);
+                toast.error("💎 Auto-trade failed", { description: `Failed to sell ${symU}. Please try manually.` });
               }
-              highestPriceCache.current.delete(order.id);
-              if (settings?.notifications_enabled === true) {
-                base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: `${!isSimMode ? '🟢 LIVE' : '💎'} Auto-Sell Executed • ${symU}`, body: `${tradeType.replace("-", " ")}: Sold ${sellQuantity.toFixed(4)} at $${currentPrice.toFixed(2)}`, data: { type: "trade", symbol: symU, tradeType: "sell", reason: tradeType, live: !isSimMode } } }).catch(() => {});
-              }
-            } catch (tradeError) {
-              console.error(`Failed to execute sell for ${symU}:`, tradeError);
-              toast.error(`${!isSimMode ? '🟢 LIVE' : '💎'} Auto-trade failed`, { description: `Failed to sell ${symU}. Please try manually.` });
             }
           }
           checkAndFlushBatch();
