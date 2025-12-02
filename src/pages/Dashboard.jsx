@@ -138,11 +138,72 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         }
         // CRITICAL: Low balance no longer blocks sell orders - only affects buying
         const isLowBalance = cashAvailable < 1;
-        let activeOrders = [];
-        if (nowTs >= nextOrdersCheckAtRef.current) {
-          activeOrders = await ConditionalOrder.filter({ created_by: user.email, status: "active" });
-          nextOrdersCheckAtRef.current = nowTs + 5 * 60 * 1000;
+        // CRITICAL: Always fetch active orders to check for holdings without orders
+        let activeOrders = await ConditionalOrder.filter({ created_by: user.email, status: "active", is_simulation: isSimMode });
+        nextOrdersCheckAtRef.current = nowTs + 5 * 60 * 1000;
+
+        // CRITICAL: Fetch holdings to auto-create conditional orders for assets without them
+        const freshHoldings = await base44.entities.Holding.filter({ created_by: user.email, is_simulation: isSimMode });
+
+        // Find holdings that don't have active conditional orders
+        const holdingsWithoutOrders = freshHoldings.filter(holding => {
+          const symU = (holding.symbol || "").toUpperCase();
+          const hasOrder = activeOrders.some(order => (order.symbol || "").toUpperCase() === symU);
+          return !hasOrder && (holding.quantity || 0) > 0.00001;
+        });
+
+        // Auto-create conditional orders for holdings without them
+        if (holdingsWithoutOrders.length > 0) {
+          console.log('[AutoTrader] Creating conditional orders for', holdingsWithoutOrders.length, 'holdings without orders');
+
+          for (const holding of holdingsWithoutOrders) {
+            const symU = (holding.symbol || "").toUpperCase();
+            const purchasePrice = holding.average_cost_price || 0;
+
+            // Skip if we don't have a valid purchase price
+            if (purchasePrice <= 0) {
+              console.log('[AutoTrader] Skipping', symU, '- no valid purchase price');
+              continue;
+            }
+
+            const newOrder = {
+              symbol: symU,
+              asset_type: holding.asset_type || "crypto",
+              quantity: holding.quantity,
+              purchase_price: purchasePrice,
+              gain_margin: parseFloat(settings?.gain_margin ?? 10),
+              loss_margin: parseFloat(settings?.loss_margin ?? 5),
+              trailing_enabled: true,
+              trailing_margin: parseFloat(settings?.loss_margin ?? 5),
+              highest_price: purchasePrice,
+              status: "active",
+              is_simulation: isSimMode,
+              created_by: user.email
+            };
+
+            queueOrderCreate(newOrder);
+
+            // Add to activeOrders so we process it in this cycle
+            activeOrders.push(newOrder);
+
+            console.log('[AutoTrader] Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice);
+
+            if (settings?.notifications_enabled === true) {
+              base44.functions.invoke("pushNotifications", { 
+                action: "sendNotification", 
+                payload: { 
+                  title: "🤖 Auto-Trader Activated", 
+                  body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
+                  data: { type: "auto_order_created", symbol: symU }
+                } 
+              }).catch(() => {});
+            }
+          }
+
+          // Flush the batch to create orders immediately
+          await flushBatchQueue();
         }
+
         const stockSymbolsForOrders = [...new Set(activeOrders.filter(o => o.asset_type === "stock" || o.asset_type === "stocks").map(o => (o.symbol || "").toUpperCase()))];
         const cryptoSymbolsForOrders = [...new Set(activeOrders.filter(o => o.asset_type === "crypto").map(o => (o.symbol || "").toUpperCase()))];
 
