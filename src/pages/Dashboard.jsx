@@ -670,8 +670,12 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         await flushBatchQueue();
       }
     };
+    // Run immediately on mount
+    console.log('[AutoTrader] Hook initialized - running first trade cycle');
     performRuleBasedTrade();
-    const interval = setInterval(performRuleBasedTrade, 300000);
+    
+    // Run every 2 minutes instead of 5 for more responsive trading
+    const interval = setInterval(performRuleBasedTrade, 120000);
     const flushCheckInterval = setInterval(checkAndFlushBatch, 30000);
     return () => {
       if (interval) clearInterval(interval);
