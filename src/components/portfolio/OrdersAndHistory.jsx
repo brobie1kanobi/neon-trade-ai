@@ -507,12 +507,13 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
 }
 
 // Closed order row
-function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice }) {
+function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isExecuted = order.status === "executed";
   
   return (
-    <div 
-      className="flex items-center justify-between p-3 rounded-lg border opacity-75"
+    <button 
+      onClick={onClick}
+      className="w-full text-left flex items-center justify-between p-3 rounded-lg border opacity-75 hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all cursor-pointer"
       style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}
     >
       <div className="flex items-center gap-3">
@@ -539,6 +540,7 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice }) 
             >
               {isExecuted ? 'Executed' : 'Cancelled'}
             </Badge>
+            <Info className="w-3 h-3 opacity-50" />
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {format(new Date(order.updated_date || order.created_date), dateFmt)}
@@ -554,6 +556,163 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice }) 
           Entry: {formatPrice(order.purchase_price)}
         </p>
       </div>
-    </div>
+    </button>
+  );
+}
+
+// Closed order details modal
+function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDisplayQuantity, formatPrice }) {
+  if (!order) return null;
+  
+  const isExecuted = order.status === "executed";
+  const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
+  const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
+  
+  // Determine the reason for execution/cancellation
+  const getClosureReason = () => {
+    if (isExecuted) {
+      // Check if it was trailing stop, take profit, or stop loss
+      if (order.highest_price && order.highest_price > order.purchase_price) {
+        const trailingStop = order.highest_price * (1 - (order.trailing_margin || order.loss_margin || 5) / 100);
+        return {
+          type: "trailing-stop",
+          title: "Trailing Stop Triggered",
+          description: `Price peaked at ${formatPrice(order.highest_price)}, then dropped to trigger the trailing stop at ${formatPrice(trailingStop)}. This locked in profits while following the upward trend.`,
+          icon: TrendingDown,
+          color: "text-orange-500"
+        };
+      }
+      return {
+        type: "condition-met",
+        title: "Condition Met",
+        description: `The order was executed when price conditions were met. Take profit was set at ${formatPrice(gainPrice)} (+${order.gain_margin || 10}%) and stop loss at ${formatPrice(lossPrice)} (-${order.loss_margin || 5}%).`,
+        icon: CheckCircle2,
+        color: "text-green-500"
+      };
+    } else {
+      // Cancelled
+      return {
+        type: "cancelled",
+        title: "Order Cancelled",
+        description: "This order was manually cancelled or automatically removed when the underlying asset was no longer held.",
+        icon: X,
+        color: "text-gray-500"
+      };
+    }
+  };
+  
+  const reason = getClosureReason();
+  const ReasonIcon = reason.icon;
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <ReasonIcon className={`w-5 h-5 ${reason.color}`} />
+            {order.symbol} - {isExecuted ? 'Executed' : 'Cancelled'}
+          </DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4 pt-2">
+          {/* Reason Card */}
+          <div className={`p-4 rounded-lg border ${isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+            <h4 className={`font-medium mb-2 ${reason.color}`}>{reason.title}</h4>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {reason.description}
+            </p>
+          </div>
+          
+          {/* Order Details */}
+          <div className="space-y-3">
+            <h4 className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>Order Details</h4>
+            
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+                <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Symbol</span>
+                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{order.symbol}</span>
+              </div>
+              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+                <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Quantity</span>
+                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatDisplayQuantity(order.quantity)}</span>
+              </div>
+              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+                <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Entry Price</span>
+                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatPrice(order.purchase_price)}</span>
+              </div>
+              <div className="p-2 rounded bg-gray-50 dark:bg-gray-800">
+                <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Status</span>
+                <Badge className={`text-xs ${isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
+                  {isExecuted ? 'Executed' : 'Cancelled'}
+                </Badge>
+              </div>
+            </div>
+            
+            {/* Trigger Conditions */}
+            <div className="pt-2">
+              <h4 className="font-medium text-sm mb-2" style={{ color: 'var(--text-primary)' }}>Trigger Conditions</h4>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center gap-1 p-2 rounded bg-green-50 dark:bg-green-900/20">
+                  <TrendingUp className="w-3 h-3 text-green-500" />
+                  <span style={{ color: 'var(--text-secondary)' }}>TP:</span>
+                  <span className="font-medium text-green-600 dark:text-green-400">
+                    {formatPrice(gainPrice)} (+{order.gain_margin || 10}%)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 p-2 rounded bg-red-50 dark:bg-red-900/20">
+                  <TrendingDown className="w-3 h-3 text-red-500" />
+                  <span style={{ color: 'var(--text-secondary)' }}>SL:</span>
+                  <span className="font-medium text-red-600 dark:text-red-400">
+                    {formatPrice(lossPrice)} (-{order.loss_margin || 5}%)
+                  </span>
+                </div>
+              </div>
+              
+              {order.highest_price && order.highest_price > order.purchase_price && (
+                <div className="mt-2 flex items-center gap-1 p-2 rounded bg-blue-50 dark:bg-blue-900/20 text-xs">
+                  <TrendingUp className="w-3 h-3 text-blue-500" />
+                  <span style={{ color: 'var(--text-secondary)' }}>Peak Price:</span>
+                  <span className="font-medium text-blue-600 dark:text-blue-400">
+                    {formatPrice(order.highest_price)}
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            {/* Timestamps */}
+            <div className="pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="grid grid-cols-1 gap-2 text-xs">
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-secondary)' }}>Created:</span>
+                  <span style={{ color: 'var(--text-primary)' }}>
+                    {format(new Date(order.created_date), fullDateFmt)}
+                  </span>
+                </div>
+                {order.updated_date && (
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>{isExecuted ? 'Executed:' : 'Cancelled:'}</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                      {format(new Date(order.updated_date), fullDateFmt)}
+                    </span>
+                  </div>
+                )}
+                {order.kraken_order_id && (
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>Kraken Order ID:</span>
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
+                      {order.kraken_order_id}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <Button onClick={onClose} className="w-full mt-4">
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
