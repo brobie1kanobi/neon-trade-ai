@@ -438,7 +438,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     action: 'place_order', 
                     symbol: symU, 
                     side: 'sell', 
-                    quantity: actualSellQty, 
+                    quantity: parseFloat(actualSellQty.toFixed(8)), 
                     orderType: 'market',
                     timeInForce: 'ioc'
                   }),
