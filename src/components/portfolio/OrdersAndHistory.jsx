@@ -574,10 +574,11 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
       // Check if it was trailing stop, take profit, or stop loss
       if (order.highest_price && order.highest_price > order.purchase_price) {
         const trailingStop = order.highest_price * (1 - (order.trailing_margin || order.loss_margin || 5) / 100);
+        const profitPercent = ((order.highest_price - order.purchase_price) / order.purchase_price * 100).toFixed(2);
         return {
           type: "trailing-stop",
           title: "Trailing Stop Triggered",
-          description: `Price peaked at ${formatPrice(order.highest_price)}, then dropped to trigger the trailing stop at ${formatPrice(trailingStop)}. This locked in profits while following the upward trend.`,
+          description: `Price peaked at ${formatPrice(order.highest_price)} (+${profitPercent}% from entry), then dropped below the trailing stop at ${formatPrice(trailingStop)}. This locked in profits while following the upward trend.`,
           icon: TrendingDown,
           color: "text-orange-500"
         };
@@ -590,11 +591,82 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
         color: "text-green-500"
       };
     } else {
-      // Cancelled
+      // Cancelled - provide SPECIFIC reasons
+      
+      // Check if there's a newer order for the same symbol (replaced by updated order)
+      // This happens when auto-trader creates new conditional orders with updated prices
+      const createdDate = new Date(order.created_date).getTime();
+      const updatedDate = order.updated_date ? new Date(order.updated_date).getTime() : createdDate;
+      const timeDiff = updatedDate - createdDate;
+      
+      // Check for various cancellation scenarios
+      if (order.quantity <= 0 || order.quantity < 0.00001) {
+        return {
+          type: "zero-quantity",
+          title: "Position Closed",
+          description: `This order was cancelled because the holding was fully sold. You no longer own any ${order.symbol}, so there's nothing left to monitor for this conditional order.`,
+          icon: AlertCircle,
+          color: "text-yellow-500"
+        };
+      }
+      
+      if (order.purchase_price <= 0) {
+        return {
+          type: "invalid-price",
+          title: "Invalid Entry Price",
+          description: `This order was cancelled due to an invalid or missing entry price. The system could not determine the original purchase price needed to calculate take-profit and stop-loss levels.`,
+          icon: AlertCircle,
+          color: "text-red-500"
+        };
+      }
+      
+      // If order was cancelled very quickly after creation (within 5 minutes), likely replaced
+      if (timeDiff > 0 && timeDiff < 5 * 60 * 1000) {
+        return {
+          type: "replaced",
+          title: "Replaced by New Order",
+          description: `This order was replaced by a newer conditional order with updated price data. The auto-trader creates fresh orders when it detects price changes to ensure accurate take-profit and stop-loss levels.`,
+          icon: RefreshCw,
+          color: "text-blue-500"
+        };
+      }
+      
+      // Check if it's a simulation order that was cancelled when switching modes
+      if (order.is_simulation === true) {
+        return {
+          type: "mode-switch",
+          title: "Simulation Order Cancelled",
+          description: `This simulation order was cancelled. Possible reasons: (1) You sold the ${order.symbol} position, (2) The auto-trader replaced it with updated pricing, or (3) You manually cancelled it from the orders list.`,
+          icon: X,
+          color: "text-gray-500"
+        };
+      }
+      
+      // Live order cancelled
+      if (order.is_simulation === false) {
+        if (order.kraken_order_id) {
+          return {
+            type: "kraken-cancelled",
+            title: "Kraken Order Cancelled",
+            description: `This live Kraken order (ID: ${order.kraken_order_id}) was cancelled. This could be because: (1) The position was sold separately, (2) You cancelled it manually, or (3) The order was rejected by Kraken due to insufficient funds or market conditions.`,
+            icon: AlertCircle,
+            color: "text-orange-500"
+          };
+        }
+        return {
+          type: "live-cancelled",
+          title: "Live Order Cancelled",
+          description: `This live trading order was cancelled. Possible reasons: (1) You sold the ${order.symbol} position on Kraken, (2) The order failed to place on Kraken and was only tracked locally, or (3) You manually cancelled it.`,
+          icon: X,
+          color: "text-gray-500"
+        };
+      }
+      
+      // Default fallback with more context
       return {
         type: "cancelled",
         title: "Order Cancelled",
-        description: "This order was manually cancelled or automatically removed when the underlying asset was no longer held.",
+        description: `This conditional order for ${order.symbol} was cancelled at ${order.updated_date ? format(new Date(order.updated_date), "MMM d, yyyy h:mm a") : 'an unknown time'}. The most common reason is that the underlying ${order.symbol} position was sold (either manually or by another conditional order triggering).`,
         icon: X,
         color: "text-gray-500"
       };
