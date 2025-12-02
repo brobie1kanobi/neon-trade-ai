@@ -281,6 +281,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                       dateFmt={dateFmt}
                       formatDisplayQuantity={formatDisplayQuantity}
                       formatPrice={formatPrice}
+                      onClick={() => setSelectedClosedOrder(order)}
                     />
                   ))}
                 </div>
@@ -289,6 +290,16 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Closed Order Details Modal */}
+      <ClosedOrderDetailsModal 
+        order={selectedClosedOrder}
+        isOpen={!!selectedClosedOrder}
+        onClose={() => setSelectedClosedOrder(null)}
+        fullDateFmt={fullDateFmt}
+        formatDisplayQuantity={formatDisplayQuantity}
+        formatPrice={formatPrice}
+      />
     </>
   );
 }
