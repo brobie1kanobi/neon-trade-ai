@@ -256,17 +256,19 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             // CRITICAL: In LIVE mode, place REAL Kraken stop-loss orders for existing holdings
             if (!isSimMode) {
               console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken stop-loss for existing holding:', symU);
-              
-              const stopLossPrice = purchasePrice * (1 - parseFloat(settings?.loss_margin ?? 5) / 100);
+
+              const stopLossPrice = parseFloat((purchasePrice * (1 - parseFloat(settings?.loss_margin ?? 5) / 100)).toFixed(2));
               let stopLossOrderId = null;
-              
+
+              console.log('[AutoTrader] Stop-loss params:', { symbol: symU, quantity: holding.quantity, stopLossPrice, purchasePrice });
+
               try {
                 const slResponse = await Promise.race([
                   base44.functions.invoke('krakenTrade', { 
                     action: 'place_order', 
                     symbol: symU, 
                     side: 'sell', 
-                    quantity: holding.quantity, 
+                    quantity: parseFloat(holding.quantity.toFixed(8)), 
                     orderType: 'stop-loss',
                     stopPrice: stopLossPrice,
                     timeInForce: 'gtc'
@@ -780,9 +782,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               remainingCash = Math.max(0, remainingCash - total);
               
               // CRITICAL: Place REAL Kraken stop-loss order for this buy
-              const stopLossPrice = price * (1 - parseFloat(settings?.loss_margin ?? 5) / 100);
+              const stopLossPrice = parseFloat((price * (1 - parseFloat(settings?.loss_margin ?? 5) / 100)).toFixed(2));
               let stopLossOrderId = null;
-              
+
               try {
                 console.log('[AutoTrader] Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
                 const slResponse = await Promise.race([
@@ -790,7 +792,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     action: 'place_order', 
                     symbol: sym, 
                     side: 'sell', 
-                    quantity: finalQty, 
+                    quantity: parseFloat(finalQty.toFixed(8)), 
                     orderType: 'stop-loss',
                     stopPrice: stopLossPrice,
                     timeInForce: 'gtc'
