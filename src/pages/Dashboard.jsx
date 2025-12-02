@@ -253,92 +253,119 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               created_by: user.email
             };
 
-            // CRITICAL: In LIVE mode, place REAL Kraken stop-loss orders for existing holdings
+            // CRITICAL: In LIVE mode, place REAL Kraken stop-loss AND take-profit orders for existing holdings
             if (!isSimMode) {
-              console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken stop-loss for existing holding:', symU);
+              console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken bracket orders for existing holding:', symU);
 
-              const stopLossPrice = parseFloat((purchasePrice * (1 - parseFloat(settings?.loss_margin ?? 5) / 100)).toFixed(2));
+              const lossMargin = parseFloat(settings?.loss_margin ?? 5);
+              const gainMargin = parseFloat(settings?.gain_margin ?? 10);
+              const stopLossPrice = parseFloat((purchasePrice * (1 - lossMargin / 100)).toFixed(2));
+              const takeProfitPrice = parseFloat((purchasePrice * (1 + gainMargin / 100)).toFixed(2));
+              const qty = parseFloat(holding.quantity.toFixed(8));
+
               let stopLossOrderId = null;
+              let takeProfitOrderId = null;
 
-              console.log('[AutoTrader] Stop-loss params:', { symbol: symU, quantity: holding.quantity, stopLossPrice, purchasePrice });
+              console.log('[AutoTrader] Bracket order params:', { symbol: symU, quantity: qty, stopLossPrice, takeProfitPrice, purchasePrice });
 
+              // Place STOP-LOSS order
               try {
                 const slResponse = await Promise.race([
                   base44.functions.invoke('krakenTrade', { 
                     action: 'place_order', 
                     symbol: symU, 
                     side: 'sell', 
-                    quantity: parseFloat(holding.quantity.toFixed(8)), 
+                    quantity: qty, 
                     orderType: 'stop-loss',
                     stopPrice: stopLossPrice,
                     timeInForce: 'gtc'
                   }),
                   new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
                 ]);
-                
+
                 const slData = slResponse?.data || slResponse;
                 console.log('[AutoTrader] Kraken stop-loss response:', JSON.stringify(slData));
-                
+
                 if (slData?.success) {
                   stopLossOrderId = slData.order_id || slData.txid;
                   console.log('[AutoTrader] ✅ Kraken stop-loss placed for', symU, ':', stopLossOrderId, '@ $', stopLossPrice.toFixed(2));
-                  
-                  toast.success(`🟢 LIVE Stop-Loss Set for ${symU}`, { 
-                    description: `SL @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) on Kraken`,
-                    duration: 3000
-                  });
-                  
-                  // Create local tracking order with Kraken order ID
-                  const createdOrder = await ConditionalOrder.create({
-                    ...newOrder,
-                    kraken_order_id: stopLossOrderId,
-                    closure_reason: null,
-                    error_message: null
-                  });
-                  
-                  activeOrders.push({ ...newOrder, id: createdOrder?.id, kraken_order_id: stopLossOrderId });
-                  
-                  if (settings?.notifications_enabled === true) {
-                    base44.functions.invoke("pushNotifications", { 
-                      action: "sendNotification", 
-                      payload: { 
-                        title: `🟢 LIVE Stop-Loss Active • ${symU}`, 
-                        body: `Stop-loss @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) placed on Kraken`,
-                        data: { type: "stop_loss_set", symbol: symU, live: true, kraken_order_id: stopLossOrderId }
-                      } 
-                    }).catch(() => {});
-                  }
                 } else {
-                  const errorMsg = slData?.error || 'Unknown Kraken error';
-                  console.warn('[AutoTrader] Stop-loss order failed for', symU, ':', errorMsg);
-                  
-                  // Create local tracking with error message stored
-                  const createdOrder = await ConditionalOrder.create({
-                    ...newOrder,
-                    closure_reason: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
-                    error_message: errorMsg
-                  });
-                  activeOrders.push({ ...newOrder, id: createdOrder?.id });
-                  
-                  toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
-                    description: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
-                    duration: 5000
-                  });
+                  console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
                 }
               } catch (slError) {
-                const errorMsg = slError.message || 'Unknown error';
-                console.error('[AutoTrader] Stop-loss creation error for', symU, ':', errorMsg);
-                
-                // Create local tracking with error message stored
+                console.error('[AutoTrader] Stop-loss error:', slError.message);
+              }
+
+              // Place TAKE-PROFIT order
+              try {
+                const tpResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: symU, 
+                    side: 'sell', 
+                    quantity: qty, 
+                    orderType: 'take-profit',
+                    triggerPrice: takeProfitPrice,
+                    timeInForce: 'gtc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 15000))
+                ]);
+
+                const tpData = tpResponse?.data || tpResponse;
+                console.log('[AutoTrader] Kraken take-profit response:', JSON.stringify(tpData));
+
+                if (tpData?.success) {
+                  takeProfitOrderId = tpData.order_id || tpData.txid;
+                  console.log('[AutoTrader] ✅ Kraken take-profit placed for', symU, ':', takeProfitOrderId, '@ $', takeProfitPrice.toFixed(2));
+                } else {
+                  console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                }
+              } catch (tpError) {
+                console.error('[AutoTrader] Take-profit error:', tpError.message);
+              }
+
+              // Determine success status and create local tracking
+              const hasSL = !!stopLossOrderId;
+              const hasTP = !!takeProfitOrderId;
+              const krakenOrderIds = [stopLossOrderId, takeProfitOrderId].filter(Boolean).join(',');
+
+              if (hasSL || hasTP) {
+                toast.success(`🟢 LIVE Bracket Orders Set for ${symU}`, { 
+                  description: `${hasSL ? `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%)` : 'SL failed'}${hasSL && hasTP ? ' • ' : ''}${hasTP ? `TP @ $${takeProfitPrice.toFixed(2)} (+${gainMargin}%)` : 'TP failed'}`,
+                  duration: 4000
+                });
+
+                // Create local tracking order with Kraken order IDs
                 const createdOrder = await ConditionalOrder.create({
                   ...newOrder,
-                  closure_reason: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
-                  error_message: errorMsg
+                  kraken_order_id: krakenOrderIds,
+                  closure_reason: null,
+                  error_message: (!hasSL || !hasTP) ? `Partial bracket: ${!hasSL ? 'SL failed' : ''}${!hasSL && !hasTP ? ', ' : ''}${!hasTP ? 'TP failed' : ''}` : null
+                });
+
+                activeOrders.push({ ...newOrder, id: createdOrder?.id, kraken_order_id: krakenOrderIds });
+
+                if (settings?.notifications_enabled === true) {
+                  base44.functions.invoke("pushNotifications", { 
+                    action: "sendNotification", 
+                    payload: { 
+                      title: `🟢 LIVE Bracket Orders Active • ${symU}`, 
+                      body: `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%) | TP @ $${takeProfitPrice.toFixed(2)} (+${gainMargin}%)`,
+                      data: { type: "bracket_orders_set", symbol: symU, live: true, kraken_order_ids: krakenOrderIds }
+                    } 
+                  }).catch(() => {});
+                }
+              } else {
+                // Both failed - create local tracking as fallback
+                const createdOrder = await ConditionalOrder.create({
+                  ...newOrder,
+                  closure_reason: `Kraken bracket orders failed. Using app monitoring as backup.`,
+                  error_message: 'Both stop-loss and take-profit orders failed on Kraken'
                 });
                 activeOrders.push({ ...newOrder, id: createdOrder?.id });
-                
+
                 toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
-                  description: `Kraken error: ${errorMsg}. Using app monitoring.`,
+                  description: `Kraken orders failed. Using app monitoring as backup.`,
                   duration: 5000
                 });
               }
