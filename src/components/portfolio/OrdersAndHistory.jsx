@@ -92,11 +92,56 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     loadOrders();
   }, [loadOrders]);
 
-  // Cancel an order
+  // Cancel an order - also cancels associated Kraken orders in LIVE mode
   const handleCancelOrder = async (orderId) => {
     setCancellingOrderId(orderId);
     try {
-      await ConditionalOrder.update(orderId, { status: "cancelled" });
+      // Find the order to check for Kraken order IDs
+      const order = conditionalOrders.find(o => o.id === orderId) || openOrders.find(o => o.id === orderId);
+      
+      // If in LIVE mode and has Kraken order IDs, cancel them on Kraken first
+      if (!isSimMode && order?.kraken_order_id) {
+        const krakenOrderIds = order.kraken_order_id.split(',').filter(id => id.trim());
+        
+        if (krakenOrderIds.length > 0) {
+          try {
+            console.log('[OrdersAndHistory] Cancelling Kraken orders:', krakenOrderIds);
+            const cancelResponse = await base44.functions.invoke('krakenTrade', {
+              action: 'cancel_order',
+              orderIds: krakenOrderIds
+            });
+            
+            const cancelData = cancelResponse?.data || cancelResponse;
+            if (cancelData?.success) {
+              console.log('[OrdersAndHistory] ✅ Kraken orders cancelled:', cancelData.order_ids);
+              toast.success("Kraken orders cancelled", {
+                description: `Cancelled ${cancelData.cancelled_count || krakenOrderIds.length} order(s) on Kraken`
+              });
+            } else {
+              console.warn('[OrdersAndHistory] Kraken cancel response:', cancelData);
+              // Don't block local cancellation if Kraken fails
+              toast.warning("Kraken cancel may have failed", {
+                description: cancelData?.error || "Orders may still be active on Kraken"
+              });
+            }
+          } catch (krakenError) {
+            console.error('[OrdersAndHistory] Kraken cancel error:', krakenError);
+            // Don't block local cancellation - user can manually check Kraken
+            toast.warning("Could not cancel on Kraken", {
+              description: "Please verify orders are cancelled on Kraken directly"
+            });
+          }
+        }
+      }
+      
+      // Update local order status
+      await ConditionalOrder.update(orderId, { 
+        status: "cancelled",
+        closure_reason: !isSimMode && order?.kraken_order_id 
+          ? `Manually cancelled. Kraken order IDs: ${order.kraken_order_id}`
+          : "Manually cancelled by user"
+      });
+      
       toast.success("Order cancelled");
       loadOrders();
       if (onRefresh) onRefresh();
