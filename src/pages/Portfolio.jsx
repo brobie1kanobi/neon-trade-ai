@@ -49,6 +49,9 @@ export default function Portfolio() {
   // CRITICAL: Use Kraken data in LIVE mode
   const { krakenData, loading: krakenLoading, error: krakenError, refresh: refreshKraken } = useKrakenData(isSimMode, true);
 
+  // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
+  useBracketOrderSync(isSimMode, user?.email);
+
   const loadData = useCallback(async (force = false) => {
     const cache = window.__portfolioCache;
     const now = Date.now();
