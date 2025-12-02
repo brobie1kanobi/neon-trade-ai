@@ -546,9 +546,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           else if (!trailingEnabled && currentPrice >= gainPrice) { shouldSell = true; tradeType = "take-profit"; }
           if (shouldSell) {
             console.log('[AutoTrader] ⚡ SELL TRIGGERED for', symU, '-', tradeType, '- qty:', sellQuantity, '@ $', currentPrice);
-            
+
             const tradeDetails = { symbol: symU, type: "sell", asset_type: order.asset_type || "crypto", quantity: sellQuantity, price: currentPrice, total_value: sellQuantity * currentPrice, is_auto_trade: true };
-            
+
             // CRITICAL: In LIVE mode, ALL sells MUST go through Kraken - no local-only orders
             if (!isSimMode) {
               console.log('[AutoTrader] 🟢 LIVE MODE - Sending REAL sell order to Kraken for', symU);
@@ -558,9 +558,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     action: 'place_order', 
                     symbol: symU, 
                     side: 'sell', 
-                    quantity: sellQuantity, 
+                    quantity: parseFloat(sellQuantity.toFixed(8)), 
                     orderType: 'market',
-                    timeInForce: 'gtc'
+                    timeInForce: 'ioc'
                   }),
                   new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 30000))
                 ]);
@@ -748,7 +748,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   action: 'place_order', 
                   symbol: sym, 
                   side: 'buy', 
-                  quantity: finalQty, 
+                  quantity: parseFloat(finalQty.toFixed(8)), 
                   orderType: 'market',
                   timeInForce: 'ioc'
                 }),
