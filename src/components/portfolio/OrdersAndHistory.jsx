@@ -39,6 +39,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const [closedOrders, setClosedOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
+  const [selectedClosedOrder, setSelectedClosedOrder] = useState(null);
   
   const { settings, user } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
