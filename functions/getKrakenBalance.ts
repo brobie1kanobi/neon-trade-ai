@@ -240,9 +240,12 @@ Deno.serve(async (req) => {
       holdingsWithValues.push({
         symbol: holding.symbol,
         quantity: holding.quantity,
+        current_price: currentPrice,
         current_price_usd: currentPrice,
         total_value_usd: usdValue,
-        price_available: currentPrice > 0
+        price_available: currentPrice > 0,
+        asset_type: 'crypto',
+        is_simulation: false
       });
     }
 
