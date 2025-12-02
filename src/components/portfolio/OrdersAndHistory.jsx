@@ -616,7 +616,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
         
         <div className="space-y-4 pt-2">
           {/* Reason Card */}
-          <div className={`p-4 rounded-lg border ${isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-slate-500 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+          <div className={`p-4 rounded-lg border ${isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-slate-600 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
             <h4 className={`font-medium mb-2 ${reason.color}`}>{reason.title}</h4>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {reason.description}
