@@ -3,17 +3,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
+import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { 
-  History, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  Clock, 
+  DialogTitle } from
+"@/components/ui/dialog";
+import {
+  History,
+  ArrowUpRight,
+  ArrowDownRight,
+  Clock,
   Target,
   X,
   CheckCircle2,
@@ -22,8 +22,8 @@ import {
   TrendingUp,
   TrendingDown,
   Loader2,
-  Info
-} from "lucide-react";
+  Info } from
+"lucide-react";
 import { format } from "date-fns";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { ConditionalOrder, Trade } from "@/entities/all";
@@ -40,7 +40,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [selectedClosedOrder, setSelectedClosedOrder] = useState(null);
-  
+
   const { settings, user } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
@@ -49,7 +49,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // Load conditional orders - CRITICAL: Filter by simulation mode
   const loadOrders = useCallback(async () => {
     if (!user?.email) return;
-    
+
     setIsLoading(true);
     try {
       // CRITICAL: Only load orders matching the current mode (sim vs live)
@@ -60,10 +60,10 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         "-created_date",
         100
       );
-      
+
       // Filter orders based on simulation mode
       // Orders created in live mode should only show in live mode and vice versa
-      const modeFilteredOrders = allOrders.filter(o => {
+      const modeFilteredOrders = allOrders.filter((o) => {
         // If the order has is_simulation field, use it
         if (typeof o.is_simulation === 'boolean') {
           return o.is_simulation === isSimMode;
@@ -71,16 +71,16 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         // For older orders without the field, show in sim mode only (safe default)
         return isSimMode;
       });
-      
+
       // Separate active from executed/cancelled
-      const active = modeFilteredOrders.filter(o => o.status === "active");
-      const executed = modeFilteredOrders.filter(o => o.status === "executed");
-      const cancelled = modeFilteredOrders.filter(o => o.status === "cancelled");
-      
+      const active = modeFilteredOrders.filter((o) => o.status === "active");
+      const executed = modeFilteredOrders.filter((o) => o.status === "executed");
+      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
+
       setConditionalOrders(active);
       setOpenOrders(active);
       setClosedOrders([...executed, ...cancelled]);
-      
+
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
     } finally {
@@ -122,9 +122,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   };
 
   // Filter trades by simulation mode
-  const filteredTrades = trades.filter(t => t.is_simulation === isSimMode);
-  const buyTrades = filteredTrades.filter(t => t.type === "buy");
-  const sellTrades = filteredTrades.filter(t => t.type === "sell");
+  const filteredTrades = trades.filter((t) => t.is_simulation === isSimMode);
+  const buyTrades = filteredTrades.filter((t) => t.type === "buy");
+  const sellTrades = filteredTrades.filter((t) => t.type === "sell");
 
   // Tab counts
   const openCount = openOrders.length;
@@ -134,11 +134,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
   return (
     <>
-      <TradeDetailsModal 
-        trade={selectedTrade} 
-        isOpen={!!selectedTrade} 
-        onClose={() => setSelectedTrade(null)} 
-      />
+      <TradeDetailsModal
+        trade={selectedTrade}
+        isOpen={!!selectedTrade}
+        onClose={() => setSelectedTrade(null)} />
+      
       
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <CardHeader className="pb-2">
@@ -147,12 +147,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
               <History className="w-5 h-5 neon-text" />
               Orders & History
             </CardTitle>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => { loadOrders(); if (onRefresh) onRefresh(); }}
-              disabled={isLoading}
-            >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {loadOrders();if (onRefresh) onRefresh();}}
+              disabled={isLoading}>
+              
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
@@ -161,147 +161,147 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         <CardContent className="pt-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="w-full grid grid-cols-4 mb-4 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-              <TabsTrigger 
-                value="trades" 
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded"
-              >
+              <TabsTrigger
+                value="trades"
+                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                
                 Trades {tradesCount > 0 && <span className="ml-1 text-xs opacity-60">({tradesCount})</span>}
               </TabsTrigger>
-              <TabsTrigger 
-                value="open" 
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded"
-              >
+              <TabsTrigger
+                value="open"
+                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                
                 Open {openCount > 0 && <span className="ml-1 text-xs opacity-60">({openCount})</span>}
               </TabsTrigger>
-              <TabsTrigger 
-                value="conditional" 
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded"
-              >
+              <TabsTrigger
+                value="conditional"
+                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                
                 Conditional {conditionalCount > 0 && <span className="ml-1 text-xs opacity-60">({conditionalCount})</span>}
               </TabsTrigger>
-              <TabsTrigger 
-                value="closed" 
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded"
-              >
+              <TabsTrigger
+                value="closed"
+                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                
                 Closed {closedCount > 0 && <span className="ml-1 text-xs opacity-60">({closedCount})</span>}
               </TabsTrigger>
             </TabsList>
 
             {/* TRADES TAB */}
             <TabsContent value="trades" className="mt-0">
-              {filteredTrades.length === 0 ? (
-                <EmptyState 
-                  icon={History} 
-                  message="No trades yet. Execute your first trade to see it here!" 
-                />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {filteredTrades.slice(0, 50).map((trade) => (
-                    <TradeRow 
-                      key={trade.id} 
-                      trade={trade} 
-                      dateFmt={dateFmt}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onClick={() => setSelectedTrade(trade)}
-                    />
-                  ))}
+              {filteredTrades.length === 0 ?
+              <EmptyState
+                icon={History}
+                message="No trades yet. Execute your first trade to see it here!" /> :
+
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {filteredTrades.slice(0, 50).map((trade) =>
+                <TradeRow
+                  key={trade.id}
+                  trade={trade}
+                  dateFmt={dateFmt}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onClick={() => setSelectedTrade(trade)} />
+
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
 
             {/* OPEN ORDERS TAB */}
             <TabsContent value="open" className="mt-0">
-              {isLoading ? (
-                <LoadingState />
-              ) : openOrders.length === 0 ? (
-                <EmptyState 
-                  icon={Clock} 
-                  message="No open orders. Your active limit and stop orders will appear here." 
-                />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {openOrders.map((order) => (
-                    <OrderRow 
-                      key={order.id}
-                      order={order}
-                      dateFmt={dateFmt}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onCancel={handleCancelOrder}
-                      isCancelling={cancellingOrderId === order.id}
-                      type="open"
-                    />
-                  ))}
+              {isLoading ?
+              <LoadingState /> :
+              openOrders.length === 0 ?
+              <EmptyState
+                icon={Clock}
+                message="No open orders. Your active limit and stop orders will appear here." /> :
+
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {openOrders.map((order) =>
+                <OrderRow
+                  key={order.id}
+                  order={order}
+                  dateFmt={dateFmt}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onCancel={handleCancelOrder}
+                  isCancelling={cancellingOrderId === order.id}
+                  type="open" />
+
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
 
             {/* CONDITIONAL ORDERS TAB */}
             <TabsContent value="conditional" className="mt-0">
-              {isLoading ? (
-                <LoadingState />
-              ) : conditionalOrders.length === 0 ? (
-                <EmptyState 
-                  icon={Target} 
-                  message="No conditional orders. Auto-trader creates these when buying assets." 
-                />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {conditionalOrders.map((order) => (
-                    <ConditionalOrderRow 
-                      key={order.id}
-                      order={order}
-                      dateFmt={dateFmt}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onCancel={handleCancelOrder}
-                      isCancelling={cancellingOrderId === order.id}
-                    />
-                  ))}
+              {isLoading ?
+              <LoadingState /> :
+              conditionalOrders.length === 0 ?
+              <EmptyState
+                icon={Target}
+                message="No conditional orders. Auto-trader creates these when buying assets." /> :
+
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {conditionalOrders.map((order) =>
+                <ConditionalOrderRow
+                  key={order.id}
+                  order={order}
+                  dateFmt={dateFmt}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onCancel={handleCancelOrder}
+                  isCancelling={cancellingOrderId === order.id} />
+
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
 
             {/* CLOSED ORDERS TAB */}
             <TabsContent value="closed" className="mt-0">
-              {isLoading ? (
-                <LoadingState />
-              ) : closedOrders.length === 0 ? (
-                <EmptyState 
-                  icon={CheckCircle2} 
-                  message="No closed orders yet. Executed and cancelled orders appear here." 
-                />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {closedOrders.slice(0, 50).map((order) => (
-                    <ClosedOrderRow 
-                      key={order.id}
-                      order={order}
-                      dateFmt={dateFmt}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onClick={() => setSelectedClosedOrder(order)}
-                    />
-                  ))}
+              {isLoading ?
+              <LoadingState /> :
+              closedOrders.length === 0 ?
+              <EmptyState
+                icon={CheckCircle2}
+                message="No closed orders yet. Executed and cancelled orders appear here." /> :
+
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {closedOrders.slice(0, 50).map((order) =>
+                <ClosedOrderRow
+                  key={order.id}
+                  order={order}
+                  dateFmt={dateFmt}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onClick={() => setSelectedClosedOrder(order)} />
+
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
       {/* Closed Order Details Modal */}
-      <ClosedOrderDetailsModal 
+      <ClosedOrderDetailsModal
         order={selectedClosedOrder}
         isOpen={!!selectedClosedOrder}
         onClose={() => setSelectedClosedOrder(null)}
         fullDateFmt={fullDateFmt}
         formatDisplayQuantity={formatDisplayQuantity}
-        formatPrice={formatPrice}
-      />
-    </>
-  );
+        formatPrice={formatPrice} />
+      
+    </>);
+
 }
 
 // Empty state component
@@ -312,8 +312,8 @@ function EmptyState({ icon: Icon, message }) {
       <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
         {message}
       </p>
-    </div>
-  );
+    </div>);
+
 }
 
 // Loading state
@@ -322,29 +322,29 @@ function LoadingState() {
     <div className="text-center py-8">
       <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin neon-text" />
       <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Loading orders...</p>
-    </div>
-  );
+    </div>);
+
 }
 
 // Trade row component
 function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isBuy = trade.type === "buy";
-  
+
   return (
     <button
       onClick={onClick}
       className="w-full text-left flex items-center justify-between p-3 rounded-lg border hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}
-    >
+      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
+      
       <div className="flex items-center gap-3">
         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-          isBuy ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'
-        }`}>
-          {isBuy ? (
-            <ArrowUpRight className="w-4 h-4 text-green-500" />
-          ) : (
-            <ArrowDownRight className="w-4 h-4 text-red-500" />
-          )}
+        isBuy ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`
+        }>
+          {isBuy ?
+          <ArrowUpRight className="w-4 h-4 text-green-500" /> :
+
+          <ArrowDownRight className="w-4 h-4 text-red-500" />
+          }
         </div>
         <div>
           <div className="flex items-center gap-2">
@@ -354,11 +354,11 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
             <Badge variant="outline" className="text-xs capitalize">
               {trade.type}
             </Badge>
-            {trade.is_auto_trade && (
-              <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+            {trade.is_auto_trade &&
+            <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                 AI
               </Badge>
-            )}
+            }
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {format(new Date(trade.created_date), dateFmt)}
@@ -374,17 +374,17 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
           {formatDisplayQuantity(trade.quantity)} @ {formatPrice(trade.price)}
         </p>
       </div>
-    </button>
-  );
+    </button>);
+
 }
 
 // Open order row
 function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
   return (
-    <div 
+    <div
       className="flex items-center justify-between p-3 rounded-lg border"
-      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}
-    >
+      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
+      
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full flex items-center justify-center bg-yellow-100 dark:bg-yellow-900/30">
           <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
@@ -413,30 +413,30 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
             @ {formatPrice(order.purchase_price)}
           </p>
         </div>
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onCancel(order.id)}
           disabled={isCancelling}
-          className="text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
-        >
+          className="text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30">
+          
           {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
         </Button>
       </div>
-    </div>
-  );
+    </div>);
+
 }
 
 // Conditional order row
 function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling }) {
   const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
   const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
-  
+
   return (
-    <div 
+    <div
       className="p-3 rounded-lg border"
-      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}
-    >
+      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
+      
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-purple-100 dark:bg-purple-900/30">
@@ -450,11 +450,11 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
               <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                 Conditional
               </Badge>
-              {order.trailing_enabled !== false && (
-                <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+              {order.trailing_enabled !== false &&
+              <Badge className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                   Trailing
                 </Badge>
-              )}
+              }
             </div>
             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               {formatDisplayQuantity(order.quantity)} units • Entry: {formatPrice(order.purchase_price)}
@@ -462,13 +462,13 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
           </div>
         </div>
         
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onCancel(order.id)}
           disabled={isCancelling}
-          className="text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
-        >
+          className="text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30">
+          
           {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
         </Button>
       </div>
@@ -490,8 +490,8 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
         </div>
       </div>
       
-      {order.highest_price && order.highest_price > order.purchase_price && (
-        <div className="mt-2 text-xs flex items-center gap-1 p-2 rounded bg-blue-50 dark:bg-blue-900/20">
+      {order.highest_price && order.highest_price > order.purchase_price &&
+      <div className="mt-2 text-xs flex items-center gap-1 p-2 rounded bg-blue-50 dark:bg-blue-900/20">
           <TrendingUp className="w-3 h-3 text-blue-500" />
           <span style={{ color: 'var(--text-secondary)' }}>Peak:</span>
           <span className="font-medium text-blue-600 dark:text-blue-400">
@@ -501,43 +501,43 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
             (Trailing stop @ {formatPrice(order.highest_price * (1 - (order.trailing_margin || order.loss_margin || 5) / 100))})
           </span>
         </div>
-      )}
-    </div>
-  );
+      }
+    </div>);
+
 }
 
 // Closed order row
 function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isExecuted = order.status === "executed";
-  
+
   return (
-    <button 
+    <button
       onClick={onClick}
       className="w-full text-left flex items-center justify-between p-3 rounded-lg border opacity-75 hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all cursor-pointer"
-      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}
-    >
+      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
+      
       <div className="flex items-center gap-3">
         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-          isExecuted ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-800'
-        }`}>
-          {isExecuted ? (
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-          ) : (
-            <X className="w-4 h-4 text-gray-500" />
-          )}
+        isExecuted ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-800'}`
+        }>
+          {isExecuted ?
+          <CheckCircle2 className="w-4 h-4 text-green-500" /> :
+
+          <X className="w-4 h-4 text-gray-500" />
+          }
         </div>
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
               {order.symbol}
             </span>
-            <Badge 
+            <Badge
               className={`text-xs ${
-                isExecuted 
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-              }`}
-            >
+              isExecuted ?
+              'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+              'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`
+              }>
+              
               {isExecuted ? 'Executed' : 'Cancelled'}
             </Badge>
             <Info className="w-3 h-3 opacity-50" />
@@ -556,18 +556,18 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, on
           Entry: {formatPrice(order.purchase_price)}
         </p>
       </div>
-    </button>
-  );
+    </button>);
+
 }
 
 // Closed order details modal
 function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDisplayQuantity, formatPrice }) {
   if (!order) return null;
-  
+
   const isExecuted = order.status === "executed";
   const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
   const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
-  
+
   // Determine the reason for execution/cancellation
   const getClosureReason = () => {
     if (isExecuted) {
@@ -600,10 +600,10 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
       };
     }
   };
-  
+
   const reason = getClosureReason();
   const ReasonIcon = reason.icon;
-  
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
@@ -617,7 +617,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
         <div className="space-y-4 pt-2">
           {/* Reason Card */}
           <div className={`p-4 rounded-lg border ${isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-slate-600 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-            <h4 className={`font-medium mb-2 ${reason.color}`}>{reason.title}</h4>
+            <h4 className="text-slate-50 mb-2 font-medium">{reason.title}</h4>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {reason.description}
             </p>
@@ -668,15 +668,15 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
                 </div>
               </div>
               
-              {order.highest_price && order.highest_price > order.purchase_price && (
-                <div className="mt-2 flex items-center gap-1 p-2 rounded bg-blue-50 dark:bg-blue-900/20 text-xs">
+              {order.highest_price && order.highest_price > order.purchase_price &&
+              <div className="mt-2 flex items-center gap-1 p-2 rounded bg-blue-50 dark:bg-blue-900/20 text-xs">
                   <TrendingUp className="w-3 h-3 text-blue-500" />
                   <span style={{ color: 'var(--text-secondary)' }}>Peak Price:</span>
                   <span className="font-medium text-blue-600 dark:text-blue-400">
                     {formatPrice(order.highest_price)}
                   </span>
                 </div>
-              )}
+              }
             </div>
             
             {/* Timestamps */}
@@ -688,22 +688,22 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
                     {format(new Date(order.created_date), fullDateFmt)}
                   </span>
                 </div>
-                {order.updated_date && (
-                  <div className="flex justify-between">
+                {order.updated_date &&
+                <div className="flex justify-between">
                     <span style={{ color: 'var(--text-secondary)' }}>{isExecuted ? 'Executed:' : 'Cancelled:'}</span>
                     <span style={{ color: 'var(--text-primary)' }}>
                       {format(new Date(order.updated_date), fullDateFmt)}
                     </span>
                   </div>
-                )}
-                {order.kraken_order_id && (
-                  <div className="flex justify-between">
+                }
+                {order.kraken_order_id &&
+                <div className="flex justify-between">
                     <span style={{ color: 'var(--text-secondary)' }}>Kraken Order ID:</span>
                     <span className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
                       {order.kraken_order_id}
                     </span>
                   </div>
-                )}
+                }
               </div>
             </div>
           </div>
@@ -713,6 +713,6 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
           </Button>
         </div>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>);
+
 }
