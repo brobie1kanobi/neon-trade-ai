@@ -1515,6 +1515,9 @@ export default function Dashboard() {
 
   useAutoTrader(settings, user, handleTradeExecuted, wallet, effectiveHoldings, lifetimeChange, isSimMode);
 
+  // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
+  useBracketOrderSync(isSimMode, user?.email);
+
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
 
