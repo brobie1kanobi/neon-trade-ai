@@ -385,6 +385,27 @@ function handlePrivateMessage(message) {
         if (order_id) {
           if (exec_type === 'filled' || exec_type === 'canceled' || exec_type === 'expired') {
             GLOBAL_WS_STATE.orders.delete(order_id);
+            
+            // CRITICAL: When an order is filled/canceled/expired, emit event for bracket order cleanup
+            if (exec_type === 'filled') {
+              emitEvent('orderFilled', {
+                order_id,
+                symbol,
+                side,
+                quantity: cum_qty || order_qty,
+                price: avg_price || last_price,
+                exec_type,
+                timestamp: Date.now()
+              });
+            } else if (exec_type === 'canceled' || exec_type === 'expired') {
+              emitEvent('orderCanceled', {
+                order_id,
+                symbol,
+                side,
+                exec_type,
+                timestamp: Date.now()
+              });
+            }
           } else {
             GLOBAL_WS_STATE.orders.set(order_id, {
               order_id,
