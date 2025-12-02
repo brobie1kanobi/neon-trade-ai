@@ -255,24 +255,24 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
 
             // Create order directly instead of queueing for immediate effect
             try {
-              await ConditionalOrder.create(newOrder);
-              console.log('[AutoTrader] ✅ Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice);
-              
+              const createdOrder = await ConditionalOrder.create(newOrder);
+              console.log('[AutoTrader] ✅ Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice, 'id:', createdOrder?.id);
+
               // Add to activeOrders so we process it in this cycle
-              activeOrders.push(newOrder);
+              activeOrders.push({ ...newOrder, id: createdOrder?.id });
 
               if (settings?.notifications_enabled === true) {
                 base44.functions.invoke("pushNotifications", { 
                   action: "sendNotification", 
                   payload: { 
-                    title: "🤖 Auto-Trader Activated", 
+                    title: `${!isSimMode ? '🟢 LIVE' : '🤖'} Auto-Trader Activated`, 
                     body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
-                    data: { type: "auto_order_created", symbol: symU }
+                    data: { type: "auto_order_created", symbol: symU, live: !isSimMode }
                   } 
                 }).catch(() => {});
               }
-              
-              toast.success(`🤖 Monitoring ${symU}`, { 
+
+              toast.success(`${!isSimMode ? '🟢 LIVE' : '🤖'} Monitoring ${symU}`, { 
                 description: `Created sell order: TP +${settings?.gain_margin ?? 10}%, SL -${settings?.loss_margin ?? 5}%`,
                 duration: 3000
               });
