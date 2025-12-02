@@ -68,6 +68,7 @@ function formatKrakenSymbol(symbol) {
 
 /**
  * Build order parameters based on order type
+ * CRITICAL: Follows Kraken WebSocket v2 API spec exactly
  */
 function buildOrderParams(orderConfig) {
   const {
@@ -90,84 +91,241 @@ function buildOrderParams(orderConfig) {
   // FIXED: Generate valid 32-bit userref (Kraken requirement)
   // Use last 9 digits of timestamp (always < 2,147,483,647)
   const userref = parseInt(Date.now().toString().slice(-9));
+  
+  const formattedSymbol = formatKrakenSymbol(symbol);
+  const parsedQty = parseFloat(quantity);
 
-  const params = {
-    order_type: orderType,
+  console.log('[buildOrderParams] Input:', { orderType, side, quantity: parsedQty, symbol: formattedSymbol, stopPrice, limitPrice });
+
+  // CRITICAL: For market orders, use simple params
+  if (orderType === 'market') {
+    const params = {
+      order_type: 'market',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      time_in_force: timeInForce === 'gtc' ? 'ioc' : timeInForce, // Market orders should be IOC
+      order_userref: userref
+    };
+    console.log('[buildOrderParams] Market order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For limit orders
+  if (orderType === 'limit') {
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Limit orders require a valid limit_price');
+    }
+    const params = {
+      order_type: 'limit',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      limit_price: parseFloat(limitPrice),
+      time_in_force: timeInForce,
+      order_userref: userref
+    };
+    if (postOnly) params.post_only = true;
+    console.log('[buildOrderParams] Limit order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For stop-loss orders - Kraken requires triggers.price and triggers.price_type
+  if (orderType === 'stop-loss') {
+    if (!stopPrice || parseFloat(stopPrice) <= 0) {
+      throw new Error('Stop-loss orders require a valid stopPrice');
+    }
+    const params = {
+      order_type: 'stop-loss',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: parseFloat(stopPrice),
+        price_type: 'static'
+      }
+    };
+    console.log('[buildOrderParams] Stop-loss order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For stop-loss-limit orders
+  if (orderType === 'stop-loss-limit') {
+    if (!stopPrice || parseFloat(stopPrice) <= 0) {
+      throw new Error('Stop-loss-limit orders require a valid stopPrice');
+    }
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Stop-loss-limit orders require a valid limitPrice');
+    }
+    const params = {
+      order_type: 'stop-loss-limit',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      limit_price: parseFloat(limitPrice),
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: parseFloat(stopPrice),
+        price_type: 'static'
+      }
+    };
+    console.log('[buildOrderParams] Stop-loss-limit order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For take-profit orders
+  if (orderType === 'take-profit') {
+    const tpPrice = triggerPrice || stopPrice;
+    if (!tpPrice || parseFloat(tpPrice) <= 0) {
+      throw new Error('Take-profit orders require a valid triggerPrice');
+    }
+    const params = {
+      order_type: 'take-profit',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: parseFloat(tpPrice),
+        price_type: 'static'
+      }
+    };
+    console.log('[buildOrderParams] Take-profit order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For take-profit-limit orders
+  if (orderType === 'take-profit-limit') {
+    const tpPrice = triggerPrice || stopPrice;
+    if (!tpPrice || parseFloat(tpPrice) <= 0) {
+      throw new Error('Take-profit-limit orders require a valid triggerPrice');
+    }
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Take-profit-limit orders require a valid limitPrice');
+    }
+    const params = {
+      order_type: 'take-profit-limit',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      limit_price: parseFloat(limitPrice),
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: parseFloat(tpPrice),
+        price_type: 'static'
+      }
+    };
+    console.log('[buildOrderParams] Take-profit-limit order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For trailing-stop orders
+  if (orderType === 'trailing-stop') {
+    // Trailing stop uses percentage or quote offset from peak
+    let trailPrice = 5.0; // Default 5% trailing
+    let trailPriceType = 'pct';
+    
+    if (trailingPercent && parseFloat(trailingPercent) > 0) {
+      trailPrice = parseFloat(trailingPercent);
+      trailPriceType = 'pct';
+    } else if (trailingAmount && parseFloat(trailingAmount) > 0) {
+      trailPrice = parseFloat(trailingAmount);
+      trailPriceType = 'quote';
+    }
+    
+    const params = {
+      order_type: 'trailing-stop',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: trailPrice,
+        price_type: trailPriceType
+      }
+    };
+    console.log('[buildOrderParams] Trailing-stop order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For trailing-stop-limit orders
+  if (orderType === 'trailing-stop-limit') {
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Trailing-stop-limit orders require a valid limitPrice');
+    }
+    
+    let trailPrice = 5.0;
+    let trailPriceType = 'pct';
+    
+    if (trailingPercent && parseFloat(trailingPercent) > 0) {
+      trailPrice = parseFloat(trailingPercent);
+      trailPriceType = 'pct';
+    } else if (trailingAmount && parseFloat(trailingAmount) > 0) {
+      trailPrice = parseFloat(trailingAmount);
+      trailPriceType = 'quote';
+    }
+    
+    const params = {
+      order_type: 'trailing-stop-limit',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      limit_price: parseFloat(limitPrice),
+      time_in_force: timeInForce,
+      order_userref: userref,
+      triggers: {
+        reference: 'last',
+        price: trailPrice,
+        price_type: trailPriceType
+      }
+    };
+    console.log('[buildOrderParams] Trailing-stop-limit order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // CRITICAL: For iceberg orders
+  if (orderType === 'iceberg') {
+    if (!limitPrice || parseFloat(limitPrice) <= 0) {
+      throw new Error('Iceberg orders require a valid limitPrice');
+    }
+    if (!displayQty || parseFloat(displayQty) <= 0) {
+      throw new Error('Iceberg orders require a valid displayQty');
+    }
+    const params = {
+      order_type: 'iceberg',
+      side: side.toLowerCase(),
+      order_qty: parsedQty,
+      symbol: formattedSymbol,
+      limit_price: parseFloat(limitPrice),
+      display_qty: parseFloat(displayQty),
+      time_in_force: timeInForce,
+      order_userref: userref
+    };
+    console.log('[buildOrderParams] Iceberg order params:', JSON.stringify(params));
+    return params;
+  }
+
+  // Fallback for unknown order types - use market
+  console.warn('[buildOrderParams] Unknown order type:', orderType, '- falling back to market');
+  return {
+    order_type: 'market',
     side: side.toLowerCase(),
-    order_qty: parseFloat(quantity),
-    symbol: formatKrakenSymbol(symbol),
-    time_in_force: timeInForce,
+    order_qty: parsedQty,
+    symbol: formattedSymbol,
+    time_in_force: 'ioc',
     order_userref: userref
   };
-
-  // Add limit price for limit orders
-  if (limitPrice && ['limit', 'stop-loss-limit', 'take-profit-limit', 'trailing-stop-limit'].includes(orderType)) {
-    params.limit_price = parseFloat(limitPrice);
-  }
-
-  // Add triggers for stop-loss, take-profit, trailing-stop orders
-  if (['stop-loss', 'stop-loss-limit', 'take-profit', 'take-profit-limit', 'trailing-stop', 'trailing-stop-limit'].includes(orderType)) {
-    params.triggers = {
-      reference: 'last', // 'last' or 'index'
-    };
-
-    // Stop-loss and take-profit with static price
-    if (stopPrice && ['stop-loss', 'stop-loss-limit'].includes(orderType)) {
-      params.triggers.price = parseFloat(stopPrice);
-      params.triggers.price_type = 'static';
-    } else if (triggerPrice && ['take-profit', 'take-profit-limit'].includes(orderType)) {
-      params.triggers.price = parseFloat(triggerPrice);
-      params.triggers.price_type = 'static';
-    }
-
-    // Trailing stop with percentage or quote offset
-    if (['trailing-stop', 'trailing-stop-limit'].includes(orderType)) {
-      if (trailingPercent) {
-        params.triggers.price = parseFloat(trailingPercent);
-        params.triggers.price_type = 'pct'; // Percentage offset
-      } else if (trailingAmount) {
-        params.triggers.price = parseFloat(trailingAmount);
-        params.triggers.price_type = 'quote'; // USD offset
-      } else {
-        // Default to 1% trailing
-        params.triggers.price = 1.0;
-        params.triggers.price_type = 'pct';
-      }
-    }
-  }
-
-  // Add iceberg display quantity
-  if (orderType === 'iceberg' && displayQty) {
-    params.display_qty = parseFloat(displayQty);
-    if (limitPrice) {
-      params.limit_price = parseFloat(limitPrice);
-    }
-  }
-
-  // Post-only flag (only for limit orders)
-  if (postOnly && limitPrice) {
-    params.post_only = true;
-  }
-
-  // Reduce-only flag (close positions only)
-  if (reduceOnly) {
-    params.reduce_only = true;
-  }
-
-  // Conditional close order (OTO - One-Triggers-Other)
-  if (conditionalCloseOrder) {
-    params.conditional = {
-      order_type: conditionalCloseOrder.orderType || 'limit',
-      limit_price: parseFloat(conditionalCloseOrder.limitPrice || 0)
-    };
-
-    if (conditionalCloseOrder.stopPrice) {
-      params.conditional.trigger_price = parseFloat(conditionalCloseOrder.stopPrice);
-      params.conditional.trigger_price_type = 'static';
-    }
-  }
-
-  return params;
 }
 
 /**
