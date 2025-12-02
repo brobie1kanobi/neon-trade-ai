@@ -251,10 +251,51 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           kraken_order_id: krakenOrderId
         });
 
-        // CRITICAL: For LIVE buys with conditional orders, create a local tracking record
-        // The auto-trader will monitor and execute sells via Kraken when conditions are met
+        // CRITICAL: For LIVE buys with conditional orders, place REAL Kraken stop-loss orders
+        // Also create local tracking record for the auto-trader
         if (tradeData.type === 'buy' && setConditional) {
           try {
+            // Calculate stop-loss and take-profit prices
+            const stopLossPrice = tradeData.price * (1 - parseFloat(lossMargin) / 100);
+            const takeProfitPrice = tradeData.price * (1 + parseFloat(gainMargin) / 100);
+
+            console.log('[TradingInterface] Placing Kraken stop-loss order:', {
+              symbol: tradeData.symbol,
+              quantity: tradeData.quantity,
+              stopPrice: stopLossPrice
+            });
+
+            // Place REAL Kraken stop-loss order
+            let stopLossOrderId = null;
+            try {
+              const stopLossResponse = await base44.functions.invoke('krakenTrade', {
+                action: 'place_order',
+                symbol: tradeData.symbol,
+                side: 'sell',
+                quantity: tradeData.quantity,
+                orderType: 'stop-loss',
+                stopPrice: stopLossPrice,
+                timeInForce: 'gtc'
+              });
+
+              const slData = stopLossResponse?.data || stopLossResponse;
+              if (slData?.success) {
+                stopLossOrderId = slData.order_id || slData.txid;
+                console.log('[TradingInterface] ✅ Kraken stop-loss order placed:', stopLossOrderId);
+                
+                toast.success("🟢 LIVE Stop-Loss Set", {
+                  description: `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%) on Kraken`,
+                  duration: 3000
+                });
+              } else {
+                console.warn('[TradingInterface] Stop-loss order failed:', slData?.error);
+              }
+            } catch (slError) {
+              console.error('[TradingInterface] Stop-loss order error:', slError.message);
+              // Don't fail the whole flow - we still have local tracking
+            }
+
+            // Also create local conditional order for app-based monitoring (backup/trailing)
             const conditionalOrder = await ConditionalOrder.create({
               symbol: tradeData.symbol,
               asset_type: tradeData.asset_type || 'crypto',
@@ -267,14 +308,14 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
               highest_price: tradeData.price,
               status: 'active',
               is_simulation: false,
-              kraken_order_id: krakenOrderId, // Link to the buy order
+              kraken_order_id: stopLossOrderId || krakenOrderId, // Link to stop-loss or buy order
               created_by: currentUser.email
             });
 
             console.log('[TradingInterface] ✅ Created LIVE conditional order:', conditionalOrder);
 
             toast.success("🤖 Auto-Trader Monitoring", {
-              description: `TP: +${gainMargin}% | SL: -${lossMargin}% (trailing enabled)`,
+              description: `TP: +${gainMargin}% | SL: -${lossMargin}% ${stopLossOrderId ? '(Kraken SL active)' : '(trailing enabled)'}`,
               duration: 3000
             });
 
