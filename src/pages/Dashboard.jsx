@@ -399,16 +399,29 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         // CRITICAL: Don't return early just because cash is low
         // The bot should ALWAYS check sell conditions on active orders
         // Only skip buy operations when cash is low
+        console.log('[AutoTrader] Processing', activeOrders.length, 'active orders for sell conditions');
+        
         for (const order of activeOrders) {
           const symU = (order.symbol || "").toUpperCase();
           const priceData = quoteListForOrders.find(p => p.symbol === symU);
-          if (!priceData || typeof priceData.price !== "number" || priceData.price <= 0) continue;
-          const currentPrice = priceData.price;
-          const actualHolding = freshHoldings.find(h => (h.symbol || "").toUpperCase() === symU && h.is_simulation === isSimMode);
-          if (!actualHolding) {
-            queueOrderUpdate(order.id, { status: "cancelled" });
+          
+          if (!priceData || typeof priceData.price !== "number" || priceData.price <= 0) {
+            console.log('[AutoTrader] No price data for', symU);
             continue;
           }
+          
+          const currentPrice = priceData.price;
+          const actualHolding = freshHoldings.find(h => (h.symbol || "").toUpperCase() === symU);
+          
+          if (!actualHolding) {
+            console.log('[AutoTrader] No holding found for', symU, '- cancelling order');
+            if (order.id) {
+              queueOrderUpdate(order.id, { status: "cancelled" });
+            }
+            continue;
+          }
+          
+          console.log('[AutoTrader] Checking', symU, '- price:', currentPrice, 'purchase:', order.purchase_price, 'qty:', actualHolding.quantity);
           let sellQuantity = order.quantity;
           if (sellQuantity > actualHolding.quantity) {
             sellQuantity = actualHolding.quantity;
