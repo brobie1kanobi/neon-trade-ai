@@ -18,6 +18,7 @@ import { useUser } from "@/components/hooks/useUser";
 import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 
 import BalanceCard from "../components/dashboard/BalanceCard";
 import RecentTrades from "../components/dashboard/RecentTrades";
