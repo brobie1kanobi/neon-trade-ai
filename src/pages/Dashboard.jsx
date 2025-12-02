@@ -289,7 +289,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   // Create local tracking order with Kraken order ID
                   const createdOrder = await ConditionalOrder.create({
                     ...newOrder,
-                    kraken_order_id: stopLossOrderId
+                    kraken_order_id: stopLossOrderId,
+                    closure_reason: null,
+                    error_message: null
                   });
                   
                   activeOrders.push({ ...newOrder, id: createdOrder?.id, kraken_order_id: stopLossOrderId });
@@ -305,24 +307,36 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     }).catch(() => {});
                   }
                 } else {
-                  console.warn('[AutoTrader] Stop-loss order failed for', symU, ':', slData?.error);
-                  // Still create local tracking for monitoring (fallback)
-                  const createdOrder = await ConditionalOrder.create(newOrder);
+                  const errorMsg = slData?.error || 'Unknown Kraken error';
+                  console.warn('[AutoTrader] Stop-loss order failed for', symU, ':', errorMsg);
+                  
+                  // Create local tracking with error message stored
+                  const createdOrder = await ConditionalOrder.create({
+                    ...newOrder,
+                    closure_reason: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
+                    error_message: errorMsg
+                  });
                   activeOrders.push({ ...newOrder, id: createdOrder?.id });
                   
                   toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
-                    description: `Kraken stop-loss failed: ${slData?.error}. Using app monitoring as backup.`,
+                    description: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
                     duration: 5000
                   });
                 }
               } catch (slError) {
-                console.error('[AutoTrader] Stop-loss creation error for', symU, ':', slError.message);
-                // Create local tracking as fallback
-                const createdOrder = await ConditionalOrder.create(newOrder);
+                const errorMsg = slError.message || 'Unknown error';
+                console.error('[AutoTrader] Stop-loss creation error for', symU, ':', errorMsg);
+                
+                // Create local tracking with error message stored
+                const createdOrder = await ConditionalOrder.create({
+                  ...newOrder,
+                  closure_reason: `Kraken stop-loss failed: ${errorMsg}. Using app monitoring as backup.`,
+                  error_message: errorMsg
+                });
                 activeOrders.push({ ...newOrder, id: createdOrder?.id });
                 
                 toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
-                  description: `Kraken error: ${slError.message}. Using app monitoring.`,
+                  description: `Kraken error: ${errorMsg}. Using app monitoring.`,
                   duration: 5000
                 });
               }

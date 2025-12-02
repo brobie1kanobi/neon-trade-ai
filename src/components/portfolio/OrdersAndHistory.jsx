@@ -570,6 +570,75 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
 
   // Determine the reason for execution/cancellation
   const getClosureReason = () => {
+    // CRITICAL: If there's a stored closure_reason or error_message, use it first
+    if (order.error_message) {
+      return {
+        type: "error",
+        title: "Order Failed",
+        description: order.error_message,
+        icon: AlertCircle,
+        color: "text-red-500"
+      };
+    }
+    
+    if (order.closure_reason) {
+      // Parse the closure reason to determine icon and color
+      const reason = order.closure_reason.toLowerCase();
+      if (reason.includes('stop-loss') || reason.includes('trailing')) {
+        return {
+          type: "stop-triggered",
+          title: "Stop Triggered",
+          description: order.closure_reason,
+          icon: TrendingDown,
+          color: "text-orange-500"
+        };
+      }
+      if (reason.includes('take-profit') || reason.includes('profit')) {
+        return {
+          type: "take-profit",
+          title: "Take Profit Hit",
+          description: order.closure_reason,
+          icon: TrendingUp,
+          color: "text-green-500"
+        };
+      }
+      if (reason.includes('sold') || reason.includes('position')) {
+        return {
+          type: "position-closed",
+          title: "Position Closed",
+          description: order.closure_reason,
+          icon: CheckCircle2,
+          color: "text-blue-500"
+        };
+      }
+      if (reason.includes('kraken') || reason.includes('websocket') || reason.includes('failed')) {
+        return {
+          type: "api-error",
+          title: "Kraken API Error",
+          description: order.closure_reason,
+          icon: AlertCircle,
+          color: "text-red-500"
+        };
+      }
+      if (reason.includes('replaced') || reason.includes('updated')) {
+        return {
+          type: "replaced",
+          title: "Order Replaced",
+          description: order.closure_reason,
+          icon: RefreshCw,
+          color: "text-blue-500"
+        };
+      }
+      // Generic stored reason
+      return {
+        type: "stored-reason",
+        title: isExecuted ? "Order Executed" : "Order Cancelled",
+        description: order.closure_reason,
+        icon: isExecuted ? CheckCircle2 : X,
+        color: isExecuted ? "text-green-500" : "text-gray-500"
+      };
+    }
+    
     if (isExecuted) {
       // Check if it was trailing stop, take profit, or stop loss
       if (order.highest_price && order.highest_price > order.purchase_price) {
