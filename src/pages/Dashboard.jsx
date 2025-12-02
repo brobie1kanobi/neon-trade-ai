@@ -588,11 +588,13 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   kraken_order_id: krakenOrderId
                 });
 
-                // Mark conditional order as executed with Kraken ID
+                // Mark conditional order as executed with Kraken ID and closure reason
                 if (order.id) {
                   await ConditionalOrder.update(order.id, { 
                     status: "executed", 
-                    kraken_order_id: krakenOrderId 
+                    kraken_order_id: krakenOrderId,
+                    closure_reason: `${tradeType} triggered: Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken. Order ID: ${krakenOrderId || 'N/A'}`,
+                    error_message: null
                   });
                 }
                 
@@ -609,14 +611,24 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   }).catch(() => {});
                 }
               } catch (krakenError) {
-                console.error('[AutoTrader] ❌ Kraken sell failed:', krakenError.message);
-                const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
+                const errorMsg = krakenError.message || 'Unknown Kraken error';
+                console.error('[AutoTrader] ❌ Kraken sell failed:', errorMsg);
+                const isRateLimit = errorMsg && /rate limit|429/i.test(errorMsg);
                 if (isRateLimit) {
                   failureCountRef.current++;
                   backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
                 }
+                
+                // Store the error in the order for display
+                if (order.id) {
+                  await ConditionalOrder.update(order.id, { 
+                    error_message: `Kraken sell failed: ${errorMsg}`,
+                    closure_reason: `${tradeType} triggered but Kraken order failed: ${errorMsg}`
+                  }).catch(() => {});
+                }
+                
                 toast.error("🔴 LIVE Trade Failed", { 
-                  description: `Failed to sell ${symU} on Kraken: ${krakenError.message}`, 
+                  description: `Failed to sell ${symU} on Kraken: ${errorMsg}`, 
                   duration: 10000 
                 });
                 // DO NOT execute locally - in LIVE mode, only Kraken orders count
