@@ -14,6 +14,7 @@ import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
+import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 
 // GLOBAL CACHE to prevent duplicate API calls
 if (typeof window !== 'undefined') {
