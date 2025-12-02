@@ -808,10 +808,17 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
 
               remainingCash = Math.max(0, remainingCash - total);
               
-              // CRITICAL: Place REAL Kraken stop-loss order for this buy
-              const stopLossPrice = parseFloat((price * (1 - parseFloat(settings?.loss_margin ?? 5) / 100)).toFixed(2));
-              let stopLossOrderId = null;
+              // CRITICAL: Place REAL Kraken bracket orders (stop-loss AND take-profit) for this buy
+              const lossMargin = parseFloat(settings?.loss_margin ?? 5);
+              const gainMargin = parseFloat(settings?.gain_margin ?? 10);
+              const stopLossPrice = parseFloat((price * (1 - lossMargin / 100)).toFixed(2));
+              const takeProfitPrice = parseFloat((price * (1 + gainMargin / 100)).toFixed(2));
+              const orderQty = parseFloat(finalQty.toFixed(8));
 
+              let stopLossOrderId = null;
+              let takeProfitOrderId = null;
+
+              // Place STOP-LOSS order
               try {
                 console.log('[AutoTrader] Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
                 const slResponse = await Promise.race([
@@ -819,29 +826,61 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     action: 'place_order', 
                     symbol: sym, 
                     side: 'sell', 
-                    quantity: parseFloat(finalQty.toFixed(8)), 
+                    quantity: orderQty, 
                     orderType: 'stop-loss',
                     stopPrice: stopLossPrice,
                     timeInForce: 'gtc'
                   }),
                   new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
                 ]);
-                
+
                 const slData = slResponse?.data || slResponse;
                 if (slData?.success) {
                   stopLossOrderId = slData.order_id || slData.txid;
                   console.log('[AutoTrader] ✅ Kraken stop-loss placed:', stopLossOrderId);
-                  
-                  toast.success("🟢 Stop-Loss Set", { 
-                    description: `SL @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) on Kraken`,
-                    duration: 3000 
-                  });
                 } else {
                   console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
                 }
               } catch (slError) {
                 console.error('[AutoTrader] Stop-loss error:', slError.message);
-                // Continue - we have the buy, stop-loss is optional backup
+              }
+
+              // Place TAKE-PROFIT order
+              try {
+                console.log('[AutoTrader] Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2));
+                const tpResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: sym, 
+                    side: 'sell', 
+                    quantity: orderQty, 
+                    orderType: 'take-profit',
+                    triggerPrice: takeProfitPrice,
+                    timeInForce: 'gtc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 15000))
+                ]);
+
+                const tpData = tpResponse?.data || tpResponse;
+                if (tpData?.success) {
+                  takeProfitOrderId = tpData.order_id || tpData.txid;
+                  console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
+                } else {
+                  console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                }
+              } catch (tpError) {
+                console.error('[AutoTrader] Take-profit error:', tpError.message);
+              }
+
+              const hasSL = !!stopLossOrderId;
+              const hasTP = !!takeProfitOrderId;
+              const krakenOrderIds = [stopLossOrderId, takeProfitOrderId].filter(Boolean).join(',');
+
+              if (hasSL || hasTP) {
+                toast.success("🟢 Bracket Orders Set", { 
+                  description: `${hasSL ? `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%)` : ''}${hasSL && hasTP ? ' • ' : ''}${hasTP ? `TP @ $${takeProfitPrice.toFixed(2)} (+${gainMargin}%)` : ''}`,
+                  duration: 3000 
+                });
               }
 
               // Create local conditional order for trailing stop monitoring (backup)
@@ -850,15 +889,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 asset_type: p.asset_type, 
                 quantity: finalQty, 
                 purchase_price: price, 
-                gain_margin: parseFloat(settings?.gain_margin ?? 10), 
-                loss_margin: parseFloat(settings?.loss_margin ?? 5),
+                gain_margin: gainMargin, 
+                loss_margin: lossMargin,
                 trailing_enabled: true,
-                trailing_margin: parseFloat(settings?.loss_margin ?? 5),
+                trailing_margin: lossMargin,
                 highest_price: price,
                 status: "active", 
                 created_by: user.email, 
                 is_simulation: false,
-                kraken_order_id: stopLossOrderId || krakenBuyOrderId
+                kraken_order_id: krakenOrderIds || krakenBuyOrderId
               });
               
               nextOrdersCheckAtRef.current = Math.min(nextOrdersCheckAtRef.current, Date.now() + 2 * 60 * 1000);
