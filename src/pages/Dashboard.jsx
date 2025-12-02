@@ -454,9 +454,12 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           else if (trailingEnabled && updatedHighest > order.purchase_price && currentPrice <= trailingStop) { shouldSell = true; tradeType = "trailing-stop"; }
           else if (!trailingEnabled && currentPrice >= gainPrice) { shouldSell = true; tradeType = "take-profit"; }
           if (shouldSell) {
-            const tradeDetails = { symbol: symU, type: "sell", asset_type: order.asset_type, quantity: sellQuantity, price: currentPrice, total_value: sellQuantity * currentPrice, is_auto_trade: true };
+            console.log('[AutoTrader] ⚡ SELL TRIGGERED for', symU, '-', tradeType, '- qty:', sellQuantity, '@ $', currentPrice);
+            
+            const tradeDetails = { symbol: symU, type: "sell", asset_type: order.asset_type || "crypto", quantity: sellQuantity, price: currentPrice, total_value: sellQuantity * currentPrice, is_auto_trade: true };
             try {
               if (!isSimMode) {
+                console.log('[AutoTrader] Sending LIVE sell order to Kraken for', symU);
                 try {
                   const krakenResponse = await Promise.race([
                     base44.functions.invoke('krakenTrade', { 
@@ -465,22 +468,32 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                       side: 'sell', 
                       quantity: sellQuantity, 
                       orderType: 'market',
-                      timeInForce: 'ioc' // Immediate-or-cancel for auto-trades
+                      timeInForce: 'gtc' // Good-till-cancelled for reliability
                     }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 30000))
                   ]);
+                  
+                  console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenResponse));
                   const krakenData = krakenResponse?.data || krakenResponse;
-                  if (!krakenData?.success) throw new Error(krakenData?.error || 'Kraken trade failed');
+                  
+                  if (!krakenData?.success) {
+                    throw new Error(krakenData?.error || 'Kraken trade failed - no success flag');
+                  }
 
                   // CRITICAL: Store Kraken order ID for tracking
                   const krakenOrderId = krakenData.order_id || krakenData.txid || null;
 
+                  console.log('[AutoTrader] ✅ LIVE sell executed -', symU, 'order ID:', krakenOrderId);
+                  
                   toast.success("🟢 LIVE Auto-Sell Executed", { description: `Sold ${sellQuantity.toFixed(4)} ${symU} @ $${currentPrice.toFixed(2)} on Kraken (Order: ${krakenOrderId || 'submitted'})`, duration: 5000 });
                   await base44.entities.Trade.create({ ...tradeDetails, is_simulation: false, created_by: user.email, status: 'executed' });
 
                   // Update order with Kraken order ID
-                  queueOrderUpdate(order.id, { status: "executed", kraken_order_id: krakenOrderId });
+                  if (order.id) {
+                    await ConditionalOrder.update(order.id, { status: "executed", kraken_order_id: krakenOrderId });
+                  }
                 } catch (krakenError) {
+                  console.error('[AutoTrader] ❌ Kraken sell failed:', krakenError.message);
                   const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
                   if (isRateLimit) {
                     failureCountRef.current++;
