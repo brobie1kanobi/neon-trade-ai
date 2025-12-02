@@ -388,7 +388,7 @@ function handlePrivateMessage(message) {
             
             // CRITICAL: When an order is filled/canceled/expired, emit event for bracket order cleanup
             if (exec_type === 'filled') {
-              emitEvent('orderFilled', {
+              const filledData = {
                 order_id,
                 symbol,
                 side,
@@ -396,15 +396,27 @@ function handlePrivateMessage(message) {
                 price: avg_price || last_price,
                 exec_type,
                 timestamp: Date.now()
-              });
+              };
+              emitEvent('orderFilled', filledData);
+              
+              // CRITICAL: Dispatch window event for useBracketOrderSync hook
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('kraken:order-filled', { detail: filledData }));
+              }
             } else if (exec_type === 'canceled' || exec_type === 'expired') {
-              emitEvent('orderCanceled', {
+              const canceledData = {
                 order_id,
                 symbol,
                 side,
                 exec_type,
                 timestamp: Date.now()
-              });
+              };
+              emitEvent('orderCanceled', canceledData);
+              
+              // CRITICAL: Dispatch window event for useBracketOrderSync hook
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('kraken:order-canceled', { detail: canceledData }));
+              }
             }
           } else {
             GLOBAL_WS_STATE.orders.set(order_id, {
