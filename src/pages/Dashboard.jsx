@@ -253,31 +253,105 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               created_by: user.email
             };
 
-            // Create order directly instead of queueing for immediate effect
-            try {
-              const createdOrder = await ConditionalOrder.create(newOrder);
-              console.log('[AutoTrader] ✅ Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice, 'id:', createdOrder?.id);
-
-              // Add to activeOrders so we process it in this cycle
-              activeOrders.push({ ...newOrder, id: createdOrder?.id });
-
-              if (settings?.notifications_enabled === true) {
-                base44.functions.invoke("pushNotifications", { 
-                  action: "sendNotification", 
-                  payload: { 
-                    title: `${!isSimMode ? '🟢 LIVE' : '🤖'} Auto-Trader Activated`, 
-                    body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
-                    data: { type: "auto_order_created", symbol: symU, live: !isSimMode }
-                  } 
-                }).catch(() => {});
+            // CRITICAL: In LIVE mode, place REAL Kraken stop-loss orders for existing holdings
+            if (!isSimMode) {
+              console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken stop-loss for existing holding:', symU);
+              
+              const stopLossPrice = purchasePrice * (1 - parseFloat(settings?.loss_margin ?? 5) / 100);
+              let stopLossOrderId = null;
+              
+              try {
+                const slResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: symU, 
+                    side: 'sell', 
+                    quantity: holding.quantity, 
+                    orderType: 'stop-loss',
+                    stopPrice: stopLossPrice,
+                    timeInForce: 'gtc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
+                ]);
+                
+                const slData = slResponse?.data || slResponse;
+                console.log('[AutoTrader] Kraken stop-loss response:', JSON.stringify(slData));
+                
+                if (slData?.success) {
+                  stopLossOrderId = slData.order_id || slData.txid;
+                  console.log('[AutoTrader] ✅ Kraken stop-loss placed for', symU, ':', stopLossOrderId, '@ $', stopLossPrice.toFixed(2));
+                  
+                  toast.success(`🟢 LIVE Stop-Loss Set for ${symU}`, { 
+                    description: `SL @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) on Kraken`,
+                    duration: 3000
+                  });
+                  
+                  // Create local tracking order with Kraken order ID
+                  const createdOrder = await ConditionalOrder.create({
+                    ...newOrder,
+                    kraken_order_id: stopLossOrderId
+                  });
+                  
+                  activeOrders.push({ ...newOrder, id: createdOrder?.id, kraken_order_id: stopLossOrderId });
+                  
+                  if (settings?.notifications_enabled === true) {
+                    base44.functions.invoke("pushNotifications", { 
+                      action: "sendNotification", 
+                      payload: { 
+                        title: `🟢 LIVE Stop-Loss Active • ${symU}`, 
+                        body: `Stop-loss @ $${stopLossPrice.toFixed(2)} (-${settings?.loss_margin ?? 5}%) placed on Kraken`,
+                        data: { type: "stop_loss_set", symbol: symU, live: true, kraken_order_id: stopLossOrderId }
+                      } 
+                    }).catch(() => {});
+                  }
+                } else {
+                  console.warn('[AutoTrader] Stop-loss order failed for', symU, ':', slData?.error);
+                  // Still create local tracking for monitoring (fallback)
+                  const createdOrder = await ConditionalOrder.create(newOrder);
+                  activeOrders.push({ ...newOrder, id: createdOrder?.id });
+                  
+                  toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
+                    description: `Kraken stop-loss failed: ${slData?.error}. Using app monitoring as backup.`,
+                    duration: 5000
+                  });
+                }
+              } catch (slError) {
+                console.error('[AutoTrader] Stop-loss creation error for', symU, ':', slError.message);
+                // Create local tracking as fallback
+                const createdOrder = await ConditionalOrder.create(newOrder);
+                activeOrders.push({ ...newOrder, id: createdOrder?.id });
+                
+                toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
+                  description: `Kraken error: ${slError.message}. Using app monitoring.`,
+                  duration: 5000
+                });
               }
+            } else {
+              // SIM MODE: Create local order only
+              try {
+                const createdOrder = await ConditionalOrder.create(newOrder);
+                console.log('[AutoTrader] ✅ Created SIM conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice, 'id:', createdOrder?.id);
 
-              toast.success(`${!isSimMode ? '🟢 LIVE' : '🤖'} Monitoring ${symU}`, { 
-                description: `Created sell order: TP +${settings?.gain_margin ?? 10}%, SL -${settings?.loss_margin ?? 5}%`,
-                duration: 3000
-              });
-            } catch (createError) {
-              console.error('[AutoTrader] Failed to create order for', symU, ':', createError.message);
+                activeOrders.push({ ...newOrder, id: createdOrder?.id });
+
+                if (settings?.notifications_enabled === true) {
+                  base44.functions.invoke("pushNotifications", { 
+                    action: "sendNotification", 
+                    payload: { 
+                      title: `🤖 Auto-Trader Activated`, 
+                      body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
+                      data: { type: "auto_order_created", symbol: symU, live: false }
+                    } 
+                  }).catch(() => {});
+                }
+
+                toast.success(`🤖 Monitoring ${symU}`, { 
+                  description: `Created sell order: TP +${settings?.gain_margin ?? 10}%, SL -${settings?.loss_margin ?? 5}%`,
+                  duration: 3000
+                });
+              } catch (createError) {
+                console.error('[AutoTrader] Failed to create order for', symU, ':', createError.message);
+              }
             }
           }
         }
