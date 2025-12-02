@@ -18,7 +18,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
  */
 
 const WS_URL = 'wss://ws-auth.kraken.com/v2';
-const WS_TIMEOUT = 20000; // 20 second timeout for complex orders
+const WS_TIMEOUT = 30000; // 30 second timeout for robustness
 
 /**
  * Format symbol for Kraken (e.g., "BTC" -> "BTC/USD")
@@ -259,20 +259,22 @@ function executeKrakenTrade(token, orderParams) {
       };
       
       ws.onerror = (error) => {
-        console.error('[krakenTrade] WebSocket error:', error);
+        console.error('[krakenTrade] WebSocket error:', error?.message || error);
+        console.error('[krakenTrade] Order params were:', JSON.stringify(orderParams));
         clearTimeout(timeout);
         if (!isResolved) {
           isResolved = true;
-          reject(new Error('WebSocket connection error'));
+          reject(new Error('WebSocket connection error: ' + (error?.message || 'unknown')));
         }
       };
       
-      ws.onclose = () => {
-        console.log('[krakenTrade] WebSocket closed');
+      ws.onclose = (event) => {
+        console.log('[krakenTrade] WebSocket closed. Code:', event?.code, 'Reason:', event?.reason);
+        console.log('[krakenTrade] Order params were:', JSON.stringify(orderParams));
         clearTimeout(timeout);
         if (!isResolved) {
           isResolved = true;
-          reject(new Error('WebSocket closed unexpectedly'));
+          reject(new Error(`WebSocket closed unexpectedly (code: ${event?.code}, reason: ${event?.reason || 'none'})`));
         }
       };
       
@@ -355,19 +357,20 @@ function cancelKrakenOrder(token, orderIds) {
       };
       
       ws.onerror = (error) => {
-        console.error('[krakenTrade] WebSocket error:', error);
+        console.error('[krakenTrade] Cancel WebSocket error:', error?.message || error);
         clearTimeout(timeout);
         if (!isResolved) {
           isResolved = true;
-          reject(new Error('WebSocket connection error'));
+          reject(new Error('WebSocket connection error for cancel: ' + (error?.message || 'unknown')));
         }
       };
       
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('[krakenTrade] Cancel WebSocket closed. Code:', event?.code);
         clearTimeout(timeout);
         if (!isResolved) {
           isResolved = true;
-          reject(new Error('WebSocket closed unexpectedly'));
+          reject(new Error(`WebSocket closed unexpectedly for cancel (code: ${event?.code})`));
         }
       };
       
