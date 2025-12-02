@@ -203,15 +203,35 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           return !hasOrder && (holding.quantity || 0) > 0.00001;
         });
 
+        console.log('[AutoTrader] Holdings without orders:', holdingsWithoutOrders.length);
+
         // Auto-create conditional orders for holdings without them
         if (holdingsWithoutOrders.length > 0) {
-          console.log('[AutoTrader] Creating conditional orders for', holdingsWithoutOrders.length, 'holdings without orders');
+          console.log('[AutoTrader] Creating conditional orders for', holdingsWithoutOrders.length, 'holdings');
 
           for (const holding of holdingsWithoutOrders) {
             const symU = (holding.symbol || "").toUpperCase();
-            const purchasePrice = holding.average_cost_price || 0;
+            let purchasePrice = holding.average_cost_price || 0;
 
-            // Skip if we don't have a valid purchase price
+            // CRITICAL: For LIVE mode, if no cost basis, fetch current market price
+            if (purchasePrice <= 0 && !isSimMode) {
+              try {
+                const priceRes = await base44.functions.invoke('getMarketData', {
+                  action: 'getWatchlistData',
+                  payload: { cryptoSymbols: [symU], stockSymbols: [] }
+                });
+                const priceData = Array.isArray(priceRes?.data) ? priceRes.data : [];
+                const found = priceData.find(p => (p.symbol || "").toUpperCase() === symU);
+                if (found?.price > 0) {
+                  purchasePrice = found.price;
+                  console.log('[AutoTrader] Fetched market price for', symU, ':', purchasePrice);
+                }
+              } catch (priceError) {
+                console.error('[AutoTrader] Price fetch error for', symU, ':', priceError.message);
+              }
+            }
+
+            // Skip if we still don't have a valid price
             if (purchasePrice <= 0) {
               console.log('[AutoTrader] Skipping', symU, '- no valid purchase price');
               continue;
@@ -232,27 +252,33 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               created_by: user.email
             };
 
-            queueOrderCreate(newOrder);
+            // Create order directly instead of queueing for immediate effect
+            try {
+              await ConditionalOrder.create(newOrder);
+              console.log('[AutoTrader] ✅ Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice);
+              
+              // Add to activeOrders so we process it in this cycle
+              activeOrders.push(newOrder);
 
-            // Add to activeOrders so we process it in this cycle
-            activeOrders.push(newOrder);
-
-            console.log('[AutoTrader] Created conditional order for', symU, '- qty:', holding.quantity, 'price:', purchasePrice);
-
-            if (settings?.notifications_enabled === true) {
-              base44.functions.invoke("pushNotifications", { 
-                action: "sendNotification", 
-                payload: { 
-                  title: "🤖 Auto-Trader Activated", 
-                  body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
-                  data: { type: "auto_order_created", symbol: symU }
-                } 
-              }).catch(() => {});
+              if (settings?.notifications_enabled === true) {
+                base44.functions.invoke("pushNotifications", { 
+                  action: "sendNotification", 
+                  payload: { 
+                    title: "🤖 Auto-Trader Activated", 
+                    body: `Now monitoring ${symU} for sell conditions (TP: +${settings?.gain_margin ?? 10}%, SL: -${settings?.loss_margin ?? 5}%)`,
+                    data: { type: "auto_order_created", symbol: symU }
+                  } 
+                }).catch(() => {});
+              }
+              
+              toast.success(`🤖 Monitoring ${symU}`, { 
+                description: `Created sell order: TP +${settings?.gain_margin ?? 10}%, SL -${settings?.loss_margin ?? 5}%`,
+                duration: 3000
+              });
+            } catch (createError) {
+              console.error('[AutoTrader] Failed to create order for', symU, ':', createError.message);
             }
           }
-
-          // Flush the batch to create orders immediately
-          await flushBatchQueue();
         }
 
         const stockSymbolsForOrders = [...new Set(activeOrders.filter(o => o.asset_type === "stock" || o.asset_type === "stocks").map(o => (o.symbol || "").toUpperCase()))];
