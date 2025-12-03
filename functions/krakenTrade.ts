@@ -409,16 +409,22 @@ function executeKrakenTrade(token, orderParams) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('[krakenTrade] Received:', JSON.stringify(data, null, 2));
+          console.log('[krakenTrade] 📥 Received:', JSON.stringify(data, null, 2));
           
           // Check for successful order - Kraken v2 response format
           if (data.method === 'add_order') {
             clearTimeout(timeout);
             
             if (data.success === true) {
+              console.log('[krakenTrade] ✅ ORDER SUCCESS! Order ID:', data.result?.order_id);
               if (!isResolved) {
                 isResolved = true;
-                ws.close();
+                // CRITICAL: Close WebSocket cleanly before resolving
+                try {
+                  ws.close(1000, 'Order completed');
+                } catch (closeErr) {
+                  console.log('[krakenTrade] Close error (non-fatal):', closeErr);
+                }
                 resolve({
                   success: true,
                   order_id: data.result?.order_id,
@@ -432,10 +438,15 @@ function executeKrakenTrade(token, orderParams) {
               }
             } else {
               // success === false means error
-              console.error('[krakenTrade] Order failed. Error:', data.error, 'Full response:', JSON.stringify(data));
+              console.error('[krakenTrade] ❌ ORDER FAILED! Error:', data.error);
+              console.error('[krakenTrade] Full response:', JSON.stringify(data));
               if (!isResolved) {
                 isResolved = true;
-                ws.close();
+                try {
+                  ws.close(1000, 'Order failed');
+                } catch (closeErr) {
+                  console.log('[krakenTrade] Close error (non-fatal):', closeErr);
+                }
                 reject(new Error(data.error || 'Order failed - check Kraken logs'));
               }
             }
@@ -444,11 +455,15 @@ function executeKrakenTrade(token, orderParams) {
           
           // Check for error response (different format)
           if (data.error && !data.method) {
-            console.error('[krakenTrade] Error response (no method):', data.error);
+            console.error('[krakenTrade] ❌ Error response (no method):', data.error);
             clearTimeout(timeout);
             if (!isResolved) {
               isResolved = true;
-              ws.close();
+              try {
+                ws.close(1000, 'Error received');
+              } catch (closeErr) {
+                console.log('[krakenTrade] Close error (non-fatal):', closeErr);
+              }
               reject(new Error(data.error || 'Order failed'));
             }
           }
