@@ -744,7 +744,86 @@ Deno.serve(async (req) => {
     console.log('[krakenTrade] ✅ Got WebSocket token');
 
     // ============================================
-    // ACTION: PLACE ORDER
+    // ACTION: PLACE BRACKET ORDERS (TP + SL via single connection)
+    // ============================================
+    if (action === 'place_bracket_orders') {
+      const { symbol, quantity, takeProfitPrice, stopLossPrice } = body;
+
+      if (!symbol || !quantity || !takeProfitPrice || !stopLossPrice) {
+        return Response.json({ 
+          error: 'Missing required fields: symbol, quantity, takeProfitPrice, stopLossPrice', 
+          success: false 
+        }, { status: 400 });
+      }
+
+      const parsedQty = parseFloat(quantity);
+      const formattedSymbol = formatKrakenSymbol(symbol);
+
+      console.log('[krakenTrade] === BRACKET ORDERS ===');
+      console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
+      console.log('[krakenTrade] TP:', takeProfitPrice, 'SL:', stopLossPrice);
+
+      // Build TP order params
+      const tpParams = {
+        order_type: 'take-profit',
+        side: 'sell',
+        order_qty: parsedQty,
+        symbol: formattedSymbol,
+        time_in_force: 'gtc',
+        triggers: {
+          reference: 'last',
+          price: parseFloat(takeProfitPrice),
+          price_type: 'static'
+        }
+      };
+
+      // Build SL order params
+      const slParams = {
+        order_type: 'stop-loss',
+        side: 'sell',
+        order_qty: parsedQty,
+        symbol: formattedSymbol,
+        time_in_force: 'gtc',
+        triggers: {
+          reference: 'last',
+          price: parseFloat(stopLossPrice),
+          price_type: 'static'
+        }
+      };
+
+      // Execute both orders over single WebSocket connection
+      const bracketResult = await executeBracketOrders(wsToken, tpParams, slParams, 4000);
+
+      console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
+
+      const tpSuccess = bracketResult.tp?.success === true;
+      const slSuccess = bracketResult.sl?.success === true;
+      const orderIds = [bracketResult.tp?.order_id, bracketResult.sl?.order_id].filter(Boolean);
+
+      // Log result
+      await base44.asServiceRole.entities.KrakenLog.create({
+        event_type: 'create_order',
+        status: (tpSuccess && slSuccess) ? 'success' : 'partial',
+        message: `Bracket orders: TP=${tpSuccess ? 'OK' : 'FAIL'}, SL=${slSuccess ? 'OK' : 'FAIL'}`,
+        details_json: JSON.stringify({ symbol, quantity, takeProfitPrice, stopLossPrice, bracketResult }),
+        created_by: user.email
+      });
+
+      return Response.json({
+        success: tpSuccess || slSuccess,
+        tp_success: tpSuccess,
+        sl_success: slSuccess,
+        tp_order_id: bracketResult.tp?.order_id || null,
+        sl_order_id: bracketResult.sl?.order_id || null,
+        tp_error: bracketResult.tp?.error || null,
+        sl_error: bracketResult.sl?.error || null,
+        order_ids: orderIds.join(','),
+        duration_ms: Date.now() - startTime
+      }, { status: 200 });
+    }
+
+    // ============================================
+    // ACTION: PLACE ORDER (single order)
     // ============================================
     if (action === 'place_order') {
       const { 
