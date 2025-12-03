@@ -277,11 +277,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.2, 'NEAR': 1.0,
                 'BABY': 100.0, 'FLOKI': 5000.0, 'WIF': 1.0, 'BONK': 100000.0, 'PEPE': 500000.0
               };
-              
+
               const minQty = minOrderSizes[symU] || 0.00001;
               if (qty < minQty) {
                 console.warn('[AutoTrader] Order quantity', qty, 'below minimum', minQty, 'for', symU, '- skipping bracket orders');
-                
+
                 // Still create local tracking order but note the issue
                 const createdOrder = await ConditionalOrder.create({
                   ...newOrder,
@@ -290,7 +290,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   error_message: `Quantity ${qty.toFixed(8)} is below Kraken minimum (${minQty}). Using local monitoring only.`
                 });
                 activeOrders.push({ ...newOrder, id: createdOrder?.id });
-                
+
                 toast.warning(`⚠️ ${symU} below min order size`, { 
                   description: `Need ${minQty}+ ${symU} for Kraken orders. Using local monitoring.`,
                   duration: 5000
@@ -298,47 +298,13 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 continue;
               }
 
-              // Place STOP-LOSS order FIRST
-              try {
-                console.log('[AutoTrader] 📤 Sending STOP-LOSS order:', { symbol: symU, qty, stopLossPrice });
-                const slResponse = await Promise.race([
-                  base44.functions.invoke('krakenTrade', { 
-                    action: 'place_order', 
-                    symbol: symU, 
-                    side: 'sell', 
-                    quantity: qty, 
-                    orderType: 'stop-loss',
-                    stopPrice: stopLossPrice,
-                    timeInForce: 'gtc'
-                  }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 15000))
-                ]);
-
-                const slData = slResponse?.data || slResponse;
-                console.log('[AutoTrader] Kraken stop-loss response:', JSON.stringify(slData));
-
-                if (slData?.success) {
-                  stopLossOrderId = slData.order_id || slData.txid;
-                  console.log('[AutoTrader] ✅ Kraken stop-loss placed for', symU, ':', stopLossOrderId, '@ $', stopLossPrice.toFixed(2));
-                } else {
-                  console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
-                }
-              } catch (slError) {
-                console.error('[AutoTrader] Stop-loss error:', slError.message);
-              }
-
-              // CRITICAL: Kraken rate limit - 1 point per order, decay 3.75/sec for Pro
-              // Wait 3 seconds to ensure rate limit counter has decayed enough
-              console.log('[AutoTrader] ⏳ Waiting 3 seconds before placing take-profit order (Kraken rate limit)...');
-              await new Promise(resolve => setTimeout(resolve, 3000));
-
-              // Place TAKE-PROFIT order SECOND with retry logic
+              // CRITICAL: Place TAKE-PROFIT order FIRST (user request - may help with rate limiting)
               let tpRetries = 0;
               const maxTpRetries = 2;
-              
+
               while (!takeProfitOrderId && tpRetries <= maxTpRetries) {
                 try {
-                  console.log('[AutoTrader] 📤 Sending TAKE-PROFIT order (attempt', tpRetries + 1, '):', { symbol: symU, qty, takeProfitPrice });
+                  console.log('[AutoTrader] 📤 Sending TAKE-PROFIT order FIRST (attempt', tpRetries + 1, '):', { symbol: symU, qty, takeProfitPrice });
                   const tpResponse = await Promise.race([
                     base44.functions.invoke('krakenTrade', { 
                       action: 'place_order', 
@@ -349,7 +315,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                       triggerPrice: takeProfitPrice,
                       timeInForce: 'gtc'
                     }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 20000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 25000))
                   ]);
 
                   const tpData = tpResponse?.data || tpResponse;
@@ -363,26 +329,54 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     console.warn('[AutoTrader] Take-profit FAILED (attempt', tpRetries + 1, '):', JSON.stringify(tpData));
                     if (tpData?.error) {
                       console.error('[AutoTrader] TP Error details:', tpData.error);
-                      // If rate limited, wait longer before retry
-                      if (tpData.error.includes('Rate') || tpData.error.includes('rate')) {
-                        console.log('[AutoTrader] Rate limited - waiting 5 seconds before retry...');
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                      }
                     }
                   }
                 } catch (tpError) {
                   console.error('[AutoTrader] Take-profit error (attempt', tpRetries + 1, '):', tpError.message);
                 }
-                
+
                 tpRetries++;
                 if (tpRetries <= maxTpRetries && !takeProfitOrderId) {
                   console.log('[AutoTrader] Retrying take-profit in 3 seconds...');
                   await new Promise(resolve => setTimeout(resolve, 3000));
                 }
               }
-              
+
               if (!takeProfitOrderId) {
                 console.error('[AutoTrader] ❌ All take-profit attempts failed for', symU);
+              }
+
+              // CRITICAL: Wait 3 seconds between orders (Kraken rate limit decay)
+              console.log('[AutoTrader] ⏳ Waiting 3 seconds before placing stop-loss order (Kraken rate limit)...');
+              await new Promise(resolve => setTimeout(resolve, 3000));
+
+              // Place STOP-LOSS order SECOND
+              try {
+                console.log('[AutoTrader] 📤 Sending STOP-LOSS order:', { symbol: symU, qty, stopLossPrice });
+                const slResponse = await Promise.race([
+                  base44.functions.invoke('krakenTrade', { 
+                    action: 'place_order', 
+                    symbol: symU, 
+                    side: 'sell', 
+                    quantity: qty, 
+                    orderType: 'stop-loss',
+                    stopPrice: stopLossPrice,
+                    timeInForce: 'gtc'
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 20000))
+                ]);
+
+                const slData = slResponse?.data || slResponse;
+                console.log('[AutoTrader] Kraken stop-loss response:', JSON.stringify(slData));
+
+                if (slData?.success) {
+                  stopLossOrderId = slData.order_id || slData.txid;
+                  console.log('[AutoTrader] ✅ Kraken stop-loss placed for', symU, ':', stopLossOrderId, '@ $', stopLossPrice.toFixed(2));
+                } else {
+                  console.warn('[AutoTrader] Stop-loss failed:', slData?.error);
+                }
+              } catch (slError) {
+                console.error('[AutoTrader] Stop-loss error:', slError.message);
               }
 
               // Determine success status and create local tracking
