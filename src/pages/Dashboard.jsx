@@ -925,39 +925,58 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   console.error('[AutoTrader] Stop-loss error:', slError.message);
                 }
 
-                // CRITICAL: Add delay between orders to prevent Kraken rate limiting
-                console.log('[AutoTrader] ⏳ Waiting 2 seconds before placing take-profit order...');
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // CRITICAL: Kraken rate limit - wait 3 seconds between orders
+                console.log('[AutoTrader] ⏳ Waiting 3 seconds before placing take-profit order (Kraken rate limit)...');
+                await new Promise(resolve => setTimeout(resolve, 3000));
 
-                // Place TAKE-PROFIT order SECOND
-                try {
-                  console.log('[AutoTrader] 📤 Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2));
-                  const tpResponse = await Promise.race([
-                    base44.functions.invoke('krakenTrade', { 
-                      action: 'place_order', 
-                      symbol: sym, 
-                      side: 'sell', 
-                      quantity: orderQty, 
-                      orderType: 'take-profit',
-                      triggerPrice: takeProfitPrice,
-                      timeInForce: 'gtc'
-                    }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 15000))
-                  ]);
+                // Place TAKE-PROFIT order SECOND with retry logic
+                let tpRetries = 0;
+                const maxTpRetries = 2;
+                
+                while (!takeProfitOrderId && tpRetries <= maxTpRetries) {
+                  try {
+                    console.log('[AutoTrader] 📤 Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2), '(attempt', tpRetries + 1, ')');
+                    const tpResponse = await Promise.race([
+                      base44.functions.invoke('krakenTrade', { 
+                        action: 'place_order', 
+                        symbol: sym, 
+                        side: 'sell', 
+                        quantity: orderQty, 
+                        orderType: 'take-profit',
+                        triggerPrice: takeProfitPrice,
+                        timeInForce: 'gtc'
+                      }),
+                      new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 20000))
+                    ]);
 
-                  const tpData = tpResponse?.data || tpResponse;
-                  if (tpData?.success) {
-                    takeProfitOrderId = tpData.order_id || tpData.txid;
-                    console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
-                  } else {
-                    console.warn('[AutoTrader] Take-profit FAILED:', JSON.stringify(tpData));
-                    if (tpData?.error) {
-                      console.error('[AutoTrader] TP Error details:', tpData.error);
+                    const tpData = tpResponse?.data || tpResponse;
+                    if (tpData?.success) {
+                      takeProfitOrderId = tpData.order_id || tpData.txid;
+                      console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
+                      break;
+                    } else {
+                      console.warn('[AutoTrader] Take-profit FAILED (attempt', tpRetries + 1, '):', JSON.stringify(tpData));
+                      if (tpData?.error) {
+                        console.error('[AutoTrader] TP Error details:', tpData.error);
+                        if (tpData.error.includes('Rate') || tpData.error.includes('rate')) {
+                          console.log('[AutoTrader] Rate limited - waiting 5 seconds before retry...');
+                          await new Promise(resolve => setTimeout(resolve, 5000));
+                        }
+                      }
                     }
+                  } catch (tpError) {
+                    console.error('[AutoTrader] Take-profit error (attempt', tpRetries + 1, '):', tpError.message);
                   }
-                } catch (tpError) {
-                  console.error('[AutoTrader] Take-profit error:', tpError.message);
-                  console.error('[AutoTrader] TP Stack:', tpError.stack);
+                  
+                  tpRetries++;
+                  if (tpRetries <= maxTpRetries && !takeProfitOrderId) {
+                    console.log('[AutoTrader] Retrying take-profit in 3 seconds...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                  }
+                }
+                
+                if (!takeProfitOrderId) {
+                  console.error('[AutoTrader] ❌ All take-profit attempts failed for', sym);
                 }
               }
 
