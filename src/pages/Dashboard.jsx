@@ -298,7 +298,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 continue;
               }
 
-              // Place STOP-LOSS order
+              // Place STOP-LOSS order FIRST
               try {
                 console.log('[AutoTrader] 📤 Sending STOP-LOSS order:', { symbol: symU, qty, stopLossPrice });
                 const slResponse = await Promise.race([
@@ -327,7 +327,12 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 console.error('[AutoTrader] Stop-loss error:', slError.message);
               }
 
-              // Place TAKE-PROFIT order
+              // CRITICAL: Add delay between orders to prevent Kraken rate limiting
+              // Kraken recommends waiting between API calls to avoid EOrder:Rate limit exceeded
+              console.log('[AutoTrader] ⏳ Waiting 2 seconds before placing take-profit order...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+
+              // Place TAKE-PROFIT order SECOND
               try {
                 console.log('[AutoTrader] 📤 Sending TAKE-PROFIT order:', { symbol: symU, qty, takeProfitPrice });
                 const tpResponse = await Promise.race([
@@ -350,10 +355,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   takeProfitOrderId = tpData.order_id || tpData.txid;
                   console.log('[AutoTrader] ✅ Kraken take-profit placed for', symU, ':', takeProfitOrderId, '@ $', takeProfitPrice.toFixed(2));
                 } else {
-                  console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                  console.warn('[AutoTrader] Take-profit FAILED:', JSON.stringify(tpData));
+                  // If take-profit fails, log detailed error for debugging
+                  if (tpData?.error) {
+                    console.error('[AutoTrader] TP Error details:', tpData.error);
+                  }
                 }
               } catch (tpError) {
                 console.error('[AutoTrader] Take-profit error:', tpError.message);
+                console.error('[AutoTrader] TP Stack:', tpError.stack);
               }
 
               // Determine success status and create local tracking
