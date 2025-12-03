@@ -280,21 +280,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
 
               const minQty = minOrderSizes[symU] || 0.00001;
               if (qty < minQty) {
-                console.warn('[AutoTrader] Order quantity', qty, 'below minimum', minQty, 'for', symU, '- skipping bracket orders');
-
-                // Still create local tracking order but note the issue
-                const createdOrder = await ConditionalOrder.create({
-                  ...newOrder,
-                  kraken_order_id: null,
-                  closure_reason: null,
-                  error_message: `Quantity ${qty.toFixed(8)} is below Kraken minimum (${minQty}). Using local monitoring only.`
-                });
-                activeOrders.push({ ...newOrder, id: createdOrder?.id });
-
-                toast.warning(`⚠️ ${symU} below min order size`, { 
-                  description: `Need ${minQty}+ ${symU} for Kraken orders. Using local monitoring.`,
-                  duration: 5000
-                });
+                console.log('[AutoTrader] Skipping', symU, '- quantity', qty, 'below minimum', minQty);
+                // Skip entirely - don't create orders for positions too small
                 continue;
               }
 
@@ -410,21 +397,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     } 
                   }).catch(() => {});
                 }
-              } else {
-                // Both failed - create local tracking as fallback
-                const createdOrder = await ConditionalOrder.create({
-                  ...newOrder,
-                  closure_reason: `Kraken bracket orders failed. Using app monitoring as backup.`,
-                  error_message: 'Both stop-loss and take-profit orders failed on Kraken'
-                });
-                activeOrders.push({ ...newOrder, id: createdOrder?.id });
 
-                toast.warning(`⚠️ Monitoring ${symU} (local only)`, { 
-                  description: `Kraken orders failed. Using app monitoring as backup.`,
-                  duration: 5000
-                });
-              }
-            } else {
+                // CRITICAL: Wait 5 seconds before processing next holding to prevent rate limiting
+                console.log('[AutoTrader] ⏳ Waiting 5 seconds before next holding (rate limit protection)...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                } else {
+                // Both failed - log but don't create local fallback
+                console.error('[AutoTrader] Both bracket orders failed for', symU);
+                }
+                } else {
               // SIM MODE: Create local order only
               try {
                 const createdOrder = await ConditionalOrder.create(newOrder);
@@ -886,11 +867,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               const skipBracketOrders = orderQty < minQtyForBracket;
 
               if (skipBracketOrders) {
-                console.warn('[AutoTrader] Order quantity', orderQty, 'below minimum', minQtyForBracket, 'for', sym, '- skipping bracket orders');
-                toast.warning(`⚠️ ${sym} below min for bracket orders`, { 
-                  description: `Need ${minQtyForBracket}+ for SL/TP orders. Position will be monitored locally.`,
-                  duration: 4000
-                });
+                console.log('[AutoTrader] Skipping bracket orders for', sym, '- quantity', orderQty, 'below minimum', minQtyForBracket);
+                // Skip entirely - don't place orders for positions too small
               } else {
                 // CRITICAL: Place TAKE-PROFIT order FIRST
                 let tpRetries = 0;
