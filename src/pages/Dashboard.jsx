@@ -952,11 +952,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               const hasTP = !!takeProfitOrderId;
               const krakenOrderIds = [stopLossOrderId, takeProfitOrderId].filter(Boolean).join(',');
 
-              if (hasSL || hasTP) {
+              if (hasTP || hasSL) {
                 toast.success("🟢 Bracket Orders Set", { 
-                  description: `${hasSL ? `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%)` : ''}${hasSL && hasTP ? ' • ' : ''}${hasTP ? `TP @ $${takeProfitPrice.toFixed(2)} (+${gainMargin}%)` : ''}`,
+                  description: `${hasTP ? `TP @ $${takeProfitPrice.toFixed(2)} (+${gainMargin}%)` : ''}${hasTP && hasSL ? ' • ' : ''}${hasSL ? `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%)` : ''}`,
                   duration: 3000 
                 });
+                
+                // CRITICAL: Wait 5 seconds before next operation to prevent rate limiting
+                console.log('[AutoTrader] ⏳ Waiting 5 seconds after bracket orders (rate limit protection)...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
               }
 
               // Create local conditional order for trailing stop monitoring (backup)
