@@ -89,8 +89,8 @@ function buildOrderParams(orderConfig) {
   } = orderConfig;
 
   // FIXED: Generate valid 32-bit userref (Kraken requirement)
-  // Use last 9 digits of timestamp (always < 2,147,483,647)
-  const userref = parseInt(Date.now().toString().slice(-9));
+  // Use random number + last 6 digits of timestamp to ensure uniqueness
+  const userref = parseInt((Math.floor(Math.random() * 1000) * 1000000 + parseInt(Date.now().toString().slice(-6))).toString().slice(-9));
   
   const formattedSymbol = formatKrakenSymbol(symbol);
   const parsedQty = parseFloat(quantity);
