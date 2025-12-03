@@ -639,6 +639,109 @@ Deno.serve(async (req) => {
     console.log('[krakenTrade] ✅ Got WebSocket token');
 
     // ============================================
+    // ACTION: PLACE BRACKET ORDERS (TP + SL as separate calls)
+    // ============================================
+    if (action === 'place_bracket_orders') {
+      const { symbol, quantity, takeProfitPrice, stopLossPrice } = body;
+
+      if (!symbol || !quantity || !takeProfitPrice || !stopLossPrice) {
+        return Response.json({ 
+          error: 'Missing required fields for bracket orders', 
+          success: false 
+        }, { status: 400 });
+      }
+
+      console.log('[krakenTrade] Placing BRACKET orders separately for', symbol);
+
+      let tpOrderId = null;
+      let slOrderId = null;
+      let tpError = null;
+      let slError = null;
+
+      // STEP 1: Place Take-Profit order with fresh token
+      try {
+        console.log('[krakenTrade] 📤 Placing TAKE-PROFIT order...');
+        const tpToken1 = await Promise.race([
+          base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('TP token timeout')), 5000))
+        ]);
+        const tpWsToken = tpToken1?.data?.token || tpToken1?.token;
+        
+        if (!tpWsToken) throw new Error('Failed to get TP WebSocket token');
+
+        const tpParams = buildOrderParams({
+          orderType: 'take-profit',
+          side: 'sell',
+          quantity,
+          symbol,
+          triggerPrice: takeProfitPrice,
+          timeInForce: 'gtc'
+        });
+
+        const tpResult = await executeKrakenTrade(tpWsToken, tpParams);
+        tpOrderId = tpResult.order_id;
+        console.log('[krakenTrade] ✅ Take-profit placed:', tpOrderId);
+      } catch (err) {
+        console.error('[krakenTrade] ❌ Take-profit failed:', err.message);
+        tpError = err.message;
+      }
+
+      // STEP 2: Wait 5 seconds for rate limit
+      console.log('[krakenTrade] ⏳ Waiting 5 seconds between orders...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // STEP 3: Get a FRESH token for Stop-Loss
+      try {
+        console.log('[krakenTrade] 📤 Placing STOP-LOSS order with FRESH token...');
+        const slToken2 = await Promise.race([
+          base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SL token timeout')), 5000))
+        ]);
+        const slWsToken = slToken2?.data?.token || slToken2?.token;
+        
+        if (!slWsToken) throw new Error('Failed to get SL WebSocket token');
+
+        const slParams = buildOrderParams({
+          orderType: 'stop-loss',
+          side: 'sell',
+          quantity,
+          symbol,
+          stopPrice: stopLossPrice,
+          timeInForce: 'gtc'
+        });
+
+        const slResult = await executeKrakenTrade(slWsToken, slParams);
+        slOrderId = slResult.order_id;
+        console.log('[krakenTrade] ✅ Stop-loss placed:', slOrderId);
+      } catch (err) {
+        console.error('[krakenTrade] ❌ Stop-loss failed:', err.message);
+        slError = err.message;
+      }
+
+      // Log results
+      await base44.asServiceRole.entities.KrakenLog.create({
+        event_type: 'bracket_orders',
+        status: (tpOrderId && slOrderId) ? 'success' : 'partial',
+        message: `Bracket orders for ${symbol}: TP=${tpOrderId || 'failed'}, SL=${slOrderId || 'failed'}`,
+        details_json: JSON.stringify({ 
+          symbol, quantity, takeProfitPrice, stopLossPrice,
+          tp_order_id: tpOrderId, sl_order_id: slOrderId,
+          tp_error: tpError, sl_error: slError
+        }),
+        created_by: user.email
+      });
+
+      return Response.json({
+        success: !!(tpOrderId || slOrderId),
+        tp_order_id: tpOrderId,
+        sl_order_id: slOrderId,
+        tp_error: tpError,
+        sl_error: slError,
+        duration_ms: Date.now() - startTime
+      }, { status: 200 });
+    }
+
+    // ============================================
     // ACTION: PLACE ORDER
     // ============================================
     if (action === 'place_order') {
