@@ -179,11 +179,16 @@ function buildOrderParams(orderConfig) {
   }
 
   // CRITICAL: For take-profit orders
+  // Kraken WebSocket v2 uses 'take-profit' order type with triggers object
+  // The trigger fires when market price RISES to or above the trigger price
   if (orderType === 'take-profit') {
     const tpPrice = triggerPrice || stopPrice;
     if (!tpPrice || parseFloat(tpPrice) <= 0) {
       throw new Error('Take-profit orders require a valid triggerPrice');
     }
+    
+    console.log('[buildOrderParams] Building take-profit order with trigger price:', tpPrice);
+    
     const params = {
       order_type: 'take-profit',
       side: side.toLowerCase(),
@@ -192,11 +197,12 @@ function buildOrderParams(orderConfig) {
       time_in_force: timeInForce,
       order_userref: userref,
       triggers: {
-        reference: 'last',
+        reference: 'last',  // Use last traded price as reference
         price: parseFloat(tpPrice),
-        price_type: 'static'
+        price_type: 'static'  // Static price target (not trailing)
       }
     };
+    
     console.log('[buildOrderParams] Take-profit order params:', JSON.stringify(params));
     return params;
   }
