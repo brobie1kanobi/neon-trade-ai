@@ -353,9 +353,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   }).catch(() => {});
                 }
 
-                // CRITICAL: Wait 5 seconds before processing next holding to prevent rate limiting
-                console.log('[AutoTrader] ⏳ Waiting 5 seconds before next holding (rate limit protection)...');
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // CRITICAL: Wait 2 seconds before processing next holding
+                console.log('[AutoTrader] ⏳ Waiting 2 seconds before next holding...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 } else {
                 // Both failed - log but don't create local fallback
                 console.error('[AutoTrader] Both bracket orders failed for', symU);
