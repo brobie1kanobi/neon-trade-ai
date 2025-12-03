@@ -478,8 +478,9 @@ function executeKrakenTrade(token, orderParams) {
       };
       
       ws.onerror = (error) => {
-        console.error('[krakenTrade] WebSocket error:', error?.message || error);
-        console.error('[krakenTrade] Order params were:', JSON.stringify(orderParams));
+        console.error('[krakenTrade] ❌ WebSocket ERROR:', error?.message || error);
+        console.error('[krakenTrade] Order type was:', orderParams.order_type);
+        console.error('[krakenTrade] Symbol was:', orderParams.symbol);
         clearTimeout(timeout);
         if (!isResolved) {
           isResolved = true;
@@ -488,12 +489,17 @@ function executeKrakenTrade(token, orderParams) {
       };
       
       ws.onclose = (event) => {
-        console.log('[krakenTrade] WebSocket closed. Code:', event?.code, 'Reason:', event?.reason);
-        console.log('[krakenTrade] Order params were:', JSON.stringify(orderParams));
-        clearTimeout(timeout);
+        // Only log as error if we didn't resolve successfully
         if (!isResolved) {
+          console.error('[krakenTrade] ❌ WebSocket CLOSED unexpectedly!');
+          console.error('[krakenTrade] Code:', event?.code, 'Reason:', event?.reason);
+          console.error('[krakenTrade] Order type was:', orderParams.order_type);
+          console.error('[krakenTrade] Symbol was:', orderParams.symbol);
+          clearTimeout(timeout);
           isResolved = true;
           reject(new Error(`WebSocket closed unexpectedly (code: ${event?.code}, reason: ${event?.reason || 'none'})`));
+        } else {
+          console.log('[krakenTrade] WebSocket closed normally after order completion');
         }
       };
       
