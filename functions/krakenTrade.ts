@@ -336,28 +336,31 @@ function buildOrderParams(orderConfig) {
 
 /**
  * Execute trade via Kraken WebSocket v2
+ * CRITICAL: Each order costs 1 point, decay is 3.75/sec for Pro accounts
+ * Max counter is 180, so we can place ~3-4 orders per second sustained
  */
 function executeKrakenTrade(token, orderParams) {
   return new Promise((resolve, reject) => {
     let ws;
     let isResolved = false;
     
-    // Timeout handler
+    // Timeout handler - increased to 45 seconds for reliability
     const timeout = setTimeout(() => {
       if (!isResolved) {
         isResolved = true;
+        console.error('[krakenTrade] Timeout reached. Order params were:', JSON.stringify(orderParams));
         if (ws) {
           try { ws.close(); } catch (e) { console.log(e); }
         }
-        reject(new Error('Trade execution timeout'));
+        reject(new Error('Trade execution timeout after 45 seconds'));
       }
-    }, WS_TIMEOUT);
+    }, 45000);
     
     try {
       ws = new WebSocket(WS_URL);
       
       ws.onopen = () => {
-        console.log('[krakenTrade] WebSocket connected');
+        console.log('[krakenTrade] WebSocket connected for order type:', orderParams.order_type);
         
         // Send add_order message
         const message = {
