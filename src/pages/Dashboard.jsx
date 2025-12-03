@@ -285,69 +285,40 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 continue;
               }
 
-              // CRITICAL: Place each order SEPARATELY with delay between them
-              // Kraken rate limit: 1 point per order, 3.75/sec decay for Pro
+              // CRITICAL: Use single WebSocket connection for both bracket orders
+              console.log('[AutoTrader] 📤 Sending BRACKET orders for', symU);
+              console.log('[AutoTrader] TP:', takeProfitPrice.toFixed(2), 'SL:', stopLossPrice.toFixed(2));
 
-              // STEP 1: Place TAKE-PROFIT order first
-              console.log('[AutoTrader] 📤 Sending TAKE-PROFIT order for', symU, '@ $', takeProfitPrice.toFixed(2));
               try {
-                const tpResponse = await Promise.race([
+                const bracketResponse = await Promise.race([
                   base44.functions.invoke('krakenTrade', { 
-                    action: 'place_order', 
+                    action: 'place_bracket_orders', 
                     symbol: symU, 
-                    side: 'sell', 
                     quantity: qty, 
-                    orderType: 'take-profit',
-                    triggerPrice: takeProfitPrice,
-                    timeInForce: 'gtc'
+                    takeProfitPrice: takeProfitPrice,
+                    stopLossPrice: stopLossPrice
                   }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Take-profit timeout')), 30000))
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Bracket order timeout')), 60000))
                 ]);
 
-                const tpData = tpResponse?.data || tpResponse;
-                console.log('[AutoTrader] TP Response:', JSON.stringify(tpData));
+                const bracketData = bracketResponse?.data || bracketResponse;
+                console.log('[AutoTrader] Bracket Response:', JSON.stringify(bracketData));
 
-                if (tpData?.success) {
-                  takeProfitOrderId = tpData.order_id || tpData.txid;
+                if (bracketData?.tp_success) {
+                  takeProfitOrderId = bracketData.tp_order_id;
                   console.log('[AutoTrader] ✅ Take-profit placed:', takeProfitOrderId);
                 } else {
-                  console.error('[AutoTrader] TP Failed:', tpData?.error);
+                  console.error('[AutoTrader] TP Failed:', bracketData?.tp_error);
                 }
-              } catch (tpError) {
-                console.error('[AutoTrader] TP Error:', tpError.message);
-              }
 
-              // STEP 2: Wait 4 seconds for rate limit decay (1 point / 3.75 per sec = ~0.27 sec, but extra buffer)
-              console.log('[AutoTrader] ⏳ Waiting 4 seconds before stop-loss...');
-              await new Promise(resolve => setTimeout(resolve, 4000));
-
-              // STEP 3: Place STOP-LOSS order second
-              console.log('[AutoTrader] 📤 Sending STOP-LOSS order for', symU, '@ $', stopLossPrice.toFixed(2));
-              try {
-                const slResponse = await Promise.race([
-                  base44.functions.invoke('krakenTrade', { 
-                    action: 'place_order', 
-                    symbol: symU, 
-                    side: 'sell', 
-                    quantity: qty, 
-                    orderType: 'stop-loss',
-                    stopPrice: stopLossPrice,
-                    timeInForce: 'gtc'
-                  }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Stop-loss timeout')), 30000))
-                ]);
-
-                const slData = slResponse?.data || slResponse;
-                console.log('[AutoTrader] SL Response:', JSON.stringify(slData));
-
-                if (slData?.success) {
-                  stopLossOrderId = slData.order_id || slData.txid;
+                if (bracketData?.sl_success) {
+                  stopLossOrderId = bracketData.sl_order_id;
                   console.log('[AutoTrader] ✅ Stop-loss placed:', stopLossOrderId);
                 } else {
-                  console.error('[AutoTrader] SL Failed:', slData?.error);
+                  console.error('[AutoTrader] SL Failed:', bracketData?.sl_error);
                 }
-              } catch (slError) {
-                console.error('[AutoTrader] SL Error:', slError.message);
+              } catch (bracketError) {
+                console.error('[AutoTrader] Bracket Error:', bracketError.message);
               }
 
               // Determine success status and create local tracking
