@@ -399,10 +399,11 @@ function executeKrakenTrade(token, orderParams) {
               }
             } else {
               // success === false means error
+              console.error('[krakenTrade] Order failed. Error:', data.error, 'Full response:', JSON.stringify(data));
               if (!isResolved) {
                 isResolved = true;
                 ws.close();
-                reject(new Error(data.error || 'Order failed'));
+                reject(new Error(data.error || 'Order failed - check Kraken logs'));
               }
             }
             return;
@@ -410,12 +411,18 @@ function executeKrakenTrade(token, orderParams) {
           
           // Check for error response (different format)
           if (data.error && !data.method) {
+            console.error('[krakenTrade] Error response (no method):', data.error);
             clearTimeout(timeout);
             if (!isResolved) {
               isResolved = true;
               ws.close();
               reject(new Error(data.error || 'Order failed'));
             }
+          }
+          
+          // Log any other messages for debugging
+          if (data.channel || data.type) {
+            console.log('[krakenTrade] Other message:', data.channel || data.type);
           }
         } catch (parseError) {
           console.error('[krakenTrade] Parse error:', parseError);
