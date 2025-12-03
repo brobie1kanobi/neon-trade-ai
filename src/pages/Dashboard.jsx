@@ -784,9 +784,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   duration: 3000 
                 });
                 
-                // CRITICAL: Wait 5 seconds before next operation to prevent rate limiting
-                console.log('[AutoTrader] ⏳ Waiting 5 seconds after bracket orders (rate limit protection)...');
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // CRITICAL: Wait 2 seconds before next operation
+                console.log('[AutoTrader] ⏳ Waiting 2 seconds after bracket orders...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
               }
 
               // Create local conditional order for trailing stop monitoring (backup)
