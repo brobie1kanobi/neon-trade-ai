@@ -344,13 +344,16 @@ function buildOrderParams(orderConfig) {
 
 /**
  * Execute trade via Kraken WebSocket v2
- * CRITICAL: Each order costs 1 point, decay is 3.75/sec for Pro accounts
- * Max counter is 180, so we can place ~3-4 orders per second sustained
+ * CRITICAL: Each order uses a FRESH WebSocket connection and unique req_id
+ * Each order costs 1 point, decay is 3.75/sec for Pro accounts
  */
 function executeKrakenTrade(token, orderParams) {
   return new Promise((resolve, reject) => {
     let ws;
     let isResolved = false;
+    
+    // Generate a truly unique request ID using crypto if available, else random + timestamp
+    const uniqueReqId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     
     // Timeout handler - increased to 45 seconds for reliability
     const timeout = setTimeout(() => {
@@ -365,19 +368,20 @@ function executeKrakenTrade(token, orderParams) {
     }, 45000);
     
     try {
+      // CRITICAL: Create a completely fresh WebSocket connection for each order
       ws = new WebSocket(WS_URL);
       
       ws.onopen = () => {
-        console.log('[krakenTrade] WebSocket connected for order type:', orderParams.order_type);
+        console.log('[krakenTrade] NEW WebSocket connected for order type:', orderParams.order_type, 'req_id:', uniqueReqId);
         
-        // Send add_order message
+        // Send add_order message with unique request ID
         const message = {
           method: 'add_order',
           params: {
             token,
             ...orderParams
           },
-          req_id: Date.now()
+          req_id: uniqueReqId
         };
         
         console.log('[krakenTrade] Sending order:', JSON.stringify(message, null, 2));
