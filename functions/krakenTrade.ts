@@ -352,8 +352,19 @@ function executeKrakenTrade(token, orderParams) {
     let ws;
     let isResolved = false;
     
-    // Generate a truly unique request ID using crypto if available, else random + timestamp
-    const uniqueReqId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    // Generate a truly unique request ID - use crypto random for better uniqueness
+    const randomPart = Math.floor(Math.random() * 1000000);
+    const timePart = Date.now() % 1000000000; // Last 9 digits of timestamp
+    const uniqueReqId = parseInt(`${randomPart}${timePart}`.slice(0, 15));
+    
+    // Also generate a unique order_userref for this specific order
+    const uniqueUserRef = parseInt(`${Math.floor(Math.random() * 100000)}${Date.now() % 10000}`.slice(0, 9));
+    
+    console.log('[krakenTrade] === NEW ORDER EXECUTION ===');
+    console.log('[krakenTrade] Order type:', orderParams.order_type);
+    console.log('[krakenTrade] Symbol:', orderParams.symbol);
+    console.log('[krakenTrade] Unique req_id:', uniqueReqId);
+    console.log('[krakenTrade] Unique userref:', uniqueUserRef);
     
     // Timeout handler - increased to 45 seconds for reliability
     const timeout = setTimeout(() => {
@@ -369,22 +380,29 @@ function executeKrakenTrade(token, orderParams) {
     
     try {
       // CRITICAL: Create a completely fresh WebSocket connection for each order
+      console.log('[krakenTrade] Opening NEW WebSocket connection to:', WS_URL);
       ws = new WebSocket(WS_URL);
       
       ws.onopen = () => {
-        console.log('[krakenTrade] NEW WebSocket connected for order type:', orderParams.order_type, 'req_id:', uniqueReqId);
+        console.log('[krakenTrade] ✅ WebSocket CONNECTED for', orderParams.order_type, '- sending order now');
+        
+        // CRITICAL: Override the order_userref with our unique one
+        const paramsWithUniqueRef = {
+          ...orderParams,
+          order_userref: uniqueUserRef
+        };
         
         // Send add_order message with unique request ID
         const message = {
           method: 'add_order',
           params: {
             token,
-            ...orderParams
+            ...paramsWithUniqueRef
           },
           req_id: uniqueReqId
         };
         
-        console.log('[krakenTrade] Sending order:', JSON.stringify(message, null, 2));
+        console.log('[krakenTrade] 📤 Sending order:', JSON.stringify(message, null, 2));
         ws.send(JSON.stringify(message));
       };
       
