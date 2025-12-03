@@ -317,9 +317,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 console.error('[AutoTrader] TP Error:', tpError.message);
               }
 
-              // STEP 2: Wait 3 seconds for rate limit decay (1 point / 3.75 per sec = ~0.27 sec, but buffer)
-              console.log('[AutoTrader] ⏳ Waiting 3 seconds before stop-loss...');
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              // STEP 2: Wait 4 seconds for rate limit decay (1 point / 3.75 per sec = ~0.27 sec, but extra buffer)
+              console.log('[AutoTrader] ⏳ Waiting 4 seconds before stop-loss...');
+              await new Promise(resolve => setTimeout(resolve, 4000));
 
               // STEP 3: Place STOP-LOSS order second
               console.log('[AutoTrader] 📤 Sending STOP-LOSS order for', symU, '@ $', stopLossPrice.toFixed(2));
@@ -885,9 +885,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   console.error('[AutoTrader] TP Error:', tpError.message);
                 }
 
-                // STEP 2: Wait 3 seconds for rate limit decay
-                console.log('[AutoTrader] ⏳ Waiting 3 seconds before stop-loss...');
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                // STEP 2: Wait 4 seconds for rate limit decay
+                console.log('[AutoTrader] ⏳ Waiting 4 seconds before stop-loss...');
+                await new Promise(resolve => setTimeout(resolve, 4000));
 
                 // STEP 3: Place STOP-LOSS order second
                 console.log('[AutoTrader] 📤 Sending STOP-LOSS order for', sym, '@ $', stopLossPrice.toFixed(2));
