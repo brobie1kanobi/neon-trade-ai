@@ -879,7 +879,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   duration: 4000
                 });
               } else {
-                // Place STOP-LOSS order
+                // Place STOP-LOSS order FIRST
                 try {
                   console.log('[AutoTrader] 📤 Placing Kraken stop-loss for', sym, '@ $', stopLossPrice.toFixed(2));
                   const slResponse = await Promise.race([
@@ -906,7 +906,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   console.error('[AutoTrader] Stop-loss error:', slError.message);
                 }
 
-                // Place TAKE-PROFIT order
+                // CRITICAL: Add delay between orders to prevent Kraken rate limiting
+                console.log('[AutoTrader] ⏳ Waiting 2 seconds before placing take-profit order...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Place TAKE-PROFIT order SECOND
                 try {
                   console.log('[AutoTrader] 📤 Placing Kraken take-profit for', sym, '@ $', takeProfitPrice.toFixed(2));
                   const tpResponse = await Promise.race([
@@ -927,10 +931,14 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     takeProfitOrderId = tpData.order_id || tpData.txid;
                     console.log('[AutoTrader] ✅ Kraken take-profit placed:', takeProfitOrderId);
                   } else {
-                    console.warn('[AutoTrader] Take-profit failed:', tpData?.error);
+                    console.warn('[AutoTrader] Take-profit FAILED:', JSON.stringify(tpData));
+                    if (tpData?.error) {
+                      console.error('[AutoTrader] TP Error details:', tpData.error);
+                    }
                   }
                 } catch (tpError) {
                   console.error('[AutoTrader] Take-profit error:', tpError.message);
+                  console.error('[AutoTrader] TP Stack:', tpError.stack);
                 }
               }
 
