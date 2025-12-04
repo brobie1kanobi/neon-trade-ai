@@ -76,7 +76,7 @@ export default function AssetSearchInput({
         // Fetch crypto list from CoinGecko via our API
         const response = await base44.functions.invoke('getMarketData', {
           action: 'searchAssets',
-          payload: { query: upperQuery, type: 'crypto' }
+          payload: { term: upperQuery, assetType: 'crypto' }
         });
         
         const results = response?.data || [];
@@ -111,7 +111,7 @@ export default function AssetSearchInput({
         // Stocks - use our stock API
         const response = await base44.functions.invoke('getMarketData', {
           action: 'searchAssets',
-          payload: { query: upperQuery, type: 'stock' }
+          payload: { term: upperQuery, assetType: 'stocks' }
         });
         
         const results = response?.data || [];
