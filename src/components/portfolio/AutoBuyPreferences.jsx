@@ -220,7 +220,10 @@ export default function AutoBuyPreferences() {
               <SelectItem value="stock">Stock</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="number" min={10} value={percentage} onChange={(e) => setPercentage(e.target.value)} placeholder="% of cash (min 10%)" />
+          <div className="relative">
+            <Input type="number" min={10} value={percentage} onChange={(e) => setPercentage(e.target.value)} className="pt-5" />
+            <span className="absolute top-1 left-3 text-xs" style={{ color: 'var(--text-secondary)' }}>% of cash (min 10%)</span>
+          </div>
           <Button onClick={addPref} className="gap-2" disabled={!symbol || loading}>
             <Plus className="w-4 h-4" /> Add
           </Button>
