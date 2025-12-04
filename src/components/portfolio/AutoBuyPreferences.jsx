@@ -5,8 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Plus, Save, RefreshCw, X } from "lucide-react";
-import AssetSearchInput from "@/components/common/AssetSearchInput";
+import { Plus, Save, RefreshCw } from "lucide-react";
 
 // GLOBAL CACHE to prevent duplicate API calls
 if (typeof window !== 'undefined') {
@@ -179,19 +178,6 @@ export default function AutoBuyPreferences() {
     }
   };
 
-  const deletePref = async (pref) => {
-    try {
-      await AutoBuyPreference.delete(pref.id);
-      setPrefs((prev) => prev.filter(p => p.id !== pref.id));
-      
-      // Invalidate cache
-      window.__autoBuyCache.data = null;
-      window.__autoBuyCache.timestamp = 0;
-    } catch (error) {
-      console.error('[AutoBuyPreferences] Delete error:', error);
-    }
-  };
-
   return (
     <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
       <CardHeader>
@@ -207,12 +193,7 @@ export default function AutoBuyPreferences() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <AssetSearchInput 
-            value={symbol} 
-            onChange={setSymbol} 
-            assetType={assetType}
-            placeholder={assetType === "crypto" ? "Search crypto (e.g., BTC)" : "Search stock (e.g., AAPL)"}
-          />
+          <Input placeholder="Symbol (e.g., BTC, AAPL)" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
           <Select value={assetType} onValueChange={setAssetType}>
             <SelectTrigger><SelectValue placeholder="Asset Type" /></SelectTrigger>
             <SelectContent>
@@ -220,10 +201,7 @@ export default function AutoBuyPreferences() {
               <SelectItem value="stock">Stock</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex items-center gap-2">
-            <Input type="number" min={10} value={percentage} onChange={(e) => setPercentage(e.target.value)} className="w-20" />
-            <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>% of cash (min 10%)</span>
-          </div>
+          <Input type="number" min={10} value={percentage} onChange={(e) => setPercentage(e.target.value)} placeholder="% of cash (min 10%)" />
           <Button onClick={addPref} className="gap-2" disabled={!symbol || loading}>
             <Plus className="w-4 h-4" /> Add
           </Button>
@@ -268,14 +246,6 @@ export default function AutoBuyPreferences() {
                       onCheckedChange={() => toggleEnabled(p)}
                     />
                   </div>
-
-                  <button
-                    onClick={() => deletePref(p)}
-                    className="p-1 rounded hover:bg-red-500/20 transition-colors"
-                    title="Remove auto-buy"
-                  >
-                    <X className="w-4 h-4 text-red-400 hover:text-red-300" />
-                  </button>
                 </div>
               </div>
             ))
