@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Plus, Save, RefreshCw } from "lucide-react";
+import AssetSearchInput from "@/components/common/AssetSearchInput";
 
 // GLOBAL CACHE to prevent duplicate API calls
 if (typeof window !== 'undefined') {
@@ -193,7 +194,12 @@ export default function AutoBuyPreferences() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          <Input placeholder="Symbol (e.g., BTC, AAPL)" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
+          <AssetSearchInput 
+            value={symbol} 
+            onChange={setSymbol} 
+            assetType={assetType}
+            placeholder={assetType === "crypto" ? "Search crypto (e.g., BTC)" : "Search stock (e.g., AAPL)"}
+          />
           <Select value={assetType} onValueChange={setAssetType}>
             <SelectTrigger><SelectValue placeholder="Asset Type" /></SelectTrigger>
             <SelectContent>
