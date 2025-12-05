@@ -258,11 +258,30 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             if (!isSimMode) {
               console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken bracket orders for existing holding:', symU);
 
+              // CRITICAL: Fetch current price to check if we're in profit
+              let currentPrice = 0;
+              try {
+                const priceRes = await base44.functions.invoke('getMarketData', {
+                  action: 'getWatchlistData',
+                  payload: { cryptoSymbols: [symU], stockSymbols: [] }
+                });
+                const priceData = Array.isArray(priceRes?.data) ? priceRes.data : [];
+                const found = priceData.find(p => (p.symbol || "").toUpperCase() === symU);
+                currentPrice = found?.price || 0;
+                console.log('[AutoTrader] Current price for', symU, ':', currentPrice, '| Cost:', purchasePrice);
+              } catch (priceError) {
+                console.error('[AutoTrader] Price fetch error for', symU, ':', priceError.message);
+              }
+
               const lossMargin = parseFloat(settings?.loss_margin ?? 5);
               const gainMargin = parseFloat(settings?.gain_margin ?? 10);
               const stopLossPrice = parseFloat((purchasePrice * (1 - lossMargin / 100)).toFixed(2));
               const takeProfitPrice = parseFloat((purchasePrice * (1 + gainMargin / 100)).toFixed(2));
               const qty = parseFloat(holding.quantity.toFixed(8));
+
+              // CRITICAL: Only place TP if current price >= cost (at or above break-even)
+              const isAtBreakEven = currentPrice >= purchasePrice;
+              console.log('[AutoTrader] Break-even check:', isAtBreakEven ? 'YES ✓' : 'NO ✗', '- Current:', currentPrice, 'Cost:', purchasePrice);
 
               let stopLossOrderId = null;
               let takeProfitOrderId = null;
