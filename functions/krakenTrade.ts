@@ -343,143 +343,41 @@ function buildOrderParams(orderConfig) {
 }
 
 /**
- * Execute BRACKET ORDERS via single Kraken WebSocket v2 connection
- * Places TP and SL orders over one persistent connection with delays
+ * Execute BRACKET ORDERS sequentially via separate WebSocket connections
+ * Places TP and SL orders with dedicated connections to ensure both complete
  */
 function executeBracketOrders(token, tpParams, slParams, delayMs = 4000) {
-  return new Promise((resolve, reject) => {
-    let ws;
-    let isResolved = false;
+  return new Promise(async (resolve) => {
     const results = { tp: null, sl: null };
-    let pendingOrders = 2;
-    
-    // Generate unique IDs for each order
-    const tpReqId = Date.now() * 1000 + Math.floor(Math.random() * 500);
-    const slReqId = Date.now() * 1000 + 500 + Math.floor(Math.random() * 500);
-    const tpUserRef = parseInt(`${Math.floor(Math.random() * 50000)}${Date.now() % 10000}`.slice(0, 9));
-    const slUserRef = parseInt(`${50000 + Math.floor(Math.random() * 50000)}${Date.now() % 10000}`.slice(0, 9));
-    
+
     console.log('[krakenTrade] === BRACKET ORDER EXECUTION ===');
     console.log('[krakenTrade] Symbol:', tpParams.symbol);
-    console.log('[krakenTrade] TP req_id:', tpReqId, 'userref:', tpUserRef);
-    console.log('[krakenTrade] SL req_id:', slReqId, 'userref:', slUserRef);
-    
-    const timeout = setTimeout(() => {
-      if (!isResolved) {
-        isResolved = true;
-        console.error('[krakenTrade] Bracket order timeout');
-        if (ws) { try { ws.close(); } catch (e) {} }
-        // Return partial results if any
-        resolve(results);
-      }
-    }, 60000); // 60 second timeout for both orders
-    
-    const checkComplete = () => {
-      pendingOrders--;
-      if (pendingOrders <= 0 && !isResolved) {
-        isResolved = true;
-        clearTimeout(timeout);
-        try { ws.close(1000, 'Bracket orders complete'); } catch (e) {}
-        resolve(results);
-      }
-    };
-    
+    console.log('[krakenTrade] Delaying SL by', delayMs, 'ms');
+
+    // Execute TP order first
     try {
-      console.log('[krakenTrade] Opening WebSocket for bracket orders...');
-      ws = new WebSocket(WS_URL);
-      
-      ws.onopen = () => {
-        console.log('[krakenTrade] ✅ WebSocket CONNECTED for bracket orders');
-        
-        // STEP 1: Send TP order immediately
-        const tpMessage = {
-          method: 'add_order',
-          params: { token, ...tpParams, order_userref: tpUserRef },
-          req_id: tpReqId
-        };
-        console.log('[krakenTrade] 📤 Sending TP order:', JSON.stringify(tpMessage));
-        ws.send(JSON.stringify(tpMessage));
-        
-        // STEP 2: Send SL order after delay
-        setTimeout(() => {
-          if (isResolved || ws.readyState !== WebSocket.OPEN) {
-            console.log('[krakenTrade] Skipping SL - connection closed or resolved');
-            checkComplete();
-            return;
-          }
-          
-          const slMessage = {
-            method: 'add_order',
-            params: { token, ...slParams, order_userref: slUserRef },
-            req_id: slReqId
-          };
-          console.log('[krakenTrade] 📤 Sending SL order:', JSON.stringify(slMessage));
-          ws.send(JSON.stringify(slMessage));
-        }, delayMs);
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('[krakenTrade] 📥 Received:', JSON.stringify(data));
-          
-          if (data.method === 'add_order') {
-            const reqId = data.req_id;
-            const isTP = reqId === tpReqId;
-            const isSL = reqId === slReqId;
-            const orderType = isTP ? 'TP' : (isSL ? 'SL' : 'UNKNOWN');
-            
-            if (data.success === true) {
-              console.log(`[krakenTrade] ✅ ${orderType} SUCCESS! Order ID:`, data.result?.order_id);
-              const result = {
-                success: true,
-                order_id: data.result?.order_id,
-                order_userref: data.result?.order_userref
-              };
-              if (isTP) results.tp = result;
-              if (isSL) results.sl = result;
-            } else {
-              console.error(`[krakenTrade] ❌ ${orderType} FAILED:`, data.error);
-              const result = { success: false, error: data.error };
-              if (isTP) results.tp = result;
-              if (isSL) results.sl = result;
-            }
-            checkComplete();
-          }
-          
-          if (data.error && !data.method) {
-            console.error('[krakenTrade] Error response:', data.error);
-          }
-        } catch (parseError) {
-          console.error('[krakenTrade] Parse error:', parseError);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error('[krakenTrade] WebSocket ERROR:', error?.message || error);
-        if (!isResolved) {
-          isResolved = true;
-          clearTimeout(timeout);
-          resolve(results); // Return partial results
-        }
-      };
-      
-      ws.onclose = (event) => {
-        console.log('[krakenTrade] WebSocket closed. Code:', event?.code);
-        if (!isResolved) {
-          isResolved = true;
-          clearTimeout(timeout);
-          resolve(results);
-        }
-      };
-      
+      console.log('[krakenTrade] 📤 Sending TP order...');
+      results.tp = await executeKrakenTrade(token, tpParams);
+      console.log('[krakenTrade] ✅ TP order result:', JSON.stringify(results.tp));
     } catch (error) {
-      clearTimeout(timeout);
-      if (!isResolved) {
-        isResolved = true;
-        reject(error);
-      }
+      console.error('[krakenTrade] ❌ TP order failed:', error.message);
+      results.tp = { success: false, error: error.message };
     }
+
+    // Wait before sending SL order
+    await new Promise(res => setTimeout(res, delayMs));
+
+    // Execute SL order
+    try {
+      console.log('[krakenTrade] 📤 Sending SL order...');
+      results.sl = await executeKrakenTrade(token, slParams);
+      console.log('[krakenTrade] ✅ SL order result:', JSON.stringify(results.sl));
+    } catch (error) {
+      console.error('[krakenTrade] ❌ SL order failed:', error.message);
+      results.sl = { success: false, error: error.message };
+    }
+
+    resolve(results);
   });
 }
 
