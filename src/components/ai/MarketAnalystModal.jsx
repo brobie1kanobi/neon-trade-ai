@@ -95,8 +95,8 @@ export default function MarketAnalystModal({ isOpen, onClose }) {
 
         <div className="flex flex-col gap-3">
           <div
-            ref={listRef}
-            className="h-64 overflow-auto rounded-md border p-3 bg-white dark:bg-slate-900">
+            ref={listRef} className="bg-neutral-950 p-3 rounded-md h-64 overflow-auto border dark:bg-slate-900">
+
 
             {messages.length === 0 &&
             <div className="text-sm text-slate-500">
@@ -106,12 +106,12 @@ export default function MarketAnalystModal({ isOpen, onClose }) {
             <div className="space-y-3">
               {messages.map((m, i) =>
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                  className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
-                  m.role === "user" ?
-                  "bg-slate-800 text-white" :
-                  "bg-slate-100 dark:bg-slate-800 dark:text-slate-100"}`
-                  }>
+                  <div className="bg-gray-600 px-3 py-2 text-sm rounded-xl max-w-[80%] dark:bg-slate-800 dark:text-slate-100">
+
+
+
+
+
 
                     {m.content}
                   </div>
