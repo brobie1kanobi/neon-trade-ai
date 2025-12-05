@@ -75,11 +75,16 @@ export function usePriceData(symbols = []) {
         }
       });
 
-      // Create the fetch promise
-      const fetchPromise = base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      }).then(response => {
+      // Create the fetch promise with 10-second timeout
+      const fetchPromise = Promise.race([
+        base44.functions.invoke('getMarketData', {
+          action: 'getWatchlistData',
+          payload: { cryptoSymbols, stockSymbols }
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Price fetch timeout')), 10000)
+        )
+      ]).then(response => {
         const data = Array.isArray(response?.data) ? response.data : [];
         
         // Update global cache
@@ -95,6 +100,12 @@ export function usePriceData(symbols = []) {
       }).catch(error => {
         console.error('[usePriceData] REST Error:', error);
         globalPriceCache.pendingRequest = null;
+        
+        // Return stale cache on error if available
+        if (globalPriceCache.data) {
+          console.log('[usePriceData] Using stale cache due to error');
+          return globalPriceCache.data;
+        }
         return [];
       });
 
