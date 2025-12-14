@@ -30,6 +30,7 @@ import { ConditionalOrder, Trade } from "@/entities/all";
 import { base44 } from "@/api/base44Client";
 import TradeDetailsModal from "../dashboard/TradeDetailsModal";
 import { toast } from "sonner";
+import OrderSyncButton from "./OrderSyncButton";
 
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
