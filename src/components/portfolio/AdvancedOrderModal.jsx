@@ -336,7 +336,7 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
           </div>
 
           {/* Advanced Options */}
-          <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+          <div className="bg-slate-500 p-4 rounded-lg space-y-3 dark:bg-gray-900">
             <h4 className="font-semibold text-sm">Advanced Options</h4>
             
             <div>
@@ -444,7 +444,7 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
           }
 
           {/* Order Summary */}
-          <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
+          <div className="bg-gray-700 p-4 rounded-lg dark:bg-gray-800">
             <h4 className="font-semibold mb-2">Order Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
