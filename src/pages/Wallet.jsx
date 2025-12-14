@@ -6,6 +6,7 @@ import { base44 } from "@/api/base44Client";
 import { getMarketData } from "@/functions/getMarketData";
 import { useKrakenData, invalidateKrakenCache } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 import WalletBalance from "../components/wallet/WalletBalance";
 import BankConnection from "../components/wallet/BankConnection";
