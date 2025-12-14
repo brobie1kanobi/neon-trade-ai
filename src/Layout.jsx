@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -10,6 +9,7 @@ import PushManager from "./components/utils/PushManager";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
+import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 
 function LayoutContent({ children, currentPageName }) {
@@ -295,7 +295,9 @@ function LayoutContent({ children, currentPageName }) {
 export default function Layout({ children, currentPageName }) {
   return (
     <SettingsProvider>
-      <LayoutContent children={children} currentPageName={currentPageName} />
+      <KrakenWebSocketProvider>
+        <LayoutContent children={children} currentPageName={currentPageName} />
+      </KrakenWebSocketProvider>
     </SettingsProvider>
   );
 }

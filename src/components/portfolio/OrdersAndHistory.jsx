@@ -31,7 +31,7 @@ import { base44 } from "@/api/base44Client";
 import TradeDetailsModal from "../dashboard/TradeDetailsModal";
 import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
@@ -48,14 +48,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
   const fullDateFmt = is24h ? "MMM d, yyyy HH:mm:ss" : "MMM d, yyyy h:mm:ss a";
 
-  // CRITICAL: Get live Kraken orders via WebSocket (only in LIVE mode)
+  // CRITICAL: Use global WebSocket connection
   const { 
     orders: krakenOrders, 
     isConnected: wsConnected 
-  } = useRealtimeKrakenData({
-    subscribeToOrders: !isSimMode,
-    isSimMode
-  });
+  } = useKrakenWebSocket();
 
   // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
@@ -78,39 +75,67 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         return isSimMode;
       });
 
-      // CRITICAL: In LIVE mode, merge with Kraken WebSocket orders
+      // CRITICAL: In LIVE mode, use ONLY Kraken WebSocket orders (source of truth)
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
       
       if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
-        console.log('[OrdersAndHistory] Merging with', Object.keys(krakenOrders).length, 'Kraken orders');
+        console.log('[OrdersAndHistory] Using', Object.keys(krakenOrders).length, 'live Kraken orders');
         
-        // Convert Kraken orders to our format
-        const krakenOrdersList = Object.values(krakenOrders).map(ko => ({
-          id: ko.order_id || ko.txid,
-          symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
-          quantity: ko.volume || 0,
-          purchase_price: ko.price || ko.limit_price || 0,
-          status: 'active',
-          asset_type: 'crypto',
-          is_simulation: false,
-          kraken_order_id: ko.order_id || ko.txid,
-          created_date: ko.created_at || new Date().toISOString(),
-          order_type: ko.order_type || ko.ordertype,
-          side: ko.side,
-          // Estimate margins from order prices if available
-          gain_margin: 10,
-          loss_margin: 5,
-          trailing_enabled: ko.order_type === 'trailing-stop' || ko.ordertype === 'trailing-stop'
-        }));
+        // Convert Kraken orders to our format - VALIDATE each order
+        const krakenOrdersList = Object.values(krakenOrders)
+          .filter(ko => {
+            // CRITICAL: Filter out invalid orders
+            const volume = ko.volume || 0;
+            const price = ko.price || ko.limit_price || 0;
+            
+            if (volume <= 0.00001) {
+              console.warn('[OrdersAndHistory] Skipping order with 0 volume:', ko.order_id);
+              return false;
+            }
+            if (price <= 0) {
+              console.warn('[OrdersAndHistory] Skipping order with 0 price:', ko.order_id);
+              return false;
+            }
+            return true;
+          })
+          .map(ko => ({
+            id: ko.order_id || ko.txid,
+            symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
+            quantity: ko.volume || 0,
+            purchase_price: ko.price || ko.limit_price || 0,
+            status: 'active',
+            asset_type: 'crypto',
+            is_simulation: false,
+            kraken_order_id: ko.order_id || ko.txid,
+            created_date: ko.created_at || new Date().toISOString(),
+            order_type: ko.order_type || ko.ordertype,
+            side: ko.side,
+            gain_margin: 10,
+            loss_margin: 5,
+            trailing_enabled: ko.order_type === 'trailing-stop' || ko.ordertype === 'trailing-stop'
+          }));
 
-        // Merge: prioritize Kraken orders, add local orders not on Kraken
-        const krakenOrderIds = new Set(krakenOrdersList.map(o => o.kraken_order_id));
-        const localOnlyOrders = activeOrders.filter(o => 
-          !o.kraken_order_id || !krakenOrderIds.has(o.kraken_order_id)
+        // In LIVE mode, Kraken is source of truth
+        activeOrders = krakenOrdersList;
+        console.log('[OrdersAndHistory] Live orders:', activeOrders.length);
+        
+        // CRITICAL: Clean up invalid local orders
+        const invalidLocalOrders = modeFilteredOrders.filter(o => 
+          o.status === 'active' && 
+          o.is_simulation === false &&
+          (o.quantity <= 0.00001 || o.purchase_price <= 0)
         );
         
-        activeOrders = [...krakenOrdersList, ...localOnlyOrders];
-        console.log('[OrdersAndHistory] Merged orders:', activeOrders.length, '(Kraken:', krakenOrdersList.length, ', Local:', localOnlyOrders.length, ')');
+        if (invalidLocalOrders.length > 0) {
+          console.log('[OrdersAndHistory] Cleaning up', invalidLocalOrders.length, 'invalid local orders');
+          Promise.all(invalidLocalOrders.map(o => 
+            ConditionalOrder.update(o.id, { 
+              status: 'cancelled',
+              closure_reason: 'Invalid order: zero quantity or price',
+              error_message: 'Order validation failed - quantity or price was zero'
+            })
+          )).catch(err => console.error('[OrdersAndHistory] Cleanup error:', err));
+        }
       }
 
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");

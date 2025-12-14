@@ -17,7 +17,7 @@ import { useHoldings } from "@/components/hooks/useHoldings";
 import { useUser } from "@/components/hooks/useUser";
 import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { usePriceData } from "@/components/hooks/usePriceData";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 
 import BalanceCard from "../components/dashboard/BalanceCard";
@@ -955,7 +955,7 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Get WebSocket data for LIVE mode
+  // CRITICAL: Use global WebSocket connection
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -964,14 +964,7 @@ export default function Dashboard() {
     totalAssets: wsTotalAssets,
     balances: wsBalances,
     prices: wsPrices
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD', 'DOGE/USD', 'LTC/USD', 'BCH/USD', 'LINK/USD', 'UNI/USD', 'MATIC/USD', 'ATOM/USD', 'TRX/USD', 'AVAX/USD'],
-    subscribeToBalances: true,
-    subscribeToOrders: true,
-    subscribeToExecutions: true,
-    isSimMode
-  });
+  } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
