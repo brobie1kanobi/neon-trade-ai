@@ -5,34 +5,61 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
+import { KrakenConnection, AutoBuyPreference } from "@/entities/all";
 
 export default function AutoTraderHealth() {
-  const { settings } = useSettings();
+  const { settings, user } = useSettings();
   
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
-
-  // CRITICAL: Auto-Trader Status is ALWAYS for LIVE mode only
-  // Listen to WebSocket for real-time balance updates (ALWAYS LIVE)
-  const { isConnected: wsConnected, balances: wsBalances } = useRealtimeKrakenData({
-    subscribeToBalances: true,
-    subscribeToOrders: true,
-    subscribeToExecutions: true,
-    isSimMode: false  // FORCE LIVE MODE
+  const [prerequisites, setPrerequisites] = useState({
+    krakenConnected: false,
+    autoTradingEnabled: false,
+    hasAutoBuyPrefs: false
   });
+
+  // CRITICAL: Use global WebSocket connection
+  const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
+
+  const checkPrerequisites = async () => {
+    if (!user?.email) return;
+    
+    try {
+      // Check all prerequisites in parallel
+      const [krakenConn, autoBuyPrefs] = await Promise.all([
+        KrakenConnection.filter({ created_by: user.email }).catch(() => []),
+        AutoBuyPreference.filter({ created_by: user.email, enabled: true, is_simulation: false }).catch(() => [])
+      ]);
+
+      const prereqs = {
+        krakenConnected: krakenConn.length > 0 && krakenConn[0]?.account_verified === true,
+        autoTradingEnabled: settings?.auto_trading_enabled === true,
+        hasAutoBuyPrefs: autoBuyPrefs.length > 0
+      };
+
+      setPrerequisites(prereqs);
+      return prereqs;
+    } catch (err) {
+      console.error('[AutoTraderHealth] Prerequisites check error:', err);
+      return prerequisites;
+    }
+  };
 
   const fetchHealth = async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Check prerequisites first
+      await checkPrerequisites();
       
       // CRITICAL: Fast timeout - 5 seconds max
       const timeoutPromise = new Promise((_, reject) => 
@@ -59,7 +86,7 @@ export default function AutoTraderHealth() {
       // Show minimal fallback health (LIVE mode only)
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
-        wallet_balance: 0,
+        wallet_balance: wsUsdBalance || 0,
         wallet_status: 'unknown',
         active_conditional_orders: 0,
         trades_24h: { total: 0, buys: 0, sells: 0, volume: 0 },
@@ -71,27 +98,27 @@ export default function AutoTraderHealth() {
   };
 
   useEffect(() => {
-    fetchHealth();
-    
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchHealth, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    if (user?.email) {
+      fetchHealth();
+      
+      // Refresh every 30 seconds
+      const interval = setInterval(fetchHealth, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [user?.email, settings?.auto_trading_enabled]);
 
   // Auto-update balance from WebSocket (ALWAYS LIVE)
   useEffect(() => {
-    if (wsBalances && Object.keys(wsBalances).length > 0) {
-      const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
-      
+    if (wsUsdBalance > 0) {
       setHealth(prev => prev ? {
         ...prev,
-        wallet_balance: usdBalance,
-        wallet_status: usdBalance < 0 ? 'critical' : usdBalance < 10 ? 'warning' : 'healthy',
+        wallet_balance: wsUsdBalance,
+        wallet_status: wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy',
         last_check: new Date().toISOString()
       } : null);
     }
-  }, [wsBalances]);
+  }, [wsUsdBalance]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
@@ -213,82 +240,118 @@ export default function AutoTraderHealth() {
                     <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
                       <AlertCircle className="w-5 h-5 text-yellow-500" />
                       <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        Auto-Trading Disabled
+                        {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs 
+                          ? 'Ready to Enable' 
+                          : 'Missing Requirements'}
                       </h3>
                     </div>
 
                     <div className="space-y-3">
-                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        To enable auto-trading, follow these steps:
-                      </p>
-
+                      {/* Show status for each prerequisite */}
                       <div className="space-y-3">
-                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
-                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
-                            1
+                        {/* Kraken Connection */}
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ 
+                          backgroundColor: prerequisites.krakenConnected ? 'rgba(34, 197, 94, 0.1)' : 'var(--secondary-bg)'
+                        }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{
+                            backgroundColor: prerequisites.krakenConnected ? 'rgba(34, 197, 94, 0.2)' : 'rgba(156, 163, 175, 0.2)',
+                            color: prerequisites.krakenConnected ? '#22c55e' : '#9ca3af'
+                          }}>
+                            {prerequisites.krakenConnected ? '✓' : '1'}
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                              Connect Kraken Account
+                            <p className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                              Kraken Account
+                              {prerequisites.krakenConnected && (
+                                <Badge className="bg-green-500 text-white text-xs">Connected</Badge>
+                              )}
                             </p>
-                            <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
-                              Link your Kraken exchange account with API credentials
-                            </p>
-                            <Link to={createPageUrl("Settings")}>
-                              <Button size="sm" variant="outline" className="text-xs gap-1">
-                                <LinkIcon className="w-3 h-3" />
-                                Go to Kraken Settings
-                              </Button>
-                            </Link>
+                            {!prerequisites.krakenConnected && (
+                              <>
+                                <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                  Link your Kraken exchange account with API credentials
+                                </p>
+                                <Link to={createPageUrl("Settings")} onClick={() => setShowHelp(false)}>
+                                  <Button size="sm" variant="outline" className="text-xs gap-1">
+                                    <LinkIcon className="w-3 h-3" />
+                                    Connect Kraken
+                                  </Button>
+                                </Link>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
-                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
-                            2
+                        {/* Auto-Trading Toggle */}
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ 
+                          backgroundColor: prerequisites.autoTradingEnabled ? 'rgba(34, 197, 94, 0.1)' : 'var(--secondary-bg)'
+                        }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{
+                            backgroundColor: prerequisites.autoTradingEnabled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(156, 163, 175, 0.2)',
+                            color: prerequisites.autoTradingEnabled ? '#22c55e' : '#9ca3af'
+                          }}>
+                            {prerequisites.autoTradingEnabled ? '✓' : '2'}
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                              Enable Auto-Trading
+                            <p className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                              Auto-Trading Toggle
+                              {prerequisites.autoTradingEnabled && (
+                                <Badge className="bg-green-500 text-white text-xs">Enabled</Badge>
+                              )}
                             </p>
-                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                              Turn on auto-trading in Trading Settings
-                            </p>
+                            {!prerequisites.autoTradingEnabled && (
+                              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                Turn on the auto-trading switch in Trading Settings above
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
-                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
-                            3
+                        {/* Auto-Buy Preferences */}
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ 
+                          backgroundColor: prerequisites.hasAutoBuyPrefs ? 'rgba(34, 197, 94, 0.1)' : 'var(--secondary-bg)'
+                        }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{
+                            backgroundColor: prerequisites.hasAutoBuyPrefs ? 'rgba(34, 197, 94, 0.2)' : 'rgba(156, 163, 175, 0.2)',
+                            color: prerequisites.hasAutoBuyPrefs ? '#22c55e' : '#9ca3af'
+                          }}>
+                            {prerequisites.hasAutoBuyPrefs ? '✓' : '3'}
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                              Set Auto-Buy Preferences
+                            <p className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                              Auto-Buy Preferences
+                              {prerequisites.hasAutoBuyPrefs && (
+                                <Badge className="bg-green-500 text-white text-xs">Configured</Badge>
+                              )}
                             </p>
-                            <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
-                              Configure which assets to auto-trade in Portfolio
-                            </p>
-                            <Link to={createPageUrl("Portfolio")}>
-                              <Button size="sm" variant="outline" className="text-xs gap-1">
-                                <ArrowRight className="w-3 h-3" />
-                                Configure Portfolio
-                              </Button>
-                            </Link>
+                            {!prerequisites.hasAutoBuyPrefs && (
+                              <>
+                                <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                  Configure which assets to auto-trade in Portfolio
+                                </p>
+                                <Link to={createPageUrl("Portfolio")} onClick={() => setShowHelp(false)}>
+                                  <Button size="sm" variant="outline" className="text-xs gap-1">
+                                    <ArrowRight className="w-3 h-3" />
+                                    Configure Portfolio
+                                  </Button>
+                                </Link>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                        <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                          ⚠️ Important Notes:
-                        </p>
-                        <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
-                          <li>• Auto-trading only works in LIVE mode</li>
-                          <li>• Ensure sufficient balance in your Kraken account</li>
-                          <li>• Set gain/loss margins in Trading Settings</li>
-                          <li>• Monitor regularly using this status card</li>
-                        </ul>
-                      </div>
+                      {/* Summary */}
+                      {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && !prerequisites.autoTradingEnabled && (
+                        <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                          <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">
+                            ✅ Almost Ready!
+                          </p>
+                          <p className="text-xs text-green-600 dark:text-green-500">
+                            Just toggle "Enable Auto-Trading" above to start automated trading.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </PopoverContent>
