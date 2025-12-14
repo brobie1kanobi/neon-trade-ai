@@ -97,14 +97,14 @@ function buildOrderParams(orderConfig) {
 
   console.log('[buildOrderParams] Input:', { orderType, side, quantity: parsedQty, symbol: formattedSymbol, stopPrice, limitPrice });
 
-  // CRITICAL: For market orders, use simple params
+  // CRITICAL: For market orders, DON'T include time_in_force
+  // Kraken WebSocket v2 API: market orders do NOT accept time_in_force parameter
   if (orderType === 'market') {
     const params = {
       order_type: 'market',
       side: side.toLowerCase(),
       order_qty: parsedQty,
       symbol: formattedSymbol,
-      time_in_force: timeInForce === 'gtc' ? 'ioc' : timeInForce, // Market orders should be IOC
       order_userref: userref
     };
     console.log('[buildOrderParams] Market order params:', JSON.stringify(params));
@@ -337,7 +337,6 @@ function buildOrderParams(orderConfig) {
     side: side.toLowerCase(),
     order_qty: parsedQty,
     symbol: formattedSymbol,
-    time_in_force: 'ioc',
     order_userref: userref
   };
 }
