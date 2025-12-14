@@ -12,7 +12,7 @@ import DataSync from "../components/portfolio/DataSync";
 import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 
@@ -46,57 +46,8 @@ export default function Portfolio() {
   // CRITICAL: Determine sim mode FIRST
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // CRITICAL: Use WebSocket for real-time Kraken data in LIVE mode
-  const {
-    isConnected: wsConnected,
-    usdBalance: wsUsdBalance,
-    cryptoHoldingsValue: wsCryptoValue,
-    totalPortfolioValue: wsTotalValue,
-    balances: wsBalances,
-    prices: wsPrices,
-    loading: krakenLoading
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD', 'DOGE/USD', 'LTC/USD', 'BCH/USD', 'LINK/USD', 'UNI/USD', 'MATIC/USD', 'ATOM/USD', 'TRX/USD', 'AVAX/USD'],
-    subscribeToBalances: true,
-    subscribeToOrders: true,
-    subscribeToExecutions: true,
-    isSimMode
-  });
-
-  // CRITICAL: Create krakenData object from WebSocket data to maintain compatibility
-  const krakenData = React.useMemo(() => {
-    if (isSimMode || !wsConnected) return null;
-    
-    // Build holdings array from WebSocket balances
-    const holdings = Object.entries(wsBalances || {})
-      .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
-      .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
-      .map(([asset, balance]) => {
-        const pair = `${asset}/USD`;
-        const priceInfo = wsPrices[pair];
-        const currentPrice = priceInfo?.price || 0;
-        const quantity = balance.balance || 0;
-        
-        return {
-          symbol: asset,
-          quantity: quantity,
-          avg_cost: currentPrice,
-          current_price_usd: currentPrice,
-          total_value_usd: quantity * currentPrice,
-          unrealized_pnl: 0,
-          pnl_percent: 0
-        };
-      });
-    
-    return {
-      connected: true,
-      usd_balance: wsUsdBalance || 0,
-      total_crypto_value: wsCryptoValue || 0,
-      total_portfolio_value: wsTotalValue || 0,
-      holdings: holdings
-    };
-  }, [isSimMode, wsConnected, wsBalances, wsPrices, wsUsdBalance, wsCryptoValue, wsTotalValue]);
+  // CRITICAL: Use Kraken data in LIVE mode
+  const { krakenData, loading: krakenLoading, error: krakenError, refresh: refreshKraken } = useKrakenData(isSimMode, true);
 
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
@@ -354,46 +305,33 @@ export default function Portfolio() {
     }
   }, [loadData]);
 
-  // CRITICAL: Merge holdings from WebSocket (if LIVE mode) with local holdings (if SIM mode)
+  // CRITICAL: Merge holdings from Kraken (if LIVE mode) with local holdings (if SIM mode)
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
       // SIM MODE: Use local holdings
       return holdings;
     } else {
-      // LIVE MODE: Use WebSocket balances
-      if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-        const krakenHoldings = Object.entries(wsBalances)
-          .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
-          .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
-          .map(([asset, balance]) => {
-            const pair = `${asset}/USD`;
-            const priceInfo = wsPrices[pair];
-            const currentPrice = priceInfo?.price || 0;
-            const quantity = balance.balance || 0;
-            const currentValue = quantity * currentPrice;
-            
-            return {
-              symbol: asset,
-              quantity: quantity,
-              average_cost_price: currentPrice,
-              asset_type: 'crypto',
-              currentPrice: currentPrice,
-              costBasis: currentValue,
-              currentValue: currentValue,
-              gainLoss: 0,
-              gainLossPercent: 0,
-              is_simulation: false
-            };
-          });
-        
-        console.log('[Portfolio] Using WebSocket holdings in LIVE mode:', krakenHoldings.length);
-        return krakenHoldings;
+      // LIVE MODE: Use Kraken holdings if available
+      if (krakenData?.holdings && krakenData.holdings.length > 0) {
+        console.log('[Portfolio] Using Kraken holdings in LIVE mode:', krakenData.holdings.length);
+        return krakenData.holdings.map(kh => ({
+          symbol: kh.symbol,
+          quantity: kh.quantity,
+          average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
+          asset_type: 'crypto',
+          currentPrice: kh.current_price_usd,
+          costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
+          currentValue: kh.total_value_usd,
+          gainLoss: kh.unrealized_pnl || 0,
+          gainLossPercent: kh.pnl_percent || 0,
+          is_simulation: false
+        }));
       } else {
-        console.log('[Portfolio] No WebSocket data, using local holdings');
+        console.log('[Portfolio] No Kraken holdings, using local (empty)');
         return holdings;
       }
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
+  }, [isSimMode, holdings, krakenData]);
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
@@ -419,7 +357,7 @@ export default function Portfolio() {
         console.log('[Portfolio] Processing', effectiveHoldings.length, 'holdings with', priceData?.length || 0, 'prices');
 
         // If LIVE mode and Kraken data already has prices, use them directly
-        if (!isSimMode && krakenData?.holdings && effectiveHoldings.length > 0) {
+        if (!isSimMode && krakenData?.holdings) {
           const updated = effectiveHoldings.map(h => ({
             ...h,
             currentPrice: h.currentPrice || h.average_cost_price,
@@ -577,6 +515,10 @@ export default function Portfolio() {
       await loadData(true);
       
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'trade', source: 'portfolio' } }));
+      
+      if (!tradeIsSimMode) {
+        refreshKraken();
+      }
     } catch (err) {
       console.error("Error executing trade:", err);
       await loadData(true);
@@ -589,15 +531,18 @@ export default function Portfolio() {
     window.__portfolioCache.data = null; // Invalidate cache
     window.__portfolioCache.timestamp = 0;
     loadData(true); // Force fresh load
+    if (!isSimMode) {
+      refreshKraken();
+    }
   };
 
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance || wallet?.real_cash_balance || 0);
+    : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
-    : (wsCryptoValue || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
+    : (krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
 
   if (isLoading && !wallet && !user) {
     return (
@@ -651,7 +596,11 @@ export default function Portfolio() {
           change24hr={portfolio24hrChange}
           lifetimeChange={lifetimeChange}
           onSyncClick={() => {
-            setShowDataSync(true);
+            if (!isSimMode) {
+              refreshKraken();
+            } else {
+              setShowDataSync(true);
+            }
           }}
           krakenData={krakenData}
         />
