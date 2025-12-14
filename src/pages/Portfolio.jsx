@@ -64,6 +64,40 @@ export default function Portfolio() {
     isSimMode
   });
 
+  // CRITICAL: Create krakenData object from WebSocket data to maintain compatibility
+  const krakenData = React.useMemo(() => {
+    if (isSimMode || !wsConnected) return null;
+    
+    // Build holdings array from WebSocket balances
+    const holdings = Object.entries(wsBalances || {})
+      .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+      .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
+      .map(([asset, balance]) => {
+        const pair = `${asset}/USD`;
+        const priceInfo = wsPrices[pair];
+        const currentPrice = priceInfo?.price || 0;
+        const quantity = balance.balance || 0;
+        
+        return {
+          symbol: asset,
+          quantity: quantity,
+          avg_cost: currentPrice,
+          current_price_usd: currentPrice,
+          total_value_usd: quantity * currentPrice,
+          unrealized_pnl: 0,
+          pnl_percent: 0
+        };
+      });
+    
+    return {
+      connected: true,
+      usd_balance: wsUsdBalance || 0,
+      total_crypto_value: wsCryptoValue || 0,
+      total_portfolio_value: wsTotalValue || 0,
+      holdings: holdings
+    };
+  }, [isSimMode, wsConnected, wsBalances, wsPrices, wsUsdBalance, wsCryptoValue, wsTotalValue]);
+
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
 
@@ -384,8 +418,8 @@ export default function Portfolio() {
     try {
         console.log('[Portfolio] Processing', effectiveHoldings.length, 'holdings with', priceData?.length || 0, 'prices');
 
-        // If LIVE mode and WebSocket data already has prices, use them directly
-        if (!isSimMode && wsConnected && effectiveHoldings.length > 0) {
+        // If LIVE mode and Kraken data already has prices, use them directly
+        if (!isSimMode && krakenData?.holdings && effectiveHoldings.length > 0) {
           const updated = effectiveHoldings.map(h => ({
             ...h,
             currentPrice: h.currentPrice || h.average_cost_price,
@@ -461,7 +495,7 @@ export default function Portfolio() {
     } finally {
         setIsCalculatingValue(false);
     }
-  }, [effectiveHoldings, priceData, trades, isSimMode, wsConnected]);
+  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;
@@ -619,7 +653,7 @@ export default function Portfolio() {
           onSyncClick={() => {
             setShowDataSync(true);
           }}
-          krakenData={wsConnected ? { connected: true, usd_balance: wsUsdBalance, total_crypto_value: wsCryptoValue } : null}
+          krakenData={krakenData}
         />
       </motion.div>
 
