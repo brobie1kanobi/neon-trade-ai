@@ -33,18 +33,24 @@ export default function AutoTraderHealth() {
     if (!user?.email) return;
     
     try {
-      // Check all prerequisites in parallel
+      // CRITICAL: Check Kraken connection via WebSocket status AND database
       const [krakenConn, autoBuyPrefs] = await Promise.all([
         KrakenConnection.filter({ created_by: user.email }).catch(() => []),
         AutoBuyPreference.filter({ created_by: user.email, enabled: true, is_simulation: false }).catch(() => [])
       ]);
 
+      // Kraken is connected if:
+      // 1. WebSocket is active (real-time connection)
+      // 2. OR database has verified connection record
+      const isKrakenConnected = wsConnected || (krakenConn.length > 0 && krakenConn[0]?.api_key);
+
       const prereqs = {
-        krakenConnected: krakenConn.length > 0 && krakenConn[0]?.account_verified === true,
+        krakenConnected: isKrakenConnected,
         autoTradingEnabled: settings?.auto_trading_enabled === true,
         hasAutoBuyPrefs: autoBuyPrefs.length > 0
       };
 
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
@@ -238,11 +244,17 @@ export default function AutoTraderHealth() {
                 >
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                      <AlertCircle className="w-5 h-5 text-yellow-500" />
+                      {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && prerequisites.autoTradingEnabled ? (
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-yellow-500" />
+                      )}
                       <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs 
+                        {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && prerequisites.autoTradingEnabled
+                          ? 'Auto-Trader Active'
+                          : prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs 
                           ? 'Ready to Enable' 
-                          : 'Missing Requirements'}
+                          : 'Setup Required'}
                       </h3>
                     </div>
 
@@ -265,16 +277,19 @@ export default function AutoTraderHealth() {
                               {prerequisites.krakenConnected && (
                                 <Badge className="bg-green-500 text-white text-xs">Connected</Badge>
                               )}
+                              {wsConnected && (
+                                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">Live</Badge>
+                              )}
                             </p>
                             {!prerequisites.krakenConnected && (
                               <>
                                 <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
                                   Link your Kraken exchange account with API credentials
                                 </p>
-                                <Link to={createPageUrl("Settings")} onClick={() => setShowHelp(false)}>
+                                <Link to={createPageUrl("Wallet")} onClick={() => setShowHelp(false)}>
                                   <Button size="sm" variant="outline" className="text-xs gap-1">
                                     <LinkIcon className="w-3 h-3" />
-                                    Connect Kraken
+                                    Go to Wallet
                                   </Button>
                                 </Link>
                               </>
@@ -342,12 +357,22 @@ export default function AutoTraderHealth() {
                       </div>
 
                       {/* Summary */}
-                      {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && !prerequisites.autoTradingEnabled && (
+                      {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && prerequisites.autoTradingEnabled && (
                         <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
                           <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">
-                            ✅ Almost Ready!
+                            ✅ Auto-Trader Active!
                           </p>
                           <p className="text-xs text-green-600 dark:text-green-500">
+                            Your auto-trader is now monitoring the market and will execute trades automatically.
+                          </p>
+                        </div>
+                      )}
+                      {prerequisites.krakenConnected && prerequisites.hasAutoBuyPrefs && !prerequisites.autoTradingEnabled && (
+                        <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                          <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mb-1">
+                            ⏸️ Almost Ready!
+                          </p>
+                          <p className="text-xs text-yellow-600 dark:text-yellow-500">
                             Just toggle "Enable Auto-Trading" above to start automated trading.
                           </p>
                         </div>
