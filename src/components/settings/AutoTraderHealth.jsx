@@ -56,10 +56,9 @@ export default function AutoTraderHealth() {
       console.error('[AutoTraderHealth] Error:', fetchError.message);
       setError(fetchError.message);
       
-      // Show minimal fallback health
+      // Show minimal fallback health (LIVE mode only)
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
-        sim_trading_mode: isSimMode,
         wallet_balance: 0,
         wallet_status: 'unknown',
         active_conditional_orders: 0,
