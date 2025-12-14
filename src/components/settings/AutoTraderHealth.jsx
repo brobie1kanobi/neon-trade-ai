@@ -2,11 +2,14 @@ import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { createPageUrl } from "@/utils";
+import { Link } from "react-router-dom";
 
 export default function AutoTraderHealth() {
   const { settings } = useSettings();
@@ -15,6 +18,7 @@ export default function AutoTraderHealth() {
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   // CRITICAL: Auto-Trader Status is ALWAYS for LIVE mode only
   // Listen to WebSocket for real-time balance updates (ALWAYS LIVE)
@@ -183,13 +187,115 @@ export default function AutoTraderHealth() {
 
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Status</span>
-          <Badge className={
-            health.auto_trading_enabled
-              ? 'bg-green-500 text-white'
-              : 'bg-gray-500 text-white'
-          }>
-            {health.auto_trading_enabled ? '🟢 Enabled' : '⏸️ Disabled'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge className={
+              health.auto_trading_enabled
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-500 text-white'
+            }>
+              {health.auto_trading_enabled ? '🟢 Enabled' : '⏸️ Disabled'}
+            </Badge>
+            {!health.auto_trading_enabled && (
+              <Popover open={showHelp} onOpenChange={setShowHelp}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="w-6 h-6 p-0">
+                    <HelpCircle className="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent 
+                  className="w-80 max-h-96 overflow-y-auto" 
+                  style={{ 
+                    backgroundColor: 'var(--card-bg)',
+                    borderColor: 'var(--neon-green)',
+                    borderWidth: '2px'
+                  }}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                      <AlertCircle className="w-5 h-5 text-yellow-500" />
+                      <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Auto-Trading Disabled
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        To enable auto-trading, follow these steps:
+                      </p>
+
+                      <div className="space-y-3">
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
+                            1
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                              Connect Kraken Account
+                            </p>
+                            <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                              Link your Kraken exchange account with API credentials
+                            </p>
+                            <Link to={createPageUrl("Settings")}>
+                              <Button size="sm" variant="outline" className="text-xs gap-1">
+                                <LinkIcon className="w-3 h-3" />
+                                Go to Kraken Settings
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
+                            2
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                              Enable Auto-Trading
+                            </p>
+                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              Turn on auto-trading in Trading Settings
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-green-500/20 text-green-500 text-xs font-bold">
+                            3
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                              Set Auto-Buy Preferences
+                            </p>
+                            <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                              Configure which assets to auto-trade in Portfolio
+                            </p>
+                            <Link to={createPageUrl("Portfolio")}>
+                              <Button size="sm" variant="outline" className="text-xs gap-1">
+                                <ArrowRight className="w-3 h-3" />
+                                Configure Portfolio
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                          ⚠️ Important Notes:
+                        </p>
+                        <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+                          <li>• Auto-trading only works in LIVE mode</li>
+                          <li>• Ensure sufficient balance in your Kraken account</li>
+                          <li>• Set gain/loss margins in Trading Settings</li>
+                          <li>• Monitor regularly using this status card</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-between">
