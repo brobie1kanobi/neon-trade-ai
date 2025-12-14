@@ -72,19 +72,21 @@ Deno.serve(async (req) => {
         
         // Calculate metrics
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const trades24h = trades.filter(t => new Date(t.created_date) > oneDayAgo);
         
-        const isSimMode = userSetting.sim_trading_mode !== false;
-        const balance = isSimMode 
-          ? (Number(walletData.cash_balance) || 0)
-          : (Number(walletData.real_cash_balance) || 0);
+        // CRITICAL: Auto-Trader Status ALWAYS shows LIVE data only
+        const trades24h = trades.filter(t => 
+          new Date(t.created_date) > oneDayAgo && 
+          t.is_simulation === false  // ONLY count LIVE trades
+        );
+        
+        // CRITICAL: ALWAYS use real_cash_balance for Auto-Trader Status
+        const balance = Number(walletData.real_cash_balance) || 0;
 
         const health = {
           auto_trading_enabled: Boolean(userSetting.auto_trading_enabled),
-          sim_trading_mode: isSimMode,
           wallet_balance: balance,
           wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
-          active_conditional_orders: orders.length,
+          active_conditional_orders: orders.filter(o => o.is_simulation === false).length,  // ONLY LIVE orders
           trades_24h: {
             total: trades24h.length,
             buys: trades24h.filter(t => t.type === 'buy').length,
@@ -99,12 +101,11 @@ Deno.serve(async (req) => {
       } catch (healthError) {
         console.error('[autoTraderMonitor] Health error:', healthError);
         
-        // Return minimal valid health data
+        // Return minimal valid health data (LIVE mode only)
         return Response.json({
           success: true,
           health: {
             auto_trading_enabled: false,
-            sim_trading_mode: true,
             wallet_balance: 0,
             wallet_status: 'unknown',
             active_conditional_orders: 0,

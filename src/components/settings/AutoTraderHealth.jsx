@@ -10,19 +10,19 @@ import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function AutoTraderHealth() {
   const { settings } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
   
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
 
-  // Listen to WebSocket for real-time balance updates (LIVE mode only)
+  // CRITICAL: Auto-Trader Status is ALWAYS for LIVE mode only
+  // Listen to WebSocket for real-time balance updates (ALWAYS LIVE)
   const { isConnected: wsConnected, balances: wsBalances } = useRealtimeKrakenData({
-    subscribeToBalances: !isSimMode,
-    subscribeToOrders: !isSimMode,
-    subscribeToExecutions: !isSimMode,
-    isSimMode
+    subscribeToBalances: true,
+    subscribeToOrders: true,
+    subscribeToExecutions: true,
+    isSimMode: false  // FORCE LIVE MODE
   });
 
   const fetchHealth = async () => {
@@ -76,9 +76,9 @@ export default function AutoTraderHealth() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-update balance from WebSocket in LIVE mode
+  // Auto-update balance from WebSocket (ALWAYS LIVE)
   useEffect(() => {
-    if (!isSimMode && wsBalances && Object.keys(wsBalances).length > 0) {
+    if (wsBalances && Object.keys(wsBalances).length > 0) {
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
       
       setHealth(prev => prev ? {
@@ -88,7 +88,7 @@ export default function AutoTraderHealth() {
         last_check: new Date().toISOString()
       } : null);
     }
-  }, [isSimMode, wsBalances]);
+  }, [wsBalances]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
@@ -160,7 +160,7 @@ export default function AutoTraderHealth() {
               <CheckCircle className="w-5 h-5 text-green-500" />
             )}
             Auto-Trader Status
-            {!isSimMode && wsConnected && (
+            {wsConnected && (
               <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
                 <Wifi className="w-3 h-3" />
                 Live
@@ -184,15 +184,11 @@ export default function AutoTraderHealth() {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Status</span>
           <Badge className={
-            health.auto_trading_enabled && !health.sim_trading_mode
+            health.auto_trading_enabled
               ? 'bg-green-500 text-white'
-              : health.auto_trading_enabled
-              ? 'bg-blue-500 text-white'
               : 'bg-gray-500 text-white'
           }>
-            {health.auto_trading_enabled 
-              ? (health.sim_trading_mode ? '💎 Running (SIM)' : '🟢 LIVE & Active')
-              : '⏸️ Disabled'}
+            {health.auto_trading_enabled ? '🟢 Enabled' : '⏸️ Disabled'}
           </Badge>
         </div>
 
@@ -244,7 +240,7 @@ export default function AutoTraderHealth() {
           </div>
         </div>
 
-        {health.auto_trading_enabled && !health.sim_trading_mode && (
+        {health.auto_trading_enabled && (
           <Button
             variant="destructive"
             className="w-full"
@@ -258,7 +254,7 @@ export default function AutoTraderHealth() {
 
         <p className="text-xs text-gray-500 text-center">
           Last checked: {new Date(health.last_check).toLocaleTimeString()}
-          {!isSimMode && wsConnected && (
+          {wsConnected && (
             <span className="text-green-600"> • WebSocket Active 🟢</span>
           )}
         </p>
