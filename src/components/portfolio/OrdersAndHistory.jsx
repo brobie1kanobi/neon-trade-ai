@@ -31,6 +31,7 @@ import { base44 } from "@/api/base44Client";
 import TradeDetailsModal from "../dashboard/TradeDetailsModal";
 import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
+import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
@@ -47,15 +48,22 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
   const fullDateFmt = is24h ? "MMM d, yyyy HH:mm:ss" : "MMM d, yyyy h:mm:ss a";
 
-  // Load conditional orders - CRITICAL: Filter by simulation mode
+  // CRITICAL: Get live Kraken orders via WebSocket (only in LIVE mode)
+  const { 
+    orders: krakenOrders, 
+    isConnected: wsConnected 
+  } = useRealtimeKrakenData({
+    subscribeToOrders: !isSimMode,
+    isSimMode
+  });
+
+  // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
     if (!user?.email) return;
 
     setIsLoading(true);
     try {
-      // CRITICAL: Only load orders matching the current mode (sim vs live)
-      // ConditionalOrder doesn't have is_simulation field, so we need to check
-      // if the order was created in sim mode by looking at related trades or settings
+      // Load local database orders
       const allOrders = await ConditionalOrder.filter(
         { created_by: user.email },
         "-created_date",
@@ -63,23 +71,53 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       );
 
       // Filter orders based on simulation mode
-      // Orders created in live mode should only show in live mode and vice versa
       const modeFilteredOrders = allOrders.filter((o) => {
-        // If the order has is_simulation field, use it
         if (typeof o.is_simulation === 'boolean') {
           return o.is_simulation === isSimMode;
         }
-        // For older orders without the field, show in sim mode only (safe default)
         return isSimMode;
       });
 
-      // Separate active from executed/cancelled
-      const active = modeFilteredOrders.filter((o) => o.status === "active");
+      // CRITICAL: In LIVE mode, merge with Kraken WebSocket orders
+      let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
+      
+      if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
+        console.log('[OrdersAndHistory] Merging with', Object.keys(krakenOrders).length, 'Kraken orders');
+        
+        // Convert Kraken orders to our format
+        const krakenOrdersList = Object.values(krakenOrders).map(ko => ({
+          id: ko.order_id || ko.txid,
+          symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
+          quantity: ko.volume || 0,
+          purchase_price: ko.price || ko.limit_price || 0,
+          status: 'active',
+          asset_type: 'crypto',
+          is_simulation: false,
+          kraken_order_id: ko.order_id || ko.txid,
+          created_date: ko.created_at || new Date().toISOString(),
+          order_type: ko.order_type || ko.ordertype,
+          side: ko.side,
+          // Estimate margins from order prices if available
+          gain_margin: 10,
+          loss_margin: 5,
+          trailing_enabled: ko.order_type === 'trailing-stop' || ko.ordertype === 'trailing-stop'
+        }));
+
+        // Merge: prioritize Kraken orders, add local orders not on Kraken
+        const krakenOrderIds = new Set(krakenOrdersList.map(o => o.kraken_order_id));
+        const localOnlyOrders = activeOrders.filter(o => 
+          !o.kraken_order_id || !krakenOrderIds.has(o.kraken_order_id)
+        );
+        
+        activeOrders = [...krakenOrdersList, ...localOnlyOrders];
+        console.log('[OrdersAndHistory] Merged orders:', activeOrders.length, '(Kraken:', krakenOrdersList.length, ', Local:', localOnlyOrders.length, ')');
+      }
+
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
       const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
 
-      setConditionalOrders(active);
-      setOpenOrders(active);
+      setConditionalOrders(activeOrders);
+      setOpenOrders(activeOrders);
       setClosedOrders([...executed, ...cancelled]);
 
     } catch (err) {
@@ -87,11 +125,19 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     } finally {
       setIsLoading(false);
     }
-  }, [user?.email, isSimMode]);
+  }, [user?.email, isSimMode, wsConnected, krakenOrders]);
 
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  // CRITICAL: Reload orders when Kraken WebSocket data changes
+  useEffect(() => {
+    if (!isSimMode && wsConnected && krakenOrders) {
+      console.log('[OrdersAndHistory] Kraken orders updated, reloading...');
+      loadOrders();
+    }
+  }, [krakenOrders, wsConnected, isSimMode, loadOrders]);
 
   // Cancel an order - also cancels associated Kraken orders in LIVE mode
   const handleCancelOrder = async (orderId) => {
