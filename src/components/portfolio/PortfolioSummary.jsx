@@ -6,8 +6,10 @@ import NumberDisplay from "@/components/ui/NumberDisplay";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
 
-export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, isSimMode = true, change24hr, lifetimeChange, onSyncClick }) {
-  const currentCashBalance = isSimMode ? (wallet?.cash_balance || 0) : (wallet?.real_cash_balance || 0);
+export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, isSimMode = true, change24hr, lifetimeChange, onSyncClick, krakenData }) {
+  const currentCashBalance = isSimMode 
+    ? (wallet?.cash_balance || 0) 
+    : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
   const totalValue = currentCashBalance + (currentPortfolioValue || 0);
   
   const displayChange = change24hr || { value: 0, percentage: 0 };
