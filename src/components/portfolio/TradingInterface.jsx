@@ -244,12 +244,30 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           duration: 5000
         });
 
-        // Record trade in local database with Kraken order ID
-        await onTrade({
-          ...tradeData,
+        // CRITICAL: Record trade directly in DB - bypass onTrade validation for LIVE mode
+        // Kraken already validated the order, so we trust it
+        console.log('[TradingInterface] Recording LIVE trade in DB:', tradeData);
+        
+        await base44.entities.Trade.create({
+          symbol: tradeData.symbol,
+          type: tradeData.type,
+          asset_type: tradeData.asset_type,
+          quantity: tradeData.quantity,
+          price: tradeData.price,
+          total_value: tradeData.total_value,
+          is_auto_trade: false,
           is_simulation: false,
-          kraken_order_id: krakenOrderId
+          status: 'executed',
+          kraken_order_id: krakenOrderId,
+          created_by: currentUser.email
         });
+
+        console.log('[TradingInterface] ✅ LIVE trade recorded in DB');
+
+        // Dispatch event for UI refresh
+        window.dispatchEvent(new CustomEvent('trade:completed', {
+          detail: { timestamp: Date.now(), trade: tradeData }
+        }));
 
         // CRITICAL: For LIVE buys with conditional orders, place REAL Kraken stop-loss orders
         // Also create local tracking record for the auto-trader
