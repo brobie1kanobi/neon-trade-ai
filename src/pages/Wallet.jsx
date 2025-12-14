@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useCallback } from "react";
-import { Wallet, Transaction, UserSettings, User, Holding } from "@/entities/all";
+import { Wallet, Transaction, UserSettings, User, Holding, Trade } from "@/entities/all";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
@@ -17,6 +16,7 @@ import EmergencyRepair from "../components/wallet/EmergencyRepair";
 export default function WalletPage() {
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [trades, setTrades] = useState([]);
   const [settings, setSettings] = useState(null);
   const [user, setUser] = useState(null);
   const [activeAction, setActiveAction] = useState(null);
@@ -123,6 +123,17 @@ export default function WalletPage() {
       await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
       const userSettings = await UserSettings.filter({ created_by: currentUser.email });
       
+      const currentSettings = userSettings[0] || { sim_trading_mode: true };
+      if (!isAdminOrCreator) {
+        currentSettings.sim_trading_mode = true;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const userTrades = await Trade.filter({ 
+        created_by: currentUser.email, 
+        is_simulation: currentSettings.sim_trading_mode !== false 
+      }, '-created_date', 100);
+      
       setWallet(userWallet[0] || { 
         cash_balance: 0, 
         total_deposits: 0, 
@@ -133,11 +144,7 @@ export default function WalletPage() {
       });
       
       setTransactions(userTransactions);
-
-      const currentSettings = userSettings[0] || { sim_trading_mode: true };
-      if (!isAdminOrCreator) {
-        currentSettings.sim_trading_mode = true;
-      }
+      setTrades(userTrades);
       setSettings(currentSettings);
 
       // Compute portfolio value (SIM from DB, LIVE from Kraken)
@@ -423,7 +430,7 @@ export default function WalletPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
       >
-        <TransactionHistory transactions={transactions} isSimMode={isSimMode} />
+        <TransactionHistory transactions={transactions} trades={trades} isSimMode={isSimMode} />
       </motion.div>
     </div>
   );
