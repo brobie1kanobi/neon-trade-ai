@@ -385,7 +385,7 @@ export default function Portfolio() {
         console.log('[Portfolio] Processing', effectiveHoldings.length, 'holdings with', priceData?.length || 0, 'prices');
 
         // If LIVE mode and WebSocket data already has prices, use them directly
-        if (!isSimMode && wsConnected) {
+        if (!isSimMode && wsConnected && effectiveHoldings.length > 0) {
           const updated = effectiveHoldings.map(h => ({
             ...h,
             currentPrice: h.currentPrice || h.average_cost_price,
