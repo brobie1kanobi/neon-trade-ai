@@ -15,6 +15,7 @@ import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 // GLOBAL CACHE to prevent duplicate API calls
 if (typeof window !== 'undefined') {
@@ -45,6 +46,15 @@ export default function Portfolio() {
 
   // CRITICAL: Determine sim mode FIRST
   const isSimMode = settings?.sim_trading_mode !== false;
+
+  // CRITICAL: Use global WebSocket connection
+  const {
+    isConnected: wsConnected,
+    usdBalance: wsUsdBalance,
+    cryptoHoldingsValue: wsCryptoValue,
+    balances: wsBalances,
+    prices: wsPrices
+  } = useKrakenWebSocket();
 
   // CRITICAL: Use Kraken data in LIVE mode
   const { krakenData, loading: krakenLoading, error: krakenError, refresh: refreshKraken } = useKrakenData(isSimMode, true);
@@ -538,11 +548,11 @@ export default function Portfolio() {
 
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
+    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (krakenData?.usd_balance || wallet?.real_cash_balance || 0));
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
-    : (krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
+    : (wsConnected && wsCryptoValue > 0 ? wsCryptoValue : (krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)));
 
   if (isLoading && !wallet && !user) {
     return (

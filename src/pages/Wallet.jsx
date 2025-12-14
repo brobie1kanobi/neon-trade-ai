@@ -26,6 +26,14 @@ export default function WalletPage() {
 
   const isSimMode = settings?.sim_trading_mode !== false;
 
+  // CRITICAL: Use global WebSocket connection
+  const {
+    isConnected: wsConnected,
+    usdBalance: wsUsdBalance,
+    cryptoHoldingsValue: wsCryptoValue,
+    totalPortfolioValue: wsTotalValue
+  } = useKrakenWebSocket();
+
   // CRITICAL: Fetch real Kraken data in LIVE mode (autoFetch ALWAYS enabled for non-sim)
   const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
 
@@ -48,18 +56,24 @@ export default function WalletPage() {
 
   const { priceData } = usePriceData(krakenSymbols);
 
-  // CRITICAL FIX: Use Kraken's total_crypto_value directly (most reliable)
+  // CRITICAL FIX: Use WebSocket data FIRST, then fallback to Kraken API
   const krakenPortfolioValue = React.useMemo(() => {
-    if (isSimMode || !krakenData) return 0;
+    if (isSimMode) return 0;
 
-    // PRIORITY 1: Use Kraken's calculated total (includes prices)
-    if (krakenData.total_crypto_value && krakenData.total_crypto_value > 0) {
-      console.log('[Wallet] ✅ Using Kraken total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
+    // PRIORITY 1: Use WebSocket live data
+    if (wsConnected && wsCryptoValue > 0) {
+      console.log('[Wallet] ✅ Using WebSocket portfolio value:', wsCryptoValue.toFixed(2));
+      return wsCryptoValue;
+    }
+
+    // PRIORITY 2: Use Kraken's calculated total (REST API fallback)
+    if (krakenData?.total_crypto_value && krakenData.total_crypto_value > 0) {
+      console.log('[Wallet] ✅ Using Kraken API total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
       return krakenData.total_crypto_value;
     }
 
-    // PRIORITY 2: Sum up total_value_usd from individual holdings
-    if (krakenData.holdings && krakenData.holdings.length > 0) {
+    // PRIORITY 3: Sum up total_value_usd from individual holdings
+    if (krakenData?.holdings && krakenData.holdings.length > 0) {
       const sumOfHoldings = krakenData.holdings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
       if (sumOfHoldings > 0) {
         console.log('[Wallet] ✅ Using sum of holding values:', sumOfHoldings.toFixed(2));
@@ -67,23 +81,9 @@ export default function WalletPage() {
       }
     }
 
-    // PRIORITY 3: Calculate with external price data
-    if (!krakenData.holdings || !priceData || priceData.length === 0) {
-      console.warn('[Wallet] ⚠️ No holdings or price data');
-      return 0;
-    }
-
-    const calculated = krakenData.holdings.reduce((total, holding) => {
-      const price = priceData.find(p => 
-        (p.symbol || '').toUpperCase() === (holding.symbol || '').toUpperCase()
-      );
-      const currentPrice = price?.price || price?.current_price || holding.current_price_usd || 0;
-      return total + (holding.quantity * currentPrice);
-    }, 0);
-
-    console.log('[Wallet] ✅ Calculated portfolio value:', calculated.toFixed(2));
-    return calculated;
-  }, [isSimMode, krakenData, priceData]);
+    console.warn('[Wallet] ⚠️ No valid portfolio data');
+    return 0;
+  }, [isSimMode, wsConnected, wsCryptoValue, krakenData, priceData]);
 
   const loadData = useCallback(async () => {
     if (typeof window !== "undefined") {
