@@ -2,22 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useKrakenWebSocketManager } from '@/components/hooks/useKrakenWebSocketManager';
 import { useSettings } from '@/components/utils/SettingsContext';
 
-const KrakenWebSocketContext = createContext({
-  isConnected: false,
-  prices: {},
-  balances: {},
-  orders: {},
-  executions: [],
-  usdBalance: 0,
-  cryptoHoldingsValue: 0,
-  totalPortfolioValue: 0,
-  totalAssets: 0,
-  refresh: async () => {},
-  wsManager: null
-});
+const KrakenWebSocketContext = createContext(null);
 
 export const useKrakenWebSocket = () => {
   const context = useContext(KrakenWebSocketContext);
+  if (!context) {
+    throw new Error('useKrakenWebSocket must be used within KrakenWebSocketProvider');
+  }
   return context;
 };
 
@@ -33,15 +24,10 @@ export function KrakenWebSocketProvider({ children }) {
   const shouldConnect = !isSimMode && !!user?.email;
 
   // Initialize WebSocket manager with ALL subscriptions
-  let wsManager = null;
-  try {
-    wsManager = useKrakenWebSocketManager({
-      enabled: shouldConnect,
-      subscriptions: shouldConnect ? ['ticker', 'openOrders', 'ownTrades', 'balances'] : []
-    });
-  } catch (err) {
-    console.warn('[KrakenWebSocketProvider] Manager initialization error:', err);
-  }
+  const wsManager = useKrakenWebSocketManager({
+    enabled: shouldConnect,
+    subscriptions: shouldConnect ? ['ticker', 'openOrders', 'ownTrades', 'balances'] : []
+  });
 
   const [state, setState] = useState({
     isConnected: false,
@@ -57,18 +43,15 @@ export function KrakenWebSocketProvider({ children }) {
 
   // Update state when WebSocket data changes
   useEffect(() => {
-    if (!shouldConnect || !wsManager) {
-      // Keep default state when not connected
-      return;
-    }
+    if (!shouldConnect || !wsManager) return;
 
     const updateState = async () => {
       try {
-        const isConnected = typeof wsManager.isConnected === 'function' ? wsManager.isConnected() : false;
-        const prices = typeof wsManager.getAllPrices === 'function' ? await wsManager.getAllPrices() : {};
-        const balances = typeof wsManager.getBalances === 'function' ? await wsManager.getBalances() : {};
-        const orders = typeof wsManager.getOpenOrders === 'function' ? await wsManager.getOpenOrders() : {};
-        const executions = typeof wsManager.getExecutions === 'function' ? await wsManager.getExecutions() : [];
+        const isConnected = wsManager.isConnected?.() || false;
+        const prices = await wsManager.getAllPrices?.() || {};
+        const balances = await wsManager.getBalances?.() || {};
+        const orders = await wsManager.getOpenOrders?.() || {};
+        const executions = await wsManager.getExecutions?.() || [];
 
         // Calculate portfolio metrics
         let usdBalance = 0;
@@ -126,12 +109,8 @@ export function KrakenWebSocketProvider({ children }) {
   const refresh = async () => {
     if (!wsManager) return;
     try {
-      if (typeof wsManager.refreshBalances === 'function') {
-        await wsManager.refreshBalances();
-      }
-      if (typeof wsManager.refreshOrders === 'function') {
-        await wsManager.refreshOrders();
-      }
+      await wsManager.refreshBalances?.();
+      await wsManager.refreshOrders?.();
     } catch (err) {
       console.error('[KrakenWebSocketProvider] Refresh error:', err);
     }
