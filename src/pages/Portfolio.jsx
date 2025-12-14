@@ -461,7 +461,7 @@ export default function Portfolio() {
     } finally {
         setIsCalculatingValue(false);
     }
-  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData]);
+  }, [effectiveHoldings, priceData, trades, isSimMode, wsConnected]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;
