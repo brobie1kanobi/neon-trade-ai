@@ -227,11 +227,11 @@ export default function AutoTraderHealth() {
           <span className="text-sm font-medium">Status</span>
           <div className="flex items-center gap-2">
             <Badge className={
-              health.auto_trading_enabled
+              prerequisites.autoTradingEnabled
                 ? 'bg-green-500 text-white'
                 : 'bg-gray-500 text-white'
             }>
-              {health.auto_trading_enabled ? '🟢 Enabled' : '⏸️ Disabled'}
+              {prerequisites.autoTradingEnabled ? '🟢 Enabled' : '⏸️ Disabled'}
             </Badge>
             {!health.auto_trading_enabled && (
               <Popover open={showHelp} onOpenChange={setShowHelp}>
