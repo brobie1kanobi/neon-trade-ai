@@ -504,11 +504,16 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           }
           const trailingEnabled = order.trailing_enabled !== false;
           const trailingMargin = typeof order.trailing_margin === "number" && order.trailing_margin > 0 ? order.trailing_margin : (typeof settings?.loss_margin === "number" ? settings.loss_margin : 5);
+
+          // ENHANCED: Trailing take-profit for locking in gains
+          const trailingTakeProfitEnabled = settings?.trailing_takeprofit_enabled !== false;
+          const trailingTakeProfitMargin = typeof settings?.trailing_takeprofit_margin === "number" ? settings.trailing_takeprofit_margin : 3;
+
           let updatedHighest = order.highest_price || order.purchase_price;
-          if (trailingEnabled && currentPrice > (order.highest_price || 0)) {
+          if (currentPrice > (order.highest_price || 0)) {
             const cachedHighest = highestPriceCache.current.get(order.id) || order.highest_price || 0;
             const priceChangePercent = cachedHighest > 0 ? ((currentPrice - cachedHighest) / cachedHighest) * 100 : 0;
-            if (priceChangePercent > 1) {
+            if (priceChangePercent > 0.5) {
               updatedHighest = currentPrice;
               queueOrderUpdate(order.id, { highest_price: updatedHighest });
               highestPriceCache.current.set(order.id, updatedHighest);
@@ -516,14 +521,35 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               updatedHighest = cachedHighest || order.highest_price || order.purchase_price;
             }
           }
+
           const gainPrice = order.purchase_price * (1 + order.gain_margin / 100);
           const lossPrice = order.purchase_price * (1 - order.loss_margin / 100);
           const trailingStop = trailingEnabled ? updatedHighest * (1 - trailingMargin / 100) : null;
+
+          // ENHANCED: Trailing take-profit logic - lock in gains when price rises then drops
+          const inProfit = updatedHighest > order.purchase_price * 1.02; // At least 2% profit before activating
+          const trailingTakeProfit = trailingTakeProfitEnabled && inProfit ? updatedHighest * (1 - trailingTakeProfitMargin / 100) : null;
+
           let shouldSell = false;
           let tradeType = "";
-          if (currentPrice <= lossPrice) { shouldSell = true; tradeType = "stop-loss"; }
-          else if (trailingEnabled && updatedHighest > order.purchase_price && currentPrice <= trailingStop) { shouldSell = true; tradeType = "trailing-stop"; }
-          else if (!trailingEnabled && currentPrice >= gainPrice) { shouldSell = true; tradeType = "take-profit"; }
+
+          // Priority order: stop-loss > trailing take-profit > trailing stop-loss > static take-profit
+          if (currentPrice <= lossPrice) { 
+            shouldSell = true; 
+            tradeType = "stop-loss"; 
+          }
+          else if (trailingTakeProfitEnabled && trailingTakeProfit && currentPrice <= trailingTakeProfit && currentPrice > order.purchase_price) { 
+            shouldSell = true; 
+            tradeType = "trailing-take-profit"; 
+          }
+          else if (trailingEnabled && updatedHighest > order.purchase_price && currentPrice <= trailingStop) { 
+            shouldSell = true; 
+            tradeType = "trailing-stop"; 
+          }
+          else if (!trailingTakeProfitEnabled && currentPrice >= gainPrice) { 
+            shouldSell = true; 
+            tradeType = "take-profit"; 
+          }
           if (shouldSell) {
             console.log('[AutoTrader] ⚡ SELL TRIGGERED for', symU, '-', tradeType, '- qty:', sellQuantity, '@ $', currentPrice);
 
@@ -562,6 +588,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 });
                 
                 // Record trade in local DB for history
+                const profitAmount = (currentPrice - order.purchase_price) * sellQuantity;
                 await base44.entities.Trade.create({ 
                   ...tradeDetails, 
                   is_simulation: false, 
@@ -579,8 +606,29 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     error_message: null
                   });
                 }
-                
+
                 highestPriceCache.current.delete(order.id);
+
+                // ENHANCED: Auto-reinvest profits
+                if (profitAmount > 0) {
+                  const reinvestPct = typeof settings?.reinvest_profit_percentage === "number" ? settings.reinvest_profit_percentage : 80;
+                  const reinvestAmount = (profitAmount * reinvestPct) / 100;
+
+                  if (reinvestAmount >= 1) {
+                    console.log('[AutoTrader] 💰 Profit reinvestment:', reinvestAmount.toFixed(2), '(', reinvestPct, '% of', profitAmount.toFixed(2), ')');
+
+                    if (settings?.notifications_enabled === true) {
+                      base44.functions.invoke("pushNotifications", { 
+                        action: "sendNotification", 
+                        payload: { 
+                          title: `💰 Profit Reinvestment Ready`, 
+                          body: `$${reinvestAmount.toFixed(2)} from ${symU} sale will be reinvested automatically`,
+                          data: { type: "profit_reinvest", amount: reinvestAmount }
+                        } 
+                      }).catch(() => {});
+                    }
+                  }
+                }
                 
                 if (settings?.notifications_enabled === true) {
                   base44.functions.invoke("pushNotifications", { 
@@ -619,12 +667,23 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             } else {
               // SIM MODE: Execute locally only
               try {
+                const profitAmount = (currentPrice - order.purchase_price) * sellQuantity;
                 await onTrade(tradeDetails);
                 toast.success("🤖 Auto-Trade Executed", { 
                   description: `Sold ${tradeDetails.quantity.toFixed(4)} ${tradeDetails.symbol} @ $${tradeDetails.price.toFixed(2)} (${tradeType}).` 
                 });
                 queueOrderUpdate(order.id, { status: "executed" });
                 highestPriceCache.current.delete(order.id);
+
+                // ENHANCED: Auto-reinvest profits in SIM mode
+                if (profitAmount > 0) {
+                  const reinvestPct = typeof settings?.reinvest_profit_percentage === "number" ? settings.reinvest_profit_percentage : 80;
+                  const reinvestAmount = (profitAmount * reinvestPct) / 100;
+
+                  if (reinvestAmount >= 1) {
+                    console.log('[AutoTrader] 💰 SIM Profit reinvestment:', reinvestAmount.toFixed(2), '(', reinvestPct, '% of', profitAmount.toFixed(2), ')');
+                  }
+                }
                 
                 if (settings?.notifications_enabled === true) {
                   base44.functions.invoke("pushNotifications", { 
