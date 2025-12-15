@@ -679,18 +679,37 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const isCashBuildUpMode = lifetimeChange?.percentage >= 10 || totalPortfolioValue < 500;
         let remainingCash = isCashBuildUpMode ? cashAvailable * 0.3 : cashAvailable * 0.8;
         if (remainingCash <= 1.0) return;
+        
+        // CRITICAL: Use new "Small Gains" LLM for conservative, high-probability trades
         let analysisMap = {};
         try {
-          const llm = await base44.integrations.Core.InvokeLLM({
-            prompt: `You are an automated market analysis bot. Goal: proactive buy signals. Margins: gain=${settings?.gain_margin ?? 10}% loss=${settings?.loss_margin ?? 5}%\nSymbols:\n${JSON.stringify(quotesForBuy.map(q => ({ symbol: q.symbol, price: q.price, change24h: q.changePct })))}\nReturn confidence 0-1 for each.`,
-            response_json_schema: { type: "object", properties: { recommendations: { type: "array", items: { type: "object", properties: { symbol: { type: "string" }, action: { type: "string", enum: ["buy", "hold", "sell"] }, confidence: { type: "number" } }, required: ["symbol", "confidence"] } } } }
+          console.log('[AutoTrader] Calling Small Gains Analyzer...');
+          const smartAnalysis = await base44.functions.invoke('analyzeSmallGains', {
+            symbols: cryptoPrefs.concat(stockPrefs)
           });
-          const recs = Array.isArray(llm?.recommendations) ? llm.recommendations : [];
-          analysisMap = recs.reduce((acc, r) => {
-            acc[(r.symbol || "").toUpperCase()] = { confidence: Math.max(0, Math.min(1, Number(r.confidence) || 0)), action: (r.action || "buy").toLowerCase() };
-            return acc;
-          }, {});
-        } catch (_e) {console.error('[AutoTrader] LLM analysis error:', _e);}
+          
+          const smartData = smartAnalysis?.data || smartAnalysis;
+          console.log('[AutoTrader] Small Gains response:', JSON.stringify(smartData));
+          
+          if (smartData?.success && Array.isArray(smartData?.recommendations)) {
+            // Convert recommendations to analysis map format
+            analysisMap = smartData.recommendations.reduce((acc, r) => {
+              const confidence = (r.confidence_score || 60) / 100; // Convert 0-100 to 0-1
+              acc[(r.symbol || "").toUpperCase()] = { 
+                confidence: Math.max(0, Math.min(1, confidence)),
+                action: (r.action || "buy").toLowerCase(),
+                predictedGain: r.predicted_gain_percent || 10,
+                reasoning: r.reasoning || ''
+              };
+              return acc;
+            }, {});
+            console.log('[AutoTrader] Smart analysis generated', Object.keys(analysisMap).length, 'recommendations');
+          } else {
+            console.log('[AutoTrader] No smart recommendations, using default confidence');
+          }
+        } catch (_e) {
+          console.error('[AutoTrader] Small Gains analysis error:', _e);
+        }
         for (const p of prefs) {
           if (!settings?.auto_trading_enabled) break;
           const sym = (p.symbol || "").toUpperCase();
