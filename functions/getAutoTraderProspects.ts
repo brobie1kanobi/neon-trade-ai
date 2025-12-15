@@ -23,16 +23,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    const isSimMode = settings?.sim_trading_mode !== false;
+    const isSimMode = settings?.sim_trading_mode === true;
 
-    // Get wallet balance
-    const wallets = await base44.asServiceRole.entities.Wallet.filter({ 
-      created_by: user.email 
-    }, "-updated_date", 1);
-    const wallet = wallets[0];
-    const cashAvailable = isSimMode 
-      ? (wallet?.cash_balance || 0) 
-      : (wallet?.real_cash_balance || 0);
+    // Get wallet balance - LIVE mode uses Kraken WebSocket data
+    let cashAvailable = 0;
+    if (!isSimMode) {
+      // LIVE MODE: Fetch actual Kraken balance
+      try {
+        const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+        const krakenData = krakenResponse?.data || krakenResponse;
+        if (krakenData?.success && krakenData?.connected) {
+          cashAvailable = krakenData.usd_balance || 0;
+        }
+      } catch (e) {
+        console.error('Kraken balance fetch failed:', e);
+      }
+    } else {
+      // SIM MODE: Use wallet DB
+      const wallets = await base44.asServiceRole.entities.Wallet.filter({ 
+        created_by: user.email 
+      }, "-updated_date", 1);
+      const wallet = wallets[0];
+      cashAvailable = wallet?.cash_balance || 0;
+    }
 
     // Get auto-buy preferences
     const prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 

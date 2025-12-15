@@ -1027,7 +1027,7 @@ export default function Dashboard() {
   const { settings } = useSettings();
   const location = useLocation();
   
-  const isSimMode = settings?.sim_trading_mode !== false;
+  const isSimMode = settings?.sim_trading_mode === true;
   const { wallet, loading: walletLoading, refresh: refreshWallet } = useWallet();
   const { trades, loading: tradesLoading, addTrade } = useTrades(isSimMode);
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
@@ -1239,7 +1239,7 @@ export default function Dashboard() {
       if (!user?.email) return;
 
       const tradeLock = window.__tradeLock;
-      const isSimModeLocal = settings?.sim_trading_mode !== false;
+      const isSimModeLocal = settings?.sim_trading_mode === true;
       const tradeType = (tradeData.type || "").toLowerCase();
 
       if (tradeLock.lastTrade) {

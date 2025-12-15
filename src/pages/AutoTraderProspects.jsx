@@ -119,8 +119,8 @@ export default function AutoTraderProspects() {
             <span className="text-sm font-medium">Available Cash</span>
             <div className="text-right">
               <p className="font-semibold text-lg">${cashAvailable.toFixed(2)}</p>
-              <Badge variant="outline" className="text-xs">
-                {isSimMode ? "Demo Mode" : "Live Mode"}
+              <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
+                {isSimMode ? "💎 Demo" : "🟢 LIVE"}
               </Badge>
             </div>
           </div>
@@ -209,12 +209,12 @@ export default function AutoTraderProspects() {
                   </div>
                 ) : (
                   <Button 
-                    className="w-full" 
+                    className="w-full bg-green-600 hover:bg-green-700" 
                     onClick={() => setSelectedProspect(prospect)}
                     disabled={isSimMode}
                   >
                     <Send className="w-4 h-4 mr-2" />
-                    {isSimMode ? "Live Mode Only" : "Execute Order Now"}
+                    {isSimMode ? "💎 Demo Mode Only" : "🟢 Execute on Kraken Now"}
                   </Button>
                 )}
               </CardContent>
