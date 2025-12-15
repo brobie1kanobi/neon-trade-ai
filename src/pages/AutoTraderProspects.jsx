@@ -33,7 +33,7 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setCashAvailable(data.cash_available || 0);
-        setIsSimMode(data.is_sim_mode !== false);
+        setIsSimMode(data.is_sim_mode === true);
       } else {
         toast.error("Failed to load prospects");
       }
