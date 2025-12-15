@@ -33,24 +33,20 @@ export default function AutoTraderHealth() {
     if (!user?.email) return;
     
     try {
-      // CRITICAL: Check Kraken connection via WebSocket status AND database
-      const [krakenConn, autoBuyPrefs] = await Promise.all([
-        KrakenConnection.filter({ created_by: user.email }).catch(() => []),
-        AutoBuyPreference.filter({ created_by: user.email, enabled: true, is_simulation: false }).catch(() => [])
-      ]);
-
-      // Kraken is connected if:
-      // 1. WebSocket is active (real-time connection)
-      // 2. OR database has verified connection record
-      const isKrakenConnected = wsConnected || (krakenConn.length > 0 && krakenConn[0]?.api_key);
+      // CRITICAL: WebSocket connection is PRIMARY indicator - if connected, Kraken IS connected
+      const autoBuyPrefs = await AutoBuyPreference.filter({ 
+        created_by: user.email, 
+        enabled: true, 
+        is_simulation: false 
+      }).catch(() => []);
 
       const prereqs = {
-        krakenConnected: isKrakenConnected,
+        krakenConnected: wsConnected, // WebSocket active = Kraken connected
         autoTradingEnabled: settings?.auto_trading_enabled === true,
         hasAutoBuyPrefs: autoBuyPrefs.length > 0
       };
 
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs);
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
@@ -113,6 +109,13 @@ export default function AutoTraderHealth() {
       return () => clearInterval(interval);
     }
   }, [user?.email, settings?.auto_trading_enabled]);
+
+  // Re-check prerequisites when WebSocket connection changes
+  useEffect(() => {
+    if (user?.email && health) {
+      checkPrerequisites();
+    }
+  }, [wsConnected, user?.email]);
 
   // Auto-update balance from WebSocket (ALWAYS LIVE)
   useEffect(() => {
