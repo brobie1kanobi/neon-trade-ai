@@ -47,19 +47,22 @@ Deno.serve(async (req) => {
       cashAvailable = wallet?.cash_balance || 0;
     }
 
-    // Get auto-buy preferences
-    const prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
+    // Get auto-buy preferences - if none exist, use default top crypto
+    let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
       created_by: user.email, 
       is_simulation: isSimMode,
       enabled: true 
     }, "-created_date", 30);
 
+    // If no preferences, create default watchlist to analyze
     if (prefs.length === 0) {
-      return Response.json({ 
-        success: true, 
-        prospects: [],
-        message: "No auto-buy preferences configured"
-      });
+      const defaultCrypto = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
+      prefs = defaultCrypto.map(symbol => ({
+        symbol,
+        asset_type: 'crypto',
+        percentage: 20,
+        enabled: true
+      }));
     }
 
     // Get current holdings
@@ -107,11 +110,11 @@ Deno.serve(async (req) => {
       console.error('AI analysis error:', _e);
     }
 
-    // Build prospect list
+    // Build prospect list - always show what AI is thinking
     const prospects = [];
     const totalPortfolioValue = cashAvailable + holdings.reduce((sum, h) => sum + (h.quantity || 0) * (h.average_cost_price || 0), 0);
     const isCashBuildUpMode = totalPortfolioValue < 500;
-    let remainingCash = isCashBuildUpMode ? cashAvailable * 0.4 : cashAvailable * 0.85;
+    let remainingCash = Math.max(1, isCashBuildUpMode ? cashAvailable * 0.4 : cashAvailable * 0.85);
 
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
@@ -145,12 +148,18 @@ Deno.serve(async (req) => {
       const total = finalQty * price;
 
       let blockReason = null;
-      if (total < 1) {
+      let wouldExecute = false;
+      
+      if (cashAvailable < 1) {
+        blockReason = `No cash available ($${cashAvailable.toFixed(2)})`;
+      } else if (total < 1) {
         blockReason = "Order value too small (minimum $1)";
-      } else if (total > remainingCash) {
-        blockReason = "Insufficient cash balance";
+      } else if (total > remainingCash && remainingCash > 1) {
+        blockReason = `Not enough allocation ($${remainingCash.toFixed(2)} remaining)`;
       } else if (total > cashAvailable) {
-        blockReason = "Would exceed available cash";
+        blockReason = `Exceeds wallet balance ($${cashAvailable.toFixed(2)})`;
+      } else {
+        wouldExecute = true;
       }
 
       prospects.push({
@@ -164,12 +173,15 @@ Deno.serve(async (req) => {
         predicted_gain: rec.predictedGain,
         is_blocked: !!blockReason,
         block_reason: blockReason,
+        would_execute_now: wouldExecute,
         has_existing_position: !!holding,
         existing_quantity: holding?.quantity || 0,
-        priority: rec.confidence * (holding ? 0.6 : 1.0)
+        priority: rec.confidence * (holding ? 0.6 : 1.0),
+        market_trend: quote?.changePct || 0,
+        allocation_percent: Math.round((total / Math.max(1, cashAvailable)) * 100)
       });
 
-      if (!blockReason) {
+      if (wouldExecute && remainingCash > 1) {
         remainingCash -= total;
       }
     }

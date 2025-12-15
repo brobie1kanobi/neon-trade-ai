@@ -127,20 +127,27 @@ export default function AutoTraderProspects() {
         </CardContent>
       </Card>
 
-      {prospects.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <RefreshCw className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-spin" />
+            <p className="text-gray-500">Analyzing market opportunities...</p>
+          </CardContent>
+        </Card>
+      ) : prospects.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
             <p className="text-gray-500">No prospects available</p>
             <p className="text-sm text-gray-400 mt-2">
-              The auto-trader is analyzing markets and will suggest trades when opportunities arise
+              Configure auto-buy preferences in Portfolio to see AI trading suggestions
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
           {prospects.map((prospect, idx) => (
-            <Card key={idx} className={prospect.is_blocked ? "opacity-60" : ""}>
+            <Card key={idx} className={prospect.is_blocked ? "opacity-75 border-yellow-300" : "border-green-300"}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -151,18 +158,33 @@ export default function AutoTraderProspects() {
                           +{prospect.existing_quantity.toFixed(4)} held
                         </Badge>
                       )}
+                      {prospect.would_execute_now && (
+                        <Badge className="bg-green-500 text-white text-xs">
+                          READY
+                        </Badge>
+                      )}
                     </CardTitle>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
                       {prospect.asset_type === "crypto" ? "Cryptocurrency" : "Stock"}
+                      {prospect.market_trend !== 0 && (
+                        <span className={prospect.market_trend > 0 ? "text-green-600" : "text-red-600"}>
+                          {prospect.market_trend > 0 ? "↗" : "↘"} {Math.abs(prospect.market_trend).toFixed(2)}%
+                        </span>
+                      )}
                     </p>
                   </div>
-                  <Badge className={
-                    prospect.confidence_score >= 70 ? "bg-green-500" :
-                    prospect.confidence_score >= 50 ? "bg-yellow-500" :
-                    "bg-gray-500"
-                  }>
-                    {prospect.confidence_score}% confidence
-                  </Badge>
+                  <div className="text-right">
+                    <Badge className={
+                      prospect.confidence_score >= 70 ? "bg-green-500" :
+                      prospect.confidence_score >= 50 ? "bg-yellow-500" :
+                      "bg-gray-500"
+                    }>
+                      {prospect.confidence_score}% AI
+                    </Badge>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {prospect.allocation_percent}% of wallet
+                    </p>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -180,27 +202,27 @@ export default function AutoTraderProspects() {
                     <p className="font-semibold">{prospect.quantity.toFixed(4)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Predicted Gain</p>
+                    <p className="text-gray-500">Target Gain</p>
                     <p className="font-semibold text-green-600">+{prospect.predicted_gain.toFixed(1)}%</p>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900">
+                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
                     <TrendingUp className="w-3 h-3" />
-                    AI Analysis
+                    AI Market Analysis
                   </p>
                   <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {prospect.ai_reasoning}
+                    {prospect.ai_reasoning || "Analyzing market conditions and technical indicators..."}
                   </p>
                 </div>
 
                 {prospect.is_blocked ? (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-                    <Lock className="w-4 h-4 text-yellow-600" />
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700">
+                    <Lock className="w-4 h-4 text-yellow-600 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">
-                        Order Blocked
+                        ⏸️ On Hold
                       </p>
                       <p className="text-xs text-yellow-600 dark:text-yellow-500">
                         {prospect.block_reason}
@@ -209,7 +231,7 @@ export default function AutoTraderProspects() {
                   </div>
                 ) : (
                   <Button 
-                    className="w-full bg-green-600 hover:bg-green-700" 
+                    className="w-full bg-green-600 hover:bg-green-700 text-white" 
                     onClick={() => setSelectedProspect(prospect)}
                     disabled={isSimMode}
                   >
