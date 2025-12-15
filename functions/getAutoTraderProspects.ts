@@ -15,13 +15,7 @@ Deno.serve(async (req) => {
     }, "-updated_date", 1);
     const settings = settingsRecords[0];
 
-    if (!settings?.auto_trading_enabled) {
-      return Response.json({ 
-        success: true, 
-        prospects: [],
-        message: "Auto-trading is disabled"
-      });
-    }
+    // ALWAYS show prospects - even if auto-trading is disabled
 
     const isSimMode = settings?.sim_trading_mode === true;
 
@@ -79,12 +73,15 @@ Deno.serve(async (req) => {
       .filter(p => p.asset_type === "stock")
       .map(p => String(p.symbol || "").toUpperCase().trim());
 
+    console.log('[Prospects] Fetching market data for:', cryptoSymbols, stockSymbols);
+    
     const marketDataResponse = await base44.asServiceRole.functions.invoke('getMarketData', {
       action: 'getWatchlistData',
       payload: { cryptoSymbols, stockSymbols }
     });
 
     const quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
+    console.log('[Prospects] Got', quotes.length, 'price quotes');
 
     // ALWAYS get AI analysis - show bot's thinking
     let analysisMap = {};
