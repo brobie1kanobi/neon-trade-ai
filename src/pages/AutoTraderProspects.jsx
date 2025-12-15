@@ -135,12 +135,15 @@ export default function AutoTraderProspects() {
           </CardContent>
         </Card>
       ) : prospects.length === 0 ? (
-        <Card>
+        <Card className="border-red-300">
           <CardContent className="py-12 text-center">
-            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <p className="text-gray-500">No prospects available</p>
+            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
+            <p className="text-gray-500 font-semibold">Unable to generate prospects</p>
             <p className="text-sm text-gray-400 mt-2">
-              Configure auto-buy preferences in Portfolio to see AI trading suggestions
+              The AI analyzer couldn't find any tradeable assets with current market data.
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              This usually means market data APIs are temporarily unavailable. Try refreshing in a moment.
             </p>
           </CardContent>
         </Card>
