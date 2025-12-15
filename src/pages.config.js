@@ -9,6 +9,7 @@ import RefundManagement from './pages/RefundManagement';
 import VoiceSettings from './pages/VoiceSettings';
 import StockDetails from './pages/StockDetails';
 import wallet from './pages/wallet';
+import AutoTraderProspects from './pages/AutoTraderProspects';
 import __Layout from './Layout.jsx';
 
 
@@ -24,6 +25,7 @@ export const PAGES = {
     "VoiceSettings": VoiceSettings,
     "StockDetails": StockDetails,
     "wallet": wallet,
+    "AutoTraderProspects": AutoTraderProspects,
 }
 
 export const pagesConfig = {

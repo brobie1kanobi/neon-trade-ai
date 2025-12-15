@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
@@ -457,7 +458,16 @@ export default function AutoTraderHealth() {
             <span className="text-green-600"> • WebSocket Active 🟢</span>
           )}
         </p>
-      </CardContent>
-    </Card>
-  );
-}
+
+        {prerequisites.autoTradingEnabled && (
+          <Link to={createPageUrl("AutoTraderProspects")}>
+            <Button variant="outline" className="w-full mt-2">
+              <TrendingUp className="w-4 h-4 mr-2" />
+              View Prospect Orders
+            </Button>
+          </Link>
+        )}
+        </CardContent>
+        </Card>
+        );
+        }
