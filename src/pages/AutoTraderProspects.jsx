@@ -29,43 +29,32 @@ export default function AutoTraderProspects() {
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [executing, setExecuting] = useState(false);
 
+  // Set mode and balance from settings/WebSocket immediately
+  useEffect(() => {
+    const currentIsSimMode = settings?.sim_trading_mode !== false;
+    setIsSimMode(currentIsSimMode);
+    
+    // ALWAYS use WebSocket balance in LIVE mode
+    if (!currentIsSimMode && wsUsdBalance >= 0) {
+      setCashAvailable(wsUsdBalance);
+      console.log('[Prospects] WebSocket balance:', wsUsdBalance);
+    }
+  }, [settings, wsUsdBalance]);
+
   const fetchProspects = async () => {
     try {
       setLoading(true);
       
-      // Get fresh prospects from backend
-      const response = await Promise.race([
-        base44.functions.invoke('getAutoTraderProspects', {}),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
-      ]);
-      
+      const response = await base44.functions.invoke('getAutoTraderProspects', {});
       const data = response?.data || response;
-      console.log('[Prospects Page] Backend response:', data);
+      console.log('[Prospects] Backend response:', data);
 
       if (data?.success) {
         setProspects(data.prospects || []);
-        setIsSimMode(data.is_sim_mode === true);
-        
-        // CRITICAL: Use WebSocket balance for LIVE mode
-        if (!data.is_sim_mode && wsConnected && wsUsdBalance > 0) {
-          setCashAvailable(wsUsdBalance);
-          console.log('[Prospects Page] Using WebSocket balance:', wsUsdBalance);
-        } else {
-          setCashAvailable(data.cash_available || 0);
-          console.log('[Prospects Page] Using backend balance:', data.cash_available);
-        }
-      } else {
-        toast.error("Failed to load prospects", { description: data?.error });
       }
     } catch (error) {
-      console.error('[Prospects Page] Error:', error);
-      toast.error("Error loading prospects", { description: error.message });
-      
-      // Still set WebSocket balance if available
-      if (wsConnected && wsUsdBalance > 0 && settings?.sim_trading_mode === false) {
-        setCashAvailable(wsUsdBalance);
-        setIsSimMode(false);
-      }
+      console.error('[Prospects] Error:', error);
+      setProspects([]);
     } finally {
       setLoading(false);
     }
@@ -73,18 +62,9 @@ export default function AutoTraderProspects() {
 
   useEffect(() => {
     fetchProspects();
-    
-    // Auto-refresh every 30 seconds
     const interval = setInterval(fetchProspects, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  // Update balance from WebSocket in real-time (LIVE mode only)
-  useEffect(() => {
-    if (!isSimMode && wsConnected && wsUsdBalance > 0) {
-      setCashAvailable(wsUsdBalance);
-    }
-  }, [wsUsdBalance, wsConnected, isSimMode]);
 
   const handleExecuteOrder = async (prospect) => {
     setExecuting(true);

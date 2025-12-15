@@ -149,9 +149,11 @@ Deno.serve(async (req) => {
       const price = quote?.price || 0;
       
       if (!price || price <= 0) {
-        console.log('[Prospects] No price data for', symbol, '- skipping');
+        console.log('[Prospects] No price for', symbol);
         continue;
       }
+      
+      console.log('[Prospects] Processing', symbol, 'at $', price);
 
       const rec = analysisMap[symbol] || { 
         confidence: 0.6, 
