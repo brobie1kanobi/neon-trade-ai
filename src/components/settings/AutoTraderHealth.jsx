@@ -233,7 +233,7 @@ export default function AutoTraderHealth() {
             }>
               {prerequisites.autoTradingEnabled ? '🟢 Enabled' : '⏸️ Disabled'}
             </Badge>
-            {!health.auto_trading_enabled && (
+            {!prerequisites.autoTradingEnabled && (
               <Popover open={showHelp} onOpenChange={setShowHelp}>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="w-6 h-6 p-0">
