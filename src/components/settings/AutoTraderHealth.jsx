@@ -83,13 +83,19 @@ export default function AutoTraderHealth() {
       }
     } catch (fetchError) {
       console.error('[AutoTraderHealth] Error:', fetchError.message);
-      setError(fetchError.message);
+      
+      // Only set error if WebSocket is also disconnected
+      if (!wsConnected) {
+        setError(fetchError.message);
+      } else {
+        setError(null); // Clear error if WebSocket is active
+      }
       
       // Show minimal fallback health (LIVE mode only)
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
         wallet_balance: wsUsdBalance || 0,
-        wallet_status: 'unknown',
+        wallet_status: wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy',
         active_conditional_orders: 0,
         trades_24h: { total: 0, buys: 0, sells: 0, volume: 0 },
         last_check: new Date().toISOString()
@@ -212,10 +218,10 @@ export default function AutoTraderHealth() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {error && (
+        {error && !wsConnected && (
           <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
             <p className="text-xs text-yellow-700 dark:text-yellow-400">
-              ⚠️ Using cached data - {error}
+              ⚠️ Health check slow - using live WebSocket data
             </p>
           </div>
         )}
