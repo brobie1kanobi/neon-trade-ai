@@ -64,23 +64,23 @@ ${marketData.map(asset => `
 `).join('')}
 
 ANALYSIS CRITERIA:
-1. Prioritize assets with strong upward momentum and positive trends
-2. Look for assets with good volatility for quick gains
-3. Consider recent price action and volume surges
-4. Identify breakout opportunities and support levels
-5. Balance stability with growth potential
+1. Focus on STABILITY and CONSISTENT upward momentum
+2. Avoid highly volatile or speculative assets
+3. Look for assets showing gradual recovery or consolidation patterns
+4. Prioritize assets with positive 24h trends but NOT extreme gains (avoid FOMO)
+5. Consider market cap and trading volume for liquidity
 
-RISK TOLERANCE: MODERATE - We want GOOD PROBABILITY wins with decent upside.
-TARGET GAINS: 8-25% within 24-72 hours
+RISK TOLERANCE: LOW - We want HIGH PROBABILITY wins, not moonshots.
+TARGET GAINS: 5-15% within 24-48 hours
 
 For each asset, provide:
-- confidence_score (0-100): How confident you are in achieving the target gain
-- predicted_gain_percent (8-25): Expected percentage gain
+- confidence_score (0-100): How confident you are in a 5-15% gain
+- predicted_gain_percent (5-15): Expected percentage gain
 - reasoning: Brief explanation (max 50 words)
 - action: "buy" or "hold" or "skip"
 - risk_level: "low", "medium", or "high"
 
-Recommend assets with confidence_score >= 55 and any risk_level (we'll manage risk with stop-losses).`;
+Only recommend assets with confidence_score >= 60 and risk_level "low" or "medium".`;
 
     const llmResponse = await base44.integrations.Core.InvokeLLM({
       prompt,
@@ -108,9 +108,10 @@ Recommend assets with confidence_score >= 55 and any risk_level (we'll manage ri
 
     const recommendations = llmResponse?.recommendations || [];
     
-    // Filter: Accept moderate-confidence recommendations (training wheels OFF)
+    // Filter: Only high-confidence, low-risk recommendations
     const filteredRecommendations = recommendations.filter(r => 
-      r.confidence_score >= 55 && 
+      r.confidence_score >= 60 && 
+      ['low', 'medium'].includes(r.risk_level) &&
       r.action === 'buy'
     ).sort((a, b) => b.confidence_score - a.confidence_score);
 
