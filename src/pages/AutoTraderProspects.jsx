@@ -3,7 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, TrendingUp, AlertCircle, Send, RefreshCw, Lock, CheckCircle } from "lucide-react";
+import { ArrowLeft, TrendingUp, AlertCircle, Send, RefreshCw, Lock, CheckCircle, Wifi } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -14,9 +14,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function AutoTraderProspects() {
   const navigate = useNavigate();
+  const { settings } = useSettings();
+  const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
+  
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cashAvailable, setCashAvailable] = useState(0);
@@ -27,19 +32,40 @@ export default function AutoTraderProspects() {
   const fetchProspects = async () => {
     try {
       setLoading(true);
-      const response = await base44.functions.invoke('getAutoTraderProspects', {});
+      
+      // Get fresh prospects from backend
+      const response = await Promise.race([
+        base44.functions.invoke('getAutoTraderProspects', {}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+      ]);
+      
       const data = response?.data || response;
+      console.log('[Prospects Page] Backend response:', data);
 
       if (data?.success) {
         setProspects(data.prospects || []);
-        setCashAvailable(data.cash_available || 0);
         setIsSimMode(data.is_sim_mode === true);
+        
+        // CRITICAL: Use WebSocket balance for LIVE mode
+        if (!data.is_sim_mode && wsConnected && wsUsdBalance > 0) {
+          setCashAvailable(wsUsdBalance);
+          console.log('[Prospects Page] Using WebSocket balance:', wsUsdBalance);
+        } else {
+          setCashAvailable(data.cash_available || 0);
+          console.log('[Prospects Page] Using backend balance:', data.cash_available);
+        }
       } else {
-        toast.error("Failed to load prospects");
+        toast.error("Failed to load prospects", { description: data?.error });
       }
     } catch (error) {
-      console.error('Prospects error:', error);
-      toast.error("Error loading prospects");
+      console.error('[Prospects Page] Error:', error);
+      toast.error("Error loading prospects", { description: error.message });
+      
+      // Still set WebSocket balance if available
+      if (wsConnected && wsUsdBalance > 0 && settings?.sim_trading_mode === false) {
+        setCashAvailable(wsUsdBalance);
+        setIsSimMode(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -47,7 +73,18 @@ export default function AutoTraderProspects() {
 
   useEffect(() => {
     fetchProspects();
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchProspects, 30000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Update balance from WebSocket in real-time (LIVE mode only)
+  useEffect(() => {
+    if (!isSimMode && wsConnected && wsUsdBalance > 0) {
+      setCashAvailable(wsUsdBalance);
+    }
+  }, [wsUsdBalance, wsConnected, isSimMode]);
 
   const handleExecuteOrder = async (prospect) => {
     setExecuting(true);
@@ -119,9 +156,17 @@ export default function AutoTraderProspects() {
             <span className="text-sm font-medium">Available Cash</span>
             <div className="text-right">
               <p className="font-semibold text-lg">${cashAvailable.toFixed(2)}</p>
-              <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
-                {isSimMode ? "💎 Demo" : "🟢 LIVE"}
-              </Badge>
+              <div className="flex items-center gap-2 justify-end">
+                <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
+                  {isSimMode ? "💎 Demo" : "🟢 LIVE"}
+                </Badge>
+                {!isSimMode && wsConnected && (
+                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
+                    <Wifi className="w-3 h-3" />
+                    Live
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
