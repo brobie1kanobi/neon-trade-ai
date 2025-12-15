@@ -673,11 +673,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         const stockPrefs = [...new Set(prefs.filter(p => p.asset_type === "stock").map(p => String(p.symbol || "").toUpperCase().trim()))];
         const quotesForBuy = await fetchQuotes({ stockSymbols: stockPrefs, cryptoSymbols: cryptoPrefs });
         if (!Array.isArray(quotesForBuy) || quotesForBuy.length === 0) return;
-        // CRITICAL: When above $500, be more aggressive with trading
-        // Below $500: conservative mode (build up capital)
-        // Above $500: full trading mode (maximize returns)
-        const isCashBuildUpMode = lifetimeChange?.percentage >= 10 || totalPortfolioValue < 500;
-        let remainingCash = isCashBuildUpMode ? cashAvailable * 0.3 : cashAvailable * 0.8;
+        // CRITICAL: Aggressive trading mode enabled
+        // Below $500: build capital with 40% of cash
+        // Above $500: full trading mode with 85% of cash for maximum returns
+        const isCashBuildUpMode = totalPortfolioValue < 500;
+        let remainingCash = isCashBuildUpMode ? cashAvailable * 0.4 : cashAvailable * 0.85;
         if (remainingCash <= 1.0) return;
         
         // CRITICAL: Use new "Small Gains" LLM for conservative, high-probability trades
@@ -721,11 +721,11 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           const actualCash = isSimMode ? (currentWallet?.cash_balance || 0) : (currentWallet?.real_cash_balance || 0);
           remainingCash = Math.min(remainingCash, isCashBuildUpMode ? actualCash * 0.2 : actualCash * 0.8);
           if (remainingCash < 1.0) break;
-          const rec = analysisMap[sym] || { confidence: 0.55, action: "buy" };
+          const rec = analysisMap[sym] || { confidence: 0.6, action: "buy" };
           if (rec.action === "hold" || rec.action === "sell") continue;
-          const basePct = Math.max(10, Number(p.percentage) || 10) / 100;
-          const multiplier = Math.min(1.5, 0.5 + rec.confidence);
-          const fraction = Math.max(0.05, Math.min(0.3, basePct * multiplier));
+          const basePct = Math.max(15, Number(p.percentage) || 15) / 100;
+          const multiplier = Math.min(2.0, 0.6 + rec.confidence * 1.4);
+          const fraction = Math.max(0.08, Math.min(0.45, basePct * multiplier));
           let spend = remainingCash * fraction;
           const minSpendTarget = Math.max(2, Math.min(10, price * 0.05));
           if (spend < minSpendTarget && remainingCash >= minSpendTarget) spend = Math.min(remainingCash, minSpendTarget);
@@ -943,9 +943,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     // Run immediately on mount
     console.log('[AutoTrader] Hook initialized - running first trade cycle');
     performRuleBasedTrade();
-    
-    // Run every 2 minutes instead of 5 for more responsive trading
-    const interval = setInterval(performRuleBasedTrade, 120000);
+
+    // Run every 90 seconds for aggressive live trading
+    const interval = setInterval(performRuleBasedTrade, 90000);
     const flushCheckInterval = setInterval(checkAndFlushBatch, 30000);
     return () => {
       if (interval) clearInterval(interval);
