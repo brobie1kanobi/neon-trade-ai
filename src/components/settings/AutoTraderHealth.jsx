@@ -60,9 +60,6 @@ export default function AutoTraderHealth() {
       setLoading(true);
       setError(null);
       
-      // Check prerequisites first
-      await checkPrerequisites();
-      
       // CRITICAL: Fast timeout - 5 seconds max
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout after 5s')), 5000)
@@ -118,10 +115,10 @@ export default function AutoTraderHealth() {
 
   // Re-check prerequisites when WebSocket connection changes
   useEffect(() => {
-    if (user?.email && health) {
+    if (user?.email) {
       checkPrerequisites();
     }
-  }, [wsConnected, user?.email]);
+  }, [wsConnected, user?.email, settings?.auto_trading_enabled]);
 
   // Auto-update balance from WebSocket (ALWAYS LIVE)
   useEffect(() => {
