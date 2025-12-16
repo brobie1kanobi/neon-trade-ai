@@ -31,6 +31,7 @@ export default function AutoTraderProspects() {
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [krakenRestBalance, setKrakenRestBalance] = useState(0);
+  const [userMargins, setUserMargins] = useState({ gain_margin: 10, loss_margin: 5 });
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
@@ -76,6 +77,9 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
+        if (data.user_settings) {
+          setUserMargins(data.user_settings);
+        }
       }
     } catch (error) {
       console.error('[Prospects] Error:', error);
@@ -250,7 +254,7 @@ export default function AutoTraderProspects() {
                   </div>
                   <div>
                     <p className="text-gray-500">Target Gain</p>
-                    <p className="font-semibold text-green-600">+{prospect.predicted_gain.toFixed(1)}%</p>
+                    <p className="font-semibold text-green-600">+{userMargins.gain_margin}%</p>
                   </div>
                 </div>
 
@@ -297,18 +301,14 @@ export default function AutoTraderProspects() {
               }
 
                       <div className="flex gap-4 text-xs">
-                        {prospect.stop_loss_pct &&
-                <span className="text-red-500 flex items-center gap-1">
-                            <TrendingDown className="w-3 h-3" />
-                            SL: -{prospect.stop_loss_pct}%
-                          </span>
-                }
-                        {prospect.take_profit_pct &&
-                <span className="text-green-500 flex items-center gap-1">
-                            <TrendingUp className="w-3 h-3" />
-                            TP: +{prospect.take_profit_pct}%
-                          </span>
-                }
+                        <span className="text-red-500 flex items-center gap-1">
+                          <TrendingDown className="w-3 h-3" />
+                          SL: -{userMargins.loss_margin}%
+                        </span>
+                        <span className="text-green-500 flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" />
+                          TP: +{userMargins.gain_margin}%
+                        </span>
                       </div>
                     </div>
 
