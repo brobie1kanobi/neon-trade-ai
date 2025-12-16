@@ -39,15 +39,37 @@ export default function MarketAnalystModal({ isOpen, onClose }) {
   }, [isOpen, messages.length]);
 
   const sendLLM = async (prompt) => {
-    const addWeb = /news|headline|today|latest|this week|tweet|twitter|x\.com|reddit|social|predict|prediction|forecast|price target|guidance|earnings|rumor|breaking/i.test(prompt);
+    // ALWAYS fetch real-time market data for context
+    let marketContext = "";
+    try {
+      // Fetch current prices for common cryptos and stocks
+      const marketResponse = await base44.functions.invoke('getMarketData', {
+        action: 'getWatchlistData',
+        payload: {
+          cryptoSymbols: ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'],
+          stockSymbols: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META']
+        }
+      });
+      const marketData = Array.isArray(marketResponse?.data) ? marketResponse.data : [];
+      if (marketData.length > 0) {
+        marketContext = `\n\nREAL-TIME MARKET DATA (as of ${new Date().toLocaleString()}):\n` +
+          marketData.map(d => `${d.symbol}: $${d.price?.toFixed(2) || d.current_price?.toFixed(2) || 'N/A'} (24h: ${d.change_24h_percent?.toFixed(2) || d.price_change_percentage_24h?.toFixed(2) || 0}%)`).join('\n');
+      }
+    } catch (e) {
+      console.log('[MarketAnalyst] Could not fetch market data:', e.message);
+    }
+
     const res = await base44.integrations.Core.InvokeLLM({
       prompt: [
-      "You are a market analyst. Answer concisely with clear reasoning.",
-      "If asked to predict, provide an educated estimate and your assumptions.",
-      "Include any relevant, fresh context when available.",
-      `User: ${prompt}`].
-      join("\n"),
-      add_context_from_internet: addWeb
+        "You are a professional market analyst with access to REAL-TIME market data.",
+        "IMPORTANT: You have current, up-to-date market data available. Use it to provide accurate, timely analysis.",
+        "Today's date is: " + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+        "Answer concisely with clear reasoning based on current market conditions.",
+        "If asked to predict, provide an educated estimate based on current data and recent trends.",
+        marketContext,
+        `\nUser Question: ${prompt}`
+      ].join("\n"),
+      add_context_from_internet: true // ALWAYS use internet for fresh news/data
     });
     const reply = typeof res === "string" ? res : res?.answer || JSON.stringify(res);
     return reply;
