@@ -11,6 +11,7 @@ import OrdersAndHistory from "../components/portfolio/OrdersAndHistory";
 import DataSync from "../components/portfolio/DataSync";
 import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
+import AutoTraderHealth from "../components/settings/AutoTraderHealth";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
@@ -636,6 +637,11 @@ export default function Portfolio() {
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
         <AutoBuyPreferences />
+      </motion.div>
+
+      {/* Auto-Trader Status - Below Auto-Buy Preferences */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
+        <AutoTraderHealth />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>

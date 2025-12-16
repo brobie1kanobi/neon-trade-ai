@@ -11,7 +11,7 @@ import CreditsSection from "../components/settings/CreditsSection";
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
-import AutoTraderHealth from "../components/settings/AutoTraderHealth";
+
 import KrakenArchitectureSection from "../components/settings/KrakenArchitectureSection";
 import { useSettings } from "../components/utils/SettingsContext";
 
@@ -55,12 +55,7 @@ export default function Settings() {
         />
       </motion.div>
 
-      {/* 2b) Auto-Trader Health Monitor (LIVE mode only) */}
-      {settings && !settings.sim_trading_mode && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <AutoTraderHealth />
-        </motion.div>
-      )}
+
 
       {/* 2c) Kraken Architecture & Testing (LIVE mode only) */}
       {settings && !settings.sim_trading_mode && (
