@@ -230,7 +230,7 @@ export default function AutoTraderProspects() {
                 prospect.confidence_score >= 50 ? "bg-yellow-500" :
                 "bg-gray-500"
                 }>
-                      {prospect.confidence_score}% AI
+                      {prospect.confidence_score}% AI Confidence
                     </Badge>
                     <p className="text-xs text-gray-500 mt-1">
                       {prospect.allocation_percent}% of wallet
@@ -317,7 +317,7 @@ export default function AutoTraderProspects() {
                     <Lock className="w-4 h-4 text-yellow-600 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">
-                        ⏸️ On Hold
+                        ⏸️ Reconnecting to Websocket...
                       </p>
                       <p className="text-xs text-yellow-600 dark:text-yellow-500">
                         {prospect.block_reason}
