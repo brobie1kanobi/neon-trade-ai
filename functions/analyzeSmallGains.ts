@@ -1,10 +1,13 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
- * Small Gains Analyzer - AI-Powered Low-Risk Trading Recommendations
+ * Enhanced Market Intelligence Analyzer
  * 
- * Analyzes user's auto-buy preferences and identifies short-term opportunities
- * for modest gains (5-15%) with high probability of success.
+ * Analyzes user's assets with advanced capabilities:
+ * - Technical chart pattern recognition (head & shoulders, double tops/bottoms, etc.)
+ * - Market sentiment analysis from news and social trends
+ * - Cross-asset correlation analysis
+ * - Optimal buy/sell timing recommendations
  */
 
 Deno.serve(async (req) => {
@@ -17,9 +20,9 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { symbols = [] } = body;
+    const { symbols = [], includeMarketIntelligence = true } = body;
 
-    console.log('[analyzeSmallGains] Analyzing', symbols.length, 'symbols for user:', user.email);
+    console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence);
 
     // Get user's auto-buy preferences
     const autoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
@@ -34,6 +37,7 @@ Deno.serve(async (req) => {
       return Response.json({
         success: true,
         recommendations: [],
+        market_intelligence: null,
         message: 'No symbols to analyze'
       });
     }
@@ -50,40 +54,64 @@ Deno.serve(async (req) => {
       });
       marketData = Array.isArray(marketResponse?.data) ? marketResponse.data : [];
     } catch (err) {
-      console.error('[analyzeSmallGains] Market data error:', err);
+      console.error('[MarketIntelligence] Market data error:', err);
     }
 
-    // Use LLM to analyze for small gains opportunities
-    const prompt = `You are a conservative crypto trading analyst specializing in SHORT-TERM, LOW-RISK opportunities.
+    // Build comprehensive analysis prompt with market intelligence
+    const analysisPrompt = `You are an elite quantitative trading analyst with expertise in technical analysis, market sentiment, and cross-asset correlations.
 
-TASK: Analyze the following assets and identify which ones have the HIGHEST PROBABILITY of achieving modest gains (5-15%) in the next 24-48 hours.
+TASK: Provide comprehensive market intelligence for these assets to inform automated trading decisions.
 
 ASSETS TO ANALYZE:
 ${marketData.map(asset => `
-- ${asset.symbol}: Current Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h}%
+- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%
 `).join('')}
 
-ANALYSIS CRITERIA:
-1. Focus on STABILITY and CONSISTENT upward momentum
-2. Avoid highly volatile or speculative assets
-3. Look for assets showing gradual recovery or consolidation patterns
-4. Prioritize assets with positive 24h trends but NOT extreme gains (avoid FOMO)
-5. Consider market cap and trading volume for liquidity
+ANALYSIS FRAMEWORK:
 
-RISK TOLERANCE: LOW - We want HIGH PROBABILITY wins, not moonshots.
-TARGET GAINS: 5-15% within 24-48 hours
+1. TECHNICAL PATTERN RECOGNITION
+For each asset, identify any of these patterns:
+- Head & Shoulders (bearish reversal)
+- Inverse Head & Shoulders (bullish reversal)
+- Double Top (bearish reversal)
+- Double Bottom (bullish reversal)
+- Bull Flag / Bear Flag (continuation)
+- Ascending/Descending Triangle
+- Cup and Handle (bullish)
+- Support/Resistance levels
 
+2. SENTIMENT ANALYSIS
+Based on your knowledge of current market conditions:
+- Overall crypto market sentiment (bullish/bearish/neutral)
+- Bitcoin dominance trend and its impact
+- Macro factors (interest rates, regulations, institutional activity)
+- Social media buzz indicators (high/medium/low)
+
+3. CORRELATION ANALYSIS
+- Which assets move together?
+- Which assets provide diversification?
+- Beta relative to BTC/major indices
+
+4. TIMING SIGNALS
 For each asset, provide:
-- confidence_score (0-100): How confident you are in a 5-15% gain
-- predicted_gain_percent (5-15): Expected percentage gain
-- reasoning: Brief explanation (max 50 words)
-- action: "buy" or "hold" or "skip"
-- risk_level: "low", "medium", or "high"
+- optimal_action: "strong_buy", "buy", "hold", "sell", "strong_sell"
+- timing_window: "immediate" (next 1-4 hrs), "short_term" (24-48 hrs), "wait" (no clear setup)
+- entry_zone: suggested price range for entry
+- stop_loss_pct: recommended stop loss percentage
+- take_profit_pct: recommended take profit percentage
 
-Only recommend assets with confidence_score >= 60 and risk_level "low" or "medium".`;
+5. MARKET REGIME
+- Current market phase: accumulation, markup, distribution, markdown
+- Volatility level: low, medium, high, extreme
+- Trend strength: weak, moderate, strong
 
+OUTPUT FORMAT:
+Provide actionable intelligence the auto-trader can use to make informed decisions.`;
+
+    // Call LLM with enhanced schema
     const llmResponse = await base44.integrations.Core.InvokeLLM({
-      prompt,
+      prompt: analysisPrompt,
+      add_context_from_internet: includeMarketIntelligence,
       response_json_schema: {
         type: "object",
         properties: {
@@ -97,8 +125,51 @@ Only recommend assets with confidence_score >= 60 and risk_level "low" or "mediu
                 predicted_gain_percent: { type: "number" },
                 reasoning: { type: "string" },
                 action: { type: "string" },
-                risk_level: { type: "string" }
+                risk_level: { type: "string" },
+                technical_pattern: { type: "string" },
+                pattern_reliability: { type: "string" },
+                optimal_action: { type: "string" },
+                timing_window: { type: "string" },
+                entry_zone_low: { type: "number" },
+                entry_zone_high: { type: "number" },
+                stop_loss_pct: { type: "number" },
+                take_profit_pct: { type: "number" },
+                sentiment_score: { type: "number" },
+                correlation_group: { type: "string" }
               }
+            }
+          },
+          market_intelligence: {
+            type: "object",
+            properties: {
+              overall_sentiment: { type: "string" },
+              sentiment_score: { type: "number" },
+              market_regime: { type: "string" },
+              volatility_level: { type: "string" },
+              trend_strength: { type: "string" },
+              btc_dominance_trend: { type: "string" },
+              macro_outlook: { type: "string" },
+              key_levels: {
+                type: "object",
+                properties: {
+                  btc_support: { type: "number" },
+                  btc_resistance: { type: "number" }
+                }
+              },
+              correlation_clusters: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    group_name: { type: "string" },
+                    assets: { type: "array", items: { type: "string" } },
+                    correlation_strength: { type: "string" }
+                  }
+                }
+              },
+              trading_recommendation: { type: "string" },
+              best_opportunities: { type: "array", items: { type: "string" } },
+              avoid_list: { type: "array", items: { type: "string" } }
             }
           },
           market_summary: { type: "string" }
@@ -107,30 +178,51 @@ Only recommend assets with confidence_score >= 60 and risk_level "low" or "mediu
     });
 
     const recommendations = llmResponse?.recommendations || [];
+    const marketIntelligence = llmResponse?.market_intelligence || null;
     
-    // Filter: Only high-confidence, low-risk recommendations
-    const filteredRecommendations = recommendations.filter(r => 
-      r.confidence_score >= 60 && 
-      ['low', 'medium'].includes(r.risk_level) &&
-      r.action === 'buy'
-    ).sort((a, b) => b.confidence_score - a.confidence_score);
+    // Filter and enhance recommendations
+    const enhancedRecommendations = recommendations
+      .filter(r => r.confidence_score >= 50)
+      .map(r => ({
+        ...r,
+        // Ensure all fields have defaults
+        technical_pattern: r.technical_pattern || 'No clear pattern',
+        pattern_reliability: r.pattern_reliability || 'moderate',
+        optimal_action: r.optimal_action || r.action || 'hold',
+        timing_window: r.timing_window || 'short_term',
+        stop_loss_pct: r.stop_loss_pct || 5,
+        take_profit_pct: r.take_profit_pct || 10,
+        sentiment_score: r.sentiment_score || 50,
+        correlation_group: r.correlation_group || 'uncorrelated'
+      }))
+      .sort((a, b) => {
+        // Sort by: strong_buy first, then by confidence
+        const actionPriority = { 'strong_buy': 4, 'buy': 3, 'hold': 2, 'sell': 1, 'strong_sell': 0 };
+        const aPriority = actionPriority[a.optimal_action] || 2;
+        const bPriority = actionPriority[b.optimal_action] || 2;
+        if (aPriority !== bPriority) return bPriority - aPriority;
+        return b.confidence_score - a.confidence_score;
+      });
 
-    console.log('[analyzeSmallGains] Generated', filteredRecommendations.length, 'recommendations');
+    console.log('[MarketIntelligence] Generated', enhancedRecommendations.length, 'recommendations');
+    console.log('[MarketIntelligence] Market regime:', marketIntelligence?.market_regime);
 
     return Response.json({
       success: true,
-      recommendations: filteredRecommendations,
+      recommendations: enhancedRecommendations,
+      market_intelligence: marketIntelligence,
       market_summary: llmResponse?.market_summary || 'Analysis complete',
       analyzed_count: targetSymbols.length,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('[analyzeSmallGains] Error:', error);
+    console.error('[MarketIntelligence] Error:', error);
     return Response.json({
       success: false,
       error: error.message,
-      recommendations: []
+      recommendations: [],
+      market_intelligence: null
     }, { status: 500 });
   }
 });

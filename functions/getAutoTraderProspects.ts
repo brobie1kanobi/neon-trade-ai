@@ -83,53 +83,73 @@ Deno.serve(async (req) => {
     const quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
     console.log('[Prospects] Got', quotes.length, 'price quotes');
 
-    // ALWAYS get AI analysis - show bot's thinking
+    // ALWAYS get AI analysis with full market intelligence
     let analysisMap = {};
+    let marketIntelligence = null;
     try {
-      console.log('[Prospects] Calling AI analyzer for symbols:', [...cryptoSymbols, ...stockSymbols]);
+      console.log('[Prospects] Calling Market Intelligence analyzer for:', [...cryptoSymbols, ...stockSymbols]);
       const analysisResponse = await Promise.race([
         base44.asServiceRole.functions.invoke('analyzeSmallGains', {
-          symbols: [...cryptoSymbols, ...stockSymbols]
+          symbols: [...cryptoSymbols, ...stockSymbols],
+          includeMarketIntelligence: true
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI analysis timeout')), 15000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI analysis timeout')), 20000))
       ]);
       const analysisData = analysisResponse?.data || analysisResponse;
       
-      console.log('[Prospects] AI analysis response:', JSON.stringify(analysisData));
+      console.log('[Prospects] Market Intelligence response received');
+      
+      // Store market intelligence for frontend display
+      marketIntelligence = analysisData?.market_intelligence || null;
       
       if (analysisData?.success && Array.isArray(analysisData?.recommendations)) {
         analysisMap = analysisData.recommendations.reduce((acc, r) => {
           const confidence = (r.confidence_score || 60) / 100;
           acc[(r.symbol || "").toUpperCase()] = { 
             confidence: Math.max(0, Math.min(1, confidence)),
-            action: (r.action || "buy").toLowerCase(),
+            action: (r.optimal_action || r.action || "buy").toLowerCase(),
             predictedGain: r.predicted_gain_percent || 10,
-            reasoning: r.reasoning || 'Analyzing market conditions...'
+            reasoning: r.reasoning || 'Analyzing market conditions...',
+            // Enhanced fields from market intelligence
+            technicalPattern: r.technical_pattern || null,
+            patternReliability: r.pattern_reliability || 'moderate',
+            timingWindow: r.timing_window || 'short_term',
+            entryZone: r.entry_zone_low && r.entry_zone_high ? { low: r.entry_zone_low, high: r.entry_zone_high } : null,
+            stopLossPct: r.stop_loss_pct || 5,
+            takeProfitPct: r.take_profit_pct || 10,
+            sentimentScore: r.sentiment_score || 50,
+            correlationGroup: r.correlation_group || null
           };
           return acc;
         }, {});
         console.log('[Prospects] Generated', Object.keys(analysisMap).length, 'AI recommendations');
       } else {
         console.log('[Prospects] No AI recommendations, using defaults');
-        // Use default analysis for all symbols
         [...cryptoSymbols, ...stockSymbols].forEach(sym => {
           analysisMap[sym] = {
             confidence: 0.6,
             action: 'buy',
             predictedGain: 8,
-            reasoning: 'AI is analyzing market trends and technical indicators for this asset...'
+            reasoning: 'AI is analyzing market trends and technical indicators for this asset...',
+            technicalPattern: null,
+            timingWindow: 'short_term',
+            stopLossPct: 5,
+            takeProfitPct: 10
           };
         });
       }
     } catch (aiError) {
       console.error('[Prospects] AI analysis error:', aiError);
-      // Still show prospects with default analysis
       [...cryptoSymbols, ...stockSymbols].forEach(sym => {
         analysisMap[sym] = {
           confidence: 0.6,
           action: 'buy',
           predictedGain: 8,
-          reasoning: 'AI analyzer temporarily unavailable - using baseline analysis'
+          reasoning: 'AI analyzer temporarily unavailable - using baseline analysis',
+          technicalPattern: null,
+          timingWindow: 'short_term',
+          stopLossPct: 5,
+          takeProfitPct: 10
         };
       });
     }
@@ -199,7 +219,7 @@ Deno.serve(async (req) => {
         total_value: total,
         confidence_score: Math.round(rec.confidence * 100),
         ai_reasoning: rec.reasoning,
-        predicted_gain: rec.predictedGain,
+        predicted_gain: rec.predictedGain || rec.takeProfitPct || 10,
         is_blocked: !!blockReason,
         block_reason: blockReason,
         would_execute_now: wouldExecute,
@@ -207,7 +227,17 @@ Deno.serve(async (req) => {
         existing_quantity: holding?.quantity || 0,
         priority: rec.confidence * (holding ? 0.6 : 1.0),
         market_trend: quote?.changePct || 0,
-        allocation_percent: Math.round((total / Math.max(1, cashAvailable)) * 100)
+        allocation_percent: Math.round((total / Math.max(1, cashAvailable)) * 100),
+        // Enhanced market intelligence fields
+        technical_pattern: rec.technicalPattern,
+        pattern_reliability: rec.patternReliability,
+        timing_window: rec.timingWindow,
+        entry_zone: rec.entryZone,
+        stop_loss_pct: rec.stopLossPct,
+        take_profit_pct: rec.takeProfitPct,
+        sentiment_score: rec.sentimentScore,
+        correlation_group: rec.correlationGroup,
+        optimal_action: rec.action
       });
 
       if (wouldExecute && remainingCash > 1) {
@@ -225,8 +255,9 @@ Deno.serve(async (req) => {
       prospects,
       cash_available: cashAvailable,
       is_sim_mode: isSimMode,
-      auto_trading_enabled: settings.auto_trading_enabled,
-      total_analyzed: prefs.length
+      auto_trading_enabled: settings?.auto_trading_enabled || false,
+      total_analyzed: prefs.length,
+      market_intelligence: marketIntelligence
     });
 
   } catch (error) {
