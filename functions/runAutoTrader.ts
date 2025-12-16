@@ -84,7 +84,33 @@ Deno.serve(async (req) => {
     const stockSymbols = prefs.filter(p => (p.asset_type || '').toLowerCase() === 'stock').map(p => (p.symbol || '').toUpperCase());
     const priceMap = await getPrices(base44, cryptoSymbols, stockSymbols);
 
+    // Get AI analysis for intelligent execution decisions
+    let aiAnalysis = {};
+    try {
+      const analysisResponse = await Promise.race([
+        base44.functions.invoke('analyzeSmallGains', {
+          symbols: [...cryptoSymbols, ...stockSymbols],
+          includeMarketIntelligence: true
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 15000))
+      ]);
+      const analysisData = analysisResponse?.data || analysisResponse;
+      if (analysisData?.success && Array.isArray(analysisData?.recommendations)) {
+        for (const rec of analysisData.recommendations) {
+          const sym = (rec.symbol || '').toUpperCase();
+          aiAnalysis[sym] = {
+            confidence: (rec.confidence_score || 50) / 100,
+            action: (rec.optimal_action || rec.action || 'hold').toLowerCase(),
+            reasoning: rec.reasoning || ''
+          };
+        }
+      }
+    } catch (e) {
+      console.log('[runAutoTrader] AI analysis unavailable, using defaults');
+    }
+
     const tradesPlaced = [];
+    const MIN_CONFIDENCE_THRESHOLD = 0.55; // Only execute if AI confidence >= 55%
     
     for (const pref of prefs) {
       if (!pref?.enabled) continue;
@@ -94,6 +120,17 @@ Deno.serve(async (req) => {
 
       const price = priceMap.get(sym);
       if (price == null || price <= 0) continue;
+
+      // Check AI recommendation - skip if AI says don't buy or low confidence
+      const ai = aiAnalysis[sym] || { confidence: 0.6, action: 'buy' };
+      if (ai.action !== 'buy' && ai.action !== 'strong_buy') {
+        console.log(`[runAutoTrader] Skipping ${sym} - AI recommends: ${ai.action}`);
+        continue;
+      }
+      if (ai.confidence < MIN_CONFIDENCE_THRESHOLD) {
+        console.log(`[runAutoTrader] Skipping ${sym} - AI confidence too low: ${(ai.confidence * 100).toFixed(0)}%`);
+        continue;
+      }
 
       // Re-fetch latest wallet
       wallet = await getLatestWallet(base44, user.email);
@@ -188,12 +225,34 @@ Deno.serve(async (req) => {
 
       availableCash = round2(availableCash - total_value);
 
+      // Create conditional order for stop-loss/take-profit management
+      const gainMargin = settings.gain_margin || 10;
+      const lossMargin = settings.loss_margin || 5;
+      const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
+      const trailingMargin = settings.trailing_takeprofit_margin || 3;
+
+      await base44.entities.ConditionalOrder.create({
+        symbol: sym,
+        asset_type: typ,
+        quantity: qty,
+        purchase_price: price,
+        gain_margin: gainMargin,
+        loss_margin: lossMargin,
+        status: 'active',
+        trailing_enabled: trailingEnabled,
+        highest_price: price,
+        trailing_margin: trailingMargin,
+        is_simulation: isSimMode,
+        created_by: user.email
+      });
+
       tradesPlaced.push({
         symbol: sym,
         asset_type: typ,
         qty,
         price,
-        total_value
+        total_value,
+        ai_confidence: Math.round(ai.confidence * 100)
       });
 
       if (availableCash < 1) break;
