@@ -253,17 +253,36 @@ export default function AutoTraderProspects() {
                   <div>
                     <p className="text-gray-500">Target Gain</p>
                     <p className="font-semibold text-green-600">+{prospect.predicted_gain.toFixed(1)}%</p>
+                    {prospect.ai_suggested_gain && prospect.ai_suggested_gain !== prospect.predicted_gain && (
+                      <p className="text-xs text-gray-400">AI suggests +{prospect.ai_suggested_gain.toFixed(1)}%</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 space-y-2">
                       <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-                        <TrendingUp className="w-3 h-3" />
+                        <Brain className="w-3 h-3" />
                         AI Market Analysis
+                        {prospect.confidence_score >= 70 && (
+                          <Badge className="ml-1 bg-green-600 text-white text-[10px] py-0 px-1">High Confidence</Badge>
+                        )}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {prospect.ai_reasoning || "Analyzing market conditions and technical indicators..."}
+                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
+                        {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" 
+                          ? prospect.ai_reasoning 
+                          : `Analyzing ${prospect.symbol} market conditions, technical indicators, sentiment, and cross-asset correlations...`}
                       </p>
+                      
+                      {/* Sentiment Score */}
+                      {prospect.sentiment_score && prospect.sentiment_score !== 50 && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500">Market Sentiment:</span>
+                          <span className={prospect.sentiment_score > 60 ? "text-green-500" : prospect.sentiment_score < 40 ? "text-red-500" : "text-yellow-500"}>
+                            {prospect.sentiment_score > 70 ? "🟢 Bullish" : prospect.sentiment_score > 55 ? "📈 Slightly Bullish" : prospect.sentiment_score < 30 ? "🔴 Bearish" : prospect.sentiment_score < 45 ? "📉 Slightly Bearish" : "⚪ Neutral"}
+                            ({prospect.sentiment_score}%)
+                          </span>
+                        </div>
+                      )}
 
                       {/* Enhanced Intelligence Display */}
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">

@@ -211,6 +211,9 @@ Deno.serve(async (req) => {
         wouldExecute = true;
       }
 
+      // Use user's gain_margin preference for target gain, AI can suggest but user settings take priority
+      const userTargetGain = settings?.gain_margin || 10;
+      
       prospects.push({
         symbol,
         asset_type: pref.asset_type,
@@ -219,7 +222,7 @@ Deno.serve(async (req) => {
         total_value: total,
         confidence_score: Math.round(rec.confidence * 100),
         ai_reasoning: rec.reasoning,
-        predicted_gain: rec.predictedGain || rec.takeProfitPct || 10,
+        predicted_gain: userTargetGain, // Use user's preference
         is_blocked: !!blockReason,
         block_reason: blockReason,
         would_execute_now: wouldExecute,
@@ -233,8 +236,9 @@ Deno.serve(async (req) => {
         pattern_reliability: rec.patternReliability,
         timing_window: rec.timingWindow,
         entry_zone: rec.entryZone,
-        stop_loss_pct: rec.stopLossPct,
-        take_profit_pct: rec.takeProfitPct,
+        stop_loss_pct: settings?.loss_margin || rec.stopLossPct || 5,
+        take_profit_pct: userTargetGain,
+        ai_suggested_gain: rec.predictedGain || rec.takeProfitPct || 10,
         sentiment_score: rec.sentimentScore,
         correlation_group: rec.correlationGroup,
         optimal_action: rec.action
