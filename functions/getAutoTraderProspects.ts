@@ -254,6 +254,11 @@ Deno.serve(async (req) => {
     // Sort by priority (confidence * position factor)
     prospects.sort((a, b) => b.priority - a.priority);
 
+    // Add user settings to response so frontend can use them
+    const userGainMargin = settings?.gain_margin || 10;
+    const userLossMargin = settings?.loss_margin || 5;
+    
+    console.log('[Prospects] User margins - gain:', userGainMargin, '% loss:', userLossMargin, '%');
     console.log('[Prospects] Returning', prospects.length, 'prospects');
 
     return Response.json({
@@ -263,7 +268,11 @@ Deno.serve(async (req) => {
       is_sim_mode: isSimMode,
       auto_trading_enabled: settings?.auto_trading_enabled || false,
       total_analyzed: prefs.length,
-      market_intelligence: marketIntelligence
+      market_intelligence: marketIntelligence,
+      user_settings: {
+        gain_margin: userGainMargin,
+        loss_margin: userLossMargin
+      }
     });
 
   } catch (error) {

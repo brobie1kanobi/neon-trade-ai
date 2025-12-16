@@ -30,6 +30,7 @@ export default function AutoTraderProspects() {
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [userMargins, setUserMargins] = useState({ gain_margin: 10, loss_margin: 5 });
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
@@ -78,6 +79,9 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
+        if (data.user_settings) {
+          setUserMargins(data.user_settings);
+        }
       }
     } catch (error) {
       console.error('[Prospects] Error:', error);
@@ -259,8 +263,8 @@ export default function AutoTraderProspects() {
                   </div>
                   <div>
                     <p className="text-gray-500">Target Gain</p>
-                    <p className="font-semibold text-green-600">+{prospect.predicted_gain.toFixed(1)}%</p>
-                    {prospect.ai_suggested_gain && prospect.ai_suggested_gain !== prospect.predicted_gain && (
+                    <p className="font-semibold text-green-600">+{userMargins.gain_margin}%</p>
+                    {prospect.ai_suggested_gain && prospect.ai_suggested_gain !== userMargins.gain_margin && (
                       <p className="text-xs text-gray-400">AI suggests +{prospect.ai_suggested_gain.toFixed(1)}%</p>
                     )}
                   </div>
@@ -327,11 +331,11 @@ export default function AutoTraderProspects() {
                       <div className="flex gap-4 text-xs">
                         <span className="text-red-500 flex items-center gap-1">
                           <TrendingDown className="w-3 h-3" />
-                          SL: -{prospect.user_loss_margin || prospect.stop_loss_pct || 5}%
+                          SL: -{userMargins.loss_margin}%
                         </span>
                         <span className="text-green-500 flex items-center gap-1">
                           <TrendingUp className="w-3 h-3" />
-                          TP: +{prospect.user_gain_margin || prospect.take_profit_pct || 10}%
+                          TP: +{userMargins.gain_margin}%
                         </span>
                       </div>
                     </div>
@@ -406,8 +410,8 @@ export default function AutoTraderProspects() {
 
               <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  <strong>Stop Loss:</strong> -{selectedProspect.stop_loss_pct || settings?.loss_margin || 5}% | 
-                  <strong> Take Profit:</strong> +{selectedProspect.take_profit_pct || settings?.gain_margin || 10}%
+                  <strong>Stop Loss:</strong> -{userMargins.loss_margin}% | 
+                  <strong> Take Profit:</strong> +{userMargins.gain_margin}%
                 </p>
               </div>
             </div>
