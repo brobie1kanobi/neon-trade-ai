@@ -30,14 +30,37 @@ export default function AutoTraderProspects() {
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [krakenRestBalance, setKrakenRestBalance] = useState(0);
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // Calculate cash balance from actual sources
-  const cashAvailable = isSimMode ?
-  wallet?.cash_balance || 0 :
-  wsConnected && wsUsdBalance > 0 ? wsUsdBalance : wallet?.real_cash_balance || 0;
+  // Fetch Kraken balance via REST API as fallback when WebSocket isn't providing data
+  useEffect(() => {
+    if (isSimMode) return;
+    
+    const fetchKrakenBalance = async () => {
+      try {
+        const response = await base44.functions.invoke('getKrakenBalance', {});
+        const data = response?.data || response;
+        if (data?.success && data?.connected) {
+          setKrakenRestBalance(data.usd_balance || 0);
+        }
+      } catch (e) {
+        console.error('[Prospects] Kraken balance fetch error:', e);
+      }
+    };
+    
+    // Fetch if WebSocket balance is not available
+    if (!wsConnected || wsUsdBalance <= 0) {
+      fetchKrakenBalance();
+    }
+  }, [isSimMode, wsConnected, wsUsdBalance]);
+
+  // Calculate cash balance - prioritize WebSocket, then REST API, then wallet DB
+  const cashAvailable = isSimMode 
+    ? (wallet?.cash_balance || 0)
+    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (krakenRestBalance > 0 ? krakenRestBalance : (wallet?.real_cash_balance || 0)));
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
