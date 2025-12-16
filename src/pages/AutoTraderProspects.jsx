@@ -318,40 +318,40 @@ export default function AutoTraderProspects() {
       )}
 
       <Dialog open={!!selectedProspect} onOpenChange={(open) => !open && setSelectedProspect(null)}>
-        <DialogContent>
+        <DialogContent className="bg-black border border-gray-800 text-white">
           <DialogHeader>
-            <DialogTitle>Execute Order Manually?</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-white">Execute Order Manually?</DialogTitle>
+            <DialogDescription className="text-gray-400">
               You're about to manually execute this trade ahead of the auto-trader.
             </DialogDescription>
           </DialogHeader>
           
           {selectedProspect && (
             <div className="space-y-3">
-              <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-900 space-y-2">
+              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Asset:</span>
-                  <span className="font-semibold">{selectedProspect.symbol}</span>
+                  <span className="text-sm font-medium text-gray-400">Asset:</span>
+                  <span className="font-semibold text-white">{selectedProspect.symbol}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Quantity:</span>
-                  <span className="font-semibold">{selectedProspect.quantity.toFixed(4)}</span>
+                  <span className="text-sm font-medium text-gray-400">Quantity:</span>
+                  <span className="font-semibold text-white">{selectedProspect.quantity.toFixed(4)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Price:</span>
-                  <span className="font-semibold">${selectedProspect.current_price.toFixed(2)}</span>
+                  <span className="text-sm font-medium text-gray-400">Price:</span>
+                  <span className="font-semibold text-white">${selectedProspect.current_price.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Total:</span>
-                  <span className="font-semibold">${selectedProspect.total_value.toFixed(2)}</span>
+                  <span className="text-sm font-medium text-gray-400">Total:</span>
+                  <span className="font-semibold neon-text">${selectedProspect.total_value.toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
+              <div className="p-3 rounded-lg bg-gray-900/50 border border-green-900/50">
+                <p className="text-xs font-semibold text-green-400 mb-1">
                   ℹ️ Why hasn't this executed yet?
                 </p>
-                <p className="text-xs text-blue-600 dark:text-blue-500">
+                <p className="text-xs text-gray-400">
                   The auto-trader runs every 90 seconds and prioritizes trades based on AI confidence scores. 
                   This order is queued but hasn't reached the execution threshold yet. Manual execution bypasses 
                   the queue and executes immediately.
@@ -363,12 +363,14 @@ export default function AutoTraderProspects() {
           <DialogFooter>
             <Button 
               variant="outline" 
+              className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
               onClick={() => setSelectedProspect(null)}
               disabled={executing}
             >
               Cancel
             </Button>
             <Button 
+              className="bg-green-600 hover:bg-green-700 text-white neon-glow"
               onClick={() => handleExecuteOrder(selectedProspect)}
               disabled={executing}
             >
