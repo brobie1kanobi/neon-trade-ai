@@ -236,9 +236,11 @@ Deno.serve(async (req) => {
         pattern_reliability: rec.patternReliability,
         timing_window: rec.timingWindow,
         entry_zone: rec.entryZone,
-        stop_loss_pct: settings?.loss_margin || rec.stopLossPct || 5,
-        take_profit_pct: userTargetGain,
+        stop_loss_pct: settings?.loss_margin || 5,
+        take_profit_pct: settings?.gain_margin || 10,
         ai_suggested_gain: rec.predictedGain || rec.takeProfitPct || 10,
+        user_loss_margin: settings?.loss_margin || 5,
+        user_gain_margin: settings?.gain_margin || 10,
         sentiment_score: rec.sentimentScore,
         correlation_group: rec.correlationGroup,
         optimal_action: rec.action

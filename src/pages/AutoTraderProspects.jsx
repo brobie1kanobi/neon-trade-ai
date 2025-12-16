@@ -180,7 +180,7 @@ export default function AutoTraderProspects() {
         </CardContent>
       </Card>
 
-      {prospects.length === 0 ? (
+      {prospects.length === 0 && !loading && !isRefreshing ? (
         <Card className="border-red-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
@@ -191,6 +191,13 @@ export default function AutoTraderProspects() {
             <p className="text-xs text-gray-400 mt-2">
               This usually means market data APIs are temporarily unavailable. Try refreshing in a moment.
             </p>
+          </CardContent>
+        </Card>
+      ) : prospects.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <RefreshCw className="w-8 h-8 mx-auto mb-4 text-gray-400 animate-spin" />
+            <p className="text-gray-500">Loading prospects...</p>
           </CardContent>
         </Card>
       ) : (
@@ -320,11 +327,11 @@ export default function AutoTraderProspects() {
                       <div className="flex gap-4 text-xs">
                         <span className="text-red-500 flex items-center gap-1">
                           <TrendingDown className="w-3 h-3" />
-                          SL: -{prospect.stop_loss_pct || settings?.loss_margin || 5}%
+                          SL: -{prospect.user_loss_margin || prospect.stop_loss_pct || 5}%
                         </span>
                         <span className="text-green-500 flex items-center gap-1">
                           <TrendingUp className="w-3 h-3" />
-                          TP: +{prospect.take_profit_pct || settings?.gain_margin || 10}%
+                          TP: +{prospect.user_gain_margin || prospect.take_profit_pct || 10}%
                         </span>
                       </div>
                     </div>
