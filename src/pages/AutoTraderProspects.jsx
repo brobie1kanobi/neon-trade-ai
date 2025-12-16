@@ -16,39 +16,39 @@ import {
 } from "@/components/ui/dialog";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { useWallet } from "@/components/hooks/useWallet";
 
 export default function AutoTraderProspects() {
   const navigate = useNavigate();
   const { settings } = useSettings();
   const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
+  const { wallet } = useWallet();
   
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [cashAvailable, setCashAvailable] = useState(0);
-  const [isSimMode, setIsSimMode] = useState(true);
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Set mode and balance from settings/WebSocket immediately
-  useEffect(() => {
-    const currentIsSimMode = settings?.sim_trading_mode !== false;
-    setIsSimMode(currentIsSimMode);
-    
-    // ALWAYS use WebSocket balance in LIVE mode
-    if (!currentIsSimMode && wsUsdBalance >= 0) {
-      setCashAvailable(wsUsdBalance);
-      console.log('[Prospects] WebSocket balance:', wsUsdBalance);
-    }
-  }, [settings, wsUsdBalance]);
+  // Determine mode from settings
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
+  // Calculate cash balance from actual sources
+  const cashAvailable = isSimMode 
+    ? (wallet?.cash_balance || 0)
+    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
 
-  const fetchProspects = async () => {
+  const fetchProspects = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) {
+        setIsRefreshing(true);
+      } else if (prospects.length === 0) {
+        setLoading(true);
+      }
       
       const response = await base44.functions.invoke('getAutoTraderProspects', {});
       const data = response?.data || response;
-      console.log('[Prospects] Backend response:', data);
 
       if (data?.success) {
         setProspects(data.prospects || []);
@@ -56,15 +56,15 @@ export default function AutoTraderProspects() {
       }
     } catch (error) {
       console.error('[Prospects] Error:', error);
-      setProspects([]);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchProspects();
-    const interval = setInterval(fetchProspects, 30000);
+    const interval = setInterval(() => fetchProspects(false), 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -101,7 +101,8 @@ export default function AutoTraderProspects() {
     }
   };
 
-  if (loading) {
+  // Only show full loading spinner on initial load when no data exists
+  if (loading && prospects.length === 0) {
     return (
       <div className="p-4 space-y-4">
         <div className="flex items-center gap-2 mb-4">
@@ -126,9 +127,9 @@ export default function AutoTraderProspects() {
           </Button>
           <h1 className="text-2xl font-bold">Auto-Trader Prospects</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchProspects}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
+        <Button variant="outline" size="sm" onClick={() => fetchProspects(true)} disabled={isRefreshing}>
+          <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+          {isRefreshing ? 'Updating...' : 'Refresh'}
         </Button>
       </div>
 
@@ -154,14 +155,7 @@ export default function AutoTraderProspects() {
         </CardContent>
       </Card>
 
-      {loading ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <RefreshCw className="w-12 h-12 mx-auto mb-4 text-gray-400 animate-spin" />
-            <p className="text-gray-500">Analyzing market opportunities...</p>
-          </CardContent>
-        </Card>
-      ) : prospects.length === 0 ? (
+      {prospects.length === 0 ? (
         <Card className="border-red-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
