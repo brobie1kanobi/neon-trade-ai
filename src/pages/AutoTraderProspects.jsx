@@ -12,8 +12,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  DialogFooter } from
+"@/components/ui/dialog";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useWallet } from "@/components/hooks/useWallet";
@@ -23,7 +23,7 @@ export default function AutoTraderProspects() {
   const { settings } = useSettings();
   const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
   const { wallet } = useWallet();
-  
+
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProspect, setSelectedProspect] = useState(null);
@@ -33,11 +33,11 @@ export default function AutoTraderProspects() {
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
-  
+
   // Calculate cash balance from actual sources
-  const cashAvailable = isSimMode 
-    ? (wallet?.cash_balance || 0)
-    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+  const cashAvailable = isSimMode ?
+  wallet?.cash_balance || 0 :
+  wsConnected && wsUsdBalance > 0 ? wsUsdBalance : wallet?.real_cash_balance || 0;
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
@@ -46,7 +46,7 @@ export default function AutoTraderProspects() {
       } else if (prospects.length === 0) {
         setLoading(true);
       }
-      
+
       const response = await base44.functions.invoke('getAutoTraderProspects', {});
       const data = response?.data || response;
 
@@ -87,7 +87,7 @@ export default function AutoTraderProspects() {
         toast.success(`✅ Order Executed`, {
           description: `Bought ${prospect.quantity.toFixed(4)} ${prospect.symbol} @ $${prospect.current_price.toFixed(2)}`
         });
-        
+
         setSelectedProspect(null);
         setTimeout(() => fetchProspects(), 2000);
       } else {
@@ -114,8 +114,8 @@ export default function AutoTraderProspects() {
         <div className="flex items-center justify-center py-12">
           <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
         </div>
-      </div>
-    );
+      </div>);
+
   }
 
   return (
@@ -143,20 +143,20 @@ export default function AutoTraderProspects() {
                 <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
                   {isSimMode ? "💎 Demo" : "🟢 LIVE"}
                 </Badge>
-                {!isSimMode && wsConnected && (
-                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
+                {!isSimMode && wsConnected &&
+                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
                     <Wifi className="w-3 h-3" />
                     Live
                   </Badge>
-                )}
+                }
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {prospects.length === 0 ? (
-        <Card className="border-red-300">
+      {prospects.length === 0 ?
+      <Card className="border-red-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
             <p className="text-gray-500 font-semibold">Unable to generate prospects</p>
@@ -167,42 +167,42 @@ export default function AutoTraderProspects() {
               This usually means market data APIs are temporarily unavailable. Try refreshing in a moment.
             </p>
           </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {prospects.map((prospect, idx) => (
-            <Card key={idx} className={prospect.is_blocked ? "opacity-75 border-yellow-300" : "border-green-300"}>
+        </Card> :
+
+      <div className="space-y-3">
+          {prospects.map((prospect, idx) =>
+        <Card key={idx} className={prospect.is_blocked ? "opacity-75 border-yellow-300" : "border-green-300"}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <CardTitle className="text-lg flex items-center gap-2">
                       {prospect.symbol}
-                      {prospect.has_existing_position && (
-                        <Badge variant="outline" className="text-xs">
+                      {prospect.has_existing_position &&
+                  <Badge variant="outline" className="text-xs">
                           +{prospect.existing_quantity.toFixed(4)} held
                         </Badge>
-                      )}
-                      {prospect.would_execute_now && (
-                        <Badge className="bg-green-500 text-white text-xs">
+                  }
+                      {prospect.would_execute_now &&
+                  <Badge className="bg-green-500 text-white text-xs">
                           READY
                         </Badge>
-                      )}
+                  }
                     </CardTitle>
                     <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
                       {prospect.asset_type === "crypto" ? "Cryptocurrency" : "Stock"}
-                      {prospect.market_trend !== 0 && (
-                        <span className={prospect.market_trend > 0 ? "text-green-600" : "text-red-600"}>
+                      {prospect.market_trend !== 0 &&
+                  <span className={prospect.market_trend > 0 ? "text-green-600" : "text-red-600"}>
                           {prospect.market_trend > 0 ? "↗" : "↘"} {Math.abs(prospect.market_trend).toFixed(2)}%
                         </span>
-                      )}
+                  }
                     </p>
                   </div>
                   <div className="text-right">
                     <Badge className={
-                      prospect.confidence_score >= 70 ? "bg-green-500" :
-                      prospect.confidence_score >= 50 ? "bg-yellow-500" :
-                      "bg-gray-500"
-                    }>
+                prospect.confidence_score >= 70 ? "bg-green-500" :
+                prospect.confidence_score >= 50 ? "bg-yellow-500" :
+                "bg-gray-500"
+                }>
                       {prospect.confidence_score}% AI
                     </Badge>
                     <p className="text-xs text-gray-500 mt-1">
@@ -242,55 +242,55 @@ export default function AutoTraderProspects() {
 
                       {/* Enhanced Intelligence Display */}
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                        {prospect.technical_pattern && (
-                          <Badge variant="outline" className="text-xs flex items-center gap-1">
+                        {prospect.technical_pattern &&
+                <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <BarChart3 className="w-3 h-3" />
                             {prospect.technical_pattern}
                           </Badge>
-                        )}
-                        {prospect.timing_window && (
-                          <Badge variant="outline" className="text-xs flex items-center gap-1">
+                }
+                        {prospect.timing_window &&
+                <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {prospect.timing_window === 'immediate' ? '⚡ Now' : prospect.timing_window === 'short_term' ? '24-48h' : 'Wait'}
                           </Badge>
-                        )}
-                        {prospect.optimal_action && prospect.optimal_action !== 'buy' && (
-                          <Badge className={
-                            prospect.optimal_action === 'strong_buy' ? 'bg-green-600' :
-                            prospect.optimal_action === 'sell' ? 'bg-red-500' :
-                            prospect.optimal_action === 'strong_sell' ? 'bg-red-700' :
-                            'bg-gray-500'
-                          }>
+                }
+                        {prospect.optimal_action && prospect.optimal_action !== 'buy' &&
+                <Badge className={
+                prospect.optimal_action === 'strong_buy' ? 'bg-green-600' :
+                prospect.optimal_action === 'sell' ? 'bg-red-500' :
+                prospect.optimal_action === 'strong_sell' ? 'bg-red-700' :
+                'bg-gray-500'
+                }>
                             {prospect.optimal_action.replace('_', ' ')}
                           </Badge>
-                        )}
+                }
                       </div>
 
-                      {prospect.entry_zone && (
-                        <div className="text-xs text-gray-500">
+                      {prospect.entry_zone &&
+              <div className="text-xs text-gray-500">
                           <Target className="w-3 h-3 inline mr-1" />
                           Entry Zone: ${prospect.entry_zone.low?.toFixed(2)} - ${prospect.entry_zone.high?.toFixed(2)}
                         </div>
-                      )}
+              }
 
                       <div className="flex gap-4 text-xs">
-                        {prospect.stop_loss_pct && (
-                          <span className="text-red-500 flex items-center gap-1">
+                        {prospect.stop_loss_pct &&
+                <span className="text-red-500 flex items-center gap-1">
                             <TrendingDown className="w-3 h-3" />
                             SL: -{prospect.stop_loss_pct}%
                           </span>
-                        )}
-                        {prospect.take_profit_pct && (
-                          <span className="text-green-500 flex items-center gap-1">
+                }
+                        {prospect.take_profit_pct &&
+                <span className="text-green-500 flex items-center gap-1">
                             <TrendingUp className="w-3 h-3" />
                             TP: +{prospect.take_profit_pct}%
                           </span>
-                        )}
+                }
                       </div>
                     </div>
 
-                {prospect.is_blocked ? (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700">
+                {prospect.is_blocked ?
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700">
                     <Lock className="w-4 h-4 text-yellow-600 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">
@@ -300,95 +300,93 @@ export default function AutoTraderProspects() {
                         {prospect.block_reason}
                       </p>
                     </div>
-                  </div>
-                ) : (
-                  <Button 
-                    className="w-full bg-green-600 hover:bg-green-700 text-white" 
-                    onClick={() => setSelectedProspect(prospect)}
-                    disabled={isSimMode}
-                  >
+                  </div> :
+
+            <Button
+              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => setSelectedProspect(prospect)}
+              disabled={isSimMode}>
+
                     <Send className="w-4 h-4 mr-2" />
                     {isSimMode ? "💎 Demo Mode Only" : "🟢 Execute on Kraken Now"}
                   </Button>
-                )}
+            }
               </CardContent>
             </Card>
-          ))}
+        )}
         </div>
-      )}
+      }
 
       <Dialog open={!!selectedProspect} onOpenChange={(open) => !open && setSelectedProspect(null)}>
-        <DialogContent className="bg-black border border-gray-800 text-white">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-white">Execute Order Manually?</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogTitle>Execute Order Manually?</DialogTitle>
+            <DialogDescription>
               You're about to manually execute this trade ahead of the auto-trader.
             </DialogDescription>
           </DialogHeader>
           
-          {selectedProspect && (
-            <div className="space-y-3">
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 space-y-2">
+          {selectedProspect &&
+          <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-900 space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium text-gray-400">Asset:</span>
-                  <span className="font-semibold text-white">{selectedProspect.symbol}</span>
+                  <span className="text-sm font-medium">Asset:</span>
+                  <span className="font-semibold">{selectedProspect.symbol}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium text-gray-400">Quantity:</span>
-                  <span className="font-semibold text-white">{selectedProspect.quantity.toFixed(4)}</span>
+                  <span className="text-sm font-medium">Quantity:</span>
+                  <span className="font-semibold">{selectedProspect.quantity.toFixed(4)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium text-gray-400">Price:</span>
-                  <span className="font-semibold text-white">${selectedProspect.current_price.toFixed(2)}</span>
+                  <span className="text-sm font-medium">Price:</span>
+                  <span className="font-semibold">${selectedProspect.current_price.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium text-gray-400">Total:</span>
-                  <span className="font-semibold neon-text">${selectedProspect.total_value.toFixed(2)}</span>
+                  <span className="text-sm font-medium">Total:</span>
+                  <span className="font-semibold">${selectedProspect.total_value.toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-gray-900/50 border border-green-900/50">
-                <p className="text-xs font-semibold text-green-400 mb-1">
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
                   ℹ️ Why hasn't this executed yet?
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-blue-600 dark:text-blue-500">
                   The auto-trader runs every 90 seconds and prioritizes trades based on AI confidence scores. 
                   This order is queued but hasn't reached the execution threshold yet. Manual execution bypasses 
                   the queue and executes immediately.
                 </p>
               </div>
             </div>
-          )}
+          }
 
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
+            <Button
+              variant="outline"
               onClick={() => setSelectedProspect(null)}
-              disabled={executing}
-            >
+              disabled={executing} className="bg-red-600 text-gray-300 px-4 py-2 text-sm font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border shadow-sm h-9 border-gray-700 hover:bg-gray-800 hover:text-white">
+
               Cancel
             </Button>
-            <Button 
-              className="bg-green-600 hover:bg-green-700 text-white neon-glow"
+            <Button
               onClick={() => handleExecuteOrder(selectedProspect)}
-              disabled={executing}
-            >
-              {executing ? (
-                <>
+              disabled={executing}>
+
+              {executing ?
+              <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   Executing...
-                </>
-              ) : (
-                <>
+                </> :
+
+              <>
                   <CheckCircle className="w-4 h-4 mr-2" />
                   Execute Now
                 </>
-              )}
+              }
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </div>);
+
 }
