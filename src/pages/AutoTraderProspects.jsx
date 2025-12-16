@@ -318,18 +318,14 @@ export default function AutoTraderProspects() {
                       )}
 
                       <div className="flex gap-4 text-xs">
-                        {prospect.stop_loss_pct && (
-                          <span className="text-red-500 flex items-center gap-1">
-                            <TrendingDown className="w-3 h-3" />
-                            SL: -{prospect.stop_loss_pct}%
-                          </span>
-                        )}
-                        {prospect.take_profit_pct && (
-                          <span className="text-green-500 flex items-center gap-1">
-                            <TrendingUp className="w-3 h-3" />
-                            TP: +{prospect.take_profit_pct}%
-                          </span>
-                        )}
+                        <span className="text-red-500 flex items-center gap-1">
+                          <TrendingDown className="w-3 h-3" />
+                          SL: -{prospect.stop_loss_pct || settings?.loss_margin || 5}%
+                        </span>
+                        <span className="text-green-500 flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" />
+                          TP: +{prospect.take_profit_pct || settings?.gain_margin || 10}%
+                        </span>
                       </div>
                     </div>
 
@@ -393,12 +389,18 @@ export default function AutoTraderProspects() {
 
               <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
-                  ℹ️ Why hasn't this executed yet?
+                  ℹ️ Auto-Execution Info
                 </p>
                 <p className="text-xs text-blue-600 dark:text-blue-500">
-                  The auto-trader runs every 90 seconds and prioritizes trades based on AI confidence scores. 
-                  This order is queued but hasn't reached the execution threshold yet. Manual execution bypasses 
-                  the queue and executes immediately.
+                  The auto-trader will automatically execute this order when enabled. Manual execution 
+                  bypasses the queue and executes immediately on Kraken.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  <strong>Stop Loss:</strong> -{selectedProspect.stop_loss_pct || settings?.loss_margin || 5}% | 
+                  <strong> Take Profit:</strong> +{selectedProspect.take_profit_pct || settings?.gain_margin || 10}%
                 </p>
               </div>
             </div>
