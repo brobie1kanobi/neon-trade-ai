@@ -30,40 +30,14 @@ export default function AutoTraderProspects() {
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [userMargins, setUserMargins] = useState({ gain_margin: 10, loss_margin: 5 });
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  // State to store Kraken balance fetched via REST API as fallback
-  const [krakenRestBalance, setKrakenRestBalance] = useState(0);
-  
-  // Fetch Kraken balance via REST API as fallback when WebSocket isn't providing data
-  useEffect(() => {
-    if (isSimMode) return;
-    
-    const fetchKrakenBalance = async () => {
-      try {
-        const response = await base44.functions.invoke('getKrakenBalance', {});
-        const data = response?.data || response;
-        if (data?.success && data?.connected) {
-          setKrakenRestBalance(data.usd_balance || 0);
-        }
-      } catch (e) {
-        console.error('[Prospects] Kraken balance fetch error:', e);
-      }
-    };
-    
-    // Only fetch if WebSocket balance is not available
-    if (!wsConnected || wsUsdBalance <= 0) {
-      fetchKrakenBalance();
-    }
-  }, [isSimMode, wsConnected, wsUsdBalance]);
-  
-  // Calculate cash balance - prioritize WebSocket, then REST API, then wallet DB
+  // Calculate cash balance from actual sources
   const cashAvailable = isSimMode 
     ? (wallet?.cash_balance || 0)
-    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (krakenRestBalance > 0 ? krakenRestBalance : (wallet?.real_cash_balance || 0)));
+    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
@@ -79,9 +53,6 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
-        if (data.user_settings) {
-          setUserMargins(data.user_settings);
-        }
       }
     } catch (error) {
       console.error('[Prospects] Error:', error);
@@ -184,7 +155,7 @@ export default function AutoTraderProspects() {
         </CardContent>
       </Card>
 
-      {prospects.length === 0 && !loading && !isRefreshing ? (
+      {prospects.length === 0 ? (
         <Card className="border-red-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
@@ -195,13 +166,6 @@ export default function AutoTraderProspects() {
             <p className="text-xs text-gray-400 mt-2">
               This usually means market data APIs are temporarily unavailable. Try refreshing in a moment.
             </p>
-          </CardContent>
-        </Card>
-      ) : prospects.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <RefreshCw className="w-8 h-8 mx-auto mb-4 text-gray-400 animate-spin" />
-            <p className="text-gray-500">Loading prospects...</p>
           </CardContent>
         </Card>
       ) : (
@@ -263,37 +227,18 @@ export default function AutoTraderProspects() {
                   </div>
                   <div>
                     <p className="text-gray-500">Target Gain</p>
-                    <p className="font-semibold text-green-600">+{userMargins.gain_margin}%</p>
-                    {prospect.ai_suggested_gain && prospect.ai_suggested_gain !== userMargins.gain_margin && (
-                      <p className="text-xs text-gray-400">AI suggests +{prospect.ai_suggested_gain.toFixed(1)}%</p>
-                    )}
+                    <p className="font-semibold text-green-600">+{prospect.predicted_gain.toFixed(1)}%</p>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 space-y-2">
                       <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1">
-                        <Brain className="w-3 h-3" />
+                        <TrendingUp className="w-3 h-3" />
                         AI Market Analysis
-                        {prospect.confidence_score >= 70 && (
-                          <Badge className="ml-1 bg-green-600 text-white text-[10px] py-0 px-1">High Confidence</Badge>
-                        )}
                       </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
-                        {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" 
-                          ? prospect.ai_reasoning 
-                          : `Analyzing ${prospect.symbol} market conditions, technical indicators, sentiment, and cross-asset correlations...`}
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {prospect.ai_reasoning || "Analyzing market conditions and technical indicators..."}
                       </p>
-                      
-                      {/* Sentiment Score */}
-                      {prospect.sentiment_score && prospect.sentiment_score !== 50 && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">Market Sentiment:</span>
-                          <span className={prospect.sentiment_score > 60 ? "text-green-500" : prospect.sentiment_score < 40 ? "text-red-500" : "text-yellow-500"}>
-                            {prospect.sentiment_score > 70 ? "🟢 Bullish" : prospect.sentiment_score > 55 ? "📈 Slightly Bullish" : prospect.sentiment_score < 30 ? "🔴 Bearish" : prospect.sentiment_score < 45 ? "📉 Slightly Bearish" : "⚪ Neutral"}
-                            ({prospect.sentiment_score}%)
-                          </span>
-                        </div>
-                      )}
 
                       {/* Enhanced Intelligence Display */}
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -329,14 +274,18 @@ export default function AutoTraderProspects() {
                       )}
 
                       <div className="flex gap-4 text-xs">
-                        <span className="text-red-500 flex items-center gap-1">
-                          <TrendingDown className="w-3 h-3" />
-                          SL: -{userMargins.loss_margin}%
-                        </span>
-                        <span className="text-green-500 flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3" />
-                          TP: +{userMargins.gain_margin}%
-                        </span>
+                        {prospect.stop_loss_pct && (
+                          <span className="text-red-500 flex items-center gap-1">
+                            <TrendingDown className="w-3 h-3" />
+                            SL: -{prospect.stop_loss_pct}%
+                          </span>
+                        )}
+                        {prospect.take_profit_pct && (
+                          <span className="text-green-500 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" />
+                            TP: +{prospect.take_profit_pct}%
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -400,18 +349,12 @@ export default function AutoTraderProspects() {
 
               <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
-                  ℹ️ Auto-Execution Info
+                  ℹ️ Why hasn't this executed yet?
                 </p>
                 <p className="text-xs text-blue-600 dark:text-blue-500">
-                  The auto-trader will automatically execute this order when enabled. Manual execution 
-                  bypasses the queue and executes immediately on Kraken.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  <strong>Stop Loss:</strong> -{userMargins.loss_margin}% | 
-                  <strong> Take Profit:</strong> +{userMargins.gain_margin}%
+                  The auto-trader runs every 90 seconds and prioritizes trades based on AI confidence scores. 
+                  This order is queued but hasn't reached the execution threshold yet. Manual execution bypasses 
+                  the queue and executes immediately.
                 </p>
               </div>
             </div>
