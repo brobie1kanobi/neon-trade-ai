@@ -15,15 +15,17 @@ Deno.serve(async (req) => {
     }, "-updated_date", 1);
     const rawSettings = settingsRecords[0];
     
-    // Merge with defaults to ensure all values are present
+    console.log('[Prospects] Raw settings from DB:', JSON.stringify(rawSettings, null, 2));
+    
+    // Merge with defaults to ensure all values are present - rawSettings spreads FIRST so it can override
     const settings = {
-      sim_trading_mode: rawSettings?.sim_trading_mode ?? true,
-      auto_trading_enabled: rawSettings?.auto_trading_enabled ?? false,
-      gain_margin: rawSettings?.gain_margin ?? 10,
-      loss_margin: rawSettings?.loss_margin ?? 5,
-      trailing_takeprofit_enabled: rawSettings?.trailing_takeprofit_enabled ?? true,
-      trailing_takeprofit_margin: rawSettings?.trailing_takeprofit_margin ?? 3,
-      ...rawSettings
+      sim_trading_mode: true,
+      auto_trading_enabled: false,
+      gain_margin: 10,
+      loss_margin: 5,
+      trailing_takeprofit_enabled: true,
+      trailing_takeprofit_margin: 3,
+      ...rawSettings  // User values override defaults
     };
     
     console.log('[Prospects] User settings loaded - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
