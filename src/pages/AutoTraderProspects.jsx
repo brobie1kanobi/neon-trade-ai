@@ -280,7 +280,7 @@ export default function AutoTraderProspects() {
                       <p className="text-xs text-gray-600 dark:text-gray-400">
                         {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" 
                           ? prospect.ai_reasoning 
-                          : "AI recommends holding - monitoring market conditions..."}
+                          : `AI confidence ${prospect.confidence_score}% - analyzing entry opportunity...`}
                       </p>
 
                       {/* Enhanced Intelligence Display */}
