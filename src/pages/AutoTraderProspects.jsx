@@ -254,7 +254,7 @@ export default function AutoTraderProspects() {
                   </div>
                   <div>
                     <p className="text-gray-500">Target Gain</p>
-                    <p className="font-semibold text-green-600">+{userMargins.gain_margin}%</p>
+                    <p className="font-semibold text-green-600">+{prospect.user_gain_margin || userMargins.gain_margin}%</p>
                   </div>
                 </div>
 
@@ -264,7 +264,9 @@ export default function AutoTraderProspects() {
                         AI Market Analysis
                       </p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {prospect.ai_reasoning || "Analyzing market conditions and technical indicators..."}
+                        {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" 
+                          ? prospect.ai_reasoning 
+                          : "AI recommends holding - monitoring market conditions..."}
                       </p>
 
                       {/* Enhanced Intelligence Display */}
@@ -303,11 +305,11 @@ export default function AutoTraderProspects() {
                       <div className="flex gap-4 text-xs">
                         <span className="text-red-500 flex items-center gap-1">
                           <TrendingDown className="w-3 h-3" />
-                          SL: -{userMargins.loss_margin}%
+                          SL: -{prospect.user_loss_margin || userMargins.loss_margin}%
                         </span>
                         <span className="text-green-500 flex items-center gap-1">
                           <TrendingUp className="w-3 h-3" />
-                          TP: +{userMargins.gain_margin}%
+                          TP: +{prospect.user_gain_margin || userMargins.gain_margin}%
                         </span>
                       </div>
                     </div>
