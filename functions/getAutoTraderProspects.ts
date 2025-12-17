@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
       }
 
       // Use user's gain_margin preference for target gain, AI can suggest but user settings take priority
-      const userTargetGain = settings?.gain_margin || 10;
+      const userTargetGain = settings.gain_margin;
       
       prospects.push({
         symbol,
@@ -251,11 +251,11 @@ Deno.serve(async (req) => {
         pattern_reliability: rec.patternReliability,
         timing_window: rec.timingWindow,
         entry_zone: rec.entryZone,
-        stop_loss_pct: settings?.loss_margin || 5,
-        take_profit_pct: settings?.gain_margin || 10,
+        stop_loss_pct: settings.loss_margin,
+        take_profit_pct: settings.gain_margin,
         ai_suggested_gain: rec.predictedGain || rec.takeProfitPct || 10,
-        user_loss_margin: settings?.loss_margin || 5,
-        user_gain_margin: settings?.gain_margin || 10,
+        user_loss_margin: settings.loss_margin,
+        user_gain_margin: settings.gain_margin,
         sentiment_score: rec.sentimentScore,
         correlation_group: rec.correlationGroup,
         optimal_action: rec.action
@@ -270,8 +270,8 @@ Deno.serve(async (req) => {
     prospects.sort((a, b) => b.priority - a.priority);
 
     // Add user settings to response so frontend can use them
-    const userGainMargin = settings?.gain_margin || 10;
-    const userLossMargin = settings?.loss_margin || 5;
+    const userGainMargin = settings.gain_margin;
+    const userLossMargin = settings.loss_margin;
     
     console.log('[Prospects] User margins - gain:', userGainMargin, '% loss:', userLossMargin, '%');
     console.log('[Prospects] Returning', prospects.length, 'prospects');
