@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
       const marketResponse = await base44.functions.invoke('getMarketData', {
         action: 'getWatchlistData',
         payload: {
-          cryptoSymbols: targetSymbols.filter(s => !['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(s)),
+          cryptoSymbols: targetSymbols.filter(s => !['XRP', 'BTC', 'SOL', 'XLM', 'PEPE', 'HBAR', 'ADA'].includes(s)),
           stockSymbols: targetSymbols.filter(s => ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(s))
         }
       });
