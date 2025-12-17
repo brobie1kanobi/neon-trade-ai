@@ -31,7 +31,21 @@ export default function AutoTraderProspects() {
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [krakenRestBalance, setKrakenRestBalance] = useState(0);
-  const [userMargins, setUserMargins] = useState({ gain_margin: 10, loss_margin: 5 });
+  // Initialize margins from settings context, fall back to defaults
+  const [userMargins, setUserMargins] = useState({ 
+    gain_margin: settings?.gain_margin ?? 10, 
+    loss_margin: settings?.loss_margin ?? 5 
+  });
+
+  // Update margins when settings load
+  useEffect(() => {
+    if (settings?.gain_margin !== undefined || settings?.loss_margin !== undefined) {
+      setUserMargins({
+        gain_margin: settings?.gain_margin ?? 10,
+        loss_margin: settings?.loss_margin ?? 5
+      });
+    }
+  }, [settings?.gain_margin, settings?.loss_margin]);
 
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;

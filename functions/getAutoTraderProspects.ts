@@ -9,11 +9,24 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user settings
+    // Get user settings - ensure we have defaults if no settings exist
     const settingsRecords = await base44.asServiceRole.entities.UserSettings.filter({ 
       created_by: user.email 
     }, "-updated_date", 1);
-    const settings = settingsRecords[0];
+    const rawSettings = settingsRecords[0];
+    
+    // Merge with defaults to ensure all values are present
+    const settings = {
+      sim_trading_mode: rawSettings?.sim_trading_mode ?? true,
+      auto_trading_enabled: rawSettings?.auto_trading_enabled ?? false,
+      gain_margin: rawSettings?.gain_margin ?? 10,
+      loss_margin: rawSettings?.loss_margin ?? 5,
+      trailing_takeprofit_enabled: rawSettings?.trailing_takeprofit_enabled ?? true,
+      trailing_takeprofit_margin: rawSettings?.trailing_takeprofit_margin ?? 3,
+      ...rawSettings
+    };
+    
+    console.log('[Prospects] User settings loaded - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
     // ALWAYS show prospects - even if auto-trading is disabled
 
