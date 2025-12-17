@@ -177,8 +177,11 @@ Provide actionable intelligence the auto-trader can use to make informed decisio
       }
     });
 
+    console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
+    console.log('[MarketIntelligence] Parsed recommendations count:', recommendations.length);
+    console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
     
     // Filter and enhance recommendations
     const enhancedRecommendations = recommendations
