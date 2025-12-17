@@ -13,21 +13,23 @@ Deno.serve(async (req) => {
     const settingsRecords = await base44.asServiceRole.entities.UserSettings.filter({ 
       created_by: user.email 
     }, "-updated_date", 1);
-    const rawSettings = settingsRecords[0];
+    const rawRecord = settingsRecords[0];
     
     console.log('[Prospects] User email:', user.email);
-    console.log('[Prospects] Found settings record:', rawSettings?.id || 'none');
-    console.log('[Prospects] Raw gain_margin:', rawSettings?.gain_margin, 'loss_margin:', rawSettings?.loss_margin);
+    console.log('[Prospects] Found settings record:', rawRecord?.id || 'none');
     
-    // Merge with defaults to ensure all values are present - rawSettings spreads LAST so it can override
+    // Settings might be stored directly or nested in 'data' field depending on SDK version
+    const rawSettings = rawRecord?.data || rawRecord || {};
+    console.log('[Prospects] Raw gain_margin:', rawSettings.gain_margin, 'loss_margin:', rawSettings.loss_margin);
+    
+    // Build settings with explicit user values taking priority
     const settings = {
-      sim_trading_mode: true,
-      auto_trading_enabled: false,
-      gain_margin: 10,
-      loss_margin: 5,
-      trailing_takeprofit_enabled: true,
-      trailing_takeprofit_margin: 3,
-      ...rawSettings  // User values override defaults
+      sim_trading_mode: rawSettings.sim_trading_mode !== undefined ? rawSettings.sim_trading_mode : true,
+      auto_trading_enabled: rawSettings.auto_trading_enabled !== undefined ? rawSettings.auto_trading_enabled : false,
+      gain_margin: rawSettings.gain_margin !== undefined ? rawSettings.gain_margin : 10,
+      loss_margin: rawSettings.loss_margin !== undefined ? rawSettings.loss_margin : 5,
+      trailing_takeprofit_enabled: rawSettings.trailing_takeprofit_enabled !== undefined ? rawSettings.trailing_takeprofit_enabled : true,
+      trailing_takeprofit_margin: rawSettings.trailing_takeprofit_margin !== undefined ? rawSettings.trailing_takeprofit_margin : 3,
     };
     
     console.log('[Prospects] Final settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
