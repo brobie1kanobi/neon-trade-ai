@@ -43,29 +43,38 @@ Deno.serve(async (req) => {
     }
 
     // Fetch current market data for target symbols
+    // Known crypto symbols - everything else assumed to be stock
+    const knownCrypto = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'LINK', 'AVAX', 'MATIC', 'UNI', 'ATOM', 'XLM', 'PEPE', 'HBAR', 'SHIB', 'LTC', 'BCH'];
+    const knownStocks = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA', 'AMD', 'NFLX', 'DIS'];
+    
     let marketData = [];
     try {
+      const cryptoSymbols = targetSymbols.filter(s => knownCrypto.includes(s.toUpperCase()));
+      const stockSymbols = targetSymbols.filter(s => knownStocks.includes(s.toUpperCase()));
+      
+      console.log('[MarketIntelligence] Fetching crypto:', cryptoSymbols, 'stocks:', stockSymbols);
+      
       const marketResponse = await base44.functions.invoke('getMarketData', {
         action: 'getWatchlistData',
-        payload: {
-          cryptoSymbols: targetSymbols.filter(s => !['XRP', 'BTC', 'SOL', 'XLM', 'PEPE', 'HBAR', 'ETH'].includes(s)),
-          stockSymbols: targetSymbols.filter(s => ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA'].includes(s))
-        }
+        payload: { cryptoSymbols, stockSymbols }
       });
       marketData = Array.isArray(marketResponse?.data) ? marketResponse.data : [];
+      console.log('[MarketIntelligence] Got market data for', marketData.length, 'symbols');
     } catch (err) {
       console.error('[MarketIntelligence] Market data error:', err);
     }
 
     // Build comprehensive analysis prompt with market intelligence
+    const assetsSection = marketData.length > 0 
+      ? marketData.map(asset => `- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%`).join('\n')
+      : targetSymbols.map(s => `- ${s}: (analyze based on your current knowledge)`).join('\n');
+
     const analysisPrompt = `You are an elite quantitative trading analyst with expertise in technical analysis, market sentiment, and cross-asset correlations.
 
 TASK: Provide comprehensive market intelligence for these assets to inform automated trading decisions.
 
 ASSETS TO ANALYZE:
-${marketData.map(asset => `
-- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%
-`).join('')}
+${assetsSection}
 
 ANALYSIS FRAMEWORK:
 
@@ -95,6 +104,8 @@ Based on your knowledge of current market conditions:
 4. TIMING SIGNALS
 For each asset, provide:
 - optimal_action: "strong_buy", "buy", "hold", "sell", "strong_sell"
+  IMPORTANT: For auto-trading purposes, favor "buy" or "strong_buy" when confidence >= 60% unless there are clear bearish signals.
+  A 60%+ confidence should typically result in a "buy" recommendation, not "hold".
 - timing_window: "immediate" (next 1-4 hrs), "short_term" (24-48 hrs), "wait" (no clear setup)
 - entry_zone: suggested price range for entry
 - stop_loss_pct: recommended stop loss percentage
@@ -191,7 +202,7 @@ Provide actionable intelligence the auto-trader can use to make informed decisio
         // Ensure all fields have defaults
         technical_pattern: r.technical_pattern || 'No clear pattern',
         pattern_reliability: r.pattern_reliability || 'moderate',
-        optimal_action: r.optimal_action || r.action || 'hold',
+        optimal_action: r.optimal_action || r.action || 'buy', // Default to buy not hold
         timing_window: r.timing_window || 'short_term',
         stop_loss_pct: r.stop_loss_pct || 5,
         take_profit_pct: r.take_profit_pct || 10,
