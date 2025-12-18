@@ -16,11 +16,23 @@ Deno.serve(async (req) => {
     const rawRecord = settingsRecords[0];
     
     console.log('[Prospects] User email:', user.email);
-    console.log('[Prospects] Found settings record:', rawRecord?.id || 'none');
+    console.log('[Prospects] Found settings record id:', rawRecord?.id || 'none');
     
-    // Settings might be stored directly or nested in 'data' field depending on SDK version
-    const rawSettings = rawRecord?.data || rawRecord || {};
-    console.log('[Prospects] Raw gain_margin:', rawSettings.gain_margin, 'loss_margin:', rawSettings.loss_margin);
+    // Extract settings - SDK returns flat object with properties directly accessible
+    // Check both direct access and nested data field for compatibility
+    let rawSettings = {};
+    if (rawRecord) {
+      // Try direct property access first (SDK standard), then data field (legacy)
+      if (rawRecord.gain_margin !== undefined) {
+        rawSettings = rawRecord;
+      } else if (rawRecord.data && rawRecord.data.gain_margin !== undefined) {
+        rawSettings = rawRecord.data;
+      } else {
+        rawSettings = rawRecord;
+      }
+    }
+    
+    console.log('[Prospects] Extracted gain_margin:', rawSettings.gain_margin, 'loss_margin:', rawSettings.loss_margin);
     
     // Build settings with explicit user values taking priority
     const settings = {
