@@ -10,38 +10,42 @@ Deno.serve(async (req) => {
     }
 
     // Get user settings - ensure we have defaults if no settings exist
-    const settingsRecords = await base44.asServiceRole.entities.UserSettings.filter({ 
-      created_by: user.email 
-    }, "-updated_date", 1);
-    const rawRecord = settingsRecords[0];
-    
     console.log('[Prospects] User email:', user.email);
-    console.log('[Prospects] Found settings record id:', rawRecord?.id || 'none');
     
-    // Extract settings - SDK returns flat object with properties directly accessible
-    // Check both direct access and nested data field for compatibility
-    let rawSettings = {};
-    if (rawRecord) {
-      // Try direct property access first (SDK standard), then data field (legacy)
-      if (rawRecord.gain_margin !== undefined) {
-        rawSettings = rawRecord;
-      } else if (rawRecord.data && rawRecord.data.gain_margin !== undefined) {
-        rawSettings = rawRecord.data;
-      } else {
-        rawSettings = rawRecord;
-      }
+    // Fetch all UserSettings for this user and pick the most recent
+    const allSettingsRecords = await base44.asServiceRole.entities.UserSettings.filter({ 
+      created_by: user.email 
+    });
+    
+    console.log('[Prospects] Found', allSettingsRecords?.length || 0, 'settings records');
+    
+    // Sort by updated_date descending to get most recent
+    let rawRecord = null;
+    if (allSettingsRecords && allSettingsRecords.length > 0) {
+      allSettingsRecords.sort((a, b) => {
+        const dateA = new Date(a.updated_date || a.created_date || 0);
+        const dateB = new Date(b.updated_date || b.created_date || 0);
+        return dateB - dateA;
+      });
+      rawRecord = allSettingsRecords[0];
     }
     
-    console.log('[Prospects] Extracted gain_margin:', rawSettings.gain_margin, 'loss_margin:', rawSettings.loss_margin);
+    console.log('[Prospects] Using record id:', rawRecord?.id || 'none');
+    console.log('[Prospects] Record keys:', rawRecord ? Object.keys(rawRecord) : 'none');
+    
+    // Extract settings values directly from the record
+    const gain = rawRecord?.gain_margin;
+    const loss = rawRecord?.loss_margin;
+    console.log('[Prospects] Direct access - gain:', gain, 'loss:', loss);
     
     // Build settings with explicit user values taking priority
     const settings = {
-      sim_trading_mode: rawSettings.sim_trading_mode !== undefined ? rawSettings.sim_trading_mode : true,
-      auto_trading_enabled: rawSettings.auto_trading_enabled !== undefined ? rawSettings.auto_trading_enabled : false,
-      gain_margin: rawSettings.gain_margin !== undefined ? rawSettings.gain_margin : 10,
-      loss_margin: rawSettings.loss_margin !== undefined ? rawSettings.loss_margin : 5,
-      trailing_takeprofit_enabled: rawSettings.trailing_takeprofit_enabled !== undefined ? rawSettings.trailing_takeprofit_enabled : true,
-      trailing_takeprofit_margin: rawSettings.trailing_takeprofit_margin !== undefined ? rawSettings.trailing_takeprofit_margin : 3,
+      sim_trading_mode: rawRecord?.sim_trading_mode !== undefined ? rawRecord.sim_trading_mode : true,
+      auto_trading_enabled: rawRecord?.auto_trading_enabled !== undefined ? rawRecord.auto_trading_enabled : false,
+      gain_margin: gain !== undefined && gain !== null ? gain : 10,
+      loss_margin: loss !== undefined && loss !== null ? loss : 5,
+      trailing_takeprofit_enabled: rawRecord?.trailing_takeprofit_enabled !== undefined ? rawRecord.trailing_takeprofit_enabled : true,
+      trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
     };
     
     console.log('[Prospects] Final settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
