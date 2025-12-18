@@ -92,6 +92,10 @@ export default function PushManager() {
 
         // Register service worker
         const swUrl = getServiceWorkerUrl();
+        if (!swUrl) {
+          console.log('[PushManager] Cannot register service worker - app ID not found in URL');
+          return;
+        }
         console.log('[PushManager] Registering service worker:', swUrl);
         
         const registration = await navigator.serviceWorker.register(swUrl, {
