@@ -52,29 +52,24 @@ Deno.serve(async (req) => {
 
     // ALWAYS show prospects - even if auto-trading is disabled
 
-    const isSimMode = settings?.sim_trading_mode === true;
-
-    // Get wallet balance - LIVE mode uses Kraken WebSocket data
+    // AutoTraderProspects is ALWAYS for LIVE trading - never use sim wallet
+    // This page shows what would be traded on Kraken, so always use Kraken balance
     let cashAvailable = 0;
-    if (!isSimMode) {
-      // LIVE MODE: Fetch actual Kraken balance
-      try {
-        const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
-        const krakenData = krakenResponse?.data || krakenResponse;
-        if (krakenData?.success && krakenData?.connected) {
-          cashAvailable = krakenData.usd_balance || 0;
-        }
-      } catch (e) {
-        console.error('Kraken balance fetch failed:', e);
+    try {
+      const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+      const krakenData = krakenResponse?.data || krakenResponse;
+      if (krakenData?.success && krakenData?.connected) {
+        cashAvailable = krakenData.usd_balance || 0;
+        console.log('[Prospects] Using Kraken USD balance:', cashAvailable);
+      } else {
+        console.log('[Prospects] Kraken not connected or no balance');
       }
-    } else {
-      // SIM MODE: Use wallet DB
-      const wallets = await base44.asServiceRole.entities.Wallet.filter({ 
-        created_by: user.email 
-      }, "-updated_date", 1);
-      const wallet = wallets[0];
-      cashAvailable = wallet?.cash_balance || 0;
+    } catch (e) {
+      console.error('[Prospects] Kraken balance fetch failed:', e);
     }
+    
+    // For holdings/preferences, use LIVE mode (is_simulation: false)
+    const isSimMode = false; // Force LIVE mode for prospects
 
     // Get auto-buy preferences - if none exist, use default top crypto
     let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
