@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
         symbol,
         asset_type: pref.asset_type,
         current_price: price,
-        quantity: finalQty,
+        quantity: cappedQuantity,
         total_value: total,
         confidence_score: Math.round(rec.confidence * 100),
         ai_reasoning: rec.reasoning,
