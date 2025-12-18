@@ -288,9 +288,6 @@ Deno.serve(async (req) => {
         optimal_action: rec.action
       });
 
-      if (wouldExecute && remainingCash > 1) {
-        remainingCash -= total;
-      }
     }
 
     // Sort by priority (confidence * position factor)
