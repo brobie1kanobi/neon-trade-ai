@@ -246,6 +246,9 @@ Deno.serve(async (req) => {
       let blockReason = null;
       let wouldExecute = false;
       
+      // Recalculate quantity based on capped total
+      const cappedQuantity = total / price;
+      
       if (cashAvailable < 1) {
         blockReason = `No cash available ($${cashAvailable.toFixed(2)})`;
       } else if (total < 1) {
