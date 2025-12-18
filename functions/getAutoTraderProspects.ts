@@ -247,8 +247,6 @@ Deno.serve(async (req) => {
         blockReason = `No cash available ($${cashAvailable.toFixed(2)})`;
       } else if (total < 1) {
         blockReason = "Order value too small (minimum $1)";
-      } else if (total > remainingCash && remainingCash > 1) {
-        blockReason = `Not enough allocation ($${remainingCash.toFixed(2)} remaining)`;
       } else if (total > cashAvailable) {
         blockReason = `Exceeds wallet balance ($${cashAvailable.toFixed(2)})`;
       } else {
