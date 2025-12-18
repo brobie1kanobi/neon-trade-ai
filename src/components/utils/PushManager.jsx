@@ -50,9 +50,13 @@ export default function PushManager() {
    * Get service worker registration URL
    */
   const getServiceWorkerUrl = () => {
-    // Extract app ID from URL path
+    // Extract app ID from URL path - must be present in URL
     const pathMatch = window.location.pathname.match(/\/apps\/([a-f0-9-]+)/);
-    const appId = pathMatch ? pathMatch[1] : '68b9d30ff048d7f24e2fe484';
+    if (!pathMatch) {
+      console.warn('[PushManager] Could not extract app ID from URL');
+      return null;
+    }
+    const appId = pathMatch[1];
     
     // Construct service worker URL
     return `${window.location.origin}/api/apps/${appId}/functions/pushServiceWorker`;
