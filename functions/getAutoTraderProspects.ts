@@ -191,9 +191,13 @@ Deno.serve(async (req) => {
 
     // Build prospect list - always show what AI is thinking
     const prospects = [];
-    const totalPortfolioValue = cashAvailable + holdings.reduce((sum, h) => sum + (h.quantity || 0) * (h.average_cost_price || 0), 0);
-    const isCashBuildUpMode = totalPortfolioValue < 500;
-    let remainingCash = Math.max(1, isCashBuildUpMode ? cashAvailable * 0.4 : cashAvailable * 0.85);
+    const numAssets = prefs.length || 1;
+    
+    // HARD LIMIT: Each order can be at most (cashAvailable / numAssets) to spread across assets
+    // Also cap at 25% of total cash max per single order
+    const maxPerOrder = Math.min(cashAvailable / numAssets, cashAvailable * 0.25);
+    
+    console.log('[Prospects] Cash available:', cashAvailable, 'Max per order:', maxPerOrder);
 
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
@@ -215,39 +219,29 @@ Deno.serve(async (req) => {
 
       if (rec.action !== "buy") continue;
 
-      const basePct = Math.max(15, Number(pref.percentage) || 15) / 100;
-      const multiplier = Math.min(2.0, 0.6 + rec.confidence * 1.4);
-      const fraction = Math.max(0.08, Math.min(0.45, basePct * multiplier));
-
-      // CRITICAL: Calculate spend as fraction of REMAINING cash, not total
-      let spend = remainingCash * fraction;
-
-      // Cap spend to never exceed remaining cash
-      spend = Math.min(spend, remainingCash * 0.9); // Max 90% of remaining
-
-      // Minimum order size handling
-      const minSpendTarget = Math.max(2, Math.min(10, price * 0.05));
-      if (spend < minSpendTarget && remainingCash >= minSpendTarget) {
-        spend = Math.min(remainingCash * 0.5, minSpendTarget); // Don't exceed 50% for min orders
-      }
-
-      const quantity = spend / price;
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
-      const scaleInFactor = holding ? 0.6 : 1.0;
-      const finalQty = quantity * scaleInFactor;
-      let total = finalQty * price;
-
-      // Final safety cap - never exceed available cash
-      if (total > cashAvailable) {
-        console.log('[Prospects] Capping order from $', total, 'to $', cashAvailable * 0.4);
-        total = cashAvailable * 0.4; // Max 40% of total cash per order
+      
+      // Simple calculation: use user's percentage preference, but cap to maxPerOrder
+      const userPct = Math.max(10, Math.min(50, Number(pref.percentage) || 20)) / 100;
+      let total = Math.min(cashAvailable * userPct, maxPerOrder);
+      
+      // Scale down if already holding
+      if (holding) {
+        total = total * 0.6;
       }
+      
+      // Minimum $5 order
+      if (total < 5 && cashAvailable >= 5) {
+        total = Math.min(5, maxPerOrder);
+      }
+      
+      // FINAL HARD CAP: Never exceed cash
+      total = Math.min(total, cashAvailable);
+      
+      const cappedQuantity = total / price;
 
       let blockReason = null;
       let wouldExecute = false;
-      
-      // Recalculate quantity based on capped total
-      const cappedQuantity = total / price;
       
       if (cashAvailable < 1) {
         blockReason = `No cash available ($${cashAvailable.toFixed(2)})`;
