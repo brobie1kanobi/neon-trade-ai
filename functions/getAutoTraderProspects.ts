@@ -218,18 +218,30 @@ Deno.serve(async (req) => {
       const basePct = Math.max(15, Number(pref.percentage) || 15) / 100;
       const multiplier = Math.min(2.0, 0.6 + rec.confidence * 1.4);
       const fraction = Math.max(0.08, Math.min(0.45, basePct * multiplier));
-      
+
+      // CRITICAL: Calculate spend as fraction of REMAINING cash, not total
       let spend = remainingCash * fraction;
+
+      // Cap spend to never exceed remaining cash
+      spend = Math.min(spend, remainingCash * 0.9); // Max 90% of remaining
+
+      // Minimum order size handling
       const minSpendTarget = Math.max(2, Math.min(10, price * 0.05));
       if (spend < minSpendTarget && remainingCash >= minSpendTarget) {
-        spend = Math.min(remainingCash, minSpendTarget);
+        spend = Math.min(remainingCash * 0.5, minSpendTarget); // Don't exceed 50% for min orders
       }
 
       const quantity = spend / price;
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       const scaleInFactor = holding ? 0.6 : 1.0;
       const finalQty = quantity * scaleInFactor;
-      const total = finalQty * price;
+      let total = finalQty * price;
+
+      // Final safety cap - never exceed available cash
+      if (total > cashAvailable) {
+        console.log('[Prospects] Capping order from $', total, 'to $', cashAvailable * 0.4);
+        total = cashAvailable * 0.4; // Max 40% of total cash per order
+      }
 
       let blockReason = null;
       let wouldExecute = false;
