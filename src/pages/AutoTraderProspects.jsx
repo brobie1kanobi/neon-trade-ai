@@ -37,12 +37,13 @@ export default function AutoTraderProspects() {
     loss_margin: settings?.loss_margin ?? 5 
   });
 
-  // Update margins when settings load
+  // Update margins when settings load from context
   useEffect(() => {
     if (settings?.gain_margin !== undefined || settings?.loss_margin !== undefined) {
+      console.log('[Prospects UI] Settings from context - gain:', settings.gain_margin, 'loss:', settings.loss_margin);
       setUserMargins({
-        gain_margin: settings?.gain_margin ?? 10,
-        loss_margin: settings?.loss_margin ?? 5
+        gain_margin: settings.gain_margin ?? 10,
+        loss_margin: settings.loss_margin ?? 5
       });
     }
   }, [settings?.gain_margin, settings?.loss_margin]);
@@ -91,7 +92,9 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
+        // Update margins from backend response (authoritative source)
         if (data.user_settings) {
+          console.log('[Prospects UI] Got margins from backend:', data.user_settings);
           setUserMargins(data.user_settings);
         }
       }
