@@ -12,8 +12,8 @@ Deno.serve(async (req) => {
     // Get user settings - ensure we have defaults if no settings exist
     console.log('[Prospects] User email:', user.email);
     
-    // Fetch all UserSettings for this user and pick the most recent
-    const allSettingsRecords = await base44.asServiceRole.entities.UserSettings.filter({ 
+    // Fetch UserSettings using user-scoped context (not service role) to respect RLS
+    const allSettingsRecords = await base44.entities.UserSettings.filter({ 
       created_by: user.email 
     });
     
