@@ -17,6 +17,10 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
   const [triggerPrice, setTriggerPrice] = useState('');
   const [trailingPercent, setTrailingPercent] = useState('1.0');
   const [trailingAmount, setTrailingAmount] = useState('');
+  const [trailingPriceType, setTrailingPriceType] = useState('pct'); // 'pct' or 'quote'
+  const [limitPriceOffset, setLimitPriceOffset] = useState('0');
+  const [limitPriceOffsetType, setLimitPriceOffsetType] = useState('quote'); // for trailing-stop-limit
+  const [triggerReference, setTriggerReference] = useState('last'); // 'last' or 'index'
   const [timeInForce, setTimeInForce] = useState('gtc');
   const [postOnly, setPostOnly] = useState(false);
   const [reduceOnly, setReduceOnly] = useState(false);
@@ -46,8 +50,12 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
         limitPrice: limitPrice || undefined,
         stopPrice: stopPrice || undefined,
         triggerPrice: triggerPrice || undefined,
-        trailingAmount: trailingAmount || undefined,
-        trailingPercent: trailingPercent || undefined,
+        trailingAmount: trailingPriceType === 'quote' ? trailingAmount : undefined,
+        trailingPercent: trailingPriceType === 'pct' ? trailingPercent : undefined,
+        trailingPriceType,
+        limitPriceOffset: orderType === 'trailing-stop-limit' ? limitPriceOffset : undefined,
+        limitPriceOffsetType: orderType === 'trailing-stop-limit' ? limitPriceOffsetType : undefined,
+        triggerReference,
         timeInForce,
         postOnly,
         reduceOnly,
@@ -281,40 +289,105 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
               </div>
             }
 
-            {/* Trailing Stop */}
+            {/* Trailing Stop Configuration */}
             {['trailing-stop', 'trailing-stop-limit'].includes(orderType) &&
-            <Tabs defaultValue="percent" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="percent">Percentage</TabsTrigger>
-                  <TabsTrigger value="amount">USD Amount</TabsTrigger>
-                </TabsList>
-                <TabsContent value="percent" className="mt-4">
-                  <Label>Trailing Percentage (%)</Label>
-                  <Input
-                  type="number"
-                  placeholder="e.g., 1.0 for 1%"
-                  value={trailingPercent}
-                  onChange={(e) => setTrailingPercent(e.target.value)}
-                  step="0.1" />
-
+            <div className="space-y-4 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <TrendingDown className="w-4 h-4 text-orange-500" />
+                  Trailing Stop Configuration
+                </h4>
+                
+                {/* Trigger Reference */}
+                <div>
+                  <Label>Trigger Reference</Label>
+                  <Select value={triggerReference} onValueChange={setTriggerReference}>
+                    <SelectTrigger className="bg-slate-950">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="last">Last Price (Kraken)</SelectItem>
+                      <SelectItem value="index">Index Price (Market)</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-gray-500 mt-1">
-                    Triggers when price reverts by this % from peak
+                    Price reference used to track peak and trigger
                   </p>
-                </TabsContent>
-                <TabsContent value="amount" className="mt-4">
-                  <Label>Trailing Amount (USD)</Label>
-                  <Input
-                  type="number"
-                  placeholder="e.g., 500"
-                  value={trailingAmount}
-                  onChange={(e) => setTrailingAmount(e.target.value)}
-                  step="1" />
+                </div>
 
-                  <p className="text-xs text-gray-500 mt-1">
-                    Triggers when price drops by this USD amount from peak
-                  </p>
-                </TabsContent>
-              </Tabs>
+                {/* Trailing Offset Type */}
+                <Tabs value={trailingPriceType} onValueChange={setTrailingPriceType} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="pct">Percentage (%)</TabsTrigger>
+                    <TabsTrigger value="quote">USD Amount</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="pct" className="mt-4">
+                    <Label>Trailing Percentage (%)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g., 1.0 for 1%"
+                      value={trailingPercent}
+                      onChange={(e) => setTrailingPercent(e.target.value)}
+                      step="0.1"
+                      className="bg-slate-950"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Triggers when price reverts by this % from peak
+                    </p>
+                  </TabsContent>
+                  <TabsContent value="quote" className="mt-4">
+                    <Label>Trailing Amount (USD)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g., 500"
+                      value={trailingAmount}
+                      onChange={(e) => setTrailingAmount(e.target.value)}
+                      step="1"
+                      className="bg-slate-950"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Triggers when price drops by this USD amount from peak
+                    </p>
+                  </TabsContent>
+                </Tabs>
+
+                {/* Limit Price Offset for trailing-stop-limit */}
+                {orderType === 'trailing-stop-limit' && (
+                  <div className="space-y-3 pt-3 border-t border-orange-200 dark:border-orange-700">
+                    <Label>Limit Price Offset from Trigger</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={limitPriceOffset}
+                        onChange={(e) => setLimitPriceOffset(e.target.value)}
+                        step="0.1"
+                        className="bg-slate-950 flex-1"
+                      />
+                      <Select value={limitPriceOffsetType} onValueChange={setLimitPriceOffsetType}>
+                        <SelectTrigger className="bg-slate-950 w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="quote">USD</SelectItem>
+                          <SelectItem value="pct">%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Offset from trigger price. Use 0 for same as trigger, negative for below.
+                    </p>
+                  </div>
+                )}
+
+                {/* Trailing Stop Example */}
+                <div className="text-xs text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/40 p-2 rounded">
+                  <strong>Example:</strong> If {trailingPriceType === 'pct' ? `${trailingPercent || 1}%` : `$${trailingAmount || 500}`} trailing, 
+                  and price peaks at $100,000, order triggers at {trailingPriceType === 'pct' 
+                    ? `$${(100000 * (1 - (parseFloat(trailingPercent) || 1) / 100)).toLocaleString()}`
+                    : `$${(100000 - (parseFloat(trailingAmount) || 500)).toLocaleString()}`
+                  }
+                </div>
+              </div>
             }
 
             {/* Iceberg Display Quantity */}
