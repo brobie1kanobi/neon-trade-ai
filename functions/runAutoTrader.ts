@@ -66,8 +66,31 @@ Deno.serve(async (req) => {
       return Response.json({ success: true, message: 'No wallet for user', trades_count: 0 });
     }
 
-    // CRITICAL: Use correct balance based on mode
-    let availableCash = isSimMode ? (wallet.cash_balance || 0) : (wallet.real_cash_balance || 0);
+    // CRITICAL: In LIVE mode, fetch REAL Kraken balance
+    let availableCash;
+    if (isSimMode) {
+      availableCash = wallet.cash_balance || 0;
+    } else {
+      // Fetch actual Kraken balance for LIVE trading
+      try {
+        const krakenBalanceRes = await base44.functions.invoke('krakenApi', { action: 'getBalance' });
+        const krakenData = krakenBalanceRes?.data || krakenBalanceRes;
+        
+        if (krakenData?.success && krakenData?.balances) {
+          // Use USD balance from Kraken
+          availableCash = Number(krakenData.balances['USD']?.balance || krakenData.balances['ZUSD']?.balance || 0);
+          console.log('[runAutoTrader] Kraken USD balance: $' + availableCash.toFixed(2));
+        } else {
+          // Fallback to wallet if Kraken fails
+          availableCash = wallet.real_cash_balance || 0;
+          console.log('[runAutoTrader] Using wallet fallback: $' + availableCash.toFixed(2));
+        }
+      } catch (krakenErr) {
+        console.error('[runAutoTrader] Kraken balance fetch failed:', krakenErr.message);
+        availableCash = wallet.real_cash_balance || 0;
+      }
+    }
+    
     const cashBefore = availableCash;
     
     if (availableCash <= 0.99) {
@@ -75,7 +98,8 @@ Deno.serve(async (req) => {
         success: true, 
         message: 'Insufficient cash', 
         trades_count: 0, 
-        mode: isSimMode ? 'sim' : 'live' 
+        mode: isSimMode ? 'sim' : 'live',
+        available_cash: availableCash
       });
     }
 
