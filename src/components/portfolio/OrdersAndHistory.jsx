@@ -33,6 +33,28 @@ import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
+// Normalize Kraken symbol - remove X/Z prefixes and suffixes
+// Kraken uses X prefix for crypto (XXBT, XXRP) and Z prefix for fiat (ZUSD), plus Z suffix sometimes
+const normalizeKrakenSymbol = (symbol) => {
+  if (!symbol) return 'UNKNOWN';
+  let s = symbol.toUpperCase();
+  // Remove common suffixes
+  s = s.replace(/USD$/, '').replace(/ZUSD$/, '').replace(/\/USD$/, '');
+  // Handle specific Kraken mappings
+  s = s.replace(/^XXBT$/, 'BTC').replace(/^XBT$/, 'BTC').replace(/^XBTC$/, 'BTC');
+  s = s.replace(/^XXRP$/, 'XRP').replace(/^XRPZ$/, 'XRP');
+  s = s.replace(/^XETH$/, 'ETH').replace(/^XXDG$/, 'DOGE').replace(/^XLTC$/, 'LTC');
+  // Generic: remove leading X if followed by another letter and length > 3
+  if (s.length > 3 && s.startsWith('X') && /^X[A-Z]/.test(s)) {
+    s = s.substring(1);
+  }
+  // Remove trailing Z if present (e.g., BTCZ -> BTC)
+  if (s.length > 3 && s.endsWith('Z')) {
+    s = s.slice(0, -1);
+  }
+  return s;
+};
+
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
   const [selectedTrade, setSelectedTrade] = useState(null);
