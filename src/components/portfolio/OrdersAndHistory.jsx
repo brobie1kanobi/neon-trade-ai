@@ -306,8 +306,57 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     return `$${price.toFixed(6)}`;
   };
 
-  // Filter trades by simulation mode
-  const filteredTrades = trades.filter((t) => t.is_simulation === isSimMode);
+  // Filter trades by simulation mode - merge with Kraken trades in LIVE mode
+  const filteredTrades = React.useMemo(() => {
+    const localTrades = trades.filter((t) => t.is_simulation === isSimMode);
+    
+    // In LIVE mode, merge with Kraken trades history
+    if (!isSimMode && krakenTradesHistory.length > 0) {
+      // Convert Kraken trades to our format
+      const krakenTradesList = krakenTradesHistory.map(kt => {
+        const pair = kt.pair || '';
+        const symbol = pair.replace('USD', '').replace('ZUSD', '').replace('XBT', 'BTC').replace('XXBT', 'BTC');
+        return {
+          id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
+          symbol: symbol,
+          type: kt.type || 'unknown',
+          quantity: parseFloat(kt.vol) || 0,
+          price: parseFloat(kt.price) || 0,
+          total_value: parseFloat(kt.cost) || 0,
+          created_date: kt.time ? new Date(kt.time * 1000).toISOString() : new Date().toISOString(),
+          is_simulation: false,
+          is_auto_trade: false,
+          asset_type: 'crypto',
+          status: 'executed',
+          // Kraken-specific
+          fee: parseFloat(kt.fee) || 0,
+          order_type: kt.ordertype,
+          kraken_trade_id: kt.trade_id
+        };
+      });
+      
+      // Merge and dedupe by checking if local trade matches Kraken trade (within time window)
+      const mergedTrades = [...localTrades];
+      krakenTradesList.forEach(kt => {
+        const isDupe = localTrades.some(lt => 
+          lt.symbol === kt.symbol && 
+          Math.abs(lt.quantity - kt.quantity) < 0.0001 &&
+          Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
+        );
+        if (!isDupe) {
+          mergedTrades.push(kt);
+        }
+      });
+      
+      // Sort by date descending
+      return mergedTrades.sort((a, b) => 
+        new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
+      );
+    }
+    
+    return localTrades;
+  }, [trades, isSimMode, krakenTradesHistory]);
+  
   const buyTrades = filteredTrades.filter((t) => t.type === "buy");
   const sellTrades = filteredTrades.filter((t) => t.type === "sell");
 
