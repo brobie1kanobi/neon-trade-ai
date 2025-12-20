@@ -278,7 +278,8 @@ Deno.serve(async (req) => {
       const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
       const trailingMargin = settings.trailing_takeprofit_margin || 3;
 
-      await base44.entities.ConditionalOrder.create({
+      // For LIVE mode, include Kraken order IDs in conditional order
+      const conditionalOrderData = {
         symbol: sym,
         asset_type: typ,
         quantity: qty,
@@ -291,7 +292,14 @@ Deno.serve(async (req) => {
         trailing_margin: trailingMargin,
         is_simulation: isSimMode,
         created_by: user.email
-      });
+      };
+      
+      // Add Kraken order IDs if in LIVE mode
+      if (!isSimMode && typeof krakenOrderIds !== 'undefined' && krakenOrderIds) {
+        conditionalOrderData.kraken_order_id = krakenOrderIds;
+      }
+      
+      await base44.entities.ConditionalOrder.create(conditionalOrderData);
 
       tradesPlaced.push({
         symbol: sym,
