@@ -226,7 +226,9 @@ export default function AutoTraderHealth() {
 
   return (
     <Card className="border-2" style={{ 
-      borderColor: isCritical ? '#ef4444' : isWarning ? '#f59e0b' : '#10b981' 
+      borderColor: !canOperate && prerequisites.autoTradingEnabled ? '#f59e0b' : 
+                   isCritical ? '#ef4444' : 
+                   isWarning ? '#f59e0b' : '#10b981' 
     }}>
       <CardHeader>
         <div className="flex items-center justify-between">
