@@ -295,7 +295,8 @@ Deno.serve(async (req) => {
         existing_quantity: holding?.quantity || 0,
         priority: rec.confidence * (holding ? 0.6 : 1.0),
         market_trend: quote?.changePct || 0,
-        allocation_percent: Math.round((total / Math.max(1, cashAvailable)) * 100),
+        allocation_percent: actualAllocationPct,
+        user_allocation_pct: userAllocationPct, // The user's configured percentage from Portfolio
         // Enhanced market intelligence fields
         technical_pattern: rec.technicalPattern,
         pattern_reliability: rec.patternReliability,
