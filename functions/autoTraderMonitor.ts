@@ -84,8 +84,21 @@ Deno.serve(async (req) => {
           t.is_simulation === false  // ONLY count LIVE trades
         );
         
-        // CRITICAL: ALWAYS use real_cash_balance for Auto-Trader Status
-        const balance = Number(walletData.real_cash_balance) || 0;
+        // CRITICAL: Calculate TOTAL portfolio value (USD + crypto holdings)
+        const cashBalance = Number(walletData.real_cash_balance) || 0;
+        
+        // Sum up holdings value using average cost price as estimate
+        // (Real-time prices come from WebSocket in frontend)
+        let holdingsValue = 0;
+        if (holdings && holdings.length > 0) {
+          holdingsValue = holdings.reduce((sum, h) => {
+            const qty = Number(h.quantity) || 0;
+            const price = Number(h.average_cost_price) || 0;
+            return sum + (qty * price);
+          }, 0);
+        }
+        
+        const balance = cashBalance + holdingsValue;
 
         const health = {
           auto_trading_enabled: Boolean(userSetting.auto_trading_enabled),
