@@ -542,8 +542,8 @@ export default function AutoTraderHealth() {
 
         <p className="text-xs text-gray-500 text-center">
           Last checked: {new Date(health.last_check).toLocaleTimeString()}
-          {wsConnected && (
-            <span className="text-green-600"> • WebSocket Active 🟢</span>
+          {isKrakenConnected && (
+            <span className="text-green-600"> • Kraken Connected 🟢</span>
           )}
         </p>
 
