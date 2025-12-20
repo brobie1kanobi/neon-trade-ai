@@ -69,6 +69,13 @@ function formatKrakenSymbol(symbol) {
 /**
  * Build order parameters based on order type
  * CRITICAL: Follows Kraken WebSocket v2 API spec exactly
+ * 
+ * SUPPORTED FEATURES (matching Kraken Pro):
+ * - All order types: market, limit, stop-loss, take-profit, trailing-stop, etc.
+ * - OTO (One-Triggers-Other) for attaching TP/SL to buy orders
+ * - Percentage-based triggers (price_type: 'pct')
+ * - Static price triggers (price_type: 'static')
+ * - Quote offset triggers (price_type: 'quote')
  */
 function buildOrderParams(orderConfig) {
   const {
@@ -85,7 +92,13 @@ function buildOrderParams(orderConfig) {
     postOnly = false,
     reduceOnly = false,
     displayQty, // For iceberg orders
-    conditionalCloseOrder // For OTO (One-Triggers-Other)
+    conditionalCloseOrder, // For OTO (One-Triggers-Other)
+    // NEW: Enhanced TP/SL parameters
+    takeProfitPercent,    // e.g., 3 for +3% TP
+    stopLossPercent,      // e.g., 1 for -1% SL
+    takeProfitPrice,      // Absolute USD price for TP
+    stopLossPrice,        // Absolute USD price for SL
+    triggerReference = 'last' // 'last' or 'index'
   } = orderConfig;
 
   // FIXED: Generate valid 32-bit userref (Kraken requirement)
