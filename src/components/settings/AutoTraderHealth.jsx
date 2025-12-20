@@ -467,7 +467,7 @@ export default function AutoTraderHealth() {
                   ? 'text-green-600 border-green-600'
                   : 'text-yellow-600 border-yellow-600'
               }>
-                {wsConnected ? '🔴 live' : isKrakenConnected ? 'api' : 'cached'}
+                {isKrakenConnected ? '🔴 live' : 'cached'}
               </Badge>
             </div>
             {(effectiveCash > 0 || effectiveAssets > 0) && (
