@@ -726,6 +726,8 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
 function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling }) {
   const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
   const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
+  // Normalize the symbol for display
+  const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
 
   return (
     <div
@@ -740,7 +742,7 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {order.symbol}
+                {displaySymbol}
               </span>
               <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                 Conditional
