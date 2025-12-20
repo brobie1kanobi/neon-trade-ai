@@ -216,7 +216,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           .filter(ko => (ko.volume || 0) > 0.00001)
           .map(ko => ({
             id: ko.order_id || ko.txid,
-            symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
+            symbol: normalizeKrakenSymbol(ko.symbol || ''),
             quantity: ko.volume || 0,
             purchase_price: ko.price || ko.limit_price || 0,
             status: 'active',
