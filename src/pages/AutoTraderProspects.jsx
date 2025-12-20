@@ -250,7 +250,7 @@ export default function AutoTraderProspects() {
                       {prospect.confidence_score}% AI Confidence
                     </Badge>
                     <p className="text-xs text-gray-500 mt-1">
-                      {prospect.allocation_percent}% of wallet
+                      {prospect.user_allocation_pct || prospect.allocation_percent}% allocation
                     </p>
                   </div>
                 </div>

@@ -1,4 +1,3 @@
-import AutoTraderProspects from './pages/AutoTraderProspects';
 import CryptoDetails from './pages/CryptoDetails';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -12,11 +11,11 @@ import VoiceSettings from './pages/VoiceSettings';
 import Wallet from './pages/Wallet';
 import WatchlistSettings from './pages/WatchlistSettings';
 import wallet from './pages/wallet';
+import AutoTraderProspects from './pages/AutoTraderProspects';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
-    "AutoTraderProspects": AutoTraderProspects,
     "CryptoDetails": CryptoDetails,
     "Dashboard": Dashboard,
     "Home": Home,
@@ -30,6 +29,7 @@ export const PAGES = {
     "Wallet": Wallet,
     "WatchlistSettings": WatchlistSettings,
     "wallet": wallet,
+    "AutoTraderProspects": AutoTraderProspects,
 }
 
 export const pagesConfig = {
