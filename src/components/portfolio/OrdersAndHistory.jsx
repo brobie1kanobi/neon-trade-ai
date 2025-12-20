@@ -677,7 +677,7 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-              {order.symbol}
+              {displaySymbol}
             </span>
             <Badge className={`text-xs ${typeBadge.bg} ${typeBadge.text}`}>
               {typeBadge.label}
