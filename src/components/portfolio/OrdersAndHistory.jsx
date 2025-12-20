@@ -806,6 +806,8 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
 // Closed order row
 function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isExecuted = order.status === "executed";
+  // Normalize the symbol for display
+  const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
 
   return (
     <button
@@ -826,7 +828,7 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, on
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-              {order.symbol}
+              {displaySymbol}
             </span>
             <Badge
               className={`text-xs ${
