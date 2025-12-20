@@ -73,13 +73,16 @@ Deno.serve(async (req) => {
     const isSimMode = false; // Force LIVE mode for prospects
 
     // Get auto-buy preferences - ONLY use user's selected assets from Portfolio page
+    // For LIVE prospects, we need is_simulation: false preferences
+    console.log('[Prospects] Looking for preferences with is_simulation:', isSimMode);
+    
     let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
       created_by: user.email, 
       is_simulation: isSimMode,
       enabled: true 
     }, "-created_date", 30);
 
-    console.log('[Prospects] Found', prefs.length, 'AutoBuyPreferences for user');
+    console.log('[Prospects] Found', prefs.length, 'AutoBuyPreferences for user with is_simulation:', isSimMode);
 
     // If no preferences, return empty - don't use defaults
     // User must configure assets in Portfolio page first
