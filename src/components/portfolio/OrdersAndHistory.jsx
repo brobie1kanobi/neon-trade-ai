@@ -341,8 +341,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     if (!isSimMode && krakenTradesHistory.length > 0) {
       // Convert Kraken trades to our format
       const krakenTradesList = krakenTradesHistory.map(kt => {
-        const pair = kt.pair || '';
-        const symbol = pair.replace('USD', '').replace('ZUSD', '').replace('XBT', 'BTC').replace('XXBT', 'BTC');
+        const symbol = normalizeKrakenSymbol(kt.pair || '');
         return {
           id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
           symbol: symbol,
