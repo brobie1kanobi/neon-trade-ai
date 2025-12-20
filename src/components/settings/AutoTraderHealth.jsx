@@ -438,20 +438,48 @@ export default function AutoTraderHealth() {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Kraken Balance</span>
           <div className="text-right">
-            <p className="font-semibold">
-              ${(totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance).toFixed(2)}
+            <p className="font-semibold text-lg">
+              ${effectiveBalance.toFixed(2)}
             </p>
-            <Badge variant="outline" className={
-              (totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance) < 0
-                ? 'text-red-600 border-red-600'
-                : (totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance) < 10
-                ? 'text-yellow-600 border-yellow-600'
-                : 'text-green-600 border-green-600'
-            }>
-              {wsConnected ? 'live' : health.wallet_status}
-            </Badge>
+            <div className="flex items-center gap-1 justify-end">
+              <Badge variant="outline" className={
+                effectiveBalance > 10
+                  ? 'text-green-600 border-green-600'
+                  : effectiveBalance > 0
+                  ? 'text-yellow-600 border-yellow-600'
+                  : 'text-red-600 border-red-600'
+              }>
+                {wsConnected ? '🔴 live' : 'cached'}
+              </Badge>
+              {wsConnected && (
+                <span className="text-xs text-green-500">●</span>
+              )}
+            </div>
+            {effectiveCash > 0 && cryptoHoldingsValue > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                ${effectiveCash.toFixed(2)} cash + ${cryptoHoldingsValue.toFixed(2)} assets
+              </p>
+            )}
           </div>
         </div>
+        
+        {/* Show operational issues if any */}
+        {operationalIssues.length > 0 && prerequisites.autoTradingEnabled && (
+          <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+            <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400 mb-2 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Issues Preventing Auto-Trading:
+            </p>
+            <ul className="text-xs text-yellow-600 dark:text-yellow-500 space-y-1">
+              {operationalIssues.map((issue, idx) => (
+                <li key={idx} className="flex items-center gap-1">
+                  <XCircle className="w-3 h-3" />
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Active Orders</span>
