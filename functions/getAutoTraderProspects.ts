@@ -187,25 +187,24 @@ Deno.serve(async (req) => {
 
     // Build prospect list - always show what AI is thinking
     const prospects = [];
-    const numAssets = prefs.length || 1;
-    
-    // HARD LIMIT: Each order can be at most (cashAvailable / numAssets) to spread across assets
-    // Also cap at 25% of total cash max per single order
-    const maxPerOrder = Math.min(cashAvailable / numAssets, cashAvailable * 0.25);
-    
-    console.log('[Prospects] Cash available:', cashAvailable, 'Max per order:', maxPerOrder);
+
+    // Use each asset's INDIVIDUAL percentage from user preferences - no uniform allocation
+    console.log('[Prospects] Cash available:', cashAvailable);
+    console.log('[Prospects] Processing', prefs.length, 'user-selected assets');
 
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
       const quote = quotes.find(q => q.symbol === symbol);
       const price = quote?.price || 0;
-      
+
       if (!price || price <= 0) {
         console.log('[Prospects] No price for', symbol);
         continue;
       }
-      
-      console.log('[Prospects] Processing', symbol, 'at $', price);
+
+      // Get user's INDIVIDUAL percentage for THIS asset (from AutoBuyPreference)
+      const userPct = Math.max(5, Math.min(100, Number(pref.percentage) || 20)) / 100;
+      console.log('[Prospects] Processing', symbol, 'at $', price, '- user allocation:', (userPct * 100).toFixed(0) + '%');
 
       const rec = analysisMap[symbol] || { 
         confidence: 0.6, 
@@ -216,24 +215,23 @@ Deno.serve(async (req) => {
       if (rec.action !== "buy") continue;
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
-      
-      // Simple calculation: use user's percentage preference, but cap to maxPerOrder
-      const userPct = Math.max(10, Math.min(50, Number(pref.percentage) || 20)) / 100;
-      let total = Math.min(cashAvailable * userPct, maxPerOrder);
-      
-      // Scale down if already holding
+
+      // Use user's EXACT percentage preference for this specific asset
+      let total = cashAvailable * userPct;
+
+      // Scale down if already holding (to avoid over-concentration)
       if (holding) {
         total = total * 0.6;
       }
-      
+
       // Minimum $5 order
       if (total < 5 && cashAvailable >= 5) {
-        total = Math.min(5, maxPerOrder);
+        total = 5;
       }
-      
-      // FINAL HARD CAP: Never exceed cash
+
+      // Cap at available cash (but allow full allocation if user wants it)
       total = Math.min(total, cashAvailable);
-      
+
       const cappedQuantity = total / price;
 
       let blockReason = null;
