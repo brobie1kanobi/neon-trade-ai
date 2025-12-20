@@ -115,28 +115,72 @@ export default function AutoTraderProspects() {
   const handleExecuteOrder = async (prospect) => {
     setExecuting(true);
     try {
-      // Execute the trade via krakenTrade function
-      const response = await base44.functions.invoke('krakenTrade', {
+      const qty = parseFloat(prospect.quantity.toFixed(8));
+      const price = prospect.current_price;
+      const tpPercent = prospect.user_gain_margin || userMargins.gain_margin || 10;
+      const slPercent = prospect.user_loss_margin || userMargins.loss_margin || 5;
+      const takeProfitPrice = parseFloat((price * (1 + tpPercent / 100)).toFixed(2));
+      const stopLossPrice = parseFloat((price * (1 - slPercent / 100)).toFixed(2));
+      
+      console.log(`[Prospects] Executing BUY with bracket: ${prospect.symbol} qty=${qty} TP=$${takeProfitPrice} SL=$${stopLossPrice}`);
+      
+      // Step 1: Execute market BUY order
+      const buyResponse = await base44.functions.invoke('krakenTrade', {
         action: 'place_order',
         symbol: prospect.symbol,
         side: 'buy',
-        quantity: parseFloat(prospect.quantity.toFixed(8)),
+        quantity: qty,
         orderType: 'market',
         timeInForce: 'ioc'
       });
 
-      const data = response?.data || response;
+      const buyData = buyResponse?.data || buyResponse;
 
-      if (data?.success) {
-        toast.success(`✅ Order Executed`, {
-          description: `Bought ${prospect.quantity.toFixed(4)} ${prospect.symbol} @ $${prospect.current_price.toFixed(2)}`
-        });
-
-        setSelectedProspect(null);
-        setTimeout(() => fetchProspects(), 2000);
-      } else {
-        throw new Error(data?.error || 'Order failed');
+      if (!buyData?.success) {
+        throw new Error(buyData?.error || 'Buy order failed');
       }
+      
+      toast.success(`✅ BUY Executed`, {
+        description: `Bought ${qty.toFixed(4)} ${prospect.symbol} @ $${price.toFixed(2)}`
+      });
+      
+      // Step 2: Place bracket orders (TP + SL) with short delay
+      await new Promise(res => setTimeout(res, 2000));
+      
+      try {
+        const bracketResponse = await base44.functions.invoke('krakenTrade', {
+          action: 'place_bracket_orders',
+          symbol: prospect.symbol,
+          quantity: qty,
+          takeProfitPrice: takeProfitPrice,
+          stopLossPrice: stopLossPrice
+        });
+        
+        const bracketData = bracketResponse?.data || bracketResponse;
+        
+        if (bracketData?.tp_success && bracketData?.sl_success) {
+          toast.success(`✅ Bracket Orders Placed`, {
+            description: `TP @ $${takeProfitPrice} (+${tpPercent}%) | SL @ $${stopLossPrice} (-${slPercent}%)`
+          });
+        } else if (bracketData?.tp_success || bracketData?.sl_success) {
+          toast.warning(`⚠️ Partial Bracket`, {
+            description: `TP: ${bracketData?.tp_success ? '✓' : '✗'} | SL: ${bracketData?.sl_success ? '✓' : '✗'}`
+          });
+        } else {
+          toast.warning(`⚠️ Bracket orders failed`, {
+            description: `Position opened but TP/SL not set. Check Kraken manually.`
+          });
+        }
+      } catch (bracketError) {
+        console.error('Bracket error:', bracketError);
+        toast.warning(`⚠️ Bracket orders failed`, {
+          description: `Position opened. Set TP/SL manually on Kraken.`
+        });
+      }
+
+      setSelectedProspect(null);
+      setTimeout(() => fetchProspects(), 3000);
+      
     } catch (error) {
       console.error('Execute error:', error);
       toast.error("Order failed", { description: error.message });
