@@ -153,9 +153,10 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             return volume > 0.00001;
           })
           .map(ko => {
-            // Parse Kraken order format
+            // Parse Kraken order format - use normalizer
             const descr = ko.descr || {};
-            const symbol = descr.pair?.replace('USD', '').replace('XBT', 'BTC') || ko.symbol?.replace('/USD', '') || 'UNKNOWN';
+            const rawSymbol = descr.pair || ko.symbol || '';
+            const symbol = normalizeKrakenSymbol(rawSymbol);
             const volume = parseFloat(ko.vol) || ko.volume || 0;
             const price = parseFloat(descr.price) || ko.price || ko.limit_price || 0;
             const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
