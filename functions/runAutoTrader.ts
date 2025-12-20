@@ -6,6 +6,9 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
  * - SIM mode: Uses database for simulated trades
  * 
  * LEGAL COMPLIANCE: Never mixes real and fake money
+ * 
+ * AUTO-EXECUTION THRESHOLD: 70% confidence
+ * Assets at 70%+ confidence with "buy" action are auto-executed with TP/SL
  */
 
 function round2(n) {
@@ -16,19 +19,6 @@ function round2(n) {
 async function getLatestWallet(base44, email) {
   const list = await base44.entities.Wallet.filter({ created_by: email }, "-updated_date");
   return list[0] || null;
-}
-
-async function getPrices(base44, cryptoSymbols, stockSymbols) {
-  const payload = { cryptoSymbols, stockSymbols };
-  const res = await base44.functions.invoke('getMarketData', { action: 'getWatchlistData', payload });
-  const arr = Array.isArray(res?.data) ? res.data : [];
-  const map = new Map();
-  for (const p of arr) {
-    const sym = (p.symbol || '').toUpperCase();
-    const price = typeof p.price === 'number' ? p.price : (typeof p.current_price === 'number' ? p.current_price : null);
-    if (sym && price != null) map.set(sym, price);
-  }
-  return map;
 }
 
 Deno.serve(async (req) => {
@@ -50,45 +40,35 @@ Deno.serve(async (req) => {
     // CRITICAL: Respect user's mode setting - NEVER force sim mode
     const isSimMode = settings.sim_trading_mode !== false;
 
-    // Load preferences
-    const prefs = await base44.entities.AutoBuyPreference.filter({ 
-      created_by: user.email, 
-      enabled: true,
-      is_simulation: isSimMode 
-    }, "-updated_date");
+    // CRITICAL: Fetch prospects from the same source as AutoTraderProspects page
+    // This ensures consistency - we trade exactly what the prospects page shows
+    console.log('[runAutoTrader] Fetching prospects for auto-execution...');
     
-    if (!Array.isArray(prefs) || prefs.length === 0) {
-      return Response.json({ success: true, message: 'No preferences', trades_count: 0 });
-    }
-
-    let wallet = await getLatestWallet(base44, user.email);
-    if (!wallet) {
-      return Response.json({ success: true, message: 'No wallet for user', trades_count: 0 });
-    }
-
-    // CRITICAL: In LIVE mode, fetch REAL Kraken balance
-    let availableCash;
-    if (isSimMode) {
-      availableCash = wallet.cash_balance || 0;
-    } else {
-      // Fetch actual Kraken balance for LIVE trading
-      try {
-        const krakenBalanceRes = await base44.functions.invoke('krakenApi', { action: 'getBalance' });
-        const krakenData = krakenBalanceRes?.data || krakenBalanceRes;
-        
-        if (krakenData?.success && krakenData?.balances) {
-          // Use USD balance from Kraken
-          availableCash = Number(krakenData.balances['USD']?.balance || krakenData.balances['ZUSD']?.balance || 0);
-          console.log('[runAutoTrader] Kraken USD balance: $' + availableCash.toFixed(2));
-        } else {
-          // Fallback to wallet if Kraken fails
-          availableCash = wallet.real_cash_balance || 0;
-          console.log('[runAutoTrader] Using wallet fallback: $' + availableCash.toFixed(2));
-        }
-      } catch (krakenErr) {
-        console.error('[runAutoTrader] Kraken balance fetch failed:', krakenErr.message);
-        availableCash = wallet.real_cash_balance || 0;
+    let prospects = [];
+    let cashAvailable = 0;
+    
+    try {
+      const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
+      const prospectsData = prospectsResponse?.data || prospectsResponse;
+      
+      if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
+        prospects = prospectsData.prospects;
+        cashAvailable = prospectsData.cash_available || 0;
+        console.log(`[runAutoTrader] Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
+      } else {
+        console.log('[runAutoTrader] No prospects available');
+        return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
       }
+    } catch (prospectError) {
+      console.error('[runAutoTrader] Failed to fetch prospects:', prospectError.message);
+      return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
+    }
+
+    // For SIM mode, use wallet balance instead of Kraken
+    let availableCash = cashAvailable;
+    if (isSimMode) {
+      const wallet = await getLatestWallet(base44, user.email);
+      availableCash = wallet?.cash_balance || 0;
     }
     
     const cashBefore = availableCash;
@@ -103,73 +83,73 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Price lookup
-    const cryptoSymbols = prefs.filter(p => (p.asset_type || '').toLowerCase() === 'crypto').map(p => (p.symbol || '').toUpperCase());
-    const stockSymbols = prefs.filter(p => (p.asset_type || '').toLowerCase() === 'stock').map(p => (p.symbol || '').toUpperCase());
-    const priceMap = await getPrices(base44, cryptoSymbols, stockSymbols);
-
-    // Get AI analysis for intelligent execution decisions
-    let aiAnalysis = {};
-    try {
-      const analysisResponse = await Promise.race([
-        base44.functions.invoke('analyzeSmallGains', {
-          symbols: [...cryptoSymbols, ...stockSymbols],
-          includeMarketIntelligence: true
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 15000))
-      ]);
-      const analysisData = analysisResponse?.data || analysisResponse;
-      if (analysisData?.success && Array.isArray(analysisData?.recommendations)) {
-        for (const rec of analysisData.recommendations) {
-          const sym = (rec.symbol || '').toUpperCase();
-          aiAnalysis[sym] = {
-            confidence: (rec.confidence_score || 50) / 100,
-            action: (rec.optimal_action || rec.action || 'hold').toLowerCase(),
-            reasoning: rec.reasoning || '',
-            timingWindow: rec.timing_window || 'short_term', // 'immediate', 'short_term', 'wait'
-            technicalPattern: rec.technical_pattern || null
-          };
-        }
+    // CRITICAL: Auto-execution threshold - 70% confidence
+    const AUTO_EXECUTE_THRESHOLD = 0.70;
+    
+    // Filter prospects that qualify for auto-execution:
+    // 1. Confidence >= 70%
+    // 2. Action is "buy" 
+    // 3. Not blocked
+    // 4. Would execute (has sufficient funds)
+    const eligibleProspects = prospects.filter(p => {
+      const confidence = (p.confidence_score || 0) / 100;
+      const action = (p.optimal_action || 'buy').toLowerCase();
+      const isBuy = action === 'buy' || action === 'strong_buy';
+      const notBlocked = !p.is_blocked;
+      const wouldExecute = p.would_execute_now === true;
+      
+      const eligible = confidence >= AUTO_EXECUTE_THRESHOLD && isBuy && notBlocked && wouldExecute;
+      
+      if (eligible) {
+        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE: ${p.confidence_score}% confidence, action: ${action}`);
+      } else {
+        console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${p.confidence_score}% confidence (need ${AUTO_EXECUTE_THRESHOLD * 100}%+), action: ${action}, blocked: ${p.is_blocked}`);
       }
-    } catch (e) {
-      console.log('[runAutoTrader] AI analysis unavailable, using defaults');
+      
+      return eligible;
+    });
+
+    console.log(`[runAutoTrader] ${eligibleProspects.length} prospects eligible for auto-execution (70%+ confidence)`);
+
+    if (eligibleProspects.length === 0) {
+      return Response.json({ 
+        success: true, 
+        message: 'No prospects meet 70% confidence threshold', 
+        trades_count: 0,
+        mode: isSimMode ? 'sim' : 'live',
+        total_prospects: prospects.length,
+        threshold: AUTO_EXECUTE_THRESHOLD * 100
+      });
     }
 
     const tradesPlaced = [];
-    const MIN_CONFIDENCE_THRESHOLD = 0.55; // Only execute if AI confidence >= 55%
+    const gainMargin = settings.gain_margin || 10;
+    const lossMargin = settings.loss_margin || 5;
+    const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
+    const trailingMargin = settings.trailing_takeprofit_margin || 3;
     
-    for (const pref of prefs) {
-      if (!pref?.enabled) continue;
-      const sym = (pref.symbol || '').toUpperCase();
-      const typ = (pref.asset_type || '').toLowerCase();
-      if (!sym || !typ) continue;
-
-      const price = priceMap.get(sym);
-      if (price == null || price <= 0) continue;
-
-      // Check AI recommendation - skip if AI says don't buy or low confidence
-      const ai = aiAnalysis[sym] || { confidence: 0.6, action: 'buy', timingWindow: 'short_term' };
-      if (ai.action !== 'buy' && ai.action !== 'strong_buy') {
-        console.log(`[runAutoTrader] Skipping ${sym} - AI recommends: ${ai.action}`);
-        continue;
-      }
-      if (ai.confidence < MIN_CONFIDENCE_THRESHOLD) {
-        console.log(`[runAutoTrader] Skipping ${sym} - AI confidence too low: ${(ai.confidence * 100).toFixed(0)}%`);
+    // Process each eligible prospect
+    for (const prospect of eligibleProspects) {
+      const sym = (prospect.symbol || '').toUpperCase();
+      const typ = (prospect.asset_type || 'crypto').toLowerCase();
+      const price = prospect.current_price || 0;
+      const qty = prospect.quantity || 0;
+      const total_value = prospect.total_value || 0;
+      const confidence = prospect.confidence_score || 0;
+      
+      if (price <= 0 || qty <= 0 || total_value <= 0) {
+        console.log(`[runAutoTrader] Skipping ${sym} - invalid values`);
         continue;
       }
       
-      // CRITICAL: In LIVE mode, only execute if timing is "immediate" (NOW) or confidence > 75%
-      // This prevents spending money on trades that aren't ready yet
-      if (!isSimMode) {
-        const isImmediateTiming = ai.timingWindow === 'immediate';
-        const isHighConfidence = ai.confidence >= 0.75;
-        
-        if (!isImmediateTiming && !isHighConfidence) {
-          console.log(`[runAutoTrader] Skipping ${sym} - timing: ${ai.timingWindow}, confidence: ${(ai.confidence * 100).toFixed(0)}% (need 'immediate' or 75%+)`);
-          continue;
-        }
-        console.log(`[runAutoTrader] ✅ ${sym} ready for LIVE execution - timing: ${ai.timingWindow}, confidence: ${(ai.confidence * 100).toFixed(0)}%`);
+      if (total_value > availableCash) {
+        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${total_value.toFixed(2)} > $${availableCash.toFixed(2)})`);
+        continue;
       }
+
+      console.log(`[runAutoTrader] 🚀 AUTO-EXECUTING ${sym}: ${qty} @ $${price} = $${total_value.toFixed(2)} (${confidence}% confidence)`);
+      
+      let krakenOrderIds = '';
 
       // Re-fetch latest wallet
       wallet = await getLatestWallet(base44, user.email);
