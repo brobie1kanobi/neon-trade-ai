@@ -40,18 +40,28 @@ export default function AutoTraderHealth() {
     if (!user?.email) return;
     
     try {
-      // CRITICAL: WebSocket connection is PRIMARY indicator - if connected, Kraken IS connected
-      const autoBuyPrefs = await AutoBuyPreference.filter({ 
-        created_by: user.email, 
-        enabled: true, 
-        is_simulation: false 
-      }).catch(() => []);
+      // Check BOTH WebSocket AND database for Kraken connection
+      const [krakenConns, autoBuyPrefs] = await Promise.all([
+        KrakenConnection.filter({ created_by: user.email }).catch(() => []),
+        AutoBuyPreference.filter({ 
+          created_by: user.email, 
+          enabled: true, 
+          is_simulation: false 
+        }).catch(() => [])
+      ]);
+
+      // Kraken is connected if: WebSocket active OR verified connection exists in DB
+      const hasKrakenCredentials = krakenConns.length > 0 && krakenConns[0]?.account_verified;
+      const krakenConnected = wsConnected || hasKrakenCredentials;
+
+      // For balance check, use WebSocket if available, otherwise check if we have any balance info
+      const hasBalance = effectiveBalance > 1 || (hasKrakenCredentials && !wsConnected);
 
       const prereqs = {
-        krakenConnected: wsConnected, // WebSocket active = Kraken connected
+        krakenConnected,
         autoTradingEnabled: settings?.auto_trading_enabled === true,
         hasAutoBuyPrefs: autoBuyPrefs.length > 0,
-        hasBalance: effectiveBalance > 1 // At least $1 to trade
+        hasBalance
       };
 
       // Build list of operational issues
@@ -62,12 +72,13 @@ export default function AutoTraderHealth() {
       if (!prereqs.hasAutoBuyPrefs) {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
-      if (!prereqs.hasBalance) {
+      // Only show balance issue if WebSocket is connected and balance is actually low
+      if (wsConnected && effectiveBalance <= 1) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
       }
       
       setOperationalIssues(issues);
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected, '| Balance:', effectiveBalance);
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected, '| Has Kraken Creds:', hasKrakenCredentials, '| Balance:', effectiveBalance);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
