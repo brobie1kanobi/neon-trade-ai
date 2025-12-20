@@ -1492,6 +1492,9 @@ export default function Dashboard() {
 
   // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
+  
+  // CRITICAL: Fetch REAL Kraken PnL data for LIVE mode
+  const { pnlData: krakenPnL, refresh: refreshKrakenPnL } = useKrakenPnL(isSimMode);
 
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
