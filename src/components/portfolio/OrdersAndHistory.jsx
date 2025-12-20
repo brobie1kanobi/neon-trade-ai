@@ -642,6 +642,9 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
 
 // Open order row - enhanced for Kraken orders
 function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
+  // Normalize the symbol for display
+  const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
+  
   // Determine order type badge color
   const getOrderTypeBadge = () => {
     const orderType = (order.order_type || '').toLowerCase();
