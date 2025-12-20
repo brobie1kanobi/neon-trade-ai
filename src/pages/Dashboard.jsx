@@ -19,6 +19,7 @@ import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
+import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
 
 import BalanceCard from "../components/dashboard/BalanceCard";
 import RecentTrades from "../components/dashboard/RecentTrades";
