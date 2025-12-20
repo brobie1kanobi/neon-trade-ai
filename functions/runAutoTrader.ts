@@ -101,7 +101,9 @@ Deno.serve(async (req) => {
           aiAnalysis[sym] = {
             confidence: (rec.confidence_score || 50) / 100,
             action: (rec.optimal_action || rec.action || 'hold').toLowerCase(),
-            reasoning: rec.reasoning || ''
+            reasoning: rec.reasoning || '',
+            timingWindow: rec.timing_window || 'short_term', // 'immediate', 'short_term', 'wait'
+            technicalPattern: rec.technical_pattern || null
           };
         }
       }
