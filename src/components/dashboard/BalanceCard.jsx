@@ -49,7 +49,16 @@ export default function BalanceCard({
             }
           </div>
           <div className="flex items-center gap-2">
-            {Icon && <Icon className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />}
+            {Icon && linkTo ? (
+              <Link 
+                to={linkTo}
+                className="p-1 rounded border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+              >
+                <Icon className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />
+              </Link>
+            ) : Icon ? (
+              <Icon className="w-4 h-4" style={{ color: 'var(--neon-green)' }} />
+            ) : null}
             {onToggleVisibility &&
               <Button
                 variant="ghost"
