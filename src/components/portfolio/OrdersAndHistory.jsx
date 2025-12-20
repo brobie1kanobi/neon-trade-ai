@@ -54,12 +54,55 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     isConnected: wsConnected 
   } = useKrakenWebSocket();
 
+  // State for Kraken trades history
+  const [krakenTradesHistory, setKrakenTradesHistory] = useState([]);
+
+  // Fetch fresh data from Kraken API (not just WebSocket)
+  const fetchKrakenData = useCallback(async () => {
+    if (isSimMode) return { orders: [], trades: [] };
+    
+    try {
+      console.log('[OrdersAndHistory] Fetching fresh Kraken data...');
+      
+      // Fetch both open orders and trades history in parallel
+      const [ordersResponse, tradesResponse] = await Promise.all([
+        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
+        base44.functions.invoke('krakenApi', { action: 'getTradesHistory' })
+      ]);
+      
+      const ordersData = ordersResponse?.data || ordersResponse;
+      const tradesData = tradesResponse?.data || tradesResponse;
+      
+      console.log('[OrdersAndHistory] Kraken open orders:', ordersData?.orders?.length || 0);
+      console.log('[OrdersAndHistory] Kraken trades history:', tradesData?.trades?.length || 0);
+      
+      return {
+        orders: ordersData?.orders || [],
+        trades: tradesData?.trades || []
+      };
+    } catch (err) {
+      console.error('[OrdersAndHistory] Kraken fetch error:', err);
+      return { orders: [], trades: [] };
+    }
+  }, [isSimMode]);
+
   // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
     if (!user?.email) return;
 
     setIsLoading(true);
     try {
+      // CRITICAL: In LIVE mode, always fetch fresh from Kraken API
+      let krakenOpenOrders = [];
+      let krakenTrades = [];
+      
+      if (!isSimMode) {
+        const krakenData = await fetchKrakenData();
+        krakenOpenOrders = krakenData.orders;
+        krakenTrades = krakenData.trades;
+        setKrakenTradesHistory(krakenTrades);
+      }
+      
       // Load local database orders
       const allOrders = await ConditionalOrder.filter(
         { created_by: user.email },
@@ -75,51 +118,54 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         return isSimMode;
       });
 
-      // CRITICAL: In LIVE mode, use ONLY Kraken WebSocket orders (source of truth)
+      // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
       
-      if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
-        console.log('[OrdersAndHistory] Using', Object.keys(krakenOrders).length, 'live Kraken orders');
+      if (!isSimMode && krakenOpenOrders.length > 0) {
+        console.log('[OrdersAndHistory] Using', krakenOpenOrders.length, 'live Kraken orders from API');
         
-        // Convert Kraken orders to our format - VALIDATE each order
-        const krakenOrdersList = Object.values(krakenOrders)
+        // Convert Kraken orders to our format
+        const krakenOrdersList = krakenOpenOrders
           .filter(ko => {
-            // CRITICAL: Filter out invalid orders
-            const volume = ko.volume || 0;
-            const price = ko.price || ko.limit_price || 0;
-            
-            if (volume <= 0.00001) {
-              console.warn('[OrdersAndHistory] Skipping order with 0 volume:', ko.order_id);
-              return false;
-            }
-            if (price <= 0) {
-              console.warn('[OrdersAndHistory] Skipping order with 0 price:', ko.order_id);
-              return false;
-            }
-            return true;
+            const volume = parseFloat(ko.vol) || ko.volume || 0;
+            return volume > 0.00001;
           })
-          .map(ko => ({
-            id: ko.order_id || ko.txid,
-            symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
-            quantity: ko.volume || 0,
-            purchase_price: ko.price || ko.limit_price || 0,
-            status: 'active',
-            asset_type: 'crypto',
-            is_simulation: false,
-            kraken_order_id: ko.order_id || ko.txid,
-            created_date: ko.created_at || new Date().toISOString(),
-            order_type: ko.order_type || ko.ordertype,
-            side: ko.side,
-            gain_margin: 10,
-            loss_margin: 5,
-            trailing_enabled: ko.order_type === 'trailing-stop' || ko.ordertype === 'trailing-stop'
-          }));
+          .map(ko => {
+            // Parse Kraken order format
+            const descr = ko.descr || {};
+            const symbol = descr.pair?.replace('USD', '').replace('XBT', 'BTC') || ko.symbol?.replace('/USD', '') || 'UNKNOWN';
+            const volume = parseFloat(ko.vol) || ko.volume || 0;
+            const price = parseFloat(descr.price) || ko.price || ko.limit_price || 0;
+            const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
+            const side = descr.type || ko.side || 'unknown';
+            
+            return {
+              id: ko.order_id,
+              symbol: symbol,
+              quantity: volume,
+              purchase_price: price,
+              status: 'active',
+              asset_type: 'crypto',
+              is_simulation: false,
+              kraken_order_id: ko.order_id,
+              created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : new Date().toISOString(),
+              order_type: orderType,
+              side: side,
+              gain_margin: 10,
+              loss_margin: 5,
+              trailing_enabled: orderType.includes('trailing'),
+              // Extra Kraken info
+              kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+              trigger_price: parseFloat(descr.price) || 0,
+              group_id: ko.group_id,
+              group_type: ko.group_type
+            };
+          });
 
-        // In LIVE mode, Kraken is source of truth
         activeOrders = krakenOrdersList;
-        console.log('[OrdersAndHistory] Live orders:', activeOrders.length);
+        console.log('[OrdersAndHistory] Processed Kraken orders:', activeOrders.length);
         
-        // CRITICAL: Clean up invalid local orders
+        // Clean up invalid local orders
         const invalidLocalOrders = modeFilteredOrders.filter(o => 
           o.status === 'active' && 
           o.is_simulation === false &&
@@ -136,6 +182,28 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             })
           )).catch(err => console.error('[OrdersAndHistory] Cleanup error:', err));
         }
+      } else if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
+        // Fallback to WebSocket data if API fetch returned empty
+        console.log('[OrdersAndHistory] Using WebSocket orders as fallback');
+        const krakenOrdersList = Object.values(krakenOrders)
+          .filter(ko => (ko.volume || 0) > 0.00001)
+          .map(ko => ({
+            id: ko.order_id || ko.txid,
+            symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
+            quantity: ko.volume || 0,
+            purchase_price: ko.price || ko.limit_price || 0,
+            status: 'active',
+            asset_type: 'crypto',
+            is_simulation: false,
+            kraken_order_id: ko.order_id || ko.txid,
+            created_date: ko.created_at || new Date().toISOString(),
+            order_type: ko.order_type || ko.ordertype,
+            side: ko.side,
+            gain_margin: 10,
+            loss_margin: 5,
+            trailing_enabled: (ko.order_type || ko.ordertype || '').includes('trailing')
+          }));
+        activeOrders = krakenOrdersList;
       }
 
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
@@ -150,7 +218,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     } finally {
       setIsLoading(false);
     }
-  }, [user?.email, isSimMode, wsConnected, krakenOrders]);
+  }, [user?.email, isSimMode, wsConnected, krakenOrders, fetchKrakenData]);
 
   useEffect(() => {
     loadOrders();
