@@ -28,7 +28,7 @@ export default function AutoTraderHealth() {
   });
 
   // CRITICAL: Use global WebSocket connection
-  const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
+  const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue } = useKrakenWebSocket();
 
   const checkPrerequisites = async () => {
     if (!user?.email) return;
