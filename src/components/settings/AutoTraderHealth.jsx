@@ -32,7 +32,11 @@ export default function AutoTraderHealth() {
   // CRITICAL: Use global WebSocket connection for REAL-TIME Kraken data
   const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue, cryptoHoldingsValue } = useKrakenWebSocket();
 
-  const checkPrerequisites = async () => {
+  // Calculate effective balance from WebSocket (real-time Kraken data)
+  const effectiveBalance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
+  const effectiveCash = wsUsdBalance || 0;
+
+  const checkPrerequisites = useCallback(async () => {
     if (!user?.email) return;
     
     try {
@@ -46,17 +50,31 @@ export default function AutoTraderHealth() {
       const prereqs = {
         krakenConnected: wsConnected, // WebSocket active = Kraken connected
         autoTradingEnabled: settings?.auto_trading_enabled === true,
-        hasAutoBuyPrefs: autoBuyPrefs.length > 0
+        hasAutoBuyPrefs: autoBuyPrefs.length > 0,
+        hasBalance: effectiveBalance > 1 // At least $1 to trade
       };
 
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected);
+      // Build list of operational issues
+      const issues = [];
+      if (!prereqs.krakenConnected) {
+        issues.push({ type: 'connection', message: 'Kraken not connected' });
+      }
+      if (!prereqs.hasAutoBuyPrefs) {
+        issues.push({ type: 'config', message: 'No auto-buy assets configured' });
+      }
+      if (!prereqs.hasBalance) {
+        issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
+      }
+      
+      setOperationalIssues(issues);
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected, '| Balance:', effectiveBalance);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
       console.error('[AutoTraderHealth] Prerequisites check error:', err);
       return prerequisites;
     }
-  };
+  }, [user?.email, wsConnected, settings?.auto_trading_enabled, effectiveBalance]);
 
   const fetchHealth = async () => {
     try {
