@@ -124,7 +124,7 @@ function buildOrderParams(orderConfig) {
     return params;
   }
 
-  // CRITICAL: For limit orders
+  // CRITICAL: For limit orders - supports OTO (One-Triggers-Other) for TP/SL
   if (orderType === 'limit') {
     if (!limitPrice || parseFloat(limitPrice) <= 0) {
       throw new Error('Limit orders require a valid limit_price');
@@ -139,6 +139,22 @@ function buildOrderParams(orderConfig) {
       order_userref: userref
     };
     if (postOnly) params.post_only = true;
+    
+    // CRITICAL: Add OTO conditional close order if specified
+    // This attaches a TP or SL to fire when the primary order fills
+    // NOTE: Kraken only supports ONE conditional per order, so we can do TP or SL, not both
+    if (conditionalCloseOrder) {
+      params.conditional = {
+        order_type: conditionalCloseOrder.orderType || 'take-profit',
+        trigger_price: parseFloat(conditionalCloseOrder.triggerPrice),
+        trigger_price_type: conditionalCloseOrder.priceType || 'static'
+      };
+      if (conditionalCloseOrder.limitPrice) {
+        params.conditional.limit_price = parseFloat(conditionalCloseOrder.limitPrice);
+      }
+      console.log('[buildOrderParams] OTO conditional:', JSON.stringify(params.conditional));
+    }
+    
     console.log('[buildOrderParams] Limit order params:', JSON.stringify(params));
     return params;
   }
