@@ -72,37 +72,22 @@ Deno.serve(async (req) => {
     // For holdings/preferences, use LIVE mode (is_simulation: false)
     const isSimMode = false; // Force LIVE mode for prospects
 
-    // Get auto-buy preferences - ONLY analyze assets user has explicitly selected
+    // Get auto-buy preferences - if none exist, use default top crypto
     let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
       created_by: user.email, 
       is_simulation: isSimMode,
       enabled: true 
-    }, "-created_date", 50);
+    }, "-created_date", 30);
 
-    console.log('[Prospects] Found', prefs.length, 'user auto-buy preferences');
-
-    // Log each preference's allocation
-    prefs.forEach(p => {
-      console.log('[Prospects] Asset:', p.symbol, 'Allocation:', p.percentage + '%', 'Type:', p.asset_type);
-    });
-
-    // If no preferences, return empty - user must configure their watchlist first
+    // If no preferences, create default watchlist to analyze
     if (prefs.length === 0) {
-      console.log('[Prospects] No user preferences found - user needs to configure watchlist in Portfolio');
-      return Response.json({
-        success: true,
-        prospects: [],
-        cash_available: cashAvailable,
-        is_sim_mode: isSimMode,
-        auto_trading_enabled: settings?.auto_trading_enabled || false,
-        total_analyzed: 0,
-        market_intelligence: null,
-        user_settings: {
-          gain_margin: settings.gain_margin,
-          loss_margin: settings.loss_margin
-        },
-        message: "No assets configured. Add assets to your watchlist in Portfolio → Auto-Buy Preferences."
-      });
+      const defaultCrypto = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
+      prefs = defaultCrypto.map(symbol => ({
+        symbol,
+        asset_type: 'crypto',
+        percentage: 20,
+        enabled: true
+      }));
     }
 
     // Get current holdings
@@ -202,24 +187,25 @@ Deno.serve(async (req) => {
 
     // Build prospect list - always show what AI is thinking
     const prospects = [];
-
-    // Use each asset's INDIVIDUAL percentage from user preferences - no uniform allocation
-    console.log('[Prospects] Cash available:', cashAvailable);
-    console.log('[Prospects] Processing', prefs.length, 'user-selected assets');
+    const numAssets = prefs.length || 1;
+    
+    // HARD LIMIT: Each order can be at most (cashAvailable / numAssets) to spread across assets
+    // Also cap at 25% of total cash max per single order
+    const maxPerOrder = Math.min(cashAvailable / numAssets, cashAvailable * 0.25);
+    
+    console.log('[Prospects] Cash available:', cashAvailable, 'Max per order:', maxPerOrder);
 
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
       const quote = quotes.find(q => q.symbol === symbol);
       const price = quote?.price || 0;
-
+      
       if (!price || price <= 0) {
         console.log('[Prospects] No price for', symbol);
         continue;
       }
-
-      // Get user's INDIVIDUAL percentage for THIS asset (from AutoBuyPreference)
-      const userPct = Math.max(5, Math.min(100, Number(pref.percentage) || 20)) / 100;
-      console.log('[Prospects] Processing', symbol, 'at $', price, '- user allocation:', (userPct * 100).toFixed(0) + '%');
+      
+      console.log('[Prospects] Processing', symbol, 'at $', price);
 
       const rec = analysisMap[symbol] || { 
         confidence: 0.6, 
@@ -230,23 +216,24 @@ Deno.serve(async (req) => {
       if (rec.action !== "buy") continue;
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
-
-      // Use user's EXACT percentage preference for this specific asset
-      let total = cashAvailable * userPct;
-
-      // Scale down if already holding (to avoid over-concentration)
+      
+      // Simple calculation: use user's percentage preference, but cap to maxPerOrder
+      const userPct = Math.max(10, Math.min(50, Number(pref.percentage) || 20)) / 100;
+      let total = Math.min(cashAvailable * userPct, maxPerOrder);
+      
+      // Scale down if already holding
       if (holding) {
         total = total * 0.6;
       }
-
+      
       // Minimum $5 order
       if (total < 5 && cashAvailable >= 5) {
-        total = 5;
+        total = Math.min(5, maxPerOrder);
       }
-
-      // Cap at available cash (but allow full allocation if user wants it)
+      
+      // FINAL HARD CAP: Never exceed cash
       total = Math.min(total, cashAvailable);
-
+      
       const cappedQuantity = total / price;
 
       let blockReason = null;
