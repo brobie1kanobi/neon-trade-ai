@@ -612,8 +612,28 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
 
 }
 
-// Open order row
+// Open order row - enhanced for Kraken orders
 function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
+  // Determine order type badge color
+  const getOrderTypeBadge = () => {
+    const orderType = (order.order_type || '').toLowerCase();
+    if (orderType.includes('stop-loss')) {
+      return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: 'Stop Loss' };
+    }
+    if (orderType.includes('take-profit')) {
+      return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: 'Take Profit' };
+    }
+    if (orderType.includes('trailing')) {
+      return { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', label: 'Trailing' };
+    }
+    if (orderType.includes('limit')) {
+      return { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: 'Limit' };
+    }
+    return { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: 'Pending' };
+  };
+  
+  const typeBadge = getOrderTypeBadge();
+
   return (
     <div
       className="flex items-center justify-between p-3 rounded-lg border"
@@ -624,16 +644,26 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
           <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
         </div>
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
               {order.symbol}
             </span>
-            <Badge className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300">
-              Pending
+            <Badge className={`text-xs ${typeBadge.bg} ${typeBadge.text}`}>
+              {typeBadge.label}
             </Badge>
+            {order.side && (
+              <Badge variant="outline" className="text-xs capitalize">
+                {order.side}
+              </Badge>
+            )}
+            {order.group_type === 'bracket' && (
+              <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                Bracket
+              </Badge>
+            )}
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {format(new Date(order.created_date), dateFmt)}
+            {order.kraken_description || format(new Date(order.created_date), dateFmt)}
           </p>
         </div>
       </div>
@@ -644,7 +674,7 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
             {formatDisplayQuantity(order.quantity)} units
           </p>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            @ {formatPrice(order.purchase_price)}
+            @ {formatPrice(order.purchase_price || order.trigger_price)}
           </p>
         </div>
         <Button
