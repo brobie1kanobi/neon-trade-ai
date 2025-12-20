@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     if (action === 'health') {
       try {
         // CRITICAL: All queries run in parallel with fast timeouts
-        const [settings, trades, orders, wallet] = await Promise.all([
+        const [settings, trades, orders, wallet, holdings] = await Promise.all([
           Promise.race([
             base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
@@ -63,6 +63,11 @@ Deno.serve(async (req) => {
           
           Promise.race([
             base44.asServiceRole.entities.Wallet.filter({ created_by: user.email }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
+          ]).catch(() => []),
+          
+          Promise.race([
+            base44.asServiceRole.entities.Holding.filter({ created_by: user.email, is_simulation: false }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
           ]).catch(() => [])
         ]);
