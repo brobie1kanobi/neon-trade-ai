@@ -114,11 +114,20 @@ export default function RecentTrades({ trades, onTradeSelect }) {
 
   return (
     <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <Clock className="w-5 h-5 neon-text" />
-          Recent Trades
-        </CardTitle>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Clock className="w-5 h-5 neon-text" />
+            Recent Trades
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchKrakenTrades}
+            disabled={isLoading || isSimMode}>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {recentTrades.map((trade) => (
