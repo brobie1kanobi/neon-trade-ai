@@ -31,11 +31,11 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
   const longPressTimerRef = useRef(null);
 
   const timeframes = [
-    { label: "24H", value: "24h" },
-    { label: "7D", value: "7d" },
-    { label: "1M", value: "1m" },
-    { label: "3M", value: "3m" },
-    { label: "1Y", value: "1y" }];
+  { label: "24H", value: "24h" },
+  { label: "7D", value: "7d" },
+  { label: "1M", value: "1m" },
+  { label: "3M", value: "3m" },
+  { label: "1Y", value: "1y" }];
 
   const handleMouseMove = (state) => {
     const idx = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : null;
@@ -48,7 +48,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
   const handleClick = (state) => {
     const idx = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : null;
     if (idx == null) return;
-    setPinnedIndex((prev) => (prev === idx ? null : idx));
+    setPinnedIndex((prev) => prev === idx ? null : idx);
   };
   const handleTouchStart = () => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
@@ -70,7 +70,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
       longPressTimerRef.current = null;
     }
     setIsScrubbing(false);
-  }
+  };
 
   // Custom vertical cursor (green) for hover/scrub
   const CrosshairCursor = ({ points, height }) => {
@@ -89,8 +89,8 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     let hiIdx = 0;
     let loIdx = 0;
     chartData.forEach((point, idx) => {
-      if (point.price > high.price) { high = point; hiIdx = idx; }
-      if (point.price < low.price) { low = point; loIdx = idx; }
+      if (point.price > high.price) {high = point;hiIdx = idx;}
+      if (point.price < low.price) {low = point;loIdx = idx;}
     });
     return {
       highPoint: high,
@@ -108,11 +108,11 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-12))));
     const normalized = raw / power;
     let nice;
-    if (normalized <= 1) nice = 1;
-    else if (normalized <= 2) nice = 2;
-    else if (normalized <= 2.5) nice = 2.5;
-    else if (normalized <= 5) nice = 5;
-    else nice = 10;
+    if (normalized <= 1) nice = 1;else
+    if (normalized <= 2) nice = 2;else
+    if (normalized <= 2.5) nice = 2.5;else
+    if (normalized <= 5) nice = 5;else
+    nice = 10;
     return nice * power;
   };
 
@@ -163,7 +163,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     const cx = (viewBox && (viewBox.cx ?? viewBox.x)) ?? 0;
     const cy = (viewBox && (viewBox.cy ?? viewBox.y)) ?? 0;
 
-    const point = (pinnedIndex != null && chartData[pinnedIndex]) ? chartData[pinnedIndex] : null;
+    const point = pinnedIndex != null && chartData[pinnedIndex] ? chartData[pinnedIndex] : null;
     if (!point) return null;
 
     const priceStr = `$${Number(point.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
@@ -191,7 +191,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     if (tooCloseToTop) {
       // Choose left or right based on proximity to left edge
       const placeRight = cx < 120; // Heuristic: if dot is on the left side, place label to the right
-      rectX = placeRight ? (cx + 10) : (cx - width - 10); // 10px offset from the dot
+      rectX = placeRight ? cx + 10 : cx - width - 10; // 10px offset from the dot
       rectY = cy - height / 2 - 4; // Slightly above the dot's vertical center
       textX = rectX + width / 2;
       textY = rectY + height / 2 + 3;
@@ -209,8 +209,8 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         <text x={textX} y={textY} fill="#e5e7eb" fontSize="10" textAnchor="middle">
           {text}
         </text>
-      </g>
-    );
+      </g>);
+
   };
 
 
@@ -249,7 +249,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         const days = { '24h': 1, '7d': 7, '1m': 30, '3m': 90, '1y': 365 }[timeframe] || 1;
 
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
         );
 
         // Fetch current price
@@ -259,7 +259,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         });
 
         const currentPriceResponse = await Promise.race([currentPricePromise, timeoutPromise]);
-        
+
         const currentAssetData = Array.isArray(currentPriceResponse?.data) ? currentPriceResponse.data[0] : null;
 
         if (currentAssetData) {
@@ -276,7 +276,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         });
 
         const historyResponse = await Promise.race([historyPromise, timeoutPromise]);
-        
+
         const historyChartData = Array.isArray(historyResponse?.data) ? historyResponse.data : [];
 
         if (historyChartData.length > 0) {
@@ -291,9 +291,9 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
           if (processedData.length >= 2) {
             const firstPrice = processedData[0].price;
             const lastPrice = processedData[processedData.length - 1].price;
-            
+
             if (firstPrice > 0) {
-              const percentChange = ((lastPrice - firstPrice) / firstPrice) * 100;
+              const percentChange = (lastPrice - firstPrice) / firstPrice * 100;
               setPriceChange(percentChange);
             } else {
               setPriceChange(null);
@@ -302,7 +302,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
             setPriceChange(null);
           }
         } else {
-          setChartData((prev) => (prev && prev.length > 0 ? prev : []));
+          setChartData((prev) => prev && prev.length > 0 ? prev : []);
           setPriceChange(null);
         }
       } catch (error) {
@@ -378,31 +378,31 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
           </CardTitle>
           <div className="flex gap-1">
             {timeframes.map((tf) =>
-              <Button
-                key={tf.value}
-                variant={timeframe === tf.value ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setTimeframe(tf.value)}
-                className={timeframe === tf.value ?
-                  "bg-green-600 text-white neon-glow hover:bg-green-700" :
-                  "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                }>
+            <Button
+              key={tf.value}
+              variant={timeframe === tf.value ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setTimeframe(tf.value)}
+              className={timeframe === tf.value ?
+              "bg-green-600 text-white neon-glow hover:bg-green-700" :
+              "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              }>
                 {tf.label}
               </Button>
             )}
           </div>
         </div>
-        {currentPrice !== null && (
-          <div className="flex items-center gap-4 mt-2">
+        {currentPrice !== null &&
+        <div className="flex items-center gap-4 mt-2">
             <span className="text-2xl font-bold neon-text">
               ${typeof currentPrice === 'number' ? currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '0.00'}
             </span>
-            {priceChange !== null && (
-              <div className="flex items-center gap-1">
+            {priceChange !== null &&
+          <div className="flex items-center gap-1">
                 {isPositive ?
-                  <TrendingUp className="w-4 h-4 text-green-500" /> :
-                  <TrendingDown className="w-4 h-4 text-red-500" />
-                }
+            <TrendingUp className="w-4 h-4 text-green-500" /> :
+            <TrendingDown className="w-4 h-4 text-red-500" />
+            }
                 <span className={`font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                   {typeof priceChange === 'number' ? `${isPositive ? '+' : ''}${priceChange.toFixed(2)}%` : '0.00%'}
                 </span>
@@ -410,20 +410,20 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
                   {timeframe === '24h' ? '24h' : timeframe === '7d' ? '7d' : timeframe === '1m' ? '1M' : timeframe === '3m' ? '3M' : '1Y'}
                 </span>
               </div>
-            )}
+          }
           </div>
-        )}
+        }
 
         {/* High/Low Summary */}
         {!isLoading && !error && chartData.length > 0 &&
-          <div className="flex items-center justify-between mt-2 text-xs">
+        <div className="flex items-center justify-between mt-2 text-xs">
             <div className="flex items-center gap-1">
               <span style={{ color: 'var(--text-secondary)' }}>High:</span>
               <span className="text-lime-400 font-medium">${highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="flex items-center gap-1">
               <span style={{ color: 'var(--text-secondary)' }}>Low:</span>
-              <span className="text-red-500 font-medium">${lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-blue-400 font-medium">${lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
         }
@@ -437,90 +437,90 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
           onTouchCancel={handleTouchCancel} // Added handleTouchCancel
         >
           {isLoading ?
-            <div className="h-full flex items-center justify-center">
+          <div className="h-full flex items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin neon-text" />
             </div> :
-            chartData.length > 0 ?
-              <ResponsiveContainer width="100%" height="100%">
+          chartData.length > 0 ?
+          <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={chartData}
-                  onMouseMove={handleMouseMove}
-                  onMouseLeave={handleMouseLeave}
-                  onClick={handleClick}
-                >
+              data={chartData}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+              onClick={handleClick}>
+
                   <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
                   <XAxis
-                    dataKey="formattedTime"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
+                dataKey="formattedTime"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
                   <YAxis
-                    domain={yDomain}
-                    ticks={yTicks}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                    tickFormatter={(v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })}`}
-                    width={60}
-                  />
+                domain={yDomain}
+                ticks={yTicks}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
+                tickFormatter={(v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })}`}
+                width={60} />
+
                   {/* High price reference line */}
                   <ReferenceLine
-                    y={highPrice}
-                    stroke="#ef444440"
-                    strokeDasharray="3 3"
-                    label={{ value: `High: $${highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, position: "topRight", fontSize: 10, fill: "#ef4444" }} />
+                y={highPrice}
+                stroke="#ef444440"
+                strokeDasharray="3 3"
+                label={{ value: `High: $${highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, position: "topRight", fontSize: 10, fill: "#ef4444" }} />
 
                   {/* Low price reference line */}
                   <ReferenceLine
-                    y={lowPrice}
-                    stroke="#3b82f640"
-                    strokeDasharray="3 3"
-                    label={{ value: `Low: $${lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, position: "bottomRight", fontSize: 10, fill: "#3b82f6" }} />
+                y={lowPrice}
+                stroke="#3b82f640"
+                strokeDasharray="3 3"
+                label={{ value: `Low: $${lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, position: "bottomRight", fontSize: 10, fill: "#3b82f6" }} />
 
                   <Tooltip content={<CustomTooltip />} cursor={<CrosshairCursor />} />
                   <Line
-                    type="monotone"
-                    dataKey="price"
-                    stroke={isPositive ? '#39FF14' : '#ef4444'}
-                    strokeWidth={2}
-                    dot={<CustomDot />}
-                    activeDot={(pinnedIndex != null || hoverIndex != null) ? { r: 4, fill: '#39FF14', stroke: '#ffffff', strokeWidth: 2 } : false}
-                  />
+                type="monotone"
+                dataKey="price"
+                stroke={isPositive ? '#39FF14' : '#ef4444'}
+                strokeWidth={2}
+                dot={<CustomDot />}
+                activeDot={pinnedIndex != null || hoverIndex != null ? { r: 4, fill: '#39FF14', stroke: '#ffffff', strokeWidth: 2 } : false} />
+
                   {/* Persistent snap (pinned) line + green dot + sticky label */}
-                  {pinnedIndex != null && chartData[pinnedIndex] && (
-                    <>
+                  {pinnedIndex != null && chartData[pinnedIndex] &&
+              <>
                       <ReferenceLine x={chartData[pinnedIndex].formattedTime} stroke="rgba(57,255,20,0.35)" />
                       <ReferenceDot
-                        x={chartData[pinnedIndex].formattedTime}
-                        y={chartData[pinnedIndex].price}
-                        r={5}
-                        fill="#39FF14"
-                        stroke="#ffffff"
-                        strokeWidth={2}
-                        label={<PinnedDotLabel />}
-                      />
+                  x={chartData[pinnedIndex].formattedTime}
+                  y={chartData[pinnedIndex].price}
+                  r={5}
+                  fill="#39FF14"
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  label={<PinnedDotLabel />} />
+
                     </>
-                  )}
+              }
                 </LineChart>
               </ResponsiveContainer> :
-              // If we have no chart points, quietly show a subtle placeholder without error text
-              <div className="h-full flex items-center justify-center text-center p-4">
-                {currentPrice !== null ? (
-                  <div>
+          // If we have no chart points, quietly show a subtle placeholder without error text
+          <div className="h-full flex items-center justify-center text-center p-4">
+                {currentPrice !== null ?
+            <div>
                     <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
                       Showing latest price
                     </p>
                     <p className="text-2xl font-bold neon-text">
                       ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
-                  </div>
-                ) : (
-                  <Loader2 className="w-6 h-6 animate-spin neon-text" />
-                )}
+                  </div> :
+
+            <Loader2 className="w-6 h-6 animate-spin neon-text" />
+            }
               </div>
           }
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>);
+
 }
