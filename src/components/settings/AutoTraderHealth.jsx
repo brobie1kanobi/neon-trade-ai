@@ -53,9 +53,9 @@ export default function AutoTraderHealth() {
         }).catch(() => [])
       ]);
 
-      // Kraken is connected if: WebSocket active OR verified connection exists in DB OR we got API balance
+      // Kraken is connected if: useKrakenData says so OR verified connection exists in DB
       const hasKrakenCredentials = krakenConns.length > 0 && krakenConns[0]?.account_verified;
-      const krakenConnected = wsConnected || hasKrakenCredentials || krakenBalance.connected;
+      const isConnected = isKrakenConnected || hasKrakenCredentials;
 
       // For balance check, use effective balance
       const hasBalance = effectiveBalance > 1;
