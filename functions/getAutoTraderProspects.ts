@@ -76,10 +76,9 @@ Deno.serve(async (req) => {
     // For LIVE prospects, we need is_simulation: false preferences
     console.log('[Prospects] Looking for preferences with is_simulation:', isSimMode);
     
-    // Fetch ALL user's preferences and filter manually to avoid query issues
-    let allPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
-      created_by: user.email
-    }, "-created_date", 50);
+    // Fetch user's preferences using service role
+    // Use user-scoped client to get user's own preferences
+    let allPrefs = await base44.entities.AutoBuyPreference.filter({}, "-created_date", 50);
 
     console.log('[Prospects] Found', allPrefs.length, 'total AutoBuyPreferences for user');
     
