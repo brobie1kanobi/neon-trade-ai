@@ -6,12 +6,12 @@ import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, R
 import { Link as RouterLink } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
-import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { KrakenConnection, AutoBuyPreference } from "@/entities/all";
+import { useKrakenData } from "@/components/hooks/useKrakenData";
 
 export default function AutoTraderHealth() {
   const { settings, user } = useSettings();
