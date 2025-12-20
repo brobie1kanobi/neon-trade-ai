@@ -83,16 +83,26 @@ Deno.serve(async (req) => {
 
     console.log('[Prospects] Found', allPrefs.length, 'total AutoBuyPreferences for user');
     
+    // Debug: log all preferences
+    allPrefs.forEach(p => {
+      console.log('[Prospects] All pref:', p.symbol, 'is_simulation:', p.is_simulation, typeof p.is_simulation, 'enabled:', p.enabled);
+    });
+    
     // Filter to matching simulation mode and enabled
+    // isSimMode is false for LIVE prospects, so we want is_simulation: false
     let prefs = allPrefs.filter(p => {
-      const pIsSimulation = p.is_simulation === true || p.is_simulation === 'true';
-      const pEnabled = p.enabled === true || p.enabled === 'true';
-      const matchesSim = isSimMode ? pIsSimulation : !pIsSimulation;
-      console.log('[Prospects] Pref', p.symbol, '- is_simulation:', p.is_simulation, 'enabled:', p.enabled, 'matches:', matchesSim && pEnabled);
+      // Handle boolean or string values
+      const pIsSimulation = p.is_simulation === true;
+      const pEnabled = p.enabled !== false; // Default to enabled if not explicitly false
+      // For LIVE mode (isSimMode=false), we want preferences with is_simulation=false
+      const matchesSim = isSimMode === pIsSimulation;
       return matchesSim && pEnabled;
     });
 
     console.log('[Prospects] Filtered to', prefs.length, 'preferences for is_simulation:', isSimMode);
+    prefs.forEach(p => {
+      console.log('[Prospects] Using pref:', p.symbol, 'percentage:', p.percentage, '%');
+    });
 
     // If no preferences, return empty - don't use defaults
     // User must configure assets in Portfolio page first
