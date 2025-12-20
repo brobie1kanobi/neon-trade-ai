@@ -254,22 +254,26 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
     // CALCULATE SUMMARY PNL FOR SELECTED TIMEFRAME
     // ============================================================
     
-    // CRITICAL FIX: Use first and last points from the actual series data
-    if (series.length > 0) {
+    // CRITICAL: For LIVE mode "lifetime" view, use Kraken PnL if available
+    if (!isSimMode && timeframe === 'lifetime' && krakenPnL?.pnl_lifetime) {
+      setOverallPnL(krakenPnL.pnl_lifetime);
+      const costBasis = (krakenPnL.pnl_lifetime > 0) 
+        ? (series.length > 0 ? Math.abs(series[series.length - 1].value - krakenPnL.pnl_lifetime) : 0)
+        : 0;
+      const pnlPct = costBasis > 0 ? (krakenPnL.pnl_lifetime / costBasis) * 100 : 0;
+      setOverallPnLPercent(pnlPct);
+    } else if (series.length > 0) {
       const firstPoint = series[0];
       const lastPoint = series[series.length - 1];
       
       const pnlChange = lastPoint.value - firstPoint.value;
       
-      // Calculate percentage based on the absolute starting value
-      // If starting value is negative, we need to handle it differently
       const absStartValue = Math.abs(firstPoint.value);
       let pnlPercent = 0;
       
       if (absStartValue > 0) {
         pnlPercent = (pnlChange / absStartValue) * 100;
       } else if (startingCash > 0) {
-        // If starting PnL is 0, use starting cash as baseline
         pnlPercent = (pnlChange / startingCash) * 100;
       }
       
