@@ -75,13 +75,13 @@ export default function AutoTraderHealth() {
       if (!prereqs.hasAutoBuyPrefs) {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
-      // Only show balance issue if WebSocket is connected and balance is actually low
-      if (wsConnected && effectiveBalance <= 1) {
+      // Only show balance issue if Kraken is connected and balance is actually low
+      if (isConnected && effectiveBalance <= 1) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
       }
       
       setOperationalIssues(issues);
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| WS Connected:', wsConnected, '| Has Kraken Creds:', hasKrakenCredentials, '| Balance:', effectiveBalance);
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| Kraken Connected:', isConnected, '| Balance:', effectiveBalance);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
