@@ -1848,7 +1848,7 @@ export default function Dashboard() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-        <PerformanceChart trades={trades} holdings={enrichedHoldings} wallet={wallet} isSimMode={isSimMode} />
+        <PerformanceChart trades={trades} holdings={enrichedHoldings} wallet={wallet} isSimMode={isSimMode} krakenPnL={krakenPnL} />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
