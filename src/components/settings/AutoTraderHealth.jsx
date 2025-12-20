@@ -21,20 +21,25 @@ export default function AutoTraderHealth() {
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
-  const [operationalIssues, setOperationalIssues] = useState([]); // Track issues preventing trading
+  const [operationalIssues, setOperationalIssues] = useState([]);
   const [prerequisites, setPrerequisites] = useState({
     krakenConnected: false,
     autoTradingEnabled: false,
     hasAutoBuyPrefs: false,
     hasBalance: false
   });
+  
+  // Direct Kraken balance state - fetch directly from API
+  const [krakenBalance, setKrakenBalance] = useState({ total: 0, cash: 0, assets: 0, connected: false });
 
-  // CRITICAL: Use global WebSocket connection for REAL-TIME Kraken data
+  // Try WebSocket first, but we'll also fetch directly
   const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue, cryptoHoldingsValue } = useKrakenWebSocket();
 
-  // Calculate effective balance from WebSocket (real-time Kraken data)
-  const effectiveBalance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
-  const effectiveCash = wsUsdBalance || 0;
+  // Use direct API balance if WebSocket isn't providing data
+  const effectiveBalance = totalPortfolioValue > 0 ? totalPortfolioValue : (krakenBalance.total || 0);
+  const effectiveCash = wsUsdBalance > 0 ? wsUsdBalance : (krakenBalance.cash || 0);
+  const effectiveAssets = cryptoHoldingsValue > 0 ? cryptoHoldingsValue : (krakenBalance.assets || 0);
+  const isKrakenConnected = wsConnected || krakenBalance.connected;
 
   const checkPrerequisites = useCallback(async () => {
     if (!user?.email) return;
