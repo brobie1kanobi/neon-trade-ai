@@ -148,21 +148,36 @@ Deno.serve(async (req) => {
 
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
-        // LIVE MODE: Use Kraken API
+        // LIVE MODE: Use Kraken API with bracket orders (TP + SL)
         try {
-          const krakenResponse = await base44.functions.invoke('krakenTrade', {
+          // Calculate TP and SL prices
+          const gainMargin = settings.gain_margin || 10;
+          const lossMargin = settings.loss_margin || 5;
+          const takeProfitPrice = round2(price * (1 + gainMargin / 100));
+          const stopLossPrice = round2(price * (1 - lossMargin / 100));
+          
+          console.log(`[runAutoTrader] Executing LIVE buy: ${sym} qty=${qty} @ $${price}`);
+          console.log(`[runAutoTrader] TP: $${takeProfitPrice} (+${gainMargin}%), SL: $${stopLossPrice} (-${lossMargin}%)`);
+          
+          // Step 1: Place market BUY order
+          const buyResponse = await base44.functions.invoke('krakenTrade', {
             action: 'place_order',
             symbol: sym,
             side: 'buy',
             quantity: qty,
-            orderType: 'market'
+            orderType: 'market',
+            timeInForce: 'ioc'
           });
 
-          if (!krakenResponse?.data?.success) {
-            throw new Error(krakenResponse?.data?.error || 'Kraken trade failed');
+          const buyData = buyResponse?.data || buyResponse;
+          if (!buyData?.success) {
+            throw new Error(buyData?.error || 'Kraken buy failed');
           }
-
-          // Record LIVE trade
+          
+          const buyOrderId = buyData.order_id;
+          console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
+          
+          // Record LIVE trade immediately
           await base44.entities.Trade.create({
             symbol: sym,
             type: 'buy',
@@ -175,6 +190,38 @@ Deno.serve(async (req) => {
             is_simulation: false,
             created_by: user.email
           });
+          
+          // Step 2: Place bracket orders (TP + SL) with delay
+          await new Promise(res => setTimeout(res, 2000));
+          
+          let tpOrderId = null;
+          let slOrderId = null;
+          
+          try {
+            const bracketResponse = await base44.functions.invoke('krakenTrade', {
+              action: 'place_bracket_orders',
+              symbol: sym,
+              quantity: qty,
+              takeProfitPrice: takeProfitPrice,
+              stopLossPrice: stopLossPrice
+            });
+            
+            const bracketData = bracketResponse?.data || bracketResponse;
+            if (bracketData?.tp_success) {
+              tpOrderId = bracketData.tp_order_id;
+              console.log(`[runAutoTrader] ✅ TP order placed: ${tpOrderId}`);
+            }
+            if (bracketData?.sl_success) {
+              slOrderId = bracketData.sl_order_id;
+              console.log(`[runAutoTrader] ✅ SL order placed: ${slOrderId}`);
+            }
+          } catch (bracketError) {
+            console.error('[runAutoTrader] Bracket orders failed:', bracketError.message);
+            // Continue even if bracket orders fail - we still have the position
+          }
+          
+          // Store Kraken order IDs for tracking
+          const krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
 
         } catch (krakenError) {
           console.error('[runAutoTrader] Kraken buy failed:', krakenError.message);
