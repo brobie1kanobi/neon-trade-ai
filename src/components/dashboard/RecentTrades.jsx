@@ -1,28 +1,96 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, ArrowDownRight, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowUpRight, ArrowDownRight, Clock, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { base44 } from "@/api/base44Client";
 
 export default function RecentTrades({ trades, onTradeSelect }) {
   const { settings } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
+  const [krakenTrades, setKrakenTrades] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Sort trades by most recent first and take top 5
-  const recentTrades = useMemo(() => {
-    if (!Array.isArray(trades) || trades.length === 0) return [];
+  // Fetch Kraken trades history in LIVE mode
+  const fetchKrakenTrades = useCallback(async () => {
+    if (isSimMode) return;
     
-    return trades
-      .slice() // Create a copy to avoid mutating original array
+    setIsLoading(true);
+    try {
+      const response = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+      const data = response?.data || response;
+      
+      if (data?.trades && Array.isArray(data.trades)) {
+        // Convert Kraken trades to our format
+        const formattedTrades = data.trades.map(kt => {
+          const pair = kt.pair || '';
+          const symbol = pair.replace('USD', '').replace('ZUSD', '').replace('XBT', 'BTC').replace('XXBT', 'BTC');
+          return {
+            id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
+            symbol: symbol,
+            type: kt.type || 'unknown',
+            quantity: parseFloat(kt.vol) || 0,
+            price: parseFloat(kt.price) || 0,
+            total_value: parseFloat(kt.cost) || 0,
+            created_date: kt.time ? new Date(kt.time * 1000).toISOString() : new Date().toISOString(),
+            is_simulation: false,
+            is_auto_trade: false,
+            asset_type: 'crypto',
+            status: 'executed',
+            fee: parseFloat(kt.fee) || 0,
+            kraken_trade_id: kt.trade_id
+          };
+        });
+        setKrakenTrades(formattedTrades);
+      }
+    } catch (err) {
+      console.error('[RecentTrades] Kraken fetch error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isSimMode]);
+
+  // Fetch on mount and when mode changes
+  useEffect(() => {
+    fetchKrakenTrades();
+  }, [fetchKrakenTrades]);
+
+  // Merge and sort trades - combine local with Kraken in LIVE mode
+  const recentTrades = useMemo(() => {
+    const localTrades = Array.isArray(trades) ? trades.filter(t => t.is_simulation === isSimMode) : [];
+    
+    // In LIVE mode, merge with Kraken trades
+    let allTrades = localTrades;
+    if (!isSimMode && krakenTrades.length > 0) {
+      const mergedTrades = [...localTrades];
+      krakenTrades.forEach(kt => {
+        // Check for duplicates
+        const isDupe = localTrades.some(lt => 
+          lt.symbol === kt.symbol && 
+          Math.abs(lt.quantity - kt.quantity) < 0.0001 &&
+          Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
+        );
+        if (!isDupe) {
+          mergedTrades.push(kt);
+        }
+      });
+      allTrades = mergedTrades;
+    }
+    
+    return allTrades
+      .slice()
       .sort((a, b) => {
         const dateA = new Date(a.created_date || a.date || 0).getTime();
         const dateB = new Date(b.created_date || b.date || 0).getTime();
-        return dateB - dateA; // Most recent first
+        return dateB - dateA;
       })
-      .slice(0, 5); // Take only the 5 most recent
-  }, [trades]);
+      .slice(0, 5);
+  }, [trades, krakenTrades, isSimMode]);
 
   if (recentTrades.length === 0) {
     return (
