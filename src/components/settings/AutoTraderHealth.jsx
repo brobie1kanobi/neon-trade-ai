@@ -121,17 +121,18 @@ export default function AutoTraderHealth() {
     }
   }, [wsConnected, user?.email, settings?.auto_trading_enabled]);
 
-  // Auto-update balance from WebSocket (ALWAYS LIVE)
+  // Auto-update balance from WebSocket (ALWAYS LIVE) - use TOTAL portfolio value
   useEffect(() => {
-    if (wsUsdBalance > 0) {
+    const balance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
+    if (balance > 0) {
       setHealth(prev => prev ? {
         ...prev,
-        wallet_balance: wsUsdBalance,
-        wallet_status: wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy',
+        wallet_balance: balance,
+        wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
         last_check: new Date().toISOString()
       } : null);
     }
-  }, [wsUsdBalance]);
+  }, [wsUsdBalance, totalPortfolioValue]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
