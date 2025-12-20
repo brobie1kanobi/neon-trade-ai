@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon, XCircle } from "lucide-react";
 import { Link as RouterLink } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
@@ -21,14 +21,16 @@ export default function AutoTraderHealth() {
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [operationalIssues, setOperationalIssues] = useState([]); // Track issues preventing trading
   const [prerequisites, setPrerequisites] = useState({
     krakenConnected: false,
     autoTradingEnabled: false,
-    hasAutoBuyPrefs: false
+    hasAutoBuyPrefs: false,
+    hasBalance: false
   });
 
-  // CRITICAL: Use global WebSocket connection
-  const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue } = useKrakenWebSocket();
+  // CRITICAL: Use global WebSocket connection for REAL-TIME Kraken data
+  const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue, cryptoHoldingsValue } = useKrakenWebSocket();
 
   const checkPrerequisites = async () => {
     if (!user?.email) return;
