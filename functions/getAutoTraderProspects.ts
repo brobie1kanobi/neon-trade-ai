@@ -233,11 +233,19 @@ Deno.serve(async (req) => {
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       
-      // Simple calculation: use user's percentage preference, but cap to maxPerOrder
-      const userPct = Math.max(10, Math.min(50, Number(pref.percentage) || 20)) / 100;
-      let total = Math.min(cashAvailable * userPct, maxPerOrder);
+      // Use the EXACT percentage from user's AutoBuyPreference - this is what they set in Portfolio
+      const userAllocationPct = Number(pref.percentage) || 10;
+      const userPct = userAllocationPct / 100;
       
-      // Scale down if already holding
+      console.log('[Prospects]', symbol, '- User set allocation:', userAllocationPct, '%');
+      
+      // Calculate order value based on user's exact preference
+      let total = cashAvailable * userPct;
+      
+      // Cap to maxPerOrder safety limit, but preserve user's intended percentage display
+      total = Math.min(total, maxPerOrder);
+      
+      // Scale down if already holding (reduce risk of over-concentration)
       if (holding) {
         total = total * 0.6;
       }
@@ -251,6 +259,9 @@ Deno.serve(async (req) => {
       total = Math.min(total, cashAvailable);
       
       const cappedQuantity = total / price;
+      
+      // Calculate actual allocation after all caps
+      const actualAllocationPct = cashAvailable > 0 ? Math.round((total / cashAvailable) * 100) : 0;
 
       let blockReason = null;
       let wouldExecute = false;
