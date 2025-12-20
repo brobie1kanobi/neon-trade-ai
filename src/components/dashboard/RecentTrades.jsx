@@ -164,7 +164,7 @@ export default function RecentTrades({ trades, onTradeSelect }) {
                 )}
               </div>
               <div>
-                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{trade.symbol}</p>
+                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{normalizeKrakenSymbol(trade.symbol)}</p>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                   {format(new Date(trade.created_date), dateFmt)}
                 </p>
