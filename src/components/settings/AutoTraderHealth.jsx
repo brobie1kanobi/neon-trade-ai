@@ -76,7 +76,7 @@ export default function AutoTraderHealth() {
     }
   }, [user?.email, wsConnected, settings?.auto_trading_enabled, effectiveBalance]);
 
-  const fetchHealth = async () => {
+  const fetchHealth = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -94,7 +94,13 @@ export default function AutoTraderHealth() {
       const data = response?.data || response;
       
       if (data?.success && data?.health) {
-        setHealth(data.health);
+        // CRITICAL: Override backend balance with WebSocket data (always up-to-date)
+        const wsBalance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
+        setHealth({
+          ...data.health,
+          wallet_balance: wsBalance > 0 ? wsBalance : data.health.wallet_balance,
+          wallet_status: wsBalance > 10 ? 'healthy' : wsBalance > 0 ? 'warning' : 'critical'
+        });
         setError(null);
       } else {
         throw new Error(data?.error || 'Invalid response');
@@ -109,12 +115,11 @@ export default function AutoTraderHealth() {
         setError(null); // Clear error if WebSocket is active
       }
       
-      // Show minimal fallback health (LIVE mode only) - use TOTAL portfolio value
-      const balance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
+      // Show minimal fallback health using WebSocket balance
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
-        wallet_balance: balance || 0,
-        wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
+        wallet_balance: effectiveBalance || 0,
+        wallet_status: effectiveBalance > 10 ? 'healthy' : effectiveBalance > 0 ? 'warning' : 'critical',
         active_conditional_orders: 0,
         trades_24h: { total: 0, buys: 0, sells: 0, volume: 0 },
         last_check: new Date().toISOString()
@@ -122,7 +127,7 @@ export default function AutoTraderHealth() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [totalPortfolioValue, wsUsdBalance, wsConnected, settings?.auto_trading_enabled, effectiveBalance]);
 
   useEffect(() => {
     if (user?.email) {
