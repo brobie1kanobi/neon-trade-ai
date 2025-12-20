@@ -72,22 +72,37 @@ Deno.serve(async (req) => {
     // For holdings/preferences, use LIVE mode (is_simulation: false)
     const isSimMode = false; // Force LIVE mode for prospects
 
-    // Get auto-buy preferences - if none exist, use default top crypto
+    // Get auto-buy preferences - ONLY analyze assets user has explicitly selected
     let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
       created_by: user.email, 
       is_simulation: isSimMode,
       enabled: true 
-    }, "-created_date", 30);
+    }, "-created_date", 50);
 
-    // If no preferences, create default watchlist to analyze
+    console.log('[Prospects] Found', prefs.length, 'user auto-buy preferences');
+
+    // Log each preference's allocation
+    prefs.forEach(p => {
+      console.log('[Prospects] Asset:', p.symbol, 'Allocation:', p.percentage + '%', 'Type:', p.asset_type);
+    });
+
+    // If no preferences, return empty - user must configure their watchlist first
     if (prefs.length === 0) {
-      const defaultCrypto = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
-      prefs = defaultCrypto.map(symbol => ({
-        symbol,
-        asset_type: 'crypto',
-        percentage: 20,
-        enabled: true
-      }));
+      console.log('[Prospects] No user preferences found - user needs to configure watchlist in Portfolio');
+      return Response.json({
+        success: true,
+        prospects: [],
+        cash_available: cashAvailable,
+        is_sim_mode: isSimMode,
+        auto_trading_enabled: settings?.auto_trading_enabled || false,
+        total_analyzed: 0,
+        market_intelligence: null,
+        user_settings: {
+          gain_margin: settings.gain_margin,
+          loss_margin: settings.loss_margin
+        },
+        message: "No assets configured. Add assets to your watchlist in Portfolio → Auto-Buy Preferences."
+      });
     }
 
     // Get current holdings
