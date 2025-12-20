@@ -430,7 +430,8 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
                 stroke="#9CA3AF"
                 tick={{ fill: '#9CA3AF', fontSize: 12 }}
                 tickFormatter={(val) => `$${val.toFixed(0)}`}
-                domain={['auto', 'auto']}
+                domain={['dataMin', 'dataMax']}
+                allowDataOverflow={false}
               />
               <Tooltip content={<PerfTooltip />} />
               <ReferenceLine y={0} stroke="#6B7280" strokeDasharray="3 3" />
