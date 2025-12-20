@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { DollarSign, Activity } from "lucide-react";
+import { createPageUrl } from "@/utils";
 import { motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
