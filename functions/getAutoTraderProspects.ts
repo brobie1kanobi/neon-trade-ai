@@ -76,13 +76,23 @@ Deno.serve(async (req) => {
     // For LIVE prospects, we need is_simulation: false preferences
     console.log('[Prospects] Looking for preferences with is_simulation:', isSimMode);
     
-    let prefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
-      created_by: user.email, 
-      is_simulation: isSimMode,
-      enabled: true 
-    }, "-created_date", 30);
+    // Fetch ALL user's preferences and filter manually to avoid query issues
+    let allPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ 
+      created_by: user.email
+    }, "-created_date", 50);
 
-    console.log('[Prospects] Found', prefs.length, 'AutoBuyPreferences for user with is_simulation:', isSimMode);
+    console.log('[Prospects] Found', allPrefs.length, 'total AutoBuyPreferences for user');
+    
+    // Filter to matching simulation mode and enabled
+    let prefs = allPrefs.filter(p => {
+      const pIsSimulation = p.is_simulation === true || p.is_simulation === 'true';
+      const pEnabled = p.enabled === true || p.enabled === 'true';
+      const matchesSim = isSimMode ? pIsSimulation : !pIsSimulation;
+      console.log('[Prospects] Pref', p.symbol, '- is_simulation:', p.is_simulation, 'enabled:', p.enabled, 'matches:', matchesSim && pEnabled);
+      return matchesSim && pEnabled;
+    });
+
+    console.log('[Prospects] Filtered to', prefs.length, 'preferences for is_simulation:', isSimMode);
 
     // If no preferences, return empty - don't use defaults
     // User must configure assets in Portfolio page first
