@@ -34,12 +34,12 @@ Deno.serve(async (req) => {
     console.log('[autoTraderMonitor] Action:', action);
 
     // ============================================
-    // HEALTH CHECK - FAST & LOCAL ONLY
+    // HEALTH CHECK - FETCHES REAL KRAKEN BALANCE
     // ============================================
     if (action === 'health') {
       try {
-        // CRITICAL: All queries run in parallel with fast timeouts
-        const [settings, trades, orders, wallet, holdings] = await Promise.all([
+        // CRITICAL: Fetch Kraken balance for LIVE mode in parallel with local data
+        const [settings, trades, orders, krakenBalanceResult] = await Promise.all([
           Promise.race([
             base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
@@ -61,19 +61,17 @@ Deno.serve(async (req) => {
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
           ]).catch(() => []),
           
+          // Fetch REAL Kraken balance
           Promise.race([
-            base44.asServiceRole.entities.Wallet.filter({ created_by: user.email }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
-          ]).catch(() => []),
-          
-          Promise.race([
-            base44.asServiceRole.entities.Holding.filter({ created_by: user.email, is_simulation: false }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
-          ]).catch(() => [])
+            base44.functions.invoke('krakenApi', { action: 'getBalance' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('kraken timeout')), 3000))
+          ]).catch((e) => {
+            console.log('[autoTraderMonitor] Kraken balance fetch failed:', e.message);
+            return null;
+          })
         ]);
 
         const userSetting = settings[0] || {};
-        const walletData = wallet[0] || {};
         
         // Calculate metrics
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -84,21 +82,37 @@ Deno.serve(async (req) => {
           t.is_simulation === false  // ONLY count LIVE trades
         );
         
-        // CRITICAL: Calculate TOTAL portfolio value (USD + crypto holdings)
-        const cashBalance = Number(walletData.real_cash_balance) || 0;
+        // CRITICAL: Use REAL Kraken balance for Auto-Trader
+        let balance = 0;
+        const krakenData = krakenBalanceResult?.data || krakenBalanceResult;
         
-        // Sum up holdings value using average cost price as estimate
-        // (Real-time prices come from WebSocket in frontend)
-        let holdingsValue = 0;
-        if (holdings && holdings.length > 0) {
-          holdingsValue = holdings.reduce((sum, h) => {
-            const qty = Number(h.quantity) || 0;
-            const price = Number(h.average_cost_price) || 0;
-            return sum + (qty * price);
-          }, 0);
+        if (krakenData?.success && krakenData?.balances) {
+          // Calculate total portfolio value from Kraken balances
+          const balances = krakenData.balances;
+          
+          // USD balance
+          const usdBalance = Number(balances['USD']?.balance || balances['ZUSD']?.balance || 0);
+          
+          // Crypto holdings value (use Kraken's reported values)
+          let cryptoValue = 0;
+          for (const [asset, info] of Object.entries(balances)) {
+            if (asset === 'USD' || asset === 'ZUSD') continue;
+            const qty = Number(info?.balance || 0);
+            if (qty <= 0.00001) continue;
+            
+            // Use estimated_usd_value if available from Kraken
+            if (info?.estimated_usd_value) {
+              cryptoValue += Number(info.estimated_usd_value);
+            } else if (info?.price_usd) {
+              cryptoValue += qty * Number(info.price_usd);
+            }
+          }
+          
+          balance = usdBalance + cryptoValue;
+          console.log('[autoTraderMonitor] Kraken balance: USD=$' + usdBalance.toFixed(2) + ', Crypto=$' + cryptoValue.toFixed(2) + ', Total=$' + balance.toFixed(2));
+        } else {
+          console.log('[autoTraderMonitor] No Kraken balance available, using 0');
         }
-        
-        const balance = cashBalance + holdingsValue;
 
         const health = {
           auto_trading_enabled: Boolean(userSetting.auto_trading_enabled),
