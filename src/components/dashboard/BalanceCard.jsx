@@ -4,6 +4,7 @@ import { Eye, EyeOff, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
+import { Link } from "react-router-dom";
 
 export default function BalanceCard({
   title,
@@ -14,7 +15,8 @@ export default function BalanceCard({
   isVisible,
   isPrimary = false,
   isSimMode = true,
-  changeLabel
+  changeLabel,
+  linkTo
 }) {
   // Use actual change data if provided, otherwise default to positive zero
   const displayChange = change || { value: 0, percentage: 0 };
