@@ -33,6 +33,33 @@ import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
+// Normalize Kraken symbol - remove X/Z prefixes and suffixes
+const normalizeKrakenSymbol = (symbol) => {
+  if (!symbol) return 'UNKNOWN';
+  let s = symbol.toUpperCase();
+  // Remove USD suffixes
+  s = s.replace(/USD$/, '').replace(/ZUSD$/, '').replace(/\/USD$/, '');
+  // Handle XBT -> BTC variations
+  s = s.replace(/^XXBT$/, 'BTC').replace(/^XBT$/, 'BTC').replace(/^XBTC$/, 'BTC').replace(/^XBTCZ$/, 'BTC').replace(/^XBTZ$/, 'BTC');
+  // Handle other common Kraken prefixes
+  s = s.replace(/^XXRP$/, 'XRP').replace(/^XXRPZ$/, 'XRP').replace(/^XRPZ$/, 'XRP');
+  s = s.replace(/^XETH$/, 'ETH').replace(/^XETHZ$/, 'ETH').replace(/^ETHZ$/, 'ETH');
+  s = s.replace(/^XXDG$/, 'DOGE').replace(/^XDOGEZ$/, 'DOGE');
+  s = s.replace(/^XLTC$/, 'LTC').replace(/^XLTCZ$/, 'LTC').replace(/^LTCZ$/, 'LTC');
+  s = s.replace(/^XXLM$/, 'XLM').replace(/^XLMZ$/, 'XLM');
+  s = s.replace(/^XSOL$/, 'SOL').replace(/^SOLZ$/, 'SOL');
+  s = s.replace(/^XADA$/, 'ADA').replace(/^ADAZ$/, 'ADA');
+  // Generic: remove leading X if symbol is longer than 3 chars and starts with X followed by uppercase
+  if (s.length > 3 && s.startsWith('X') && /^X[A-Z]/.test(s)) {
+    s = s.substring(1);
+  }
+  // Generic: remove trailing Z if symbol is longer than 3 chars
+  if (s.length > 3 && s.endsWith('Z')) {
+    s = s.slice(0, -1);
+  }
+  return s;
+};
+
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
   const [selectedTrade, setSelectedTrade] = useState(null);
