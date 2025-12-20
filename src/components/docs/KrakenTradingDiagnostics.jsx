@@ -1,6 +1,7 @@
 /**
  * KRAKEN TRADING SYSTEM - FULL DIAGNOSTIC REPORT
  * Generated: Dec 20, 2024
+ * Updated: Dec 20, 2024 - Added full trailing stop support
  * 
  * ============================================================
  * KRAKEN PRO ORDER FORM ANALYSIS (from screenshots)
@@ -44,14 +45,15 @@
  * - This means we can place a single BUY order that automatically
  *   creates TP and SL when the buy fills!
  * 
- * ❌ NOT YET IMPLEMENTED:
+ * ✅ NOW FULLY IMPLEMENTED:
  * - Stop-loss-limit orders
  * - Take-profit-limit orders  
- * - Trailing-stop orders
- * - Trailing-stop-limit orders
+ * - Trailing-stop orders (with pct or quote offset)
+ * - Trailing-stop-limit orders (with configurable limit offset)
  * - Iceberg orders
- * - Percentage-based triggers (pct price_type)
- * - Quote offset triggers (quote price_type)
+ * - Percentage-based triggers (price_type: 'pct')
+ * - Quote offset triggers (price_type: 'quote')
+ * - Trigger reference selection ('last' or 'index')
  * 
  * ============================================================
  * KRAKEN API PARAMETER MAPPING
