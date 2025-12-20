@@ -395,17 +395,19 @@ export default function AutoTraderHealth() {
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Wallet Balance</span>
+          <span className="text-sm font-medium">Kraken Balance</span>
           <div className="text-right">
-            <p className="font-semibold">${health.wallet_balance.toFixed(2)}</p>
+            <p className="font-semibold">
+              ${(totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance).toFixed(2)}
+            </p>
             <Badge variant="outline" className={
-              health.wallet_status === 'critical'
+              (totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance) < 0
                 ? 'text-red-600 border-red-600'
-                : health.wallet_status === 'warning'
+                : (totalPortfolioValue > 0 ? totalPortfolioValue : health.wallet_balance) < 10
                 ? 'text-yellow-600 border-yellow-600'
                 : 'text-green-600 border-green-600'
             }>
-              {health.wallet_status}
+              {wsConnected ? 'live' : health.wallet_status}
             </Badge>
           </div>
         </div>
