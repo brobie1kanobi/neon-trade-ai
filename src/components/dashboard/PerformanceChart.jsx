@@ -284,7 +284,7 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
       setOverallPnLPercent(0);
     }
 
-  }, [holdings, trades, timeframe, settings, isSimMode, wallet]);
+  }, [holdings, trades, timeframe, settings, isSimMode, wallet, krakenPnL]);
 
   // Sanitize data
   const safeChartData = useMemo(() => {
