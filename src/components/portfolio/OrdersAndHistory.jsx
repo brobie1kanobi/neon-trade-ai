@@ -589,6 +589,8 @@ function LoadingState() {
 // Trade row component
 function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isBuy = trade.type === "buy";
+  // Normalize the symbol for display (handles Kraken's X/Z prefixes/suffixes)
+  const displaySymbol = normalizeKrakenSymbol(trade.symbol || '');
 
   return (
     <button
@@ -609,7 +611,7 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-              {trade.symbol}
+              {displaySymbol}
             </span>
             <Badge variant="outline" className="text-xs capitalize">
               {trade.type}
