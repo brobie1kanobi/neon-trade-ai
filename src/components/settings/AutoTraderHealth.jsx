@@ -154,12 +154,12 @@ export default function AutoTraderHealth() {
     }
   }, [user?.email, settings?.auto_trading_enabled]);
 
-  // Re-check prerequisites when WebSocket connection changes
+  // Re-check prerequisites when Kraken connection changes
   useEffect(() => {
     if (user?.email) {
       checkPrerequisites();
     }
-  }, [wsConnected, user?.email, settings?.auto_trading_enabled]);
+  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance]);
 
   // Auto-update balance from WebSocket (ALWAYS LIVE) - use TOTAL portfolio value
   useEffect(() => {
