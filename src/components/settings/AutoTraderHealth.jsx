@@ -145,12 +145,50 @@ export default function AutoTraderHealth() {
     }
   }, [totalPortfolioValue, wsUsdBalance, wsConnected, settings?.auto_trading_enabled, effectiveBalance]);
 
+  // Fetch Kraken balance directly from API
+  const fetchKrakenBalance = useCallback(async () => {
+    if (!user?.email) return;
+    
+    try {
+      const response = await base44.functions.invoke('getKrakenBalance', {});
+      const data = response?.data || response;
+      
+      if (data?.success && data?.balances) {
+        const usd = Number(data.balances['USD']?.balance || data.balances['ZUSD']?.balance || 0);
+        let cryptoValue = 0;
+        
+        // Calculate crypto value from balances
+        Object.entries(data.balances).forEach(([asset, info]) => {
+          if (asset !== 'USD' && asset !== 'ZUSD') {
+            const qty = Number(info?.balance || 0);
+            const price = Number(info?.usd_value || 0) / qty || 0;
+            cryptoValue += Number(info?.usd_value || 0);
+          }
+        });
+        
+        setKrakenBalance({
+          total: usd + cryptoValue,
+          cash: usd,
+          assets: cryptoValue,
+          connected: true
+        });
+        console.log('[AutoTraderHealth] Direct Kraken balance:', { usd, cryptoValue, total: usd + cryptoValue });
+      }
+    } catch (err) {
+      console.error('[AutoTraderHealth] Kraken balance fetch error:', err);
+    }
+  }, [user?.email]);
+
   useEffect(() => {
     if (user?.email) {
       fetchHealth();
+      fetchKrakenBalance();
       
       // Refresh every 30 seconds
-      const interval = setInterval(fetchHealth, 30000);
+      const interval = setInterval(() => {
+        fetchHealth();
+        fetchKrakenBalance();
+      }, 30000);
       
       return () => clearInterval(interval);
     }
