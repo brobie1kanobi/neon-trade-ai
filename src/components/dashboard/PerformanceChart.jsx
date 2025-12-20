@@ -254,15 +254,30 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
     // CALCULATE SUMMARY PNL FOR SELECTED TIMEFRAME
     // ============================================================
     
-    // CRITICAL: For LIVE mode "lifetime" view, use Kraken PnL if available
-    if (!isSimMode && timeframe === 'lifetime' && krakenPnL?.pnl_lifetime) {
-      setOverallPnL(krakenPnL.pnl_lifetime);
-      const costBasis = (krakenPnL.pnl_lifetime > 0) 
-        ? (series.length > 0 ? Math.abs(series[series.length - 1].value - krakenPnL.pnl_lifetime) : 0)
-        : 0;
-      const pnlPct = costBasis > 0 ? (krakenPnL.pnl_lifetime / costBasis) * 100 : 0;
+    // CRITICAL: For LIVE mode, use Kraken PnL data based on timeframe
+    if (!isSimMode && krakenPnL) {
+      let pnlValue = 0;
+      
+      // Map timeframe to appropriate Kraken PnL field
+      if (timeframe === 'lifetime') {
+        pnlValue = krakenPnL.pnl_lifetime || 0;
+      } else if (timeframe === '24h' || timeframe === '1h') {
+        // Use 24h PnL for short timeframes
+        pnlValue = krakenPnL.pnl_24h || 0;
+      } else {
+        // For 7d, 1m, 1y - use lifetime as best approximation
+        // (Kraken API doesn't provide per-timeframe PnL, so lifetime is most accurate)
+        pnlValue = krakenPnL.pnl_lifetime || 0;
+      }
+      
+      // Calculate percentage based on realized PnL as cost basis proxy
+      const costBasis = Math.abs(krakenPnL.realized_pnl || 0) + Math.abs(krakenPnL.unrealized_pnl || 0);
+      const pnlPct = costBasis > 0 ? (pnlValue / costBasis) * 100 : 0;
+      
+      setOverallPnL(pnlValue);
       setOverallPnLPercent(pnlPct);
     } else if (series.length > 0) {
+      // SIM MODE: Calculate from chart series
       const firstPoint = series[0];
       const lastPoint = series[series.length - 1];
       
