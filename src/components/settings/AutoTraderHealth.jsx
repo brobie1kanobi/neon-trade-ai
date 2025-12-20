@@ -506,21 +506,16 @@ export default function AutoTraderHealth() {
             </p>
             <div className="flex items-center gap-1 justify-end">
               <Badge variant="outline" className={
-                effectiveBalance > 10
+                isKrakenConnected
                   ? 'text-green-600 border-green-600'
-                  : effectiveBalance > 0
-                  ? 'text-yellow-600 border-yellow-600'
-                  : 'text-red-600 border-red-600'
+                  : 'text-yellow-600 border-yellow-600'
               }>
-                {wsConnected ? '🔴 live' : 'cached'}
+                {wsConnected ? '🔴 live' : isKrakenConnected ? 'api' : 'cached'}
               </Badge>
-              {wsConnected && (
-                <span className="text-xs text-green-500">●</span>
-              )}
             </div>
-            {effectiveCash > 0 && cryptoHoldingsValue > 0 && (
+            {(effectiveCash > 0 || effectiveAssets > 0) && (
               <p className="text-xs text-gray-500 mt-1">
-                ${effectiveCash.toFixed(2)} cash + ${cryptoHoldingsValue.toFixed(2)} assets
+                ${effectiveCash.toFixed(2)} cash + ${effectiveAssets.toFixed(2)} assets
               </p>
             )}
           </div>
