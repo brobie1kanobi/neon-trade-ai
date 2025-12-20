@@ -1566,6 +1566,28 @@ export default function Dashboard() {
 
   useEffect(() => {
     const isSimModeLocal = settings?.sim_trading_mode !== false;
+    
+    // CRITICAL: For LIVE mode, use REAL Kraken PnL from getKrakenPnL endpoint
+    if (!isSimModeLocal && krakenPnL) {
+      // 24h realized PnL from Kraken trades
+      const realized24hValue = krakenPnL.pnl_24h || 0;
+      const realized24hPct = krakenPnL.realized_pnl > 0 ? (realized24hValue / krakenPnL.realized_pnl) * 100 : 0;
+      setRealized24h({ value: realized24hValue, percentage: realized24hPct });
+      
+      // Lifetime PnL = realized + unrealized from Kraken
+      const lifetimePnLValue = krakenPnL.pnl_lifetime || 0;
+      // Calculate percentage based on current portfolio value
+      const currentValue = (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
+        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
+        portfolioMarketValue;
+      const costBasis = currentValue - lifetimePnLValue;
+      const lifetimePct = costBasis > 0 ? (lifetimePnLValue / costBasis) * 100 : 0;
+      
+      setLifetimeChange({ value: lifetimePnLValue, percentage: lifetimePct });
+      return;
+    }
+    
+    // SIM MODE: Calculate from local trades
     if (!Array.isArray(trades) || trades.length === 0) {
       setRealized24h({ value: 0, percentage: 0 });
       setLifetimeChange({ value: 0, percentage: 0 });
@@ -1617,21 +1639,7 @@ export default function Dashboard() {
     const pct = soldCostSum > 0 ? (realizedSum / soldCostSum) * 100 : 0;
     setRealized24h({ value: realizedSum, percentage: pct });
 
-    // CRITICAL: For LIVE mode, use Kraken API's cost basis data if available
-    if (!isSimMode && krakenApiBalances.loaded && krakenApiBalances.costBasis > 0) {
-      // Use Kraken's calculated unrealized PnL directly
-      const unrealizedPnL = krakenApiBalances.unrealizedPnL || 0;
-      const costBasis = krakenApiBalances.costBasis || 0;
-      const pnlPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0;
-      
-      setLifetimeChange({ value: unrealizedPnL, percentage: pnlPct });
-      return;
-    }
-
-    // SIM MODE or fallback: Calculate lifetime PnL from trades
-    // Realized PnL = sum of (sell price - avg cost) * qty for each sell
-    // Unrealized PnL = current market value - remaining cost basis
-    
+    // SIM MODE: Calculate lifetime PnL from trades
     const stateLifetime = new Map();
     let lifetimeRealizedPnL = 0;
     let totalCostBasisInvested = 0;
@@ -1650,7 +1658,6 @@ export default function Dashboard() {
         stateLifetime.set(sym, { qty: newQty, avgCost: newAvg });
         totalCostBasisInvested += qty * price;
       } else if ((t.type || "").toLowerCase() === "sell") {
-        // Realized PnL = (sell price - avg cost) * qty
         const realizedPnL = (price - (rec.avgCost || 0)) * qty;
         lifetimeRealizedPnL += realizedPnL;
 
@@ -1663,33 +1670,19 @@ export default function Dashboard() {
       }
     }
     
-    // Calculate remaining cost basis (unrealized holdings)
     let remainingCostBasis = 0;
     stateLifetime.forEach((rec) => {
       remainingCostBasis += rec.qty * rec.avgCost;
     });
     
-    // Current market value of holdings
-    const currentMarketValue = isSimMode 
-      ? Number(portfolioMarketValue || 0)
-      : (
-          (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
-          (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
-          portfolioMarketValue
-        );
-    
-    // Unrealized PnL = current market value - remaining cost basis
+    const currentMarketValue = Number(portfolioMarketValue || 0);
     const unrealizedPnL = currentMarketValue - remainingCostBasis;
-    
-    // Total Lifetime PnL = Realized + Unrealized
     const lifetimePnL = lifetimeRealizedPnL + unrealizedPnL;
-    
-    // Percentage based on total invested cost basis
     const lifetimePct = totalCostBasisInvested > 0 ? (lifetimePnL / totalCostBasisInvested) * 100 : 0;
     
     setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
 
-  }, [trades, settings, portfolioMarketValue, isSimMode, wsTotalValue, wsConnected, wsCryptoValue, krakenApiBalances]);
+  }, [trades, settings, portfolioMarketValue, isSimMode, wsTotalValue, wsConnected, wsCryptoValue, krakenApiBalances, krakenPnL]);
 
   useEffect(() => {
     const handleTradeCompleted = () => {
