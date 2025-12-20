@@ -33,28 +33,6 @@ import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
-// Normalize Kraken symbol - remove X/Z prefixes and suffixes
-// Kraken uses X prefix for crypto (XXBT, XXRP) and Z prefix for fiat (ZUSD), plus Z suffix sometimes
-const normalizeKrakenSymbol = (symbol) => {
-  if (!symbol) return 'UNKNOWN';
-  let s = symbol.toUpperCase();
-  // Remove common suffixes
-  s = s.replace(/USD$/, '').replace(/ZUSD$/, '').replace(/\/USD$/, '');
-  // Handle specific Kraken mappings
-  s = s.replace(/^XXBT$/, 'BTC').replace(/^XBT$/, 'BTC').replace(/^XBTC$/, 'BTC');
-  s = s.replace(/^XXRP$/, 'XRP').replace(/^XRPZ$/, 'XRP');
-  s = s.replace(/^XETH$/, 'ETH').replace(/^XXDG$/, 'DOGE').replace(/^XLTC$/, 'LTC');
-  // Generic: remove leading X if followed by another letter and length > 3
-  if (s.length > 3 && s.startsWith('X') && /^X[A-Z]/.test(s)) {
-    s = s.substring(1);
-  }
-  // Remove trailing Z if present (e.g., BTCZ -> BTC)
-  if (s.length > 3 && s.endsWith('Z')) {
-    s = s.slice(0, -1);
-  }
-  return s;
-};
-
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("trades");
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -153,10 +131,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             return volume > 0.00001;
           })
           .map(ko => {
-            // Parse Kraken order format - use normalizer
+            // Parse Kraken order format
             const descr = ko.descr || {};
-            const rawSymbol = descr.pair || ko.symbol || '';
-            const symbol = normalizeKrakenSymbol(rawSymbol);
+            const symbol = descr.pair?.replace('USD', '').replace('XBT', 'BTC') || ko.symbol?.replace('/USD', '') || 'UNKNOWN';
             const volume = parseFloat(ko.vol) || ko.volume || 0;
             const price = parseFloat(descr.price) || ko.price || ko.limit_price || 0;
             const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
@@ -212,7 +189,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           .filter(ko => (ko.volume || 0) > 0.00001)
           .map(ko => ({
             id: ko.order_id || ko.txid,
-            symbol: normalizeKrakenSymbol(ko.symbol || ''),
+            symbol: ko.symbol?.replace('/USD', '') || 'UNKNOWN',
             quantity: ko.volume || 0,
             purchase_price: ko.price || ko.limit_price || 0,
             status: 'active',
@@ -337,7 +314,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     if (!isSimMode && krakenTradesHistory.length > 0) {
       // Convert Kraken trades to our format
       const krakenTradesList = krakenTradesHistory.map(kt => {
-        const symbol = normalizeKrakenSymbol(kt.pair || '');
+        const pair = kt.pair || '';
+        const symbol = pair.replace('USD', '').replace('ZUSD', '').replace('XBT', 'BTC').replace('XXBT', 'BTC');
         return {
           id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
           symbol: symbol,
