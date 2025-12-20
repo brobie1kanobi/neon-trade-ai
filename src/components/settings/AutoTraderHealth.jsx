@@ -108,12 +108,11 @@ export default function AutoTraderHealth() {
       const data = response?.data || response;
       
       if (data?.success && data?.health) {
-        // CRITICAL: Override backend balance with WebSocket data (always up-to-date)
-        const wsBalance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
+        // Override backend balance with useKrakenData balance (always up-to-date)
         setHealth({
           ...data.health,
-          wallet_balance: wsBalance > 0 ? wsBalance : data.health.wallet_balance,
-          wallet_status: wsBalance > 10 ? 'healthy' : wsBalance > 0 ? 'warning' : 'critical'
+          wallet_balance: effectiveBalance > 0 ? effectiveBalance : data.health.wallet_balance,
+          wallet_status: effectiveBalance > 10 ? 'healthy' : effectiveBalance > 0 ? 'warning' : 'critical'
         });
         setError(null);
       } else {
@@ -122,14 +121,14 @@ export default function AutoTraderHealth() {
     } catch (fetchError) {
       console.error('[AutoTraderHealth] Error:', fetchError.message);
       
-      // Only set error if WebSocket is also disconnected
-      if (!wsConnected) {
+      // Only set error if Kraken is also disconnected
+      if (!isKrakenConnected) {
         setError(fetchError.message);
       } else {
-        setError(null); // Clear error if WebSocket is active
+        setError(null); // Clear error if Kraken is connected
       }
       
-      // Show minimal fallback health using WebSocket balance
+      // Show minimal fallback health using effective balance
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
         wallet_balance: effectiveBalance || 0,
@@ -141,7 +140,7 @@ export default function AutoTraderHealth() {
     } finally {
       setLoading(false);
     }
-  }, [totalPortfolioValue, wsUsdBalance, wsConnected, settings?.auto_trading_enabled, effectiveBalance]);
+  }, [effectiveBalance, isKrakenConnected, settings?.auto_trading_enabled]);
 
   useEffect(() => {
     if (user?.email) {
