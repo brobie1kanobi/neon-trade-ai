@@ -151,27 +151,11 @@ Deno.serve(async (req) => {
       
       let krakenOrderIds = '';
 
-      // Re-fetch latest wallet
-      wallet = await getLatestWallet(base44, user.email);
-      availableCash = isSimMode ? (wallet?.cash_balance || availableCash) : (wallet?.real_cash_balance || availableCash);
-
-      const pct = Math.max(1, Number(pref.percentage || 0));
-      const budget = round2((availableCash * pct) / 100);
-      if (budget < 1) continue;
-
-      const qty = price > 0 ? (budget / price) : 0;
-      if (qty <= 0) continue;
-
-      const total_value = round2(qty * price);
-      if (total_value > availableCash) continue;
-
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
         // LIVE MODE: Use Kraken API with bracket orders (TP + SL)
         try {
-          // Calculate TP and SL prices
-          const gainMargin = settings.gain_margin || 10;
-          const lossMargin = settings.loss_margin || 5;
+          // Calculate TP and SL prices using user's settings
           const takeProfitPrice = round2(price * (1 + gainMargin / 100));
           const stopLossPrice = round2(price * (1 - lossMargin / 100));
           
@@ -240,7 +224,7 @@ Deno.serve(async (req) => {
           }
           
           // Store Kraken order IDs for tracking
-          const krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
+          krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
 
         } catch (krakenError) {
           console.error('[runAutoTrader] Kraken buy failed:', krakenError.message);
@@ -292,12 +276,6 @@ Deno.serve(async (req) => {
       availableCash = round2(availableCash - total_value);
 
       // Create conditional order for stop-loss/take-profit management
-      const gainMargin = settings.gain_margin || 10;
-      const lossMargin = settings.loss_margin || 5;
-      const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
-      const trailingMargin = settings.trailing_takeprofit_margin || 3;
-
-      // For LIVE mode, include Kraken order IDs in conditional order
       const conditionalOrderData = {
         symbol: sym,
         asset_type: typ,
@@ -314,7 +292,7 @@ Deno.serve(async (req) => {
       };
       
       // Add Kraken order IDs if in LIVE mode
-      if (!isSimMode && typeof krakenOrderIds !== 'undefined' && krakenOrderIds) {
+      if (!isSimMode && krakenOrderIds) {
         conditionalOrderData.kraken_order_id = krakenOrderIds;
       }
       
@@ -326,8 +304,10 @@ Deno.serve(async (req) => {
         qty,
         price,
         total_value,
-        ai_confidence: Math.round(ai.confidence * 100)
+        ai_confidence: confidence
       });
+
+      console.log(`[runAutoTrader] ✅ Trade completed for ${sym}`);
 
       if (availableCash < 1) break;
     }
