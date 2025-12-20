@@ -88,7 +88,7 @@ export default function AutoTraderHealth() {
       console.error('[AutoTraderHealth] Prerequisites check error:', err);
       return prerequisites;
     }
-  }, [user?.email, wsConnected, settings?.auto_trading_enabled, effectiveBalance, krakenBalance.connected]);
+  }, [user?.email, isKrakenConnected, settings?.auto_trading_enabled, effectiveBalance]);
 
   const fetchHealth = useCallback(async () => {
     try {
