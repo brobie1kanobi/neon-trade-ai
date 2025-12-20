@@ -319,15 +319,20 @@ Deno.serve(async (req) => {
       console.error('[runAutoTrader] Reconcile error:', e.message);
     }
 
+    console.log(`[runAutoTrader] ✅ Completed: ${tradesPlaced.length} trades executed`);
+
     return Response.json({
       success: true,
       mode: isSimMode ? 'sim' : 'live',
       trades_count: tradesPlaced.length,
       cash_before: cashBefore,
       cash_after_estimated: availableCash,
-      trades: tradesPlaced
+      trades: tradesPlaced,
+      auto_execute_threshold: 70,
+      total_prospects_analyzed: prospects.length
     });
   } catch (error) {
+    console.error('[runAutoTrader] Fatal error:', error);
     return Response.json({ success: false, error: error.message || String(error) }, { status: 500 });
   }
 });
