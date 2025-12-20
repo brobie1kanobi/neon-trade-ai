@@ -213,9 +213,16 @@ export default function AutoTraderHealth() {
 
   if (!health) return null;
 
-  const isHealthy = health.wallet_status === 'healthy';
-  const isWarning = health.wallet_status === 'warning';
-  const isCritical = health.wallet_status === 'critical';
+  // Determine health status based on effective balance
+  const isHealthy = effectiveBalance > 10;
+  const isWarning = effectiveBalance > 0 && effectiveBalance <= 10;
+  const isCritical = effectiveBalance <= 0;
+  
+  // Check if auto-trader can actually operate
+  const canOperate = prerequisites.krakenConnected && 
+                     prerequisites.autoTradingEnabled && 
+                     prerequisites.hasAutoBuyPrefs && 
+                     effectiveBalance > 1;
 
   return (
     <Card className="border-2" style={{ 
