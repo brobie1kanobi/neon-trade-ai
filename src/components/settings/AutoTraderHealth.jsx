@@ -347,7 +347,7 @@ export default function AutoTraderHealth() {
                               {prerequisites.krakenConnected && (
                                 <Badge className="bg-green-500 text-white text-xs">Connected</Badge>
                               )}
-                              {wsConnected && (
+                              {isKrakenConnected && (
                                 <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">Live</Badge>
                               )}
                             </p>
