@@ -252,7 +252,7 @@ export default function AutoTraderHealth() {
               <CheckCircle className="w-5 h-5 text-green-500" />
             )}
             Auto-Trader Status
-            {wsConnected && (
+            {isKrakenConnected && (
               <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
                 <Wifi className="w-3 h-3" />
                 Live
