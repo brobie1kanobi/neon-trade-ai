@@ -149,16 +149,18 @@ export default function AutoTraderHealth() {
 
   // Auto-update balance from WebSocket (ALWAYS LIVE) - use TOTAL portfolio value
   useEffect(() => {
-    const balance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
-    if (balance > 0) {
+    if (effectiveBalance >= 0) {
       setHealth(prev => prev ? {
         ...prev,
-        wallet_balance: balance,
-        wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
+        wallet_balance: effectiveBalance,
+        wallet_status: effectiveBalance > 10 ? 'healthy' : effectiveBalance > 0 ? 'warning' : 'critical',
         last_check: new Date().toISOString()
       } : null);
+      
+      // Re-check prerequisites when balance changes
+      checkPrerequisites();
     }
-  }, [wsUsdBalance, totalPortfolioValue]);
+  }, [effectiveBalance, checkPrerequisites]);
 
   const handleEmergencyStop = async () => {
     if (!confirm('⚠️ Disable auto-trading and cancel all orders?')) return;
