@@ -61,7 +61,7 @@ export default function AutoTraderHealth() {
       const hasBalance = effectiveBalance > 1;
 
       const prereqs = {
-        krakenConnected,
+        krakenConnected: isConnected,
         autoTradingEnabled: settings?.auto_trading_enabled === true,
         hasAutoBuyPrefs: autoBuyPrefs.length > 0,
         hasBalance
