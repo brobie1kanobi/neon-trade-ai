@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
       if (price == null || price <= 0) continue;
 
       // Check AI recommendation - skip if AI says don't buy or low confidence
-      const ai = aiAnalysis[sym] || { confidence: 0.6, action: 'buy' };
+      const ai = aiAnalysis[sym] || { confidence: 0.6, action: 'buy', timingWindow: 'short_term' };
       if (ai.action !== 'buy' && ai.action !== 'strong_buy') {
         console.log(`[runAutoTrader] Skipping ${sym} - AI recommends: ${ai.action}`);
         continue;
@@ -132,6 +132,19 @@ Deno.serve(async (req) => {
       if (ai.confidence < MIN_CONFIDENCE_THRESHOLD) {
         console.log(`[runAutoTrader] Skipping ${sym} - AI confidence too low: ${(ai.confidence * 100).toFixed(0)}%`);
         continue;
+      }
+      
+      // CRITICAL: In LIVE mode, only execute if timing is "immediate" (NOW) or confidence > 75%
+      // This prevents spending money on trades that aren't ready yet
+      if (!isSimMode) {
+        const isImmediateTiming = ai.timingWindow === 'immediate';
+        const isHighConfidence = ai.confidence >= 0.75;
+        
+        if (!isImmediateTiming && !isHighConfidence) {
+          console.log(`[runAutoTrader] Skipping ${sym} - timing: ${ai.timingWindow}, confidence: ${(ai.confidence * 100).toFixed(0)}% (need 'immediate' or 75%+)`);
+          continue;
+        }
+        console.log(`[runAutoTrader] ✅ ${sym} ready for LIVE execution - timing: ${ai.timingWindow}, confidence: ${(ai.confidence * 100).toFixed(0)}%`);
       }
 
       // Re-fetch latest wallet
