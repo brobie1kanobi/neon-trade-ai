@@ -32,9 +32,9 @@ export default function AutoTraderProspects() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [krakenRestBalance, setKrakenRestBalance] = useState(0);
   // Initialize margins from settings context, fall back to defaults
-  const [userMargins, setUserMargins] = useState({ 
-    gain_margin: settings?.gain_margin ?? 10, 
-    loss_margin: settings?.loss_margin ?? 5 
+  const [userMargins, setUserMargins] = useState({
+    gain_margin: settings?.gain_margin ?? 10,
+    loss_margin: settings?.loss_margin ?? 5
   });
 
   // Update margins when settings load from context
@@ -54,7 +54,7 @@ export default function AutoTraderProspects() {
   // Fetch Kraken balance via REST API as fallback when WebSocket isn't providing data
   useEffect(() => {
     if (isSimMode) return;
-    
+
     const fetchKrakenBalance = async () => {
       try {
         const response = await base44.functions.invoke('getKrakenBalance', {});
@@ -66,7 +66,7 @@ export default function AutoTraderProspects() {
         console.error('[Prospects] Kraken balance fetch error:', e);
       }
     };
-    
+
     // Fetch if WebSocket balance is not available
     if (!wsConnected || wsUsdBalance <= 0) {
       fetchKrakenBalance();
@@ -74,9 +74,9 @@ export default function AutoTraderProspects() {
   }, [isSimMode, wsConnected, wsUsdBalance]);
 
   // Calculate cash balance - prioritize WebSocket, then REST API, then wallet DB
-  const cashAvailable = isSimMode 
-    ? (wallet?.cash_balance || 0)
-    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (krakenRestBalance > 0 ? krakenRestBalance : (wallet?.real_cash_balance || 0)));
+  const cashAvailable = isSimMode ?
+  wallet?.cash_balance || 0 :
+  wsConnected && wsUsdBalance > 0 ? wsUsdBalance : krakenRestBalance > 0 ? krakenRestBalance : wallet?.real_cash_balance || 0;
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
@@ -210,11 +210,11 @@ export default function AutoTraderProspects() {
             <p className="text-xs text-gray-400 mt-2">
               Go to Portfolio → Auto-Buy Preferences to add assets with your desired allocation percentages.
             </p>
-            <Button 
-              variant="outline" 
-              className="mt-4"
-              onClick={() => navigate('/Portfolio')}
-            >
+            <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => navigate('/Portfolio')}>
+
               Go to Portfolio Settings
             </Button>
           </CardContent>
@@ -288,9 +288,9 @@ export default function AutoTraderProspects() {
                         AI Market Analysis
                       </p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" 
-                          ? prospect.ai_reasoning 
-                          : `AI confidence ${prospect.confidence_score}% - analyzing entry opportunity...`}
+                        {prospect.ai_reasoning && prospect.ai_reasoning !== "Awaiting AI analysis" ?
+                prospect.ai_reasoning :
+                `AI confidence ${prospect.confidence_score}% - analyzing entry opportunity...`}
                       </p>
 
                       {/* Enhanced Intelligence Display */}
@@ -367,7 +367,7 @@ export default function AutoTraderProspects() {
       }
 
       <Dialog open={!!selectedProspect} onOpenChange={(open) => !open && setSelectedProspect(null)}>
-        <DialogContent>
+        <DialogContent className="bg-slate-900 p-6 fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg">
           <DialogHeader>
             <DialogTitle>Execute Order Manually?</DialogTitle>
             <DialogDescription>
@@ -377,7 +377,7 @@ export default function AutoTraderProspects() {
           
           {selectedProspect &&
           <div className="space-y-3">
-              <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-900 space-y-2">
+              <div className="bg-slate-700 p-4 rounded-lg dark:bg-gray-900 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm font-medium">Asset:</span>
                   <span className="font-semibold">{selectedProspect.symbol}</span>
@@ -396,7 +396,7 @@ export default function AutoTraderProspects() {
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+              <div className="bg-slate-300 p-3 rounded-lg dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
                   ℹ️ Why hasn't this executed yet?
                 </p>
