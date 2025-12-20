@@ -272,17 +272,33 @@ function buildOrderParams(orderConfig) {
   }
 
   // CRITICAL: For trailing-stop orders
+  // Kraken trailing-stop: market order triggered when price reverts from peak by specified amount
+  // - price_type: 'pct' = percentage (e.g., 5 = 5% reversion from peak)
+  // - price_type: 'quote' = USD amount (e.g., 500 = $500 reversion from peak)
   if (orderType === 'trailing-stop') {
-    // Trailing stop uses percentage or quote offset from peak
     let trailPrice = 5.0; // Default 5% trailing
     let trailPriceType = 'pct';
     
-    if (trailingPercent && parseFloat(trailingPercent) > 0) {
+    // Check for explicit price type override
+    if (orderConfig.trailingPriceType === 'quote' && trailingAmount && parseFloat(trailingAmount) > 0) {
+      trailPrice = parseFloat(trailingAmount);
+      trailPriceType = 'quote';
+    } else if (orderConfig.trailingPriceType === 'pct' && trailingPercent && parseFloat(trailingPercent) > 0) {
+      trailPrice = parseFloat(trailingPercent);
+      trailPriceType = 'pct';
+    } else if (trailingPercent && parseFloat(trailingPercent) > 0) {
+      // Default: if trailingPercent is provided, use percentage
       trailPrice = parseFloat(trailingPercent);
       trailPriceType = 'pct';
     } else if (trailingAmount && parseFloat(trailingAmount) > 0) {
+      // Fallback: if trailingAmount is provided, use quote
       trailPrice = parseFloat(trailingAmount);
       trailPriceType = 'quote';
+    }
+    
+    // Validate trailing price is positive (Kraken requirement)
+    if (trailPrice <= 0) {
+      throw new Error('Trailing stop offset must be a positive value');
     }
     
     const params = {
@@ -293,25 +309,38 @@ function buildOrderParams(orderConfig) {
       time_in_force: timeInForce,
       order_userref: userref,
       triggers: {
-        reference: 'last',
+        reference: triggerReference, // 'last' or 'index'
         price: trailPrice,
         price_type: trailPriceType
       }
     };
     console.log('[buildOrderParams] Trailing-stop order params:', JSON.stringify(params));
+    console.log('[buildOrderParams] Trail offset:', trailPrice, trailPriceType === 'pct' ? '%' : 'USD');
     return params;
   }
 
   // CRITICAL: For trailing-stop-limit orders
+  // Same as trailing-stop but executes as limit order when triggered
+  // limit_price_type can be 'static', 'pct', or 'quote' (offset from trigger price)
   if (orderType === 'trailing-stop-limit') {
-    if (!limitPrice || parseFloat(limitPrice) <= 0) {
-      throw new Error('Trailing-stop-limit orders require a valid limitPrice');
-    }
+    // For trailing-stop-limit, limit price can be:
+    // - A static USD price
+    // - A percentage offset from trigger (e.g., 0 = same as trigger, -1 = 1% below trigger)
+    // - A quote offset from trigger (e.g., 0 = same as trigger, -100 = $100 below trigger)
     
     let trailPrice = 5.0;
     let trailPriceType = 'pct';
+    let limitPriceValue = 0; // Default: same as trigger price
+    let limitPriceTypeValue = 'quote'; // Default: offset in USD
     
-    if (trailingPercent && parseFloat(trailingPercent) > 0) {
+    // Determine trailing offset
+    if (orderConfig.trailingPriceType === 'quote' && trailingAmount && parseFloat(trailingAmount) > 0) {
+      trailPrice = parseFloat(trailingAmount);
+      trailPriceType = 'quote';
+    } else if (orderConfig.trailingPriceType === 'pct' && trailingPercent && parseFloat(trailingPercent) > 0) {
+      trailPrice = parseFloat(trailingPercent);
+      trailPriceType = 'pct';
+    } else if (trailingPercent && parseFloat(trailingPercent) > 0) {
       trailPrice = parseFloat(trailingPercent);
       trailPriceType = 'pct';
     } else if (trailingAmount && parseFloat(trailingAmount) > 0) {
@@ -319,21 +348,40 @@ function buildOrderParams(orderConfig) {
       trailPriceType = 'quote';
     }
     
+    // Validate trailing price
+    if (trailPrice <= 0) {
+      throw new Error('Trailing stop offset must be a positive value');
+    }
+    
+    // Handle limit price - can be static or offset
+    if (limitPrice && parseFloat(limitPrice) > 0) {
+      // User specified a static limit price
+      limitPriceValue = parseFloat(limitPrice);
+      limitPriceTypeValue = 'static';
+    } else if (orderConfig.limitPriceOffset !== undefined) {
+      // User specified an offset from trigger
+      limitPriceValue = parseFloat(orderConfig.limitPriceOffset) || 0;
+      limitPriceTypeValue = orderConfig.limitPriceOffsetType || 'quote';
+    }
+    
     const params = {
       order_type: 'trailing-stop-limit',
       side: side.toLowerCase(),
       order_qty: parsedQty,
       symbol: formattedSymbol,
-      limit_price: parseFloat(limitPrice),
+      limit_price: limitPriceValue,
+      limit_price_type: limitPriceTypeValue,
       time_in_force: timeInForce,
       order_userref: userref,
       triggers: {
-        reference: 'last',
+        reference: triggerReference,
         price: trailPrice,
         price_type: trailPriceType
       }
     };
-    console.log('[buildOrderParams] Trailing-stop-limit order params:', JSON.stringify(params));
+    console.log('[buildOrderParams] Trailing-stop-limit params:', JSON.stringify(params));
+    console.log('[buildOrderParams] Trail offset:', trailPrice, trailPriceType === 'pct' ? '%' : 'USD');
+    console.log('[buildOrderParams] Limit price:', limitPriceValue, limitPriceTypeValue);
     return params;
   }
 
@@ -922,6 +970,10 @@ Deno.serve(async (req) => {
         triggerPrice,
         trailingAmount,
         trailingPercent,
+        trailingPriceType,    // 'pct' or 'quote'
+        limitPriceOffset,      // Offset from trigger for trailing-stop-limit
+        limitPriceOffsetType,  // 'pct' or 'quote'
+        triggerReference,      // 'last' or 'index'
         timeInForce,
         postOnly,
         reduceOnly,
@@ -1039,6 +1091,10 @@ Deno.serve(async (req) => {
         triggerPrice,
         trailingAmount,
         trailingPercent,
+        trailingPriceType,
+        limitPriceOffset,
+        limitPriceOffsetType,
+        triggerReference,
         timeInForce,
         postOnly,
         reduceOnly,
