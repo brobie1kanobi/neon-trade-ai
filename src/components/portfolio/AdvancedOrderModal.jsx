@@ -544,6 +544,22 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
                   <span className="font-medium">${parseFloat(limitPrice).toFixed(2)}</span>
                 </div>
               }
+              {['trailing-stop', 'trailing-stop-limit'].includes(orderType) &&
+              <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">Trailing Offset:</span>
+                  <span className="font-medium">
+                    {trailingPriceType === 'pct' ? `${trailingPercent}%` : `$${trailingAmount}`}
+                  </span>
+                </div>
+              }
+              {['trailing-stop', 'trailing-stop-limit'].includes(orderType) &&
+              <div className="flex justify-between">
+                  <span className="text-gray-600 dark:text-gray-400">Reference:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {triggerReference === 'index' ? 'Index Price' : 'Last Price'}
+                  </Badge>
+                </div>
+              }
               {enableOTO &&
               <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Auto-Close:</span>
