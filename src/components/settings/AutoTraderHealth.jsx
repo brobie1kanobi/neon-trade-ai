@@ -89,11 +89,12 @@ export default function AutoTraderHealth() {
         setError(null); // Clear error if WebSocket is active
       }
       
-      // Show minimal fallback health (LIVE mode only)
+      // Show minimal fallback health (LIVE mode only) - use TOTAL portfolio value
+      const balance = totalPortfolioValue > 0 ? totalPortfolioValue : wsUsdBalance;
       setHealth({
         auto_trading_enabled: settings?.auto_trading_enabled || false,
-        wallet_balance: wsUsdBalance || 0,
-        wallet_status: wsUsdBalance < 0 ? 'critical' : wsUsdBalance < 10 ? 'warning' : 'healthy',
+        wallet_balance: balance || 0,
+        wallet_status: balance < 0 ? 'critical' : balance < 10 ? 'warning' : 'healthy',
         active_conditional_orders: 0,
         trades_24h: { total: 0, buys: 0, sells: 0, volume: 0 },
         last_check: new Date().toISOString()
