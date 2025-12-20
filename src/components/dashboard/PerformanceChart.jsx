@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Card,
@@ -19,7 +18,7 @@ import {
 } from "recharts";
 import { useSettings } from "@/components/utils/SettingsContext";
 
-export default function PerformanceChart({ holdings, trades, wallet, isSimMode }) {
+export default function PerformanceChart({ holdings, trades, wallet, isSimMode, krakenPnL }) {
   const [chartData, setChartData] = useState([]);
   const [overallPnL, setOverallPnL] = useState(0);
   const [overallPnLPercent, setOverallPnLPercent] = useState(0);
