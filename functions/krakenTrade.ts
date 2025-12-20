@@ -670,6 +670,166 @@ Deno.serve(async (req) => {
     console.log('[krakenTrade] ✅ Got WebSocket token');
 
     // ============================================
+    // ACTION: PLACE BUY WITH TP/SL (Complete trading setup)
+    // Matches Kraken Pro order form behavior
+    // ============================================
+    if (action === 'place_buy_with_tpsl') {
+      const { 
+        symbol, 
+        quantity, 
+        entryPrice,           // Limit price for entry (null for market)
+        takeProfitPrice,      // Absolute price or null
+        stopLossPrice,        // Absolute price or null
+        takeProfitPercent,    // Percentage from entry (e.g., 3 for +3%)
+        stopLossPercent,      // Percentage from entry (e.g., 1 for -1%)
+        useMarketEntry = false // Use market order for immediate execution
+      } = body;
+
+      if (!symbol || !quantity) {
+        return Response.json({ 
+          error: 'Missing required fields: symbol, quantity', 
+          success: false 
+        }, { status: 400 });
+      }
+
+      const parsedQty = parseFloat(quantity);
+      const formattedSymbol = formatKrakenSymbol(symbol);
+
+      console.log('[krakenTrade] === BUY WITH TP/SL ===');
+      console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
+      console.log('[krakenTrade] Entry:', entryPrice || 'MARKET', 'TP:', takeProfitPrice || `+${takeProfitPercent}%`, 'SL:', stopLossPrice || `-${stopLossPercent}%`);
+
+      // Step 1: Place the BUY order (market or limit)
+      let buyParams;
+      if (useMarketEntry || !entryPrice) {
+        buyParams = {
+          order_type: 'market',
+          side: 'buy',
+          order_qty: parsedQty,
+          symbol: formattedSymbol
+        };
+      } else {
+        buyParams = {
+          order_type: 'limit',
+          side: 'buy',
+          order_qty: parsedQty,
+          symbol: formattedSymbol,
+          limit_price: parseFloat(entryPrice),
+          time_in_force: 'gtc'
+        };
+      }
+
+      console.log('[krakenTrade] 📤 Placing BUY order...');
+      let buyResult;
+      try {
+        buyResult = await executeKrakenTrade(wsToken, buyParams);
+        console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
+      } catch (buyError) {
+        console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
+        return Response.json({
+          success: false,
+          error: `Buy order failed: ${buyError.message}`,
+          duration_ms: Date.now() - startTime
+        }, { status: 200 });
+      }
+
+      // Step 2: Calculate TP and SL prices if percentages given
+      let finalTpPrice = takeProfitPrice;
+      let finalSlPrice = stopLossPrice;
+      
+      if (!finalTpPrice && takeProfitPercent && entryPrice) {
+        finalTpPrice = parseFloat(entryPrice) * (1 + takeProfitPercent / 100);
+      }
+      if (!finalSlPrice && stopLossPercent && entryPrice) {
+        finalSlPrice = parseFloat(entryPrice) * (1 - stopLossPercent / 100);
+      }
+
+      // Step 3: Place TP and SL orders if specified
+      let tpResult = null;
+      let slResult = null;
+
+      if (finalTpPrice) {
+        const tpParams = {
+          order_type: 'take-profit',
+          side: 'sell',
+          order_qty: parsedQty,
+          symbol: formattedSymbol,
+          time_in_force: 'gtc',
+          triggers: {
+            reference: 'last',
+            price: parseFloat(finalTpPrice),
+            price_type: 'static'
+          }
+        };
+
+        try {
+          console.log('[krakenTrade] 📤 Placing TP order at', finalTpPrice);
+          tpResult = await executeKrakenTrade(wsToken, tpParams);
+          console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
+        } catch (tpError) {
+          console.error('[krakenTrade] ❌ TP failed:', tpError.message);
+          tpResult = { success: false, error: tpError.message };
+        }
+      }
+
+      // Small delay between orders
+      await new Promise(res => setTimeout(res, 2000));
+
+      if (finalSlPrice) {
+        const slParams = {
+          order_type: 'stop-loss',
+          side: 'sell',
+          order_qty: parsedQty,
+          symbol: formattedSymbol,
+          time_in_force: 'gtc',
+          triggers: {
+            reference: 'last',
+            price: parseFloat(finalSlPrice),
+            price_type: 'static'
+          }
+        };
+
+        try {
+          console.log('[krakenTrade] 📤 Placing SL order at', finalSlPrice);
+          slResult = await executeKrakenTrade(wsToken, slParams);
+          console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
+        } catch (slError) {
+          console.error('[krakenTrade] ❌ SL failed:', slError.message);
+          slResult = { success: false, error: slError.message };
+        }
+      }
+
+      // Log the complete trade setup
+      await base44.asServiceRole.entities.KrakenLog.create({
+        event_type: 'create_order',
+        status: 'success',
+        message: `BUY ${quantity} ${symbol} with TP/SL`,
+        details_json: JSON.stringify({
+          buy_order_id: buyResult.order_id,
+          tp_order_id: tpResult?.order_id,
+          sl_order_id: slResult?.order_id,
+          entry_price: entryPrice,
+          tp_price: finalTpPrice,
+          sl_price: finalSlPrice
+        }),
+        created_by: user.email
+      });
+
+      return Response.json({
+        success: true,
+        buy_order_id: buyResult.order_id,
+        tp_order_id: tpResult?.order_id || null,
+        sl_order_id: slResult?.order_id || null,
+        tp_success: tpResult?.success !== false,
+        sl_success: slResult?.success !== false,
+        entry_price: entryPrice,
+        tp_price: finalTpPrice,
+        sl_price: finalSlPrice,
+        duration_ms: Date.now() - startTime
+      }, { status: 200 });
+    }
+
+    // ============================================
     // ACTION: PLACE BRACKET ORDERS (TP + SL via single connection)
     // ============================================
     if (action === 'place_bracket_orders') {
