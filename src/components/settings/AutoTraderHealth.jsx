@@ -256,14 +256,28 @@ export default function AutoTraderHealth() {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Status</span>
           <div className="flex items-center gap-2">
-            <Badge className={
-              prerequisites.autoTradingEnabled
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-500 text-white'
-            }>
-              {prerequisites.autoTradingEnabled ? '🟢 Enabled' : '⏸️ Disabled'}
-            </Badge>
-            {!prerequisites.autoTradingEnabled && (
+            {/* Show Enabled/Disabled based on setting, but also show issues */}
+            {prerequisites.autoTradingEnabled ? (
+              operationalIssues.length > 0 ? (
+                // Enabled but has issues preventing operation
+                <Badge className="bg-yellow-500 text-white flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Enabled (Issues)
+                </Badge>
+              ) : (
+                // Fully operational
+                <Badge className="bg-green-500 text-white">
+                  🟢 Enabled
+                </Badge>
+              )
+            ) : (
+              <Badge className="bg-gray-500 text-white">
+                ⏸️ Disabled
+              </Badge>
+            )}
+            
+            {/* Show help icon if not enabled OR has operational issues */}
+            {(!prerequisites.autoTradingEnabled || operationalIssues.length > 0) && (
               <Popover open={showHelp} onOpenChange={setShowHelp}>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="w-6 h-6 p-0">
