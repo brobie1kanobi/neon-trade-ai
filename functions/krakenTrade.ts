@@ -878,6 +878,121 @@ Deno.serve(async (req) => {
     }
 
     // ============================================
+    // ACTION: PLACE TRAILING STOP (for auto-trader)
+    // Supports both percentage and quote offset modes
+    // ============================================
+    if (action === 'place_trailing_stop') {
+      const { 
+        symbol, 
+        quantity, 
+        trailingPercent,      // e.g., 3 for 3% trailing
+        trailingAmount,       // e.g., 500 for $500 trailing
+        trailingPriceType = 'pct', // 'pct' or 'quote'
+        triggerReference = 'last', // 'last' or 'index'
+        useLimit = false,     // Use trailing-stop-limit instead of trailing-stop
+        limitPriceOffset = 0, // Offset from trigger for limit orders
+        limitPriceOffsetType = 'quote'
+      } = body;
+
+      if (!symbol || !quantity) {
+        return Response.json({ 
+          error: 'Missing required fields: symbol, quantity', 
+          success: false 
+        }, { status: 400 });
+      }
+
+      // Validate trailing offset is provided
+      const hasTrailingOffset = (trailingPercent && parseFloat(trailingPercent) > 0) || 
+                                (trailingAmount && parseFloat(trailingAmount) > 0);
+      if (!hasTrailingOffset) {
+        return Response.json({ 
+          error: 'Missing trailing offset: provide trailingPercent or trailingAmount', 
+          success: false 
+        }, { status: 400 });
+      }
+
+      const parsedQty = parseFloat(quantity);
+      const formattedSymbol = formatKrakenSymbol(symbol);
+
+      console.log('[krakenTrade] === TRAILING STOP ORDER ===');
+      console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
+      console.log('[krakenTrade] Trailing:', trailingPriceType === 'pct' ? `${trailingPercent}%` : `$${trailingAmount}`);
+      console.log('[krakenTrade] Use limit:', useLimit, 'Reference:', triggerReference);
+
+      // Determine trailing offset value
+      let trailPrice, trailPriceType;
+      if (trailingPriceType === 'quote' && trailingAmount) {
+        trailPrice = parseFloat(trailingAmount);
+        trailPriceType = 'quote';
+      } else {
+        trailPrice = parseFloat(trailingPercent) || 5;
+        trailPriceType = 'pct';
+      }
+
+      // Build order params
+      const orderParams = {
+        order_type: useLimit ? 'trailing-stop-limit' : 'trailing-stop',
+        side: 'sell',
+        order_qty: parsedQty,
+        symbol: formattedSymbol,
+        time_in_force: 'gtc',
+        triggers: {
+          reference: triggerReference,
+          price: trailPrice,
+          price_type: trailPriceType
+        }
+      };
+
+      // Add limit price config for trailing-stop-limit
+      if (useLimit) {
+        orderParams.limit_price = parseFloat(limitPriceOffset) || 0;
+        orderParams.limit_price_type = limitPriceOffsetType;
+      }
+
+      console.log('[krakenTrade] 📤 Placing trailing stop order:', JSON.stringify(orderParams));
+
+      try {
+        const result = await executeKrakenTrade(wsToken, orderParams);
+        console.log('[krakenTrade] ✅ Trailing stop placed:', result.order_id);
+
+        // Log the order
+        await base44.asServiceRole.entities.KrakenLog.create({
+          event_type: 'create_order',
+          status: 'success',
+          message: `Trailing ${useLimit ? 'stop-limit' : 'stop'} ${trailPrice}${trailPriceType === 'pct' ? '%' : ' USD'} for ${quantity} ${symbol}`,
+          details_json: JSON.stringify({
+            order_id: result.order_id,
+            symbol,
+            quantity,
+            trailing_price: trailPrice,
+            trailing_type: trailPriceType,
+            use_limit: useLimit,
+            trigger_reference: triggerReference
+          }),
+          created_by: user.email
+        });
+
+        return Response.json({
+          success: true,
+          order_id: result.order_id,
+          order_type: useLimit ? 'trailing-stop-limit' : 'trailing-stop',
+          trailing_price: trailPrice,
+          trailing_type: trailPriceType,
+          trigger_reference: triggerReference,
+          duration_ms: Date.now() - startTime
+        }, { status: 200 });
+
+      } catch (error) {
+        console.error('[krakenTrade] ❌ Trailing stop failed:', error.message);
+        return Response.json({
+          success: false,
+          error: `Trailing stop order failed: ${error.message}`,
+          duration_ms: Date.now() - startTime
+        }, { status: 200 });
+      }
+    }
+
+    // ============================================
     // ACTION: PLACE BRACKET ORDERS (TP + SL via single connection)
     // ============================================
     if (action === 'place_bracket_orders') {
