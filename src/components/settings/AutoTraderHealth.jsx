@@ -265,10 +265,10 @@ export default function AutoTraderHealth() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {error && !wsConnected && (
+        {error && !isKrakenConnected && (
           <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
             <p className="text-xs text-yellow-700 dark:text-yellow-400">
-              ⚠️ Health check slow - using live WebSocket data
+              ⚠️ Unable to fetch Kraken data
             </p>
           </div>
         )}
