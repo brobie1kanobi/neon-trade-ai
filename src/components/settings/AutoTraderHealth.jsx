@@ -15,6 +15,7 @@ import { useKrakenData } from "@/components/hooks/useKrakenData";
 
 export default function AutoTraderHealth() {
   const { settings, user } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
   
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,18 +29,15 @@ export default function AutoTraderHealth() {
     hasAutoBuyPrefs: false,
     hasBalance: false
   });
-  
-  // Direct Kraken balance state - fetch directly from API
-  const [krakenBalance, setKrakenBalance] = useState({ total: 0, cash: 0, assets: 0, connected: false });
 
-  // Try WebSocket first, but we'll also fetch directly
-  const { isConnected: wsConnected, usdBalance: wsUsdBalance, totalPortfolioValue, cryptoHoldingsValue } = useKrakenWebSocket();
+  // USE THE SAME HOOK AS DASHBOARD/PORTFOLIO/WALLET - useKrakenData
+  const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, true);
 
-  // Use direct API balance if WebSocket isn't providing data
-  const effectiveBalance = totalPortfolioValue > 0 ? totalPortfolioValue : (krakenBalance.total || 0);
-  const effectiveCash = wsUsdBalance > 0 ? wsUsdBalance : (krakenBalance.cash || 0);
-  const effectiveAssets = cryptoHoldingsValue > 0 ? cryptoHoldingsValue : (krakenBalance.assets || 0);
-  const isKrakenConnected = wsConnected || krakenBalance.connected;
+  // Extract balance values from the SAME source as other pages
+  const effectiveBalance = krakenData?.total_portfolio_value || 0;
+  const effectiveCash = krakenData?.usd_balance || 0;
+  const effectiveAssets = krakenData?.total_crypto_value || 0;
+  const isKrakenConnected = krakenConnected || (krakenData?.connected === true);
 
   const checkPrerequisites = useCallback(async () => {
     if (!user?.email) return;
