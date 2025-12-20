@@ -460,15 +460,6 @@ export default function AutoTraderHealth() {
             <p className="font-semibold text-lg">
               ${effectiveBalance.toFixed(2)}
             </p>
-            <div className="flex items-center gap-1 justify-end">
-              <Badge variant="outline" className={
-                isKrakenConnected
-                  ? 'text-green-600 border-green-600'
-                  : 'text-yellow-600 border-yellow-600'
-              }>
-                {isKrakenConnected ? '🔴 live' : 'cached'}
-              </Badge>
-            </div>
             {(effectiveCash > 0 || effectiveAssets > 0) && (
               <p className="text-xs text-gray-500 mt-1">
                 ${effectiveCash.toFixed(2)} cash + ${effectiveAssets.toFixed(2)} assets
