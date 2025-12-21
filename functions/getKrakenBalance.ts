@@ -211,8 +211,20 @@ Deno.serve(async (req) => {
     const cryptoHoldings = [];
     const symbols = [];
     
-    for (const [asset, balance] of Object.entries(krakenBalance)) {
-      const qty = parseFloat(balance);
+    // CRITICAL: Iterate over extended balance if available (includes locked amounts)
+    const balanceSource = extendedBalance || krakenBalance;
+    
+    for (const [asset, balanceInfo] of Object.entries(balanceSource)) {
+      // Handle both simple balance (number/string) and extended balance (object with total/balance/hold_trade)
+      let qty;
+      if (typeof balanceInfo === 'object' && balanceInfo !== null) {
+        // Extended balance format: use "total" which includes locked amounts
+        qty = parseFloat(balanceInfo.total || balanceInfo.balance || 0);
+      } else {
+        // Simple balance format
+        qty = parseFloat(balanceInfo);
+      }
+      
       if (asset === 'ZUSD' || asset === 'USD' || qty <= 0.00001) continue;
       
       const symbol = parseKrakenAsset(asset);
