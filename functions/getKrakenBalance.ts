@@ -233,49 +233,67 @@ Deno.serve(async (req) => {
       symbols.push(symbol);
     }
 
-    // CRITICAL: Fetch prices - 3s timeout, skip if already timing out
+    // CRITICAL: Fetch prices - fetch individually for known pairs, skip unknown
     let prices = {};
     if (symbols.length > 0 && !isTimedOut) {
       try {
-        const pairs = symbols.map(sym => buildKrakenPair(sym)).join(',');
-        console.log('[getKrakenBalance] Fetching prices for pairs:', pairs);
+        // Only fetch prices for known pairs (some tokens like LM, BABY may not have public tickers)
+        const knownPairs = {
+          'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'XRP': 'XXRPZUSD',
+          'LTC': 'XLTCZUSD', 'SOL': 'SOLUSD', 'ADA': 'ADAUSD',
+          'DOT': 'DOTUSD', 'DOGE': 'XDGUSD', 'LINK': 'LINKUSD',
+          'UNI': 'UNIUSD', 'MATIC': 'MATICUSD', 'ATOM': 'ATOMUSD',
+          'AVAX': 'AVAXUSD', 'BCH': 'BCHUSD', 'TRX': 'TRXUSD',
+          'PEPE': 'PEPEUSD'
+        };
         
-        const priceResponse = await Promise.race([
-          fetch(`${KRAKEN_PUBLIC_API}?pair=${pairs}`, {
-            method: 'GET',
-            headers: { 'User-Agent': 'NeonTrade-AI/1.0' }
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-        ]);
-
-        if (priceResponse.ok) {
-          const priceData = await priceResponse.json();
-          console.log('[getKrakenBalance] Price response keys:', Object.keys(priceData?.result || {}));
+        const validPairs = symbols
+          .filter(sym => knownPairs[sym])
+          .map(sym => knownPairs[sym]);
+        
+        if (validPairs.length === 0) {
+          console.log('[getKrakenBalance] No known pairs to fetch prices for');
+        } else {
+          const pairString = validPairs.join(',');
+          console.log('[getKrakenBalance] Fetching prices for pairs:', pairString);
           
-          if (priceData?.result) {
-            for (const [pair, ticker] of Object.entries(priceData.result)) {
-              // Parse symbol from pair - handle various formats like XXBTZUSD, SOLUSD, PEPEUSD
-              let symbol = pair;
-              // Remove USD suffix variations
-              symbol = symbol.replace(/ZUSD$/, '').replace(/USD$/, '');
-              // Handle Kraken's X prefix for some assets
-              if (symbol.startsWith('X') && symbol.length === 4) {
-                symbol = symbol.substring(1);
-              }
-              // Convert XBT to BTC
-              if (symbol === 'XBT') symbol = 'BTC';
-              // Handle XDGE -> DOGE
-              if (symbol === 'XDG') symbol = 'DOGE';
-              
-              const price = parseFloat(ticker.c?.[0]) || 0;
-              if (price > 0) {
-                prices[symbol] = price;
-                console.log('[getKrakenBalance] Price found:', symbol, '=', price);
+          const priceResponse = await Promise.race([
+            fetch(`${KRAKEN_PUBLIC_API}?pair=${pairString}`, {
+              method: 'GET',
+              headers: { 'User-Agent': 'NeonTrade-AI/1.0' }
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ]);
+
+          if (priceResponse.ok) {
+            const priceData = await priceResponse.json();
+            console.log('[getKrakenBalance] Price response keys:', Object.keys(priceData?.result || {}));
+            
+            if (priceData?.result) {
+              for (const [pair, ticker] of Object.entries(priceData.result)) {
+                // Parse symbol from pair - handle various formats like XXBTZUSD, SOLUSD, PEPEUSD
+                let symbol = pair;
+                // Remove USD suffix variations
+                symbol = symbol.replace(/ZUSD$/, '').replace(/USD$/, '');
+                // Handle Kraken's X prefix for some assets
+                if (symbol.startsWith('X') && symbol.length === 4) {
+                  symbol = symbol.substring(1);
+                }
+                // Convert XBT to BTC
+                if (symbol === 'XBT') symbol = 'BTC';
+                // Handle XDG -> DOGE
+                if (symbol === 'XDG') symbol = 'DOGE';
+                
+                const price = parseFloat(ticker.c?.[0]) || 0;
+                if (price > 0) {
+                  prices[symbol] = price;
+                  console.log('[getKrakenBalance] Price found:', symbol, '=', price);
+                }
               }
             }
+          } else {
+            console.warn('[getKrakenBalance] Price fetch failed:', priceResponse.status);
           }
-        } else {
-          console.warn('[getKrakenBalance] Price fetch failed:', priceResponse.status);
         }
       } catch (e) {
         console.warn('[getKrakenBalance] Prices failed (non-critical):', e.message);
