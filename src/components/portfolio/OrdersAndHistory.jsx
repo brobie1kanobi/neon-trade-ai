@@ -890,17 +890,43 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
   if (!order) return null;
 
   const isExecuted = order.status === "executed";
+  const isFailed = order.status === "failed" || !!order.error_message;
   const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
   const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
 
-  // Determine the reason for execution/cancellation
+  // Determine the reason for execution/cancellation/failure
   const getClosureReason = () => {
     // CRITICAL: If there's a stored closure_reason or error_message, use it first
     if (order.error_message) {
+      // Parse common Kraken error messages for user-friendly display
+      const errMsg = order.error_message.toLowerCase();
+      let friendlyDescription = order.error_message;
+      let title = "Order Failed";
+      
+      if (errMsg.includes('insufficient funds') || errMsg.includes('insufficient balance')) {
+        title = "Insufficient Funds";
+        friendlyDescription = `The order could not be executed because there weren't enough funds in your account. Original error: ${order.error_message}`;
+      } else if (errMsg.includes('minimum order') || errMsg.includes('order minimum')) {
+        title = "Below Minimum Order Size";
+        friendlyDescription = `The order size was below Kraken's minimum requirement. Try increasing the order quantity. Original error: ${order.error_message}`;
+      } else if (errMsg.includes('rate limit') || errMsg.includes('too many requests')) {
+        title = "Rate Limited";
+        friendlyDescription = `Too many requests were sent to Kraken. The order will be retried automatically. Original error: ${order.error_message}`;
+      } else if (errMsg.includes('invalid') || errMsg.includes('unknown')) {
+        title = "Invalid Order";
+        friendlyDescription = `The order parameters were invalid or the trading pair is not supported. Original error: ${order.error_message}`;
+      } else if (errMsg.includes('timeout') || errMsg.includes('timed out')) {
+        title = "Connection Timeout";
+        friendlyDescription = `The connection to Kraken timed out before the order could be confirmed. The order may or may not have been placed. Original error: ${order.error_message}`;
+      } else if (errMsg.includes('websocket') || errMsg.includes('connection')) {
+        title = "Connection Error";
+        friendlyDescription = `There was a connection issue with Kraken. The order may not have been placed. Original error: ${order.error_message}`;
+      }
+      
       return {
         type: "error",
-        title: "Order Failed",
-        description: order.error_message,
+        title: title,
+        description: friendlyDescription,
         icon: AlertCircle,
         color: "text-red-500"
       };
