@@ -181,17 +181,20 @@ export function useRealtimeKrakenData(options = {}) {
 }
 
 // Calculate only crypto holdings value (excludes USD cash)
+// CRITICAL: Use balance.balance which is the TOTAL (including locked in orders)
 function calculateCryptoValue(balances, prices) {
   let total = 0;
 
-  Object.entries(balances).forEach(([asset, balance]) => {
+  Object.entries(balances).forEach(([asset, balanceObj]) => {
     if (asset === 'USD' || asset === 'ZUSD') {
       return; // Skip USD - that's cash wallet
     }
     const pairWithUSD = `${asset}/USD`;
     const price = prices[pairWithUSD]?.price || 0;
-    if (price > 0) {
-      total += balance.balance * price;
+    const quantity = balanceObj?.balance || 0;
+    
+    if (price > 0 && quantity > 0.00001) {
+      total += quantity * price;
     }
   });
 
