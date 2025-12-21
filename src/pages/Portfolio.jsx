@@ -493,12 +493,6 @@ export default function Portfolio() {
     const interval = setInterval(fetchKrakenPnL, 60000);
     return () => clearInterval(interval);
   }, [isSimMode, wsCryptoValue, krakenData, effectiveHoldings]);
-    } catch (err) {
-        console.error("[Portfolio] Failed to calculate values:", err);
-    } finally {
-        setIsCalculatingValue(false);
-    }
-  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;
