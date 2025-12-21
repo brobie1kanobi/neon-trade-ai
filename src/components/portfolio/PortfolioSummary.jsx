@@ -35,35 +35,37 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     };
   }, [isSimMode, refreshWebSocket]);
 
-  // CRITICAL: In LIVE mode, prioritize WebSocket (if connected AND > 0) > krakenData prop > wallet DB
+  // CRITICAL: In LIVE mode, prioritize krakenData prop (REST API data) > WebSocket > wallet DB
+  // REST API is the most reliable source - WebSocket can return stale/zero data
   // This logic MUST match Dashboard exactly for consistency!
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: WebSocket first (only if connected AND positive), then krakenData prop, then wallet DB
+    // LIVE MODE: krakenData prop first (REST API is authoritative)
+    if (krakenData?.usd_balance >= 0 && krakenData?.usd_balance !== undefined) {
+      return krakenData.usd_balance;
+    }
+    // WebSocket fallback - only if has positive balance
     if (wsConnected && wsUsdBalance > 0) {
       return wsUsdBalance;
-    }
-    if (krakenData?.usd_balance > 0) {
-      return krakenData.usd_balance;
     }
     return wallet?.real_cash_balance || 0;
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
 
   // CRITICAL: Portfolio value = crypto holdings only (not including cash)
-  // This logic MUST match Dashboard exactly for consistency!
+  // REST API is authoritative - WebSocket can be unreliable
   const effectivePortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
-    // LIVE MODE: WebSocket first (only if connected AND positive), then prop
+    // LIVE MODE: krakenData prop first (REST API is authoritative)
+    if (krakenData?.total_crypto_value >= 0 && krakenData?.total_crypto_value !== undefined) {
+      return krakenData.total_crypto_value;
+    }
+    // WebSocket fallback - only if has positive value
     if (wsConnected && wsCryptoValue > 0) {
       return wsCryptoValue;
-    }
-    // Fall back to krakenData prop
-    if (krakenData?.total_crypto_value > 0) {
-      return krakenData.total_crypto_value;
     }
     return currentPortfolioValue || 0;
   }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
