@@ -47,6 +47,73 @@ export default function AutoTraderHealth() {
   const effectiveAssets = krakenData?.total_crypto_value || 0;
   const isKrakenConnected = krakenConnected || (krakenData?.connected === true);
 
+  // CRITICAL: Fetch order counts using same logic as OrdersAndHistory
+  const fetchOrderCounts = useCallback(async () => {
+    if (!user?.email) return;
+    
+    try {
+      // In LIVE mode, fetch from Kraken API (same as OrdersAndHistory)
+      let openOrderCount = 0;
+      
+      if (!isSimMode) {
+        // Try Kraken API first
+        try {
+          const ordersResponse = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders' });
+          const ordersData = ordersResponse?.data || ordersResponse;
+          if (ordersData?.orders) {
+            openOrderCount = ordersData.orders.filter(o => {
+              const volume = parseFloat(o.vol) || o.volume || 0;
+              return volume > 0.00001;
+            }).length;
+          }
+        } catch (apiErr) {
+          // Fallback to WebSocket data
+          if (wsConnected && krakenOrders) {
+            openOrderCount = Object.values(krakenOrders).filter(o => (o.volume || 0) > 0.00001).length;
+          }
+        }
+      } else {
+        // SIM mode: Count from database
+        const activeOrders = await ConditionalOrder.filter({
+          created_by: user.email,
+          status: 'active',
+          is_simulation: true
+        });
+        openOrderCount = activeOrders.length;
+      }
+      
+      setActiveOrderCount(openOrderCount);
+      
+      // Fetch 24h trades (same logic as OrdersAndHistory)
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      const recentTrades = await Trade.filter({ 
+        created_by: user.email,
+        is_simulation: isSimMode
+      }, "-created_date", 100);
+      
+      const last24hTrades = recentTrades.filter(t => 
+        new Date(t.created_date) >= yesterday
+      );
+      
+      const buys = last24hTrades.filter(t => t.type === 'buy');
+      const sells = last24hTrades.filter(t => t.type === 'sell');
+      const volume = last24hTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
+      
+      setTrades24h({
+        total: last24hTrades.length,
+        buys: buys.length,
+        sells: sells.length,
+        volume
+      });
+      
+      console.log('[AutoTraderHealth] Order count:', openOrderCount, '| 24h trades:', last24hTrades.length);
+    } catch (err) {
+      console.error('[AutoTraderHealth] Failed to fetch order counts:', err);
+    }
+  }, [user?.email, isSimMode, wsConnected, krakenOrders]);
+
   const checkPrerequisites = useCallback(async () => {
     if (!user?.email) return;
     
