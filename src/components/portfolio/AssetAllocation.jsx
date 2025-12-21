@@ -152,14 +152,14 @@ export default function AssetAllocation({ allocations, isLoading }) {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold neon-glow" style={{ backgroundColor: "rgba(var(--neon-green-rgb), 0.1)", color: "var(--neon-green)" }}>
-                          {asset.symbol.substring(0, 3)}
+                          {String(asset.symbol || '').substring(0, 3)}
                         </div>
                         <div>
                           <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                            {asset.symbol}
+                            {String(asset.symbol || '')}
                           </p>
                           <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                            {asset.quantity.toFixed(4)} units
+                            {(asset.quantity || 0).toFixed(4)} units
                           </p>
                         </div>
                       </div>
