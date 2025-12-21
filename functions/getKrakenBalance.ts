@@ -208,11 +208,11 @@ Deno.serve(async (req) => {
       if (Object.keys(possibleBalance).length > 0) krakenBalance = possibleBalance;
     }
     
-    // CRITICAL: Use extended balance if available (includes locked amounts)
+    // Use extended balance if available - it has more detailed breakdown
     let extendedBalance = null;
     if (extendedData?.success && extendedData?.balance) {
       extendedBalance = extendedData.balance;
-      console.log('[getKrakenBalance] Using extended balance (includes locked)');
+      console.log('[getKrakenBalance] Using extended balance (available amounts only)');
     }
     
     if (!krakenBalance) throw new Error('Invalid balance response');
