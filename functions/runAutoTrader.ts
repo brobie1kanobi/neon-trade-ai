@@ -83,8 +83,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // CRITICAL: Auto-execution threshold - 70% confidence
-    const AUTO_EXECUTE_THRESHOLD = 0.70;
+    // CRITICAL: Auto-execution threshold - 70% confidence (use integer comparison to avoid float issues)
+    const AUTO_EXECUTE_THRESHOLD = 70;
     
     // Filter prospects that qualify for auto-execution:
     // 1. Confidence >= 70%
@@ -92,18 +92,27 @@ Deno.serve(async (req) => {
     // 3. Not blocked
     // 4. Would execute (has sufficient funds)
     const eligibleProspects = prospects.filter(p => {
-      const confidence = (p.confidence_score || 0) / 100;
+      const confidenceScore = Number(p.confidence_score || 0); // Keep as integer (e.g., 70)
       const action = (p.optimal_action || 'buy').toLowerCase();
       const isBuy = action === 'buy' || action === 'strong_buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      const eligible = confidence >= AUTO_EXECUTE_THRESHOLD && isBuy && notBlocked && wouldExecute;
+      // FIXED: Use integer comparison (70 >= 70) instead of float (0.70 >= 0.70)
+      const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
+      const eligible = meetsConfidence && isBuy && notBlocked && wouldExecute;
+      
+      console.log(`[runAutoTrader] ${p.symbol}: confidence=${confidenceScore}%, action=${action}, blocked=${p.is_blocked}, wouldExecute=${wouldExecute}`);
       
       if (eligible) {
-        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE: ${p.confidence_score}% confidence, action: ${action}`);
+        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE for auto-execution`);
       } else {
-        console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${p.confidence_score}% confidence (need ${AUTO_EXECUTE_THRESHOLD * 100}%+), action: ${action}, blocked: ${p.is_blocked}`);
+        const reasons = [];
+        if (!meetsConfidence) reasons.push(`confidence ${confidenceScore}% < ${AUTO_EXECUTE_THRESHOLD}%`);
+        if (!isBuy) reasons.push(`action is ${action}`);
+        if (p.is_blocked) reasons.push(`blocked: ${p.block_reason}`);
+        if (!wouldExecute) reasons.push('would_execute_now=false');
+        console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${reasons.join(', ')}`);
       }
       
       return eligible;
