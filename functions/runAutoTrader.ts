@@ -387,6 +387,16 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[runAutoTrader] ✅ Completed: ${tradesPlaced.length} trades executed`);
+    
+    // Summary of advanced orders placed
+    const advancedOrderSummary = tradesPlaced.map(t => ({
+      symbol: t.symbol,
+      qty: t.qty,
+      entry_price: t.price,
+      tp_target: round2(t.price * (1 + gainMargin / 100)),
+      trailing_stop: trailingEnabled ? `${trailingMargin}% from peak` : `Static SL at ${round2(t.price * (1 - lossMargin / 100))}`,
+      confidence: t.ai_confidence
+    }));
 
     return Response.json({
       success: true,
@@ -395,8 +405,15 @@ Deno.serve(async (req) => {
       cash_before: cashBefore,
       cash_after_estimated: availableCash,
       trades: tradesPlaced,
+      advanced_orders: advancedOrderSummary,
       auto_execute_threshold: 70,
-      total_prospects_analyzed: prospects.length
+      total_prospects_analyzed: prospects.length,
+      order_settings: {
+        gain_margin: gainMargin,
+        loss_margin: lossMargin,
+        trailing_enabled: trailingEnabled,
+        trailing_margin: trailingMargin
+      }
     });
   } catch (error) {
     console.error('[runAutoTrader] Fatal error:', error);
