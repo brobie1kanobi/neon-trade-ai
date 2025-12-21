@@ -10,8 +10,9 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
-import { KrakenConnection, AutoBuyPreference } from "@/entities/all";
+import { KrakenConnection, AutoBuyPreference, ConditionalOrder, Trade } from "@/entities/all";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 export default function AutoTraderHealth() {
   const { settings, user } = useSettings();
