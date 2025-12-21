@@ -100,10 +100,8 @@ export default function Settings() {
         <CurrencySettings
           preferredCurrency={settings?.preferred_currency || "USD"}
           defaultInputMode={settings?.default_input_mode || "quantity"}
-          timezone={settings?.timezone || "America/New_York"}
           onCurrencyChange={(value) => updateSetting('preferred_currency', value)}
           onInputModeChange={(value) => updateSetting('default_input_mode', value)}
-          onTimezoneChange={(value) => updateSetting('timezone', value)}
         />
       </motion.div>
 
