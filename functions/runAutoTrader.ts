@@ -153,14 +153,15 @@ Deno.serve(async (req) => {
 
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
-        // LIVE MODE: Use Kraken API with bracket orders (TP + SL)
+        // LIVE MODE: Use Kraken API with ADVANCED orders (Trailing Stop + Take Profit)
         try {
-          // Calculate TP and SL prices using user's settings
+          // Calculate TP price (static) and trailing stop percentage
           const takeProfitPrice = round2(price * (1 + gainMargin / 100));
-          const stopLossPrice = round2(price * (1 - lossMargin / 100));
+          const staticStopLossPrice = round2(price * (1 - lossMargin / 100));
           
-          console.log(`[runAutoTrader] Executing LIVE buy: ${sym} qty=${qty} @ $${price}`);
-          console.log(`[runAutoTrader] TP: $${takeProfitPrice} (+${gainMargin}%), SL: $${stopLossPrice} (-${lossMargin}%)`);
+          console.log(`[runAutoTrader] 🚀 Executing LIVE buy: ${sym} qty=${qty} @ $${price}`);
+          console.log(`[runAutoTrader] 📊 TP: $${takeProfitPrice} (+${gainMargin}%)`);
+          console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order
           const buyResponse = await base44.functions.invoke('krakenTrade', {
@@ -168,8 +169,7 @@ Deno.serve(async (req) => {
             symbol: sym,
             side: 'buy',
             quantity: qty,
-            orderType: 'market',
-            timeInForce: 'ioc'
+            orderType: 'market'
           });
 
           const buyData = buyResponse?.data || buyResponse;
@@ -194,37 +194,104 @@ Deno.serve(async (req) => {
             created_by: user.email
           });
           
-          // Step 2: Place bracket orders (TP + SL) with delay
+          // Step 2: Place TAKE PROFIT order (limit at TP price)
           await new Promise(res => setTimeout(res, 2000));
           
           let tpOrderId = null;
           let slOrderId = null;
           
+          // Place Take Profit order
           try {
-            const bracketResponse = await base44.functions.invoke('krakenTrade', {
-              action: 'place_bracket_orders',
+            console.log(`[runAutoTrader] 📤 Placing Take Profit at $${takeProfitPrice}...`);
+            const tpResponse = await base44.functions.invoke('krakenTrade', {
+              action: 'place_order',
               symbol: sym,
+              side: 'sell',
               quantity: qty,
-              takeProfitPrice: takeProfitPrice,
-              stopLossPrice: stopLossPrice
+              orderType: 'take-profit',
+              triggerPrice: takeProfitPrice,
+              timeInForce: 'gtc'
             });
             
-            const bracketData = bracketResponse?.data || bracketResponse;
-            if (bracketData?.tp_success) {
-              tpOrderId = bracketData.tp_order_id;
-              console.log(`[runAutoTrader] ✅ TP order placed: ${tpOrderId}`);
+            const tpData = tpResponse?.data || tpResponse;
+            if (tpData?.success) {
+              tpOrderId = tpData.order_id;
+              console.log(`[runAutoTrader] ✅ Take Profit order placed: ${tpOrderId}`);
+            } else {
+              console.warn(`[runAutoTrader] ⚠️ Take Profit failed: ${tpData?.error}`);
             }
-            if (bracketData?.sl_success) {
-              slOrderId = bracketData.sl_order_id;
-              console.log(`[runAutoTrader] ✅ SL order placed: ${slOrderId}`);
+          } catch (tpError) {
+            console.error('[runAutoTrader] Take Profit order failed:', tpError.message);
+          }
+          
+          // Step 3: Place TRAILING STOP order (locks in profits as price rises)
+          await new Promise(res => setTimeout(res, 2000));
+          
+          try {
+            // Use trailing stop if enabled, otherwise use static stop-loss
+            if (trailingEnabled && trailingMargin > 0) {
+              console.log(`[runAutoTrader] 📤 Placing Trailing Stop (${trailingMargin}% from peak)...`);
+              const slResponse = await base44.functions.invoke('krakenTrade', {
+                action: 'place_trailing_stop',
+                symbol: sym,
+                quantity: qty,
+                trailingPercent: trailingMargin,
+                trailingPriceType: 'pct',
+                triggerReference: 'last',
+                useLimit: false // Use market order on trigger for guaranteed execution
+              });
+              
+              const slData = slResponse?.data || slResponse;
+              if (slData?.success) {
+                slOrderId = slData.order_id;
+                console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
+              } else {
+                console.warn(`[runAutoTrader] ⚠️ Trailing Stop failed: ${slData?.error}, falling back to static SL`);
+                // Fallback to static stop-loss
+                const fallbackResponse = await base44.functions.invoke('krakenTrade', {
+                  action: 'place_order',
+                  symbol: sym,
+                  side: 'sell',
+                  quantity: qty,
+                  orderType: 'stop-loss',
+                  stopPrice: staticStopLossPrice,
+                  timeInForce: 'gtc'
+                });
+                const fallbackData = fallbackResponse?.data || fallbackResponse;
+                if (fallbackData?.success) {
+                  slOrderId = fallbackData.order_id;
+                  console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
+                }
+              }
+            } else {
+              // Use static stop-loss if trailing not enabled
+              console.log(`[runAutoTrader] 📤 Placing Static Stop-Loss at $${staticStopLossPrice}...`);
+              const slResponse = await base44.functions.invoke('krakenTrade', {
+                action: 'place_order',
+                symbol: sym,
+                side: 'sell',
+                quantity: qty,
+                orderType: 'stop-loss',
+                stopPrice: staticStopLossPrice,
+                timeInForce: 'gtc'
+              });
+              
+              const slData = slResponse?.data || slResponse;
+              if (slData?.success) {
+                slOrderId = slData.order_id;
+                console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
+              } else {
+                console.warn(`[runAutoTrader] ⚠️ Stop-Loss failed: ${slData?.error}`);
+              }
             }
-          } catch (bracketError) {
-            console.error('[runAutoTrader] Bracket orders failed:', bracketError.message);
-            // Continue even if bracket orders fail - we still have the position
+          } catch (slError) {
+            console.error('[runAutoTrader] Stop-Loss order failed:', slError.message);
           }
           
           // Store Kraken order IDs for tracking
           krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
+          
+          console.log(`[runAutoTrader] 📋 Order IDs saved: ${krakenOrderIds}`);
 
         } catch (krakenError) {
           console.error('[runAutoTrader] Kraken buy failed:', krakenError.message);
