@@ -443,7 +443,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                 value="closed"
                 className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
                 
-                Closed {closedCount > 0 && <span className="ml-1 text-xs opacity-60">({closedCount})</span>}
+                Closed/Failed {closedCount > 0 && <span className="ml-1 text-xs opacity-60">({closedCount})</span>}
               </TabsTrigger>
             </TabsList>
 
