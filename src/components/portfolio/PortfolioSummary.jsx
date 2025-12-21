@@ -154,18 +154,24 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
                 maxFontSize={20}
                 minFontSize={12}
               />
+              {!isSimMode && wsConnected && currentCashBalance > 0 && (
+                <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
+              )}
             </div>
             <div className="text-center min-w-[140px]">
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
-            
+
               <NumberDisplay
-                value={currentPortfolioValue || 0}
+                value={effectivePortfolioValue}
                 prefix="$"
                 decimals={2}
                 className="mx-auto max-w-[180px]"
                 maxFontSize={20}
                 minFontSize={12}
               />
+              {!isSimMode && wsConnected && effectivePortfolioValue > 0 && (
+                <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
+              )}
             </div>
           </div>
 
