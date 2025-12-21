@@ -1065,6 +1065,13 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
       console.log('[krakenTrade] TP:', takeProfitPrice, 'SL:', stopLossPrice);
 
+      // CRITICAL: Round prices to Kraken's required decimal precision
+      const roundedTpPrice = roundPriceForKraken(parseFloat(takeProfitPrice), formattedSymbol);
+      const roundedSlPrice = roundPriceForKraken(parseFloat(stopLossPrice), formattedSymbol);
+      
+      console.log('[krakenTrade] Rounded TP:', takeProfitPrice, '->', roundedTpPrice);
+      console.log('[krakenTrade] Rounded SL:', stopLossPrice, '->', roundedSlPrice);
+
       // Build TP order params
       const tpParams = {
         order_type: 'take-profit',
@@ -1074,7 +1081,7 @@ Deno.serve(async (req) => {
         time_in_force: 'gtc',
         triggers: {
           reference: 'last',
-          price: parseFloat(takeProfitPrice),
+          price: roundedTpPrice,
           price_type: 'static'
         }
       };
@@ -1088,7 +1095,7 @@ Deno.serve(async (req) => {
         time_in_force: 'gtc',
         triggers: {
           reference: 'last',
-          price: parseFloat(stopLossPrice),
+          price: roundedSlPrice,
           price_type: 'static'
         }
       };
