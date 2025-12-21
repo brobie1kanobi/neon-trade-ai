@@ -57,14 +57,29 @@ const rateLimiters = new Map();
 
 function parseKrakenAsset(krakenCode) {
   let symbol = krakenCode;
-  if (krakenCode.startsWith('X') && krakenCode !== 'XRP') symbol = krakenCode.substring(1);
+  
+  // Handle Kraken's X and Z prefixes
+  // XXBT -> XBT -> BTC, XXLM -> XLM, XXRP -> XRP, etc.
+  if (krakenCode.startsWith('XX')) {
+    symbol = krakenCode.substring(1); // XXBT -> XBT, XXLM -> XLM
+  } else if (krakenCode.startsWith('X') && krakenCode.length === 4 && krakenCode !== 'XETH') {
+    symbol = krakenCode.substring(1); // XBT -> BT (but handle in symbolMap)
+  }
   if (krakenCode.startsWith('Z')) symbol = krakenCode.substring(1);
   
   const symbolMap = {
-    'XBT': 'BTC', 'ETH': 'ETH', 'SOL': 'SOL', 'XRP': 'XRP',
-    'ADA': 'ADA', 'DOT': 'DOT', 'DOGE': 'DOGE', 'LINK': 'LINK',
-    'UNI': 'UNI', 'MATIC': 'MATIC', 'ATOM': 'ATOM', 'LTC': 'LTC',
-    'BCH': 'BCH', 'AVAX': 'AVAX', 'BNB': 'BNB', 'TRX': 'TRX',
+    'XBT': 'BTC', 'XXBT': 'BTC', 'BT': 'BTC',
+    'ETH': 'ETH', 'XETH': 'ETH',
+    'SOL': 'SOL',
+    'XRP': 'XRP', 'XXRP': 'XRP',
+    'XLM': 'XLM', 'XXLM': 'XLM',  // Stellar - was showing as LM
+    'ADA': 'ADA', 'DOT': 'DOT',
+    'DOGE': 'DOGE', 'XDG': 'DOGE',  // Dogecoin
+    'LINK': 'LINK', 'UNI': 'UNI',
+    'MATIC': 'MATIC', 'ATOM': 'ATOM',
+    'LTC': 'LTC', 'BCH': 'BCH',
+    'AVAX': 'AVAX', 'BNB': 'BNB',
+    'TRX': 'TRX',
     'USDT': 'USDT', 'USDC': 'USDC', 'USD': 'USD'
   };
   
