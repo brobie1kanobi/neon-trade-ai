@@ -263,6 +263,18 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     }
   }, [krakenOrders, wsConnected, isSimMode, loadOrders]);
 
+  // Dismiss a failed order from the list (delete from database)
+  const handleDismissFailedOrder = async (orderId) => {
+    try {
+      await ConditionalOrder.delete(orderId);
+      toast.success("Failed order dismissed");
+      loadOrders();
+    } catch (err) {
+      console.error("Failed to dismiss order:", err);
+      toast.error("Failed to dismiss order");
+    }
+  };
+
   // Cancel an order - also cancels associated Kraken orders in LIVE mode
   const handleCancelOrder = async (orderId) => {
     setCancellingOrderId(orderId);
