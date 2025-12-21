@@ -1134,8 +1134,12 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
               </div>
               <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Status</span>
-                <Badge className={`text-xs ${isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                  {isExecuted ? 'Executed' : 'Cancelled'}
+                <Badge className={`text-xs ${
+                  isFailed ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+                  isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 
+                  'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                }`}>
+                  {isFailed ? 'Failed' : isExecuted ? 'Executed' : 'Cancelled'}
                 </Badge>
               </div>
             </div>
