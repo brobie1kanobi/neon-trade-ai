@@ -11,7 +11,7 @@ import { invalidatePriceCache } from "@/components/hooks/usePriceData";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
-export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, onSyncComplete }) {
+export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, cashBalance = 0, onSyncComplete }) {
   const { settings } = useSettings();
   const [isVisible, setIsVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
