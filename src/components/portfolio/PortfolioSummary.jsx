@@ -43,7 +43,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
       return wallet?.cash_balance || 0;
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
-    if (krakenData?.usd_balance >= 0 && krakenData?.usd_balance !== undefined) {
+    // Check for BOTH usd_balance AND total_portfolio_value_usd
+    if (krakenData?.usd_balance > 0) {
       return krakenData.usd_balance;
     }
     // WebSocket fallback - only if has positive balance
@@ -60,7 +61,12 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
       return currentPortfolioValue || 0;
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
-    if (krakenData?.total_crypto_value >= 0 && krakenData?.total_crypto_value !== undefined) {
+    // Use total_crypto_value_usd field from getKrakenBalance
+    if (krakenData?.total_crypto_value_usd > 0) {
+      return krakenData.total_crypto_value_usd;
+    }
+    // Fallback to old field name
+    if (krakenData?.total_crypto_value > 0) {
       return krakenData.total_crypto_value;
     }
     // WebSocket fallback - only if has positive value
