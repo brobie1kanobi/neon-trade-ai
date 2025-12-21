@@ -492,6 +492,7 @@ export default function Portfolio() {
     // Refresh every 60 seconds
     const interval = setInterval(fetchKrakenPnL, 60000);
     return () => clearInterval(interval);
+  }, [isSimMode, wsCryptoValue, krakenData, effectiveHoldings]);
     } catch (err) {
         console.error("[Portfolio] Failed to calculate values:", err);
     } finally {
