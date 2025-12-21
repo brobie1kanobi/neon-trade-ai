@@ -545,7 +545,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                   dateFmt={dateFmt}
                   formatDisplayQuantity={formatDisplayQuantity}
                   formatPrice={formatPrice}
-                  onClick={() => setSelectedClosedOrder(order)} />
+                  onClick={() => setSelectedClosedOrder(order)}
+                  onDismiss={handleDismissFailedOrder} />
 
                 )}
                 </div>
