@@ -44,11 +44,15 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       return wallet?.cash_balance || 0;
     }
 
-    const krakenUSD = wsUsdBalance || 0;
+    // CRITICAL: Use portfolioMarketValue prop first (contains REST API data from parent)
+    // This is populated from krakenCashBalance in Wallet page which uses REST API as primary
     const dbCash = wallet?.real_cash_balance || 0;
+    const wsValue = wsUsdBalance || 0;
 
-    // Use WebSocket if connected AND has data, otherwise use DB value
-    const value = (wsConnected && krakenUSD > 0) ? krakenUSD : dbCash;
+    // If parent passed a portfolioMarketValue but it's meant for portfolio not cash,
+    // we need to use WebSocket or DB for cash
+    // WebSocket as secondary source
+    const value = (wsConnected && wsValue > 0) ? wsValue : dbCash;
     
     // Cache valid values
     if (value > 0) {
@@ -64,10 +68,14 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       return portfolioMarketValue;
     }
     
-    // CRITICAL: Use cryptoHoldingsValue (NOT wsTotalValue) for Portfolio display
-    // Portfolio = crypto holdings only, NOT including USD cash
+    // CRITICAL: portfolioMarketValue prop comes from parent (Wallet page) which uses
+    // REST API (krakenData) as PRIMARY source - this is the most reliable
+    // Only fall back to WebSocket if portfolioMarketValue is not available
+    const propValue = portfolioMarketValue || 0;
     const wsValue = wsCryptoHoldingsValue || 0;
-    const value = (wsConnected && wsValue > 0) ? wsValue : portfolioMarketValue;
+    
+    // Use prop value first (REST API via parent), then WebSocket as fallback
+    const value = propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
     
     // Cache valid values
     if (value > 0) {
