@@ -13,8 +13,27 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
-    totalPortfolioValue: wsTotalValue
+    totalPortfolioValue: wsTotalValue,
+    refresh: refreshWebSocket
   } = useKrakenWebSocket();
+
+  // CRITICAL: Refresh data when trades complete
+  React.useEffect(() => {
+    const handleTradeCompleted = () => {
+      console.log('[PortfolioSummary] Trade completed, refreshing WebSocket data');
+      if (!isSimMode && refreshWebSocket) {
+        refreshWebSocket();
+      }
+    };
+
+    window.addEventListener('trade:completed', handleTradeCompleted);
+    window.addEventListener('kraken:synced', handleTradeCompleted);
+    
+    return () => {
+      window.removeEventListener('trade:completed', handleTradeCompleted);
+      window.removeEventListener('kraken:synced', handleTradeCompleted);
+    };
+  }, [isSimMode, refreshWebSocket]);
 
   // CRITICAL: In LIVE mode, prioritize WebSocket (if connected AND > 0) > krakenData prop > wallet DB
   // This logic MUST match Dashboard exactly for consistency!
