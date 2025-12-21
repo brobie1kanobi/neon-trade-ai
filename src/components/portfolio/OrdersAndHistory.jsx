@@ -1190,7 +1190,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
                 </div>
                 {order.updated_date &&
                 <div className="flex justify-between">
-                    <span style={{ color: 'var(--text-secondary)' }}>{isExecuted ? 'Executed:' : 'Cancelled:'}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{isFailed ? 'Failed:' : isExecuted ? 'Executed:' : 'Cancelled:'}</span>
                     <span style={{ color: 'var(--text-primary)' }}>
                       {format(new Date(order.updated_date), fullDateFmt)}
                     </span>
