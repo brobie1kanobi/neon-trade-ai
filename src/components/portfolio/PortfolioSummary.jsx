@@ -16,12 +16,13 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     totalPortfolioValue: wsTotalValue
   } = useKrakenWebSocket();
 
-  // CRITICAL: In LIVE mode, prioritize WebSocket > krakenData prop > wallet DB
+  // CRITICAL: In LIVE mode, prioritize WebSocket (if connected AND > 0) > krakenData prop > wallet DB
+  // This logic MUST match Dashboard exactly for consistency!
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: WebSocket first, then krakenData prop, then wallet DB
+    // LIVE MODE: WebSocket first (only if connected AND positive), then krakenData prop, then wallet DB
     if (wsConnected && wsUsdBalance > 0) {
       return wsUsdBalance;
     }
@@ -32,16 +33,21 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
 
   // CRITICAL: Portfolio value = crypto holdings only (not including cash)
+  // This logic MUST match Dashboard exactly for consistency!
   const effectivePortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
-    // LIVE MODE: WebSocket first, then prop
+    // LIVE MODE: WebSocket first (only if connected AND positive), then prop
     if (wsConnected && wsCryptoValue > 0) {
       return wsCryptoValue;
     }
+    // Fall back to krakenData prop
+    if (krakenData?.total_crypto_value > 0) {
+      return krakenData.total_crypto_value;
+    }
     return currentPortfolioValue || 0;
-  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue]);
+  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
 
   const totalValue = currentCashBalance + effectivePortfolioValue;
   
