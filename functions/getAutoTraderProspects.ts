@@ -234,11 +234,12 @@ Deno.serve(async (req) => {
     const prospects = [];
     const numAssets = prefs.length || 1;
     
-    // HARD LIMIT: Each order can be at most (cashAvailable / numAssets) to spread across assets
-    // Also cap at 25% of total cash max per single order
-    const maxPerOrder = Math.min(cashAvailable / numAssets, cashAvailable * 0.25);
+    // CRITICAL: Each order uses the user's EXACT allocation percentage from their preferences
+    // No arbitrary caps - trust what the user configured in Portfolio settings
+    // Safety: max 40% of cash in single order to prevent over-concentration
+    const safetyMaxPct = 0.40;
     
-    console.log('[Prospects] Cash available:', cashAvailable, 'Max per order:', maxPerOrder);
+    console.log('[Prospects] Cash available:', cashAvailable, 'Assets:', numAssets);
 
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
@@ -268,20 +269,28 @@ Deno.serve(async (req) => {
       
       console.log('[Prospects]', symbol, '- User set allocation:', userAllocationPct, '%');
       
-      // Calculate order value based on user's exact preference
+      // Calculate order value based on user's EXACT preference
       let total = cashAvailable * userPct;
       
-      // Cap to maxPerOrder safety limit, but preserve user's intended percentage display
-      total = Math.min(total, maxPerOrder);
+      console.log('[Prospects]', symbol, '- Initial calc: $', cashAvailable.toFixed(2), '*', userAllocationPct, '% =', total.toFixed(2));
+      
+      // Safety cap: max 40% of cash in single order
+      const safetyMax = cashAvailable * safetyMaxPct;
+      if (total > safetyMax) {
+        console.log('[Prospects]', symbol, '- Capped from', total.toFixed(2), 'to safety max', safetyMax.toFixed(2));
+        total = safetyMax;
+      }
       
       // Scale down if already holding (reduce risk of over-concentration)
       if (holding) {
         total = total * 0.6;
+        console.log('[Prospects]', symbol, '- Scaled down for existing position to', total.toFixed(2));
       }
       
-      // Minimum $5 order
+      // Minimum $5 order (Kraken minimum)
       if (total < 5 && cashAvailable >= 5) {
-        total = Math.min(5, maxPerOrder);
+        total = 5;
+        console.log('[Prospects]', symbol, '- Bumped to minimum $5');
       }
       
       // FINAL HARD CAP: Never exceed cash
