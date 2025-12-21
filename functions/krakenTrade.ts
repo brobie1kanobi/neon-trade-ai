@@ -267,12 +267,15 @@ function buildOrderParams(orderConfig) {
       throw new Error('Take-profit orders require a valid triggerPrice');
     }
     
-    const parsedTpPrice = parseFloat(tpPrice);
+    // CRITICAL: Round price to Kraken's required decimal precision
+    const roundedTpPrice = roundPriceForKraken(parseFloat(tpPrice), formattedSymbol);
+    console.log('[buildOrderParams] Take-profit price rounded:', tpPrice, '->', roundedTpPrice, 'for', formattedSymbol);
+    
     console.log('[buildOrderParams] Building take-profit order:', {
       side: side.toLowerCase(),
       qty: parsedQty,
       symbol: formattedSymbol,
-      triggerPrice: parsedTpPrice
+      triggerPrice: roundedTpPrice
     });
     
     // CRITICAL: Use 'static' price_type for absolute USD trigger price
@@ -285,7 +288,7 @@ function buildOrderParams(orderConfig) {
       order_userref: userref,
       triggers: {
         reference: 'last',       // Use last traded price as reference
-        price: parsedTpPrice,    // Absolute price in USD
+        price: roundedTpPrice,   // Absolute price in USD (rounded)
         price_type: 'static'     // Static price target (not percentage)
       }
     };
