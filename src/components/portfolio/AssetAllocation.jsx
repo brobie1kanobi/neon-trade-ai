@@ -256,8 +256,13 @@ export default function AssetAllocation({ allocations, isLoading }) {
                       <div>
                         <span style={{ color: "var(--text-secondary)" }} className="">Current Price: </span>
                         <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                          ${(asset.currentPrice || asset.average_cost_price || 0).toFixed(2)}
+                          ${((asset.currentPrice || asset.average_cost_price || 0) >= 1 
+                            ? (asset.currentPrice || asset.average_cost_price || 0).toFixed(2) 
+                            : (asset.currentPrice || asset.average_cost_price || 0).toFixed(6))}
                         </span>
+                        {!isSimMode && wsConnected && (
+                          <span className="ml-1 text-green-500">✅</span>
+                        )}
                       </div>
                       <div className={`flex items-center gap-1 font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {gainLoss >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
