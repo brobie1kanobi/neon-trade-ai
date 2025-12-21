@@ -16,6 +16,52 @@ function round2(n) {
   return Math.round((x + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Kraken price decimal requirements per asset
+ * Reference: https://support.kraken.com/hc/en-us/articles/4521313131540-Price-and-volume-decimal-precision
+ */
+const PRICE_DECIMALS = {
+  'BTC': 1,
+  'XBT': 1,
+  'ETH': 2,
+  'XRP': 5,  // XRP trades around $2, needs 5 decimals
+  'LTC': 2,
+  'SOL': 2,
+  'ADA': 5,  // ADA trades around $0.40
+  'DOT': 3,
+  'DOGE': 5, // DOGE trades around $0.10
+  'XDG': 5,
+  'LINK': 3,
+  'UNI': 3,
+  'MATIC': 4,
+  'POL': 4,
+  'ATOM': 3,
+  'AVAX': 2,
+  'BCH': 2,
+  'TRX': 5,
+  'SHIB': 8, // SHIB trades very low
+  'XLM': 5,  // XLM trades around $0.20
+  'ALGO': 4,
+  'FIL': 3,
+  'NEAR': 3,
+  'APT': 3,
+  'ARB': 4,
+  'OP': 3,
+  'INJ': 2,
+  'PEPE': 9, // PEPE trades very low
+  'SUI': 4
+};
+
+/**
+ * Round price to Kraken's required decimal precision for the asset
+ */
+function roundPriceForKraken(price, symbol) {
+  const baseSymbol = String(symbol || '').replace('/USD', '').toUpperCase();
+  const decimals = PRICE_DECIMALS[baseSymbol] ?? 4; // Default to 4 decimals if unknown
+  const factor = Math.pow(10, decimals);
+  return Math.round(price * factor) / factor;
+}
+
 async function getLatestWallet(base44, email) {
   const list = await base44.entities.Wallet.filter({ created_by: email }, "-updated_date");
   return list[0] || null;
