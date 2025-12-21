@@ -3,14 +3,45 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Globe, ToggleLeft, ToggleRight } from "lucide-react";
+import { DollarSign, Globe, ToggleLeft, ToggleRight, Clock } from "lucide-react";
 import { InvokeLLM } from "@/integrations/Core";
+
+// Common timezones with friendly names
+const TIMEZONES = [
+  { value: "Pacific/Honolulu", label: "Hawaii (HST)", offset: "-10:00" },
+  { value: "America/Anchorage", label: "Alaska (AKST)", offset: "-09:00" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PST)", offset: "-08:00" },
+  { value: "America/Denver", label: "Mountain Time (MST)", offset: "-07:00" },
+  { value: "America/Chicago", label: "Central Time (CST)", offset: "-06:00" },
+  { value: "America/New_York", label: "Eastern Time (EST)", offset: "-05:00" },
+  { value: "America/Halifax", label: "Atlantic Time (AST)", offset: "-04:00" },
+  { value: "America/Sao_Paulo", label: "São Paulo (BRT)", offset: "-03:00" },
+  { value: "Atlantic/South_Georgia", label: "South Georgia (GST)", offset: "-02:00" },
+  { value: "Atlantic/Azores", label: "Azores (AZOT)", offset: "-01:00" },
+  { value: "UTC", label: "UTC", offset: "+00:00" },
+  { value: "Europe/London", label: "London (GMT)", offset: "+00:00" },
+  { value: "Europe/Paris", label: "Central Europe (CET)", offset: "+01:00" },
+  { value: "Europe/Helsinki", label: "Eastern Europe (EET)", offset: "+02:00" },
+  { value: "Europe/Moscow", label: "Moscow (MSK)", offset: "+03:00" },
+  { value: "Asia/Dubai", label: "Dubai (GST)", offset: "+04:00" },
+  { value: "Asia/Karachi", label: "Pakistan (PKT)", offset: "+05:00" },
+  { value: "Asia/Kolkata", label: "India (IST)", offset: "+05:30" },
+  { value: "Asia/Dhaka", label: "Bangladesh (BST)", offset: "+06:00" },
+  { value: "Asia/Bangkok", label: "Thailand (ICT)", offset: "+07:00" },
+  { value: "Asia/Singapore", label: "Singapore (SGT)", offset: "+08:00" },
+  { value: "Asia/Shanghai", label: "China (CST)", offset: "+08:00" },
+  { value: "Asia/Tokyo", label: "Japan (JST)", offset: "+09:00" },
+  { value: "Australia/Sydney", label: "Sydney (AEDT)", offset: "+11:00" },
+  { value: "Pacific/Auckland", label: "New Zealand (NZDT)", offset: "+13:00" }
+];
 
 export default function CurrencySettings({ 
   preferredCurrency, 
-  defaultInputMode, 
+  defaultInputMode,
+  timezone,
   onCurrencyChange, 
-  onInputModeChange 
+  onInputModeChange,
+  onTimezoneChange
 }) {
   const [currencies, setCurrencies] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
