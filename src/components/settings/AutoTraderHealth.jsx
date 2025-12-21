@@ -30,9 +30,16 @@ export default function AutoTraderHealth() {
     hasAutoBuyPrefs: false,
     hasBalance: false
   });
+  
+  // State for order counts - synced with OrdersAndHistory
+  const [activeOrderCount, setActiveOrderCount] = useState(0);
+  const [trades24h, setTrades24h] = useState({ total: 0, buys: 0, sells: 0, volume: 0 });
 
   // USE THE SAME HOOK AS DASHBOARD/PORTFOLIO/WALLET - useKrakenData
   const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, true);
+  
+  // CRITICAL: Use same WebSocket as OrdersAndHistory for consistent order counts
+  const { orders: krakenOrders, isConnected: wsConnected } = useKrakenWebSocket();
 
   // Extract balance values from the SAME source as other pages
   const effectiveBalance = krakenData?.total_portfolio_value || 0;
