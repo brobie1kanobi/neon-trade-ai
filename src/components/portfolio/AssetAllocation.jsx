@@ -96,8 +96,23 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
   }, [allocations, previousPrices]);
 
-  // Use cached allocations when loading to prevent greying out
-  const displayAllocations = isLoading && cachedAllocations.length > 0 ? cachedAllocations : allocations;
+  // CRITICAL: Prioritize WebSocket allocations in LIVE mode
+  // Fall back to prop allocations, then cached allocations
+  const displayAllocations = React.useMemo(() => {
+    // LIVE MODE: Use WebSocket data if available
+    if (!isSimMode && wsAllocations && wsAllocations.length > 0) {
+      return wsAllocations;
+    }
+    // Use prop allocations if available
+    if (allocations && allocations.length > 0) {
+      return allocations;
+    }
+    // Fall back to cached when loading
+    if (isLoading && cachedAllocations.length > 0) {
+      return cachedAllocations;
+    }
+    return allocations || [];
+  }, [isSimMode, wsAllocations, allocations, isLoading, cachedAllocations]);
 
   const consolidatedHoldings = useMemo(() => {
     if (!Array.isArray(displayAllocations)) return [];
