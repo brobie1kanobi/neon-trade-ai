@@ -1,16 +1,49 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 export default function PortfolioSummary({ wallet, trades, currentPortfolioValue, isLoading, isSimMode = true, change24hr, lifetimeChange, onSyncClick, krakenData }) {
-  const currentCashBalance = isSimMode 
-    ? (wallet?.cash_balance || 0) 
-    : (krakenData?.usd_balance || wallet?.real_cash_balance || 0);
-  const totalValue = currentCashBalance + (currentPortfolioValue || 0);
+  // CRITICAL: Use global WebSocket connection for real-time Kraken data
+  const {
+    isConnected: wsConnected,
+    usdBalance: wsUsdBalance,
+    cryptoHoldingsValue: wsCryptoValue,
+    totalPortfolioValue: wsTotalValue
+  } = useKrakenWebSocket();
+
+  // CRITICAL: In LIVE mode, prioritize WebSocket > krakenData prop > wallet DB
+  const currentCashBalance = React.useMemo(() => {
+    if (isSimMode) {
+      return wallet?.cash_balance || 0;
+    }
+    // LIVE MODE: WebSocket first, then krakenData prop, then wallet DB
+    if (wsConnected && wsUsdBalance > 0) {
+      return wsUsdBalance;
+    }
+    if (krakenData?.usd_balance > 0) {
+      return krakenData.usd_balance;
+    }
+    return wallet?.real_cash_balance || 0;
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
+
+  // CRITICAL: Portfolio value = crypto holdings only (not including cash)
+  const effectivePortfolioValue = React.useMemo(() => {
+    if (isSimMode) {
+      return currentPortfolioValue || 0;
+    }
+    // LIVE MODE: WebSocket first, then prop
+    if (wsConnected && wsCryptoValue > 0) {
+      return wsCryptoValue;
+    }
+    return currentPortfolioValue || 0;
+  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue]);
+
+  const totalValue = currentCashBalance + effectivePortfolioValue;
   
   const displayChange = change24hr || { value: 0, percentage: 0 };
   const isPositive = displayChange.value >= 0;
