@@ -149,13 +149,23 @@ Deno.serve(async (req) => {
     checkTimeout();
 
     // CRITICAL: 4 second timeout for balance fetch
-    const balanceResponse = await Promise.race([
-      base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 4000))
+    // CRITICAL: Fetch BOTH balance AND extended balance (includes locked amounts)
+    const [balanceResponse, extendedBalanceResponse] = await Promise.all([
+      Promise.race([
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 4000))
+      ]),
+      Promise.race([
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }),
+        new Promise((resolve) => setTimeout(() => resolve({ data: { success: false } }), 4000))
+      ]).catch(() => ({ data: { success: false } }))
     ]);
 
     let balanceData = balanceResponse?.data || balanceResponse;
     if (balanceData?.data) balanceData = balanceData.data;
+    
+    let extendedData = extendedBalanceResponse?.data || extendedBalanceResponse;
+    if (extendedData?.data) extendedData = extendedData.data;
     
     // CRITICAL: If not connected, return early with success=false
     if (balanceData?.success === false || balanceData?.connected === false) {
@@ -182,9 +192,21 @@ Deno.serve(async (req) => {
       if (Object.keys(possibleBalance).length > 0) krakenBalance = possibleBalance;
     }
     
+    // CRITICAL: Use extended balance if available (includes locked amounts)
+    let extendedBalance = null;
+    if (extendedData?.success && extendedData?.balance) {
+      extendedBalance = extendedData.balance;
+      console.log('[getKrakenBalance] Using extended balance (includes locked)');
+    }
+    
     if (!krakenBalance) throw new Error('Invalid balance response');
 
-    const usdBalance = parseFloat(krakenBalance.ZUSD || krakenBalance.USD || 0);
+    // CRITICAL: Use extended balance totals if available (balance + hold_trade)
+    // This matches what Kraken shows as "Total value"
+    const usdBalance = parseFloat(
+      extendedBalance?.ZUSD?.total || extendedBalance?.USD?.total ||
+      krakenBalance.ZUSD || krakenBalance.USD || 0
+    );
     
     const cryptoHoldings = [];
     const symbols = [];
