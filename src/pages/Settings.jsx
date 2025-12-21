@@ -90,6 +90,8 @@ export default function Settings() {
         <TimeSettings
           value={settings?.time_format || "12h"}
           onChange={(v) => updateSetting('time_format', v)}
+          timezone={settings?.timezone || "America/New_York"}
+          onTimezoneChange={(v) => updateSetting('timezone', v)}
         />
       </motion.div>
 
