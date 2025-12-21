@@ -1102,7 +1102,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <ReasonIcon className={`w-5 h-5 ${reason.color}`} />
-            {order.symbol} - {isExecuted ? 'Executed' : 'Cancelled'}
+            {order.symbol} - {isFailed ? 'Failed' : isExecuted ? 'Executed' : 'Cancelled'}
           </DialogTitle>
         </DialogHeader>
         
