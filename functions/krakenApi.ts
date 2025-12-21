@@ -296,6 +296,56 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
+    // ACTION: Get extended balance (includes locked/hold amounts)
+    // CRITICAL: This returns the TOTAL balance including amounts locked in orders
+    if (action === 'getExtendedBalance') {
+      const result = await callKraken(
+        connection.api_key, 
+        connection.api_secret_encrypted, 
+        '/0/private/BalanceEx', 
+        {}
+      );
+
+      checkTimeout();
+
+      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+
+      // Parse extended balances - format: { asset: { balance, hold_trade, credit, credit_used } }
+      const rawBalances = result.result || {};
+      const balances = {};
+      
+      for (const [asset, balanceInfo] of Object.entries(rawBalances)) {
+        // Normalize Kraken asset codes
+        let normalizedAsset = asset;
+        if (asset.startsWith('X') && asset.length === 4) {
+          normalizedAsset = asset.substring(1);
+        }
+        if (asset.startsWith('Z') && asset.length === 4) {
+          normalizedAsset = asset.substring(1);
+        }
+        if (normalizedAsset === 'XBT') normalizedAsset = 'BTC';
+        
+        const available = parseFloat(balanceInfo?.balance) || 0;
+        const holdTrade = parseFloat(balanceInfo?.hold_trade) || 0;
+        const total = available + holdTrade;  // CRITICAL: Total = available + locked
+        
+        balances[normalizedAsset] = {
+          balance: available,
+          hold_trade: holdTrade,
+          total: total,  // This is what Kraken shows as "Total value"
+          credit: parseFloat(balanceInfo?.credit) || 0,
+          credit_used: parseFloat(balanceInfo?.credit_used) || 0
+        };
+      }
+
+      clearTimeout(globalTimeoutId);
+      return Response.json({ 
+        success: true, 
+        balance: balances,
+        raw_balance: rawBalances 
+      }, { status: 200 });
+    }
+
     if (action === 'getTradesHistory') {
       const result = await callKraken(
         connection.api_key, 
