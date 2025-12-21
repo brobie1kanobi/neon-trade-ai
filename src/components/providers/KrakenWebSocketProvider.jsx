@@ -59,14 +59,17 @@ export function KrakenWebSocketProvider({ children }) {
         let totalAssets = 0;
 
         if (balances && Object.keys(balances).length > 0) {
-          // USD balance
+          // USD balance - WebSocket only returns available, not locked
           usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
           
           // Calculate crypto holdings value
+          // NOTE: WebSocket balance.balance is AVAILABLE only (NOT including locked in orders)
+          // This will be LESS than REST API total when assets are in pending sell orders
           Object.entries(balances).forEach(([asset, balance]) => {
             if (asset === 'USD' || asset === 'ZUSD') return;
             
-            const quantity = balance.balance || 0;
+            // Use available balance from WebSocket
+            const quantity = balance.available || balance.balance || 0;
             if (quantity <= 0.00001) return;
             
             const pair = `${asset}/USD`;
