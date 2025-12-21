@@ -850,6 +850,10 @@ Deno.serve(async (req) => {
       let slResult = null;
 
       if (finalTpPrice) {
+        // CRITICAL: Round TP price to Kraken's required decimal precision
+        const roundedTpPrice = roundPriceForKraken(parseFloat(finalTpPrice), formattedSymbol);
+        console.log('[krakenTrade] TP price rounded:', finalTpPrice, '->', roundedTpPrice);
+        
         const tpParams = {
           order_type: 'take-profit',
           side: 'sell',
@@ -858,13 +862,13 @@ Deno.serve(async (req) => {
           time_in_force: 'gtc',
           triggers: {
             reference: 'last',
-            price: parseFloat(finalTpPrice),
+            price: roundedTpPrice,
             price_type: 'static'
           }
         };
 
         try {
-          console.log('[krakenTrade] 📤 Placing TP order at', finalTpPrice);
+          console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
           tpResult = await executeKrakenTrade(wsToken, tpParams);
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
@@ -877,6 +881,10 @@ Deno.serve(async (req) => {
       await new Promise(res => setTimeout(res, 2000));
 
       if (finalSlPrice) {
+        // CRITICAL: Round SL price to Kraken's required decimal precision
+        const roundedSlPrice = roundPriceForKraken(parseFloat(finalSlPrice), formattedSymbol);
+        console.log('[krakenTrade] SL price rounded:', finalSlPrice, '->', roundedSlPrice);
+        
         const slParams = {
           order_type: 'stop-loss',
           side: 'sell',
@@ -885,13 +893,13 @@ Deno.serve(async (req) => {
           time_in_force: 'gtc',
           triggers: {
             reference: 'last',
-            price: parseFloat(finalSlPrice),
+            price: roundedSlPrice,
             price_type: 'static'
           }
         };
 
         try {
-          console.log('[krakenTrade] 📤 Placing SL order at', finalSlPrice);
+          console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
           slResult = await executeKrakenTrade(wsToken, slParams);
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
