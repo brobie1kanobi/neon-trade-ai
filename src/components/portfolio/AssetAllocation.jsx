@@ -190,7 +190,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
                       <div>
                         <span style={{ color: "var(--text-secondary)" }} className="">Current Price: </span>
                         <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                          ${asset.average_cost_price?.toFixed(2) || "0.00"}
+                          ${(asset.currentPrice || asset.average_cost_price || 0).toFixed(2)}
                         </span>
                       </div>
                       <div className={`flex items-center gap-1 font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
