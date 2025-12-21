@@ -808,7 +808,7 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
 }
 
 // Closed order row
-function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
+function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick, onDismiss }) {
   const isExecuted = order.status === "executed";
   const isFailed = order.status === "failed" || !!order.error_message;
   // Normalize the symbol for display
@@ -843,45 +843,63 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, on
   const statusStyle = getStatusStyle();
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left flex items-center justify-between p-3 rounded-lg border hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all cursor-pointer ${isFailed ? 'opacity-90 border-red-200 dark:border-red-800' : 'opacity-75'}`}
+    <div
+      className={`relative w-full text-left flex items-center justify-between p-3 rounded-lg border hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all ${isFailed ? 'opacity-90 border-red-200 dark:border-red-800' : 'opacity-75'}`}
       style={{ backgroundColor: 'var(--secondary-bg)', borderColor: isFailed ? undefined : 'var(--border-color)' }}>
       
-      <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${statusStyle.bgClass}`}>
-          {statusStyle.icon}
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-              {displaySymbol}
-            </span>
-            <Badge className={`text-xs ${statusStyle.badgeClass}`}>
-              {statusStyle.label}
-            </Badge>
-            <Info className="w-3 h-3 opacity-50" />
-          </div>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {format(new Date(order.updated_date || order.created_date), dateFmt)}
-          </p>
-          {isFailed && order.error_message && (
-            <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
-              {order.error_message.slice(0, 50)}{order.error_message.length > 50 ? '...' : ''}
-            </p>
-          )}
-        </div>
-      </div>
+      {/* Dismiss button for failed orders */}
+      {isFailed && onDismiss && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss(order.id);
+          }}
+          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-md transition-colors z-10"
+          title="Dismiss failed order"
+        >
+          <X className="w-3 h-3 text-white" />
+        </button>
+      )}
       
-      <div className="text-right">
-        <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-          {formatDisplayQuantity(order.quantity)} units
-        </p>
-        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          Entry: {formatPrice(order.purchase_price)}
-        </p>
-      </div>
-    </button>);
+      <button
+        onClick={onClick}
+        className="flex-1 flex items-center justify-between cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${statusStyle.bgClass}`}>
+            {statusStyle.icon}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                {displaySymbol}
+              </span>
+              <Badge className={`text-xs ${statusStyle.badgeClass}`}>
+                {statusStyle.label}
+              </Badge>
+              <Info className="w-3 h-3 opacity-50" />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {format(new Date(order.updated_date || order.created_date), dateFmt)}
+            </p>
+            {isFailed && order.error_message && (
+              <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
+                {order.error_message.slice(0, 50)}{order.error_message.length > 50 ? '...' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        
+        <div className="text-right">
+          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+            {formatDisplayQuantity(order.quantity)} units
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            Entry: {formatPrice(order.purchase_price)}
+          </p>
+        </div>
+      </button>
+    </div>);
 
 }
 
