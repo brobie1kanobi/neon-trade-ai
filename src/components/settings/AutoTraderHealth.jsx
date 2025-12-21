@@ -220,13 +220,17 @@ export default function AutoTraderHealth() {
   useEffect(() => {
     if (user?.email) {
       fetchHealth();
+      fetchOrderCounts();
       
       // Refresh every 30 seconds
-      const interval = setInterval(fetchHealth, 30000);
+      const interval = setInterval(() => {
+        fetchHealth();
+        fetchOrderCounts();
+      }, 30000);
       
       return () => clearInterval(interval);
     }
-  }, [user?.email, settings?.auto_trading_enabled]);
+  }, [user?.email, settings?.auto_trading_enabled, fetchOrderCounts]);
 
   // Re-check prerequisites when Kraken connection changes
   useEffect(() => {
