@@ -57,34 +57,53 @@ export default function WalletPage() {
 
   const { priceData } = usePriceData(krakenSymbols);
 
-  // CRITICAL FIX: Use WebSocket data FIRST, then fallback to Kraken API
+  // CRITICAL FIX: Use REST API (krakenData) as PRIMARY source - most reliable
+  // WebSocket can return stale/zero data
   const krakenPortfolioValue = React.useMemo(() => {
     if (isSimMode) return 0;
 
-    // PRIORITY 1: Use WebSocket live data
-    if (wsConnected && wsCryptoValue > 0) {
-      console.log('[Wallet] ✅ Using WebSocket portfolio value:', wsCryptoValue.toFixed(2));
-      return wsCryptoValue;
-    }
-
-    // PRIORITY 2: Use Kraken's calculated total (REST API fallback)
-    if (krakenData?.total_crypto_value && krakenData.total_crypto_value > 0) {
+    // PRIORITY 1: Use Kraken REST API data (most reliable)
+    if (krakenData?.total_crypto_value >= 0 && krakenData?.total_crypto_value !== undefined) {
       console.log('[Wallet] ✅ Using Kraken API total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
       return krakenData.total_crypto_value;
     }
 
-    // PRIORITY 3: Sum up total_value_usd from individual holdings
+    // PRIORITY 2: Sum up total_value_usd from individual holdings
     if (krakenData?.holdings && krakenData.holdings.length > 0) {
       const sumOfHoldings = krakenData.holdings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
-      if (sumOfHoldings > 0) {
+      if (sumOfHoldings >= 0) {
         console.log('[Wallet] ✅ Using sum of holding values:', sumOfHoldings.toFixed(2));
         return sumOfHoldings;
       }
     }
 
+    // PRIORITY 3: Use WebSocket as fallback (can be unreliable)
+    if (wsConnected && wsCryptoValue > 0) {
+      console.log('[Wallet] ✅ Using WebSocket portfolio value (fallback):', wsCryptoValue.toFixed(2));
+      return wsCryptoValue;
+    }
+
     console.warn('[Wallet] ⚠️ No valid portfolio data');
     return 0;
   }, [isSimMode, wsConnected, wsCryptoValue, krakenData, priceData]);
+  
+  // CRITICAL: Cash balance from Kraken REST API
+  const krakenCashBalance = React.useMemo(() => {
+    if (isSimMode) return 0;
+    
+    // REST API first
+    if (krakenData?.usd_balance >= 0 && krakenData?.usd_balance !== undefined) {
+      console.log('[Wallet] ✅ Using Kraken API usd_balance:', krakenData.usd_balance.toFixed(2));
+      return krakenData.usd_balance;
+    }
+    
+    // WebSocket fallback
+    if (wsConnected && wsUsdBalance > 0) {
+      return wsUsdBalance;
+    }
+    
+    return 0;
+  }, [isSimMode, krakenData, wsConnected, wsUsdBalance]);
 
   const loadData = useCallback(async () => {
     if (typeof window !== "undefined") {
