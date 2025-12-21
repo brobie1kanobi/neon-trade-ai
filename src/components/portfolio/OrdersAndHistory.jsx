@@ -235,10 +235,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
       const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
+      const failed = modeFilteredOrders.filter((o) => o.status === "failed" || o.error_message);
 
       setConditionalOrders(activeOrders);
       setOpenOrders(activeOrders);
-      setClosedOrders([...executed, ...cancelled]);
+      // Include failed orders in closed list, sorted by date (most recent first)
+      setClosedOrders([...executed, ...cancelled, ...failed].sort((a, b) => 
+        new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
+      ));
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
