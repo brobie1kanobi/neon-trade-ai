@@ -210,6 +210,10 @@ function buildOrderParams(orderConfig) {
     if (!stopPrice || parseFloat(stopPrice) <= 0) {
       throw new Error('Stop-loss orders require a valid stopPrice');
     }
+    // CRITICAL: Round price to Kraken's required decimal precision
+    const roundedPrice = roundPriceForKraken(parseFloat(stopPrice), formattedSymbol);
+    console.log('[buildOrderParams] Stop-loss price rounded:', stopPrice, '->', roundedPrice, 'for', formattedSymbol);
+    
     const params = {
       order_type: 'stop-loss',
       side: side.toLowerCase(),
@@ -219,7 +223,7 @@ function buildOrderParams(orderConfig) {
       order_userref: userref,
       triggers: {
         reference: 'last',
-        price: parseFloat(stopPrice),
+        price: roundedPrice,
         price_type: 'static'
       }
     };
