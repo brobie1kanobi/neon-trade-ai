@@ -112,9 +112,17 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               </Badge>
             )}
             {!isSimMode && (
-              <Badge className="bg-green-100 text-green-800 text-xs">
-                Live Mode
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-green-100 text-green-800 text-xs">
+                  Live Mode
+                </Badge>
+                {wsConnected && (
+                  <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
+                    <Wifi className="w-3 h-3" />
+                    Live
+                  </Badge>
+                )}
+              </div>
             )}
           </div>
           
