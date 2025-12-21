@@ -78,18 +78,23 @@ export function useRealtimeKrakenData(options = {}) {
       }).length;
 
       // CRITICAL: cryptoHoldingsValue is ONLY crypto assets (NOT including USD)
+      // CRITICAL: Use balance.balance which is the TOTAL (including locked in orders)
+      // The WebSocket manager sets balance.balance = totalBalance from Kraken
       let cryptoHoldingsValue = 0;
 
-      Object.entries(wsBalances).forEach(([asset, balance]) => {
+      Object.entries(wsBalances).forEach(([asset, balanceObj]) => {
         if (asset === 'USD' || asset === 'ZUSD') {
           return; // Skip USD - it's cash wallet, not portfolio
         }
 
         const pairWithUSD = `${asset}/USD`;
         const price = wsPrices[pairWithUSD]?.price || 0;
+        
+        // Use the total balance (balance.balance includes locked amounts)
+        const quantity = balanceObj?.balance || 0;
 
-        if (price > 0) {
-          cryptoHoldingsValue += balance.balance * price;
+        if (price > 0 && quantity > 0.00001) {
+          cryptoHoldingsValue += quantity * price;
         }
       });
 
