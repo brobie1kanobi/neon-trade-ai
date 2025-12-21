@@ -810,44 +810,66 @@ function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPric
 // Closed order row
 function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
   const isExecuted = order.status === "executed";
+  const isFailed = order.status === "failed" || !!order.error_message;
   // Normalize the symbol for display
   const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
+  
+  // Determine icon and styling based on status
+  const getStatusStyle = () => {
+    if (isFailed) {
+      return {
+        bgClass: 'bg-red-100 dark:bg-red-900/30',
+        icon: <AlertCircle className="w-4 h-4 text-red-500" />,
+        badgeClass: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+        label: 'Failed'
+      };
+    }
+    if (isExecuted) {
+      return {
+        bgClass: 'bg-green-100 dark:bg-green-900/30',
+        icon: <CheckCircle2 className="w-4 h-4 text-green-500" />,
+        badgeClass: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+        label: 'Executed'
+      };
+    }
+    return {
+      bgClass: 'bg-gray-100 dark:bg-gray-800',
+      icon: <X className="w-4 h-4 text-gray-500" />,
+      badgeClass: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',
+      label: 'Cancelled'
+    };
+  };
+  
+  const statusStyle = getStatusStyle();
 
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-center justify-between p-3 rounded-lg border opacity-75 hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all cursor-pointer"
-      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: 'var(--border-color)' }}>
+      className={`w-full text-left flex items-center justify-between p-3 rounded-lg border hover:opacity-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all cursor-pointer ${isFailed ? 'opacity-90 border-red-200 dark:border-red-800' : 'opacity-75'}`}
+      style={{ backgroundColor: 'var(--secondary-bg)', borderColor: isFailed ? undefined : 'var(--border-color)' }}>
       
       <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-        isExecuted ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-800'}`
-        }>
-          {isExecuted ?
-          <CheckCircle2 className="w-4 h-4 text-green-500" /> :
-
-          <X className="w-4 h-4 text-gray-500" />
-          }
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${statusStyle.bgClass}`}>
+          {statusStyle.icon}
         </div>
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
               {displaySymbol}
             </span>
-            <Badge
-              className={`text-xs ${
-              isExecuted ?
-              'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
-              'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`
-              }>
-              
-              {isExecuted ? 'Executed' : 'Cancelled'}
+            <Badge className={`text-xs ${statusStyle.badgeClass}`}>
+              {statusStyle.label}
             </Badge>
             <Info className="w-3 h-3 opacity-50" />
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {format(new Date(order.updated_date || order.created_date), dateFmt)}
           </p>
+          {isFailed && order.error_message && (
+            <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
+              {order.error_message.slice(0, 50)}{order.error_message.length > 50 ? '...' : ''}
+            </p>
+          )}
         </div>
       </div>
       
