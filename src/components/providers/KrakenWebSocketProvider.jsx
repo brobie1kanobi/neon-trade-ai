@@ -105,16 +105,82 @@ export function KrakenWebSocketProvider({ children }) {
     return () => clearInterval(interval);
   }, [shouldConnect, wsManager]);
 
-  // Provide refresh function
+  // Provide refresh function - CRITICAL: Force immediate state update after refresh
   const refresh = async () => {
     if (!wsManager) return;
+    console.log('[KrakenWebSocketProvider] Manual refresh requested');
     try {
       await wsManager.refreshBalances?.();
       await wsManager.refreshOrders?.();
+      
+      // CRITICAL: Force immediate state update after refresh
+      const isConnected = wsManager.isConnected?.() || false;
+      const prices = await wsManager.getAllPrices?.() || {};
+      const balances = await wsManager.getBalances?.() || {};
+      const orders = await wsManager.getOpenOrders?.() || {};
+      const executions = await wsManager.getExecutions?.() || [];
+
+      // Recalculate portfolio metrics
+      let usdBalance = 0;
+      let cryptoHoldingsValue = 0;
+      let totalAssets = 0;
+
+      if (balances && Object.keys(balances).length > 0) {
+        usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
+        
+        Object.entries(balances).forEach(([asset, balance]) => {
+          if (asset === 'USD' || asset === 'ZUSD') return;
+          
+          const quantity = balance.balance || 0;
+          if (quantity <= 0.00001) return;
+          
+          const pair = `${asset}/USD`;
+          const priceInfo = prices[pair];
+          const price = priceInfo?.price || 0;
+          
+          cryptoHoldingsValue += quantity * price;
+          totalAssets++;
+        });
+      }
+
+      const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
+
+      setState({
+        isConnected,
+        prices,
+        balances,
+        orders,
+        executions,
+        usdBalance,
+        cryptoHoldingsValue,
+        totalPortfolioValue,
+        totalAssets
+      });
+      
+      console.log('[KrakenWebSocketProvider] Refresh complete - USD:', usdBalance.toFixed(2), 'Crypto:', cryptoHoldingsValue.toFixed(2));
     } catch (err) {
       console.error('[KrakenWebSocketProvider] Refresh error:', err);
     }
   };
+
+  // CRITICAL: Listen for trade completion events and auto-refresh
+  useEffect(() => {
+    const handleTradeCompleted = () => {
+      console.log('[KrakenWebSocketProvider] Trade completed event received');
+      // Small delay to allow Kraken to process the trade
+      setTimeout(() => {
+        refresh();
+      }, 1500);
+    };
+
+    window.addEventListener('trade:completed', handleTradeCompleted);
+    window.addEventListener('kraken:synced', handleTradeCompleted);
+    
+    return () => {
+      window.removeEventListener('trade:completed', handleTradeCompleted);
+      window.removeEventListener('kraken:synced', handleTradeCompleted);
+    };
+  }, [wsManager]);
 
   const value = {
     ...state,
