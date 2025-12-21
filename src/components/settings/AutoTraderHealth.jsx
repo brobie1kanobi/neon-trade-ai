@@ -577,7 +577,7 @@ export default function AutoTraderHealth() {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Active Orders</span>
           <Badge variant="outline">
-            {health.active_conditional_orders} orders
+            {activeOrderCount} orders
           </Badge>
         </div>
 
@@ -589,20 +589,20 @@ export default function AutoTraderHealth() {
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div>
               <p className="text-gray-500">Total</p>
-              <p className="font-semibold">{health.trades_24h.total}</p>
+              <p className="font-semibold">{trades24h.total}</p>
             </div>
             <div>
               <p className="text-gray-500">Buys</p>
-              <p className="font-semibold text-green-600">{health.trades_24h.buys}</p>
+              <p className="font-semibold text-green-600">{trades24h.buys}</p>
             </div>
             <div>
               <p className="text-gray-500">Sells</p>
-              <p className="font-semibold text-red-600">{health.trades_24h.sells}</p>
+              <p className="font-semibold text-red-600">{trades24h.sells}</p>
             </div>
           </div>
           <div>
             <p className="text-gray-500">Volume</p>
-            <p className="font-semibold">${health.trades_24h.volume.toFixed(2)}</p>
+            <p className="font-semibold">${trades24h.volume.toFixed(2)}</p>
           </div>
         </div>
 
