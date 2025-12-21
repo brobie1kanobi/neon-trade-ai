@@ -44,15 +44,14 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       return wallet?.cash_balance || 0;
     }
 
-    // CRITICAL: Use portfolioMarketValue prop first (contains REST API data from parent)
-    // This is populated from krakenCashBalance in Wallet page which uses REST API as primary
+    // CRITICAL: Use cashBalance prop from parent (REST API data) as PRIMARY source
+    // Parent (Wallet page) uses krakenCashBalance which prioritizes REST API
+    const propCash = cashBalance || 0;
     const dbCash = wallet?.real_cash_balance || 0;
     const wsValue = wsUsdBalance || 0;
 
-    // If parent passed a portfolioMarketValue but it's meant for portfolio not cash,
-    // we need to use WebSocket or DB for cash
-    // WebSocket as secondary source
-    const value = (wsConnected && wsValue > 0) ? wsValue : dbCash;
+    // Priority: Prop (REST API) > WebSocket > DB
+    const value = propCash > 0 ? propCash : ((wsConnected && wsValue > 0) ? wsValue : dbCash);
     
     // Cache valid values
     if (value > 0) {
@@ -61,7 +60,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     
     // Return cached value if current is 0 but we had data before
     return value > 0 ? value : (lastKnownRef.current.cash ?? value);
-  }, [isSimMode, wallet, wsUsdBalance, wsConnected]);
+  }, [isSimMode, wallet, wsUsdBalance, wsConnected, cashBalance]);
 
   const displayPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
