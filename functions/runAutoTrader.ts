@@ -224,8 +224,13 @@ Deno.serve(async (req) => {
         // LIVE MODE: Use Kraken API with ADVANCED orders (Trailing Stop + Take Profit)
         try {
           // Calculate TP price (static) and trailing stop percentage
-          const takeProfitPrice = round2(price * (1 + gainMargin / 100));
-          const staticStopLossPrice = round2(price * (1 - lossMargin / 100));
+          // CRITICAL: Round prices to Kraken's required decimal precision per asset
+          const rawTpPrice = price * (1 + gainMargin / 100);
+          const rawSlPrice = price * (1 - lossMargin / 100);
+          const takeProfitPrice = roundPriceForKraken(rawTpPrice, sym);
+          const staticStopLossPrice = roundPriceForKraken(rawSlPrice, sym);
+          
+          console.log(`[runAutoTrader] Price precision for ${sym}: TP ${rawTpPrice} -> ${takeProfitPrice}, SL ${rawSlPrice} -> ${staticStopLossPrice}`);
           
           console.log(`[runAutoTrader] 🚀 Executing LIVE buy: ${sym} qty=${qty} @ $${price}`);
           console.log(`[runAutoTrader] 📊 TP: $${takeProfitPrice} (+${gainMargin}%)`);
