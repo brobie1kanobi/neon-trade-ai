@@ -334,25 +334,27 @@ function handlePrivateMessage(message) {
   if (channel === 'balances') {
     if (type === 'snapshot' && Array.isArray(data)) {
       // CRITICAL: Parse balance snapshot per Kraken v2 format
+      // IMPORTANT: Use totalBalance (includes locked in orders) NOT spotWallet.balance (available only)
       data.forEach(balance => {
         const { asset, balance: totalBalance, wallets } = balance;
         
-        // Get spot wallet balance (main trading wallet)
-        let spotBalance = totalBalance;
-        let availableBalance = totalBalance;
+        // CRITICAL: totalBalance = available + locked (what Kraken shows as "Total value")
+        // spotWallet.balance = available only (doesn't include locked in orders)
+        let fullBalance = parseFloat(totalBalance) || 0;
+        let availableBalance = fullBalance;
         
+        // If wallets array exists, get available from spot wallet
         if (Array.isArray(wallets)) {
           const spotWallet = wallets.find(w => w.type === 'spot' && w.id === 'main');
           if (spotWallet) {
-            spotBalance = spotWallet.balance || 0;
-            availableBalance = spotWallet.balance || 0;
+            availableBalance = parseFloat(spotWallet.balance) || 0;
           }
         }
         
         GLOBAL_WS_STATE.balances.set(asset, {
           asset,
-          balance: parseFloat(spotBalance) || 0,
-          available: parseFloat(availableBalance) || 0,
+          balance: fullBalance,  // TOTAL including locked in orders
+          available: availableBalance,  // Available for trading
           timestamp: Date.now()
         });
       });
