@@ -1694,32 +1694,31 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use WebSocket balances in LIVE mode with REST API fallback
-  // Priority: WebSocket (if connected AND value > 0) > REST API > Wallet DB > Cache
-  // MUST MATCH PortfolioSummary logic exactly for consistency!
+  // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
+  // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
+  // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
   
   // Cash Wallet = USD balance from Kraken
   const rawCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (
-        // WebSocket first - only if connected AND has a positive balance
+        // REST API first (most reliable source)
+        (krakenApiBalances.loaded && krakenApiBalances.usdBalance >= 0) ? krakenApiBalances.usdBalance :
+        // WebSocket fallback - only if has positive balance
         (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
-        // REST API fallback
-        (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) ? krakenApiBalances.usdBalance :
         // Wallet DB last resort
         (wallet?.real_cash_balance || 0)
       );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
-  // CRITICAL: Match PortfolioSummary's effectivePortfolioValue calculation exactly
-  // PortfolioSummary uses: wsConnected && wsCryptoValue > 0 ? wsCryptoValue : currentPortfolioValue
+  // CRITICAL: REST API is authoritative for balance data
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        // WebSocket first - only if connected AND has a positive value
+        // REST API first (most reliable source)
+        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue >= 0) ? krakenApiBalances.cryptoValue :
+        // WebSocket fallback - only if has positive value
         (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
-        // REST API fallback
-        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
         // Calculated from holdings last resort
         portfolioMarketValue
       );
