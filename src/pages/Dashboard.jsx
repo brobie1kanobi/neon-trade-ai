@@ -1076,14 +1076,18 @@ export default function Dashboard() {
     loaded: false
   });
   
-  // Fetch Kraken balance from REST API (fallback when WebSocket not connected)
+  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
+  // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
   React.useEffect(() => {
     if (isSimMode) return;
     
     const fetchKrakenBalance = async () => {
       try {
+        console.log('[Dashboard] Fetching Kraken balance from REST API...');
         const response = await base44.functions.invoke('getKrakenBalance', {});
         const data = response?.data || response;
+        
+        console.log('[Dashboard] Kraken REST response:', JSON.stringify(data));
         
         if (data?.success && data?.connected) {
           const newBalances = {
@@ -1095,16 +1099,18 @@ export default function Dashboard() {
             unrealizedPnL: data.total_unrealized_pnl_usd || 0,
             loaded: true
           };
+          
+          console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
           setKrakenApiBalances(newBalances);
           
-          // Also cache these values
-          if (newBalances.usdBalance > 0 || newBalances.cryptoValue > 0) {
-            lastKnownBalancesRef.current = {
-              cash: newBalances.usdBalance,
-              portfolio: newBalances.cryptoValue,
-              total: newBalances.totalValue
-            };
-          }
+          // Always update cache with fresh data (even if 0 - that's valid)
+          lastKnownBalancesRef.current = {
+            cash: newBalances.usdBalance,
+            portfolio: newBalances.cryptoValue,
+            total: newBalances.totalValue
+          };
+        } else {
+          console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
         }
       } catch (err) {
         console.error('[Dashboard] Kraken balance fetch failed:', err);
@@ -1114,8 +1120,8 @@ export default function Dashboard() {
     // Fetch immediately
     fetchKrakenBalance();
     
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchKrakenBalance, 30000);
+    // Refresh every 15 seconds for more accurate data
+    const interval = setInterval(fetchKrakenBalance, 15000);
     return () => clearInterval(interval);
   }, [isSimMode]);
 
