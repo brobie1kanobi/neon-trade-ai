@@ -232,12 +232,21 @@ export default function AutoTraderHealth() {
     }
   }, [user?.email, settings?.auto_trading_enabled, fetchOrderCounts]);
 
-  // Re-check prerequisites when Kraken connection changes
+  // Re-check prerequisites and order counts when Kraken connection changes
   useEffect(() => {
     if (user?.email) {
       checkPrerequisites();
+      fetchOrderCounts();
     }
-  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance]);
+  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites, fetchOrderCounts]);
+  
+  // CRITICAL: Refresh order counts when WebSocket orders update
+  useEffect(() => {
+    if (!isSimMode && wsConnected && krakenOrders) {
+      console.log('[AutoTraderHealth] WebSocket orders updated, refreshing counts...');
+      fetchOrderCounts();
+    }
+  }, [krakenOrders, wsConnected, isSimMode, fetchOrderCounts]);
 
   // Auto-update health when krakenData changes
   useEffect(() => {
