@@ -217,25 +217,28 @@ Deno.serve(async (req) => {
     
     if (!krakenBalance) throw new Error('Invalid balance response');
 
-    // CRITICAL: Use extended balance totals if available (balance + hold_trade)
-    // This matches what Kraken shows as "Total value"
+    // CRITICAL FIX: Use AVAILABLE balance only (NOT total which includes locked)
+    // Locked amounts are already in pending sell orders - counting them here double-counts
+    // Kraken UI shows "balance" field as the portfolio value, NOT "total"
     const usdBalance = parseFloat(
-      extendedBalance?.ZUSD?.total || extendedBalance?.USD?.total ||
+      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
       krakenBalance.ZUSD || krakenBalance.USD || 0
     );
     
     const cryptoHoldings = [];
     const symbols = [];
     
-    // CRITICAL: Iterate over extended balance if available (includes locked amounts)
+    // CRITICAL: Use extended balance for more accurate data, but use "balance" field (available)
+    // NOT "total" which includes locked amounts in pending orders
     const balanceSource = extendedBalance || krakenBalance;
     
     for (const [asset, balanceInfo] of Object.entries(balanceSource)) {
       // Handle both simple balance (number/string) and extended balance (object with total/balance/hold_trade)
       let qty;
       if (typeof balanceInfo === 'object' && balanceInfo !== null) {
-        // Extended balance format: use "total" which includes locked amounts
-        qty = parseFloat(balanceInfo.total || balanceInfo.balance || 0);
+        // Extended balance format: use "balance" (available) NOT "total" (includes locked)
+        // CRITICAL: "total" = balance + hold_trade, but hold_trade is already in pending sell orders
+        qty = parseFloat(balanceInfo.balance || 0);
       } else {
         // Simple balance format
         qty = parseFloat(balanceInfo);
