@@ -166,12 +166,19 @@ export default function AssetAllocation({ allocations, isLoading }) {
           <CardTitle className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <PieChart className="w-5 h-5" />
             Asset Allocation
-            <Badge variant="outline" className="ml-auto text-xs">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                Live Prices
-              </div>
-            </Badge>
+            {!isSimMode && wsConnected ? (
+              <Badge variant="outline" className="ml-auto text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
+                <Wifi className="w-3 h-3" />
+                WebSocket Live
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="ml-auto text-xs">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  {isSimMode ? 'Demo' : 'Live'} Prices
+                </div>
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
