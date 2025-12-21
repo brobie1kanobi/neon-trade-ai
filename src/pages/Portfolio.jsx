@@ -595,13 +595,29 @@ export default function Portfolio() {
     }
   };
 
+  // CRITICAL: Use REST API (krakenData) as PRIMARY source - it's most reliable
+  // WebSocket can return stale/zero data
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (krakenData?.usd_balance || wallet?.real_cash_balance || 0));
+    : (
+        // REST API first (krakenData from useKrakenData hook)
+        (krakenData?.usd_balance >= 0 && krakenData?.usd_balance !== undefined) ? krakenData.usd_balance :
+        // WebSocket fallback
+        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
+        // Wallet DB last resort
+        (wallet?.real_cash_balance || 0)
+      );
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
-    : (wsConnected && wsCryptoValue > 0 ? wsCryptoValue : (krakenData?.total_crypto_value || detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)));
+    : (
+        // REST API first (krakenData from useKrakenData hook)
+        (krakenData?.total_crypto_value >= 0 && krakenData?.total_crypto_value !== undefined) ? krakenData.total_crypto_value :
+        // WebSocket fallback
+        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
+        // Calculated from holdings last resort
+        detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
+      );
 
   if (isLoading && !wallet && !user) {
     return (
