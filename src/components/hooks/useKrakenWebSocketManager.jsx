@@ -333,28 +333,23 @@ function handlePrivateMessage(message) {
   // Handle balances
   if (channel === 'balances') {
     if (type === 'snapshot' && Array.isArray(data)) {
-      // CRITICAL: Parse balance snapshot per Kraken v2 format
-      // IMPORTANT: Use totalBalance (includes locked in orders) NOT spotWallet.balance (available only)
-      data.forEach(balance => {
-        const { asset, balance: totalBalance, wallets } = balance;
+      // CRITICAL: Parse balance snapshot per Kraken v2 WebSocket format
+      // The WebSocket returns balance objects with asset, balance (available), and wallets
+      // NOTE: WebSocket "balance" field is AVAILABLE only, NOT total
+      // For total balance including locked, we must use REST API (BalanceEx)
+      data.forEach(balanceItem => {
+        const { asset, balance: availableBalance, wallets } = balanceItem;
         
-        // CRITICAL: totalBalance = available + locked (what Kraken shows as "Total value")
-        // spotWallet.balance = available only (doesn't include locked in orders)
-        let fullBalance = parseFloat(totalBalance) || 0;
-        let availableBalance = fullBalance;
+        // WebSocket balance = available only (NOT including locked in orders)
+        // This is DIFFERENT from REST API BalanceEx which has "total" field
+        let available = parseFloat(availableBalance) || 0;
         
-        // If wallets array exists, get available from spot wallet
-        if (Array.isArray(wallets)) {
-          const spotWallet = wallets.find(w => w.type === 'spot' && w.id === 'main');
-          if (spotWallet) {
-            availableBalance = parseFloat(spotWallet.balance) || 0;
-          }
-        }
-        
+        // For WebSocket, we only get available balance
+        // DO NOT use this as total - it will undercount assets in pending orders
         GLOBAL_WS_STATE.balances.set(asset, {
           asset,
-          balance: fullBalance,  // TOTAL including locked in orders
-          available: availableBalance,  // Available for trading
+          balance: available,  // WebSocket only gives available
+          available: available,
           timestamp: Date.now()
         });
       });
