@@ -174,8 +174,10 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
         if (cashAvailable < 0) {
           cashAvailable = 0;
         }
-        // CRITICAL: Low balance no longer blocks sell orders - only affects buying
-        const isLowBalance = cashAvailable < 1;
+        // CRITICAL: $10 minimum threshold - stop ALL buy orders below this to prevent failed orders
+        // Sell orders will continue to execute and build cash back up
+        const MIN_CASH_FOR_BUYING = 10;
+        const isLowBalance = cashAvailable < MIN_CASH_FOR_BUYING;
         // CRITICAL: Always fetch active orders to check for holdings without orders
         let activeOrders = await ConditionalOrder.filter({ created_by: user.email, status: "active", is_simulation: isSimMode });
         nextOrdersCheckAtRef.current = nowTs + 5 * 60 * 1000;
@@ -713,18 +715,24 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           return;
         }
 
-        // Notify user if in low balance mode (but don't stop completely)
+        // Notify user if in low balance mode (buying paused until cash builds back up)
         if (isLowBalance && !lowBalanceNotifiedRef.current) {
+          console.log('[AutoTrader] 💰 Low balance mode activated - buy orders paused until cash >= $10');
           if (settings?.notifications_enabled === true) {
-            base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "Auto-Trader: Limited Buy Mode", body: `Cash balance is low ($${cashAvailable.toFixed(2)}). Auto-buying limited until balance increases.`, data: { type: "low_balance" } } }).catch(() => {});
+            base44.functions.invoke("pushNotifications", { action: "sendNotification", payload: { title: "Auto-Trader: Buying Paused", body: `Cash balance is $${cashAvailable.toFixed(2)} (below $10 minimum). Buy orders paused until sell orders build cash back up.`, data: { type: "low_balance" } } }).catch(() => {});
           }
           lowBalanceNotifiedRef.current = true;
         }
-        if (cashAvailable >= 1 && lowBalanceNotifiedRef.current) lowBalanceNotifiedRef.current = false;
+        if (cashAvailable >= MIN_CASH_FOR_BUYING && lowBalanceNotifiedRef.current) {
+          console.log('[AutoTrader] 💰 Cash restored above $10 - resuming buy orders');
+          lowBalanceNotifiedRef.current = false;
+        }
 
-        // CRITICAL: Skip buy operations if cash is too low, but don't skip entirely
-        if (cashAvailable < 1) {
-          console.log('[AutoTrader] Skipping buy operations - cash too low:', cashAvailable.toFixed(2));
+        // CRITICAL: Skip buy operations if cash is below $10 minimum threshold
+        // This prevents failed orders when cash is too low - wait for sells to bring cash back up
+        if (cashAvailable < MIN_CASH_FOR_BUYING) {
+          console.log('[AutoTrader] Skipping ALL buy operations - cash below $10 minimum:', cashAvailable.toFixed(2));
+          console.log('[AutoTrader] Waiting for sell orders to execute and build cash back up...');
           return;
         }
 
