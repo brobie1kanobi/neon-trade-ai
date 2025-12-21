@@ -233,29 +233,49 @@ Deno.serve(async (req) => {
       symbols.push(symbol);
     }
 
-    // CRITICAL: Fetch prices - 2s timeout, skip if already timing out
+    // CRITICAL: Fetch prices - 3s timeout, skip if already timing out
     let prices = {};
     if (symbols.length > 0 && !isTimedOut) {
       try {
         const pairs = symbols.map(sym => buildKrakenPair(sym)).join(',');
+        console.log('[getKrakenBalance] Fetching prices for pairs:', pairs);
+        
         const priceResponse = await Promise.race([
           fetch(`${KRAKEN_PUBLIC_API}?pair=${pairs}`, {
             method: 'GET',
             headers: { 'User-Agent': 'NeonTrade-AI/1.0' }
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
         ]);
 
         if (priceResponse.ok) {
           const priceData = await priceResponse.json();
+          console.log('[getKrakenBalance] Price response keys:', Object.keys(priceData?.result || {}));
           
           if (priceData?.result) {
             for (const [pair, ticker] of Object.entries(priceData.result)) {
-              const symbol = parseKrakenAsset(pair.replace(/ZUSD$|USD$/g, ''));
+              // Parse symbol from pair - handle various formats like XXBTZUSD, SOLUSD, PEPEUSD
+              let symbol = pair;
+              // Remove USD suffix variations
+              symbol = symbol.replace(/ZUSD$/, '').replace(/USD$/, '');
+              // Handle Kraken's X prefix for some assets
+              if (symbol.startsWith('X') && symbol.length === 4) {
+                symbol = symbol.substring(1);
+              }
+              // Convert XBT to BTC
+              if (symbol === 'XBT') symbol = 'BTC';
+              // Handle XDGE -> DOGE
+              if (symbol === 'XDG') symbol = 'DOGE';
+              
               const price = parseFloat(ticker.c?.[0]) || 0;
-              if (price > 0) prices[symbol] = price;
+              if (price > 0) {
+                prices[symbol] = price;
+                console.log('[getKrakenBalance] Price found:', symbol, '=', price);
+              }
             }
           }
+        } else {
+          console.warn('[getKrakenBalance] Price fetch failed:', priceResponse.status);
         }
       } catch (e) {
         console.warn('[getKrakenBalance] Prices failed (non-critical):', e.message);
