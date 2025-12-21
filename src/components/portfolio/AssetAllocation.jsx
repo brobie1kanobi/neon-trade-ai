@@ -31,8 +31,27 @@ export default function AssetAllocation({ allocations, isLoading }) {
     isConnected: wsConnected,
     balances: wsBalances,
     prices: wsPrices,
-    cryptoHoldingsValue: wsCryptoValue
+    cryptoHoldingsValue: wsCryptoValue,
+    refresh: refreshWebSocket
   } = useKrakenWebSocket();
+
+  // CRITICAL: Refresh WebSocket data when trades complete
+  React.useEffect(() => {
+    const handleTradeCompleted = () => {
+      console.log('[AssetAllocation] Trade completed, refreshing WebSocket data');
+      if (!isSimMode && refreshWebSocket) {
+        refreshWebSocket();
+      }
+    };
+
+    window.addEventListener('trade:completed', handleTradeCompleted);
+    window.addEventListener('kraken:synced', handleTradeCompleted);
+    
+    return () => {
+      window.removeEventListener('trade:completed', handleTradeCompleted);
+      window.removeEventListener('kraken:synced', handleTradeCompleted);
+    };
+  }, [isSimMode, refreshWebSocket]);
 
   // CRITICAL: In LIVE mode with WebSocket, build allocations from real-time data
   const wsAllocations = React.useMemo(() => {
