@@ -1113,7 +1113,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDi
             isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 
             'bg-slate-600 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
           }`}>
-            <h4 className="text-slate-50 mb-2 font-medium">{reason.title}</h4>
+            <h4 className={`mb-2 font-medium ${isFailed ? 'text-red-700 dark:text-red-300' : 'text-slate-50'}`}>{reason.title}</h4>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {reason.description}
             </p>
