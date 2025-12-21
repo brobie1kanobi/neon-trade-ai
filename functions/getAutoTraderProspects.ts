@@ -173,9 +173,16 @@ Deno.serve(async (req) => {
       
       if (analysisData?.success && Array.isArray(analysisData?.recommendations)) {
         analysisMap = analysisData.recommendations.reduce((acc, r) => {
-          const confidence = (r.confidence_score || 60) / 100;
+          // FIXED: confidence_score from AI is already 0-100, NOT 0-1
+          // So we store it as-is for integer comparison (e.g., 70 means 70%)
+          const rawConfidence = r.confidence_score || 60;
+          // If AI returns decimal (0.7), convert to percentage (70)
+          const confidence = rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
+          
+          console.log(`[Prospects] AI for ${r.symbol}: raw=${rawConfidence}, normalized=${confidence}%`);
+          
           acc[(r.symbol || "").toUpperCase()] = { 
-            confidence: Math.max(0, Math.min(1, confidence)),
+            confidence: Math.max(0, Math.min(100, confidence)), // Store as 0-100 integer
             action: (r.optimal_action || r.action || "buy").toLowerCase(),
             predictedGain: r.predicted_gain_percent || 10,
             reasoning: r.reasoning || 'Analyzing market conditions...',
