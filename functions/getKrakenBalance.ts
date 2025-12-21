@@ -75,9 +75,10 @@ function buildKrakenPair(symbol) {
   const pairMap = {
     'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'XRP': 'XXRPZUSD',
     'LTC': 'XLTCZUSD', 'SOL': 'SOLUSD', 'ADA': 'ADAUSD',
-    'DOT': 'DOTUSD', 'DOGE': 'DOGEUSD', 'LINK': 'LINKUSD',
+    'DOT': 'DOTUSD', 'DOGE': 'XDGUSD', 'LINK': 'LINKUSD',
     'UNI': 'UNIUSD', 'MATIC': 'MATICUSD', 'ATOM': 'ATOMUSD',
-    'AVAX': 'AVAXUSD', 'BCH': 'BCHUSD', 'TRX': 'TRXUSD'
+    'AVAX': 'AVAXUSD', 'BCH': 'BCHUSD', 'TRX': 'TRXUSD',
+    'PEPE': 'PEPEUSD', 'LM': 'LMUSD', 'BABY': 'BABYUSD'
   };
   
   return pairMap[symbol] || `${symbol}USD`;
