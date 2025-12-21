@@ -23,6 +23,48 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const [cachedAllocations, setCachedAllocations] = useState([]);
   const previousPrices = usePrevious(allocations);
 
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
+
+  // CRITICAL: Use global WebSocket connection for real-time Kraken data
+  const {
+    isConnected: wsConnected,
+    balances: wsBalances,
+    prices: wsPrices,
+    cryptoHoldingsValue: wsCryptoValue
+  } = useKrakenWebSocket();
+
+  // CRITICAL: In LIVE mode with WebSocket, build allocations from real-time data
+  const wsAllocations = React.useMemo(() => {
+    if (isSimMode || !wsConnected || !wsBalances) return null;
+    
+    const wsAssets = Object.entries(wsBalances)
+      .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+      .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
+      .map(([asset, balance]) => {
+        const pair = `${asset}/USD`;
+        const priceInfo = wsPrices?.[pair];
+        const qty = balance.balance || 0;
+        const price = priceInfo?.price || 0;
+        const value = qty * price;
+        
+        return {
+          symbol: asset,
+          quantity: qty,
+          currentPrice: price,
+          currentValue: value,
+          costBasis: value, // Use current value as cost basis if not available
+          average_cost_price: price,
+          asset_type: 'crypto',
+          is_simulation: false
+        };
+      })
+      .filter(a => a.currentValue > 0.01)
+      .sort((a, b) => b.currentValue - a.currentValue);
+    
+    return wsAssets.length > 0 ? wsAssets : null;
+  }, [isSimMode, wsConnected, wsBalances, wsPrices]);
+
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
     if (Array.isArray(allocations) && allocations.length > 0) {
