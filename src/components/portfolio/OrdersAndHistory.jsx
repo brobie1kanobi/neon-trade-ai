@@ -523,14 +523,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
               }
             </TabsContent>
 
-            {/* CLOSED ORDERS TAB */}
+            {/* CLOSED/FAILED ORDERS TAB */}
             <TabsContent value="closed" className="mt-0">
               {isLoading ?
               <LoadingState /> :
               closedOrders.length === 0 ?
               <EmptyState
                 icon={CheckCircle2}
-                message="No closed orders yet. Executed and cancelled orders appear here." /> :
+                message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." /> :
 
 
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
