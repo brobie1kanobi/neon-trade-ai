@@ -236,11 +236,17 @@ Deno.serve(async (req) => {
             });
             
             const tpData = tpResponse?.data || tpResponse;
+            console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
+            
             if (tpData?.success) {
               tpOrderId = tpData.order_id;
               console.log(`[runAutoTrader] ✅ Take Profit order placed: ${tpOrderId}`);
+            } else if (tpData?.order_id) {
+              // Sometimes success is not explicitly set but order_id exists
+              tpOrderId = tpData.order_id;
+              console.log(`[runAutoTrader] ✅ Take Profit order placed (implicit): ${tpOrderId}`);
             } else {
-              console.warn(`[runAutoTrader] ⚠️ Take Profit failed: ${tpData?.error}`);
+              console.warn(`[runAutoTrader] ⚠️ Take Profit failed: ${tpData?.error || 'Unknown error'}`);
             }
           } catch (tpError) {
             console.error('[runAutoTrader] Take Profit order failed:', tpError.message);
