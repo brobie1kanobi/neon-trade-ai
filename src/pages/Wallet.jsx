@@ -372,8 +372,9 @@ export default function WalletPage() {
     }
   };
 
-  // CRITICAL: Use Kraken portfolio value in LIVE mode
+  // CRITICAL: Use Kraken values in LIVE mode
   const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
+  const displayCashBalance = isSimMode ? (wallet?.cash_balance || 0) : krakenCashBalance;
 
   if (isLoading) {
     return (
