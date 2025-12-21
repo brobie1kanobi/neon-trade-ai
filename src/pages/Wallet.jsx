@@ -409,9 +409,14 @@ export default function WalletPage() {
           wallet={wallet} 
           isSimMode={isSimMode} 
           portfolioMarketValue={displayPortfolioValue}
+          cashBalance={displayCashBalance}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
-            setTimeout(() => loadData(), 500);
+            invalidateKrakenCache();
+            setTimeout(() => {
+              refreshKraken();
+              loadData();
+            }, 500);
           }}
         />
       </motion.div>
