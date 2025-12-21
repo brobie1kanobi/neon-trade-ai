@@ -308,13 +308,17 @@ Deno.serve(async (req) => {
       // Use user's gain_margin preference for target gain, AI can suggest but user settings take priority
       const userTargetGain = settings.gain_margin;
       
+      // FIXED: confidence is already 0-100, no need to multiply
+      const confidenceScore = Math.round(rec.confidence);
+      console.log(`[Prospects] ${symbol} final confidence_score: ${confidenceScore}%`);
+      
       prospects.push({
         symbol,
         asset_type: pref.asset_type,
         current_price: price,
         quantity: cappedQuantity,
         total_value: total,
-        confidence_score: Math.round(rec.confidence * 100),
+        confidence_score: confidenceScore,
         ai_reasoning: rec.reasoning,
         predicted_gain: userTargetGain, // Use user's preference
         is_blocked: !!blockReason,
