@@ -1695,15 +1695,15 @@ export default function Dashboard() {
   }, [compute24hChange]);
 
   // CRITICAL: Use WebSocket balances in LIVE mode with REST API fallback
-  // Priority: WebSocket > REST API > Wallet DB > Cache
+  // Priority: WebSocket (if connected AND value > 0) > REST API > Wallet DB > Cache
   // MUST MATCH PortfolioSummary logic exactly for consistency!
   
   // Cash Wallet = USD balance from Kraken
   const rawCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (
-        // WebSocket first (even if 0, if connected it's authoritative)
-        wsConnected ? wsUsdBalance :
+        // WebSocket first - only if connected AND has a positive balance
+        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
         // REST API fallback
         (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) ? krakenApiBalances.usdBalance :
         // Wallet DB last resort
@@ -1712,11 +1712,12 @@ export default function Dashboard() {
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
   // CRITICAL: Match PortfolioSummary's effectivePortfolioValue calculation exactly
+  // PortfolioSummary uses: wsConnected && wsCryptoValue > 0 ? wsCryptoValue : currentPortfolioValue
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        // WebSocket first - if connected, use its value even if 0
-        wsConnected ? wsCryptoValue :
+        // WebSocket first - only if connected AND has a positive value
+        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
         // REST API fallback
         (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
         // Calculated from holdings last resort
