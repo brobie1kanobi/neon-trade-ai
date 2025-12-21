@@ -203,7 +203,7 @@ Deno.serve(async (req) => {
         console.log('[Prospects] No AI recommendations, using defaults');
         [...cryptoSymbols, ...stockSymbols].forEach(sym => {
           analysisMap[sym] = {
-            confidence: 0.6,
+            confidence: 60, // Default 60% (integer, not decimal)
             action: 'buy',
             predictedGain: 8,
             reasoning: 'AI is analyzing market trends and technical indicators for this asset...',
@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
       console.error('[Prospects] AI analysis error:', aiError);
       [...cryptoSymbols, ...stockSymbols].forEach(sym => {
         analysisMap[sym] = {
-          confidence: 0.6,
+          confidence: 60, // Default 60% (integer, not decimal)
           action: 'buy',
           predictedGain: 8,
           reasoning: 'AI analyzer temporarily unavailable - using baseline analysis',
