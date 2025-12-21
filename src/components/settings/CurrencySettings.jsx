@@ -177,35 +177,6 @@ export default function CurrencySettings({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="timezone-select" style={{ color: 'var(--text-primary)' }}>
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 neon-text" />
-              Time Zone
-            </div>
-          </Label>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Trade timestamps will be displayed in your selected time zone
-          </p>
-          <Select 
-            value={timezone || "America/New_York"} 
-            onValueChange={onTimezoneChange}
-          >
-            <SelectTrigger id="timezone-select">
-              <SelectValue placeholder="Select time zone" />
-            </SelectTrigger>
-            <SelectContent className="max-h-60">
-              {TIMEZONES.map((tz) => (
-                <SelectItem key={tz.value} value={tz.value}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 font-mono w-14">{tz.offset}</span>
-                    <span>{tz.label}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </CardContent>
     </Card>
   );
