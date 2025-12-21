@@ -121,13 +121,26 @@ Deno.serve(async (req) => {
     console.log(`[runAutoTrader] ${eligibleProspects.length} prospects eligible for auto-execution (70%+ confidence)`);
 
     if (eligibleProspects.length === 0) {
+      // Debug: log why each prospect was skipped
+      console.log('[runAutoTrader] No eligible prospects. Summary:');
+      prospects.forEach(p => {
+        console.log(`  - ${p.symbol}: ${p.confidence_score}% conf, action=${p.optimal_action}, blocked=${p.is_blocked}, would_execute=${p.would_execute_now}`);
+      });
+      
       return Response.json({ 
         success: true, 
         message: 'No prospects meet 70% confidence threshold', 
         trades_count: 0,
         mode: isSimMode ? 'sim' : 'live',
         total_prospects: prospects.length,
-        threshold: AUTO_EXECUTE_THRESHOLD * 100
+        threshold: AUTO_EXECUTE_THRESHOLD,
+        prospect_summary: prospects.map(p => ({
+          symbol: p.symbol,
+          confidence: p.confidence_score,
+          action: p.optimal_action,
+          blocked: p.is_blocked,
+          would_execute: p.would_execute_now
+        }))
       });
     }
 
