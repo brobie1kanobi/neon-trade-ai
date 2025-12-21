@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PieChart, Activity, TrendingUp, TrendingDown } from "lucide-react";
+import { PieChart, Activity, TrendingUp, TrendingDown, Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import AssetDetailModal from "./AssetDetailModal";
 import NumberDisplay from "@/components/ui/NumberDisplay";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 const usePrevious = (value) => {
   const ref = useRef();
