@@ -1125,12 +1125,19 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [isSimMode]);
 
-  // CRITICAL: Build effective holdings from WebSocket in LIVE mode
+  // CRITICAL: Build effective holdings - prioritize REST API in LIVE mode
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
       return holdings;
     } else {
-      // LIVE MODE: Use WebSocket balances if connected
+      // LIVE MODE: Prioritize Kraken REST API holdings (most accurate)
+      if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
+        return krakenApiBalances.holdings.map(h => ({
+          ...h,
+          is_simulation: false
+        }));
+      }
+      // Fallback to WebSocket balances
       if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
         return Object.entries(wsBalances)
           .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
@@ -1153,7 +1160,7 @@ export default function Dashboard() {
         return holdings;
       }
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
 
   const allSymbols = React.useMemo(() => {
     return [...new Set(effectiveHoldings.map(h => (h.symbol || "").toUpperCase()))];
@@ -1514,13 +1521,8 @@ export default function Dashboard() {
       return;
     }
 
-    // CRITICAL: Use WebSocket data in LIVE mode
-    if (!isSimMode && wsConnected && wsTotalValue >= 0) {
-      setPortfolioMarketValue(wsTotalValue);
-      setEnrichedHoldings(effectiveHoldings); 
-      setChange24h({ value: 0, percentage: 0 });
-      return;
-    }
+    // CRITICAL: In LIVE mode, REST API is authoritative - don't override with WebSocket
+    // The effectiveHoldings already prioritizes REST API data
 
     // SIM MODE: Use price data
     const quotes = priceData || [];

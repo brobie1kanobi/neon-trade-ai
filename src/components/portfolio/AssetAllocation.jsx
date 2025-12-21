@@ -285,8 +285,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
                       </div>
                       <div className={`flex items-center gap-1 font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {gainLoss >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        <span>
-                          {gainLoss >= 0 ? "+" : ""}${Math.abs(gainLoss).toFixed(2)} ({gainLossPercent >= 0 ? "+" : ""}{gainLossPercent.toFixed(2)}%)
+                        <span title="Unrealized Profit/Loss since purchase (Lifetime PnL)">
+                          {gainLoss >= 0 ? "+" : ""}${Math.abs(gainLoss).toFixed(2)} ({gainLossPercent >= 0 ? "+" : ""}{gainLossPercent.toFixed(2)}% Lifetime)
                         </span>
                       </div>
                     </div>
