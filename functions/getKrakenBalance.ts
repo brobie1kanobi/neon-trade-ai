@@ -252,14 +252,14 @@ Deno.serve(async (req) => {
     let prices = {};
     if (symbols.length > 0 && !isTimedOut) {
       try {
-        // Only fetch prices for known pairs (some tokens like LM, BABY may not have public tickers)
+        // Only fetch prices for known pairs (some tokens like BABY may not have public tickers)
         const knownPairs = {
           'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'XRP': 'XXRPZUSD',
           'LTC': 'XLTCZUSD', 'SOL': 'SOLUSD', 'ADA': 'ADAUSD',
           'DOT': 'DOTUSD', 'DOGE': 'XDGUSD', 'LINK': 'LINKUSD',
           'UNI': 'UNIUSD', 'MATIC': 'MATICUSD', 'ATOM': 'ATOMUSD',
           'AVAX': 'AVAXUSD', 'BCH': 'BCHUSD', 'TRX': 'TRXUSD',
-          'PEPE': 'PEPEUSD'
+          'PEPE': 'PEPEUSD', 'XLM': 'XXLMZUSD'  // Stellar
         };
         
         const validPairs = symbols
