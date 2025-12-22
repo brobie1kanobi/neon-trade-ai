@@ -69,10 +69,14 @@ export const SettingsProvider = ({ children }) => {
           timezone: "America/New_York"
         };
       }
-      
-      // Ensure timezone is always set (for existing users who don't have it)
-      if (!currentSettings.timezone) {
+
+      // CRITICAL: Ensure timezone is always set (for existing users who don't have it)
+      // Also handle cases where timezone might be null, undefined, or empty string
+      if (!currentSettings.timezone || currentSettings.timezone.trim() === '') {
         currentSettings.timezone = "America/New_York";
+        console.log('[SettingsContext] Timezone was empty, set to default: America/New_York');
+      } else {
+        console.log('[SettingsContext] Loaded timezone:', currentSettings.timezone);
       }
 
       const isAdmin = (user?.role || '').toLowerCase() === 'admin';
