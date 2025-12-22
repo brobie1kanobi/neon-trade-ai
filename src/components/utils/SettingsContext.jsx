@@ -132,12 +132,18 @@ export const SettingsProvider = ({ children }) => {
         });
       }
 
-      // Update local state
-      setSettings(prev => ({
-        ...prev,
+      // Update local state immediately for responsive UI
+      const newSettings = {
+        ...settings,
         [key]: value,
-        ...(key !== 'sim_trading_mode' ? { sim_trading_mode: prev?.sim_trading_mode ?? true } : {})
-      }));
+        ...(key !== 'sim_trading_mode' ? { sim_trading_mode: settings?.sim_trading_mode ?? true } : {})
+      };
+      setSettings(newSettings);
+      
+      // Also update localStorage cache immediately
+      try {
+        localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings));
+      } catch (_e) {}
 
       // Invalidate cache and refresh
       if (user?.email) {
