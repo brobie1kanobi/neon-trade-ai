@@ -160,24 +160,37 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     try {
       console.log('[OrdersAndHistory] Fetching fresh Kraken data...');
       
-      // Fetch both open orders and trades history in parallel
-      const [ordersResponse, tradesResponse] = await Promise.all([
-        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-        base44.functions.invoke('krakenApi', { action: 'getTradesHistory' })
+      // Fetch both open orders and trades history in parallel with 20s timeout
+      const [ordersResponse, tradesResponse] = await Promise.race([
+        Promise.all([
+          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
+          base44.functions.invoke('krakenApi', { action: 'getTradesHistory' })
+        ]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken API timeout')), 20000))
       ]);
       
       const ordersData = ordersResponse?.data || ordersResponse;
       const tradesData = tradesResponse?.data || tradesResponse;
       
-      console.log('[OrdersAndHistory] Kraken open orders:', ordersData?.orders?.length || 0);
-      console.log('[OrdersAndHistory] Kraken trades history:', tradesData?.trades?.length || 0);
+      console.log('[OrdersAndHistory] Kraken API response - Orders:', ordersData?.orders?.length || 0, 'Trades:', tradesData?.trades?.length || 0);
+      
+      // If API returned error, log it
+      if (!ordersData?.success && ordersData?.error) {
+        console.error('[OrdersAndHistory] Kraken orders API error:', ordersData.error);
+      }
+      if (!tradesData?.success && tradesData?.error) {
+        console.error('[OrdersAndHistory] Kraken trades API error:', tradesData.error);
+      }
       
       return {
         orders: ordersData?.orders || [],
         trades: tradesData?.trades || []
       };
     } catch (err) {
-      console.error('[OrdersAndHistory] Kraken fetch error:', err);
+      console.error('[OrdersAndHistory] Kraken fetch error:', err.message || err);
+      toast.error('Failed to fetch Kraken orders', {
+        description: 'Retrying... Check your Kraken connection in Settings.'
+      });
       return { orders: [], trades: [] };
     }
   }, [isSimMode]);
@@ -193,10 +206,17 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       let krakenTrades = [];
 
       if (!isSimMode) {
+        console.log('[OrdersAndHistory] LIVE MODE - Fetching Kraken data...');
         const krakenData = await fetchKrakenData();
         krakenOpenOrders = krakenData.orders;
         krakenTrades = krakenData.trades;
+        console.log('[OrdersAndHistory] Kraken fetch complete - Orders:', krakenOpenOrders.length, 'Trades:', krakenTrades.length);
         setKrakenTradesHistory(krakenTrades);
+        
+        // If no orders from API but WebSocket has them, log warning
+        if (krakenOpenOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
+          console.warn('[OrdersAndHistory] API returned 0 orders but WebSocket has', Object.keys(krakenOrders).length, '- will use WebSocket');
+        }
       }
 
       // Load ALL local database orders (not just active ones)
@@ -347,13 +367,32 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     loadOrders();
   }, [loadOrders]);
 
+  // CRITICAL: Auto-refresh every 30 seconds in LIVE mode to keep orders synced
+  useEffect(() => {
+    if (!isSimMode) {
+      const interval = setInterval(() => {
+        console.log('[OrdersAndHistory] Auto-refresh triggered (30s interval)');
+        loadOrders();
+      }, 30000); // 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [isSimMode, loadOrders]);
+
   // CRITICAL: Reload orders when Kraken WebSocket data changes
   useEffect(() => {
     if (!isSimMode && wsConnected && krakenOrders) {
-      console.log('[OrdersAndHistory] Kraken orders updated, reloading...');
+      console.log('[OrdersAndHistory] Kraken WebSocket orders updated, reloading...', Object.keys(krakenOrders).length, 'orders');
       loadOrders();
     }
   }, [krakenOrders, wsConnected, isSimMode, loadOrders]);
+
+  // CRITICAL: Force refresh when tab becomes visible (tab switching)
+  useEffect(() => {
+    if (activeTab === 'open' || activeTab === 'conditional') {
+      console.log('[OrdersAndHistory] Active tab changed to', activeTab, '- refreshing orders');
+      loadOrders();
+    }
+  }, [activeTab, loadOrders]);
 
   // Listen for trade events (failed or completed) to refresh list immediately
   useEffect(() => {
