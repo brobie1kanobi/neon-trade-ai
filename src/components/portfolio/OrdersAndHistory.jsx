@@ -294,7 +294,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
               group_id: ko.group_id,
               group_type: ko.group_type
             };
-          });
+          })
+          .filter(o => o.quantity > 0.00000001); // Filter after mapping to ensure parsed volume is used
 
         // CRITICAL: Always set activeOrders from Kraken in LIVE mode, even if empty
         // This ensures Orders & History shows accurate state (no orders = empty list)
