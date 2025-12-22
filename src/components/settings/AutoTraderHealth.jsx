@@ -97,12 +97,15 @@ export default function AutoTraderHealth() {
         new Date(t.created_date) >= yesterday
       );
       
-      const buys = last24hTrades.filter(t => t.type === 'buy');
-      const sells = last24hTrades.filter(t => t.type === 'sell');
-      const volume = last24hTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
+      // Filter for auto-trades only since this is AutoTraderHealth
+      const autoTrades = last24hTrades.filter(t => t.is_auto_trade);
+      
+      const buys = autoTrades.filter(t => t.type === 'buy');
+      const sells = autoTrades.filter(t => t.type === 'sell');
+      const volume = autoTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
       
       setTrades24h({
-        total: last24hTrades.length,
+        total: autoTrades.length,
         buys: buys.length,
         sells: sells.length,
         volume
