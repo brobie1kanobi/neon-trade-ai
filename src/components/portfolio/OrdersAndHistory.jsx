@@ -365,14 +365,19 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       // CRITICAL: Separate conditional orders from regular open orders
       // Conditional = stop-loss, take-profit, trailing-stop orders
       // Open = limit, market orders
+      // NOTE: Also verify if order.order_type exists, fallback to other properties
       const conditionalOrdersList = activeOrders.filter(order => {
-        const orderType = (order.order_type || '').toLowerCase();
-        return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('trailing');
+        const orderType = (order.order_type || order.ordertype || '').toLowerCase();
+        const description = (order.kraken_description || '').toLowerCase();
+        return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('trailing') ||
+               description.includes('stop') || description.includes('take profit') || description.includes('trailing');
       });
       
       const openOrdersList = activeOrders.filter(order => {
-        const orderType = (order.order_type || '').toLowerCase();
-        return !orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('trailing');
+        const orderType = (order.order_type || order.ordertype || '').toLowerCase();
+        const description = (order.kraken_description || '').toLowerCase();
+        return (!orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('trailing')) &&
+               (!description.includes('stop') && !description.includes('take profit') && !description.includes('trailing'));
       });
       
       console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);

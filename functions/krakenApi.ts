@@ -357,11 +357,12 @@ Deno.serve(async (req) => {
 
     // ACTION: Get open orders
     if (action === 'getOpenOrders') {
+      // CRITICAL: Include trades=true to get detailed info
       const result = await callKraken(
         connection.api_key, 
         connection.api_secret_encrypted, 
         '/0/private/OpenOrders', 
-        {}
+        { trades: true }
       );
 
       checkTimeout();
