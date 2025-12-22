@@ -118,7 +118,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
             action: 'getAssetDetails',
             payload: { symbol: symbol, assetType: assetType }
           }),
-          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase() })
+          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase(), is_simulation: isSimMode })
         ]);
 
         if (userHoldings.length > 0) {
