@@ -353,6 +353,20 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     }
   }, [krakenOrders, wsConnected, isSimMode, loadOrders]);
 
+  // Listen for trade events (failed or completed) to refresh list immediately
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('[OrdersAndHistory] Trade event received, refreshing...');
+      loadOrders();
+    };
+    window.addEventListener('trade:failed', handleRefresh);
+    window.addEventListener('trade:completed', handleRefresh);
+    return () => {
+      window.removeEventListener('trade:failed', handleRefresh);
+      window.removeEventListener('trade:completed', handleRefresh);
+    };
+  }, [loadOrders]);
+
   // Dismiss a failed order from the list (delete from database)
   const handleDismissFailedOrder = async (orderId) => {
     try {
