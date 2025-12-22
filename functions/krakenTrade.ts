@@ -77,6 +77,7 @@ function formatKrakenSymbol(symbol) {
   }
   
   // Map common symbols to Kraken pairs
+  // Note: Kraken uses specific pair formats - some assets need XXLM format
   const symbolMap = {
     'BTC': 'BTC/USD',
     'XBT': 'BTC/USD', // Kraken alias
@@ -91,13 +92,13 @@ function formatKrakenSymbol(symbol) {
     'LINK': 'LINK/USD',
     'UNI': 'UNI/USD',
     'MATIC': 'MATIC/USD',
-    'POL': 'MATIC/USD', // New Polygon symbol
+    'POL': 'POL/USD',  // Polygon rebrand
     'ATOM': 'ATOM/USD',
     'AVAX': 'AVAX/USD',
     'BCH': 'BCH/USD',
     'TRX': 'TRX/USD',
     'SHIB': 'SHIB/USD',
-    'XLM': 'XLM/USD',
+    'XLM': 'XLM/USD',  // Stellar - verified format
     'ALGO': 'ALGO/USD',
     'FIL': 'FIL/USD',
     'NEAR': 'NEAR/USD',
@@ -106,7 +107,25 @@ function formatKrakenSymbol(symbol) {
     'OP': 'OP/USD',
     'INJ': 'INJ/USD',
     'PEPE': 'PEPE/USD',
-    'SUI': 'SUI/USD'
+    'SUI': 'SUI/USD',
+    'HBAR': 'HBAR/USD',
+    'KAS': 'KAS/USD',
+    'TAO': 'TAO/USD',
+    'EIGEN': 'EIGEN/USD',
+    'ENA': 'ENA/USD',
+    'GRASS': 'GRASS/USD',
+    'GOAT': 'GOAT/USD',
+    'TRUMP': 'TRUMP/USD',
+    'FARTCOIN': 'FARTCOIN/USD',
+    'MOVE': 'MOVE/USD',
+    'KAITO': 'KAITO/USD',
+    'TIA': 'TIA/USD',
+    'FET': 'FET/USD',
+    'JUP': 'JUP/USD',
+    'WIF': 'WIF/USD',
+    'BONK': 'BONK/USD',
+    'FLOKI': 'FLOKI/USD',
+    'BABY': 'BABY/USD'
   };
   
   return symbolMap[symbol.toUpperCase()] || `${symbol.toUpperCase()}/USD`;
