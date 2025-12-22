@@ -116,8 +116,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
   const { settings, user } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
-  const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
-  const fullDateFmt = is24h ? "MMM d, yyyy HH:mm:ss" : "MMM d, yyyy h:mm:ss a";
+  const timezone = settings?.timezone || 'America/New_York';
 
   // CRITICAL: Use global WebSocket connection
   const { 
