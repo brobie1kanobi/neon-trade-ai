@@ -1828,12 +1828,12 @@ export default function Dashboard() {
           <BalanceCard
             title="Total Balance"
             amount={balanceVisible ? (showZerosInLive ? 0 : totalBalance) : null}
-            change={showZerosInLive ? { value: 0, percentage: 0 } : realized24h}
+            change={showZerosInLive ? { value: 0, percentage: 0 } : lifetimeChange}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
-            changeLabel="24h Realized PnL (sales)"
+            changeLabel="Total PnL"
           />
         </motion.div>
 
