@@ -358,6 +358,27 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           description: krakenError.message || 'Failed to execute order on Kraken',
           duration: 10000
         });
+        
+        // Record failed order in database so it appears in "Failed Orders" list
+        try {
+          await ConditionalOrder.create({
+            symbol: tradeData.symbol,
+            asset_type: tradeData.asset_type || 'crypto',
+            quantity: tradeData.quantity,
+            purchase_price: tradeData.price,
+            gain_margin: parseFloat(gainMargin),
+            loss_margin: parseFloat(lossMargin),
+            status: 'failed',
+            is_simulation: false,
+            error_message: krakenError.message || 'Failed to execute order on Kraken',
+            created_by: currentUser.email
+          });
+          // Dispatch event to refresh orders list
+          window.dispatchEvent(new CustomEvent('trade:failed'));
+        } catch (logErr) {
+          console.error("Failed to log failed order:", logErr);
+        }
+
         setIsExecuting(false);
         return; // Don't continue if Kraken order failed
       }
@@ -491,6 +512,28 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
       toast.error("Order Failed", {
         description: error.message || "Failed to place order on Kraken"
       });
+      
+      // Record failed advanced order
+      try {
+        const currentUser = await User.me();
+        await ConditionalOrder.create({
+          symbol: orderConfig.symbol,
+          asset_type: orderConfig.asset_type || 'crypto',
+          quantity: orderConfig.quantity,
+          purchase_price: orderConfig.limitPrice || selectedAsset?.price || 0,
+          gain_margin: parseFloat(gainMargin),
+          loss_margin: parseFloat(lossMargin),
+          status: 'failed',
+          is_simulation: false,
+          error_message: error.message || 'Failed to execute advanced order',
+          created_by: currentUser.email
+        });
+        // Dispatch event to refresh orders list
+        window.dispatchEvent(new CustomEvent('trade:failed'));
+      } catch (logErr) {
+        console.error("Failed to log failed advanced order:", logErr);
+      }
+      
     } finally {
       setIsExecuting(false);
     }
