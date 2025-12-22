@@ -170,7 +170,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
 
     fetchAssetData();
-  }, [symbol, assetType]);
+  }, [symbol, assetType, isSimMode]);
 
   // Load full trade history for this asset (fast, before chart)
   useEffect(() => {
