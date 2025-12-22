@@ -241,7 +241,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
     if (symbol) loadTrades();
     return () => { active = false; };
-  }, [symbol]);
+  }, [symbol, isSimMode, user]);
 
   const handlePriceUpdate = (priceData) => {
       setAssetData(prev => ({...prev, price: priceData.price}));
