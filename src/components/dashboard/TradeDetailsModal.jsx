@@ -1,10 +1,28 @@
-
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { X, Calendar, Hash, DollarSign, Package, Banknote, TrendingUp, TrendingDown } from "lucide-react";
-import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { useSettings } from "@/components/utils/SettingsContext"; // Updated import path
+
+// Format date in user's timezone
+const formatInTimezone = (date, timezone, is24h) => {
+  try {
+    const options = {
+      timeZone: timezone || 'America/New_York',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: is24h ? '2-digit' : 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: !is24h
+    };
+    return new Date(date).toLocaleString('en-US', options);
+  } catch (e) {
+    // Fallback if timezone is invalid
+    return new Date(date).toLocaleString();
+  }
+};
 
 export default function TradeDetailsModal({ trade, isOpen, onClose }) {
   // Move hook before any early returns to satisfy React rules
@@ -13,10 +31,10 @@ export default function TradeDetailsModal({ trade, isOpen, onClose }) {
   if (!trade) return null;
 
   const is24h = (settings?.time_format || "12h") === "24h";
-  const fullFmt = is24h ? "MMM d, yyyy 'at' HH:mm:ss" : "MMM d, yyyy 'at' h:mm:ss a";
+  const timezone = settings?.timezone || 'America/New_York';
 
   const details = [
-    { icon: Calendar, label: "Date & Time", value: format(new Date(trade.created_date), fullFmt) },
+    { icon: Calendar, label: "Date & Time", value: formatInTimezone(trade.created_date, timezone, is24h) },
     { icon: Hash, label: "Asset", value: `${trade.symbol} (${trade.asset_type.toUpperCase()})` },
     { icon: trade.type === 'buy' ? TrendingUp : TrendingDown, label: "Type", value: trade.type.toUpperCase(), color: trade.type === 'buy' ? 'text-green-500' : 'text-red-500' },
     { icon: Package, label: "Quantity", value: trade.quantity },
