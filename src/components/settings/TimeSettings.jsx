@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Clock, Save, Check } from "lucide-react";
+import { toast } from "sonner";
 
 // Common timezones with friendly names
 const TIMEZONES = [
@@ -36,6 +38,34 @@ const TIMEZONES = [
 
 export default function TimeSettings({ value = "12h", onChange, timezone, onTimezoneChange }) {
   const is24h = value === "24h";
+  const [pendingTimezone, setPendingTimezone] = useState(timezone || "America/New_York");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  
+  // Sync pending timezone when prop changes
+  useEffect(() => {
+    if (timezone) {
+      setPendingTimezone(timezone);
+    }
+  }, [timezone]);
+  
+  const hasChanges = pendingTimezone !== timezone;
+  
+  const handleSaveTimezone = async () => {
+    setIsSaving(true);
+    try {
+      await onTimezoneChange(pendingTimezone);
+      setSaved(true);
+      toast.success("Timezone saved!", {
+        description: `Trade times will now display in ${TIMEZONES.find(tz => tz.value === pendingTimezone)?.label || pendingTimezone}`
+      });
+      setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      toast.error("Failed to save timezone");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
@@ -47,7 +77,7 @@ export default function TimeSettings({ value = "12h", onChange, timezone, onTime
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Time Zone Selector */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label htmlFor="timezone-select" style={{ color: 'var(--text-primary)' }}>
             Time Zone
           </Label>
@@ -55,8 +85,8 @@ export default function TimeSettings({ value = "12h", onChange, timezone, onTime
             Trade timestamps will be displayed in your selected time zone
           </p>
           <Select 
-            value={timezone || "America/New_York"} 
-            onValueChange={onTimezoneChange}
+            value={pendingTimezone} 
+            onValueChange={setPendingTimezone}
           >
             <SelectTrigger id="timezone-select">
               <SelectValue placeholder="Select time zone" />
@@ -72,6 +102,30 @@ export default function TimeSettings({ value = "12h", onChange, timezone, onTime
               ))}
             </SelectContent>
           </Select>
+          
+          {/* Save Button */}
+          <Button 
+            onClick={handleSaveTimezone}
+            disabled={!hasChanges || isSaving}
+            className={`w-full ${saved ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {saved ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Saved!
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                {isSaving ? 'Saving...' : 'Save Timezone'}
+              </>
+            )}
+          </Button>
+          
+          {/* Current timezone indicator */}
+          <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+            Currently set to: <span className="font-medium">{TIMEZONES.find(tz => tz.value === timezone)?.label || timezone || 'Not set'}</span>
+          </p>
         </div>
 
         {/* 24-hour Toggle */}
