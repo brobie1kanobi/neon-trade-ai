@@ -293,12 +293,15 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               console.log('[AutoTrader] Bracket order params:', { symbol: symU, quantity: qty, stopLossPrice, takeProfitPrice, purchasePrice });
 
               // CRITICAL: Check minimum order sizes before sending to Kraken
+              // Updated Dec 2024 from Kraken support docs
               const minOrderSizes = {
-                'BTC': 0.0001, 'ETH': 0.005, 'SOL': 0.1, 'XRP': 10.0, 'ADA': 10.0,
-                'DOT': 0.5, 'DOGE': 50.0, 'LINK': 0.5, 'UNI': 0.5, 'MATIC': 10.0,
-                'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.002, 'LTC': 0.04, 'TRX': 50.0,
-                'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.2, 'NEAR': 1.0,
-                'BABY': 100.0, 'FLOKI': 5000.0, 'WIF': 1.0, 'BONK': 100000.0, 'PEPE': 500000.0
+                'BTC': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+                'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
+                'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+                'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7,
+                'BABY': 50.0, 'FLOKI': 105000.0, 'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0,
+                'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0,
+                'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0, 'GRASS': 13.0, 'GOAT': 5.0
               };
 
               const minQty = minOrderSizes[symU] || 0.00001;
