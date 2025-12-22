@@ -7,8 +7,10 @@ import { useSettings } from "@/components/utils/SettingsContext"; // Updated imp
 // Format date in user's timezone
 const formatInTimezone = (date, timezone, is24h) => {
   try {
+    // Ensure we have a valid timezone
+    const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
     const options = {
-      timeZone: timezone || 'America/New_York',
+      timeZone: tz,
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -17,9 +19,11 @@ const formatInTimezone = (date, timezone, is24h) => {
       second: '2-digit',
       hour12: !is24h
     };
-    return new Date(date).toLocaleString('en-US', options);
+    const result = new Date(date).toLocaleString('en-US', options);
+    console.log('[TradeDetailsModal] formatInTimezone:', date, 'tz:', tz, 'result:', result);
+    return result;
   } catch (e) {
-    // Fallback if timezone is invalid
+    console.error('[TradeDetailsModal] formatInTimezone error:', e);
     return new Date(date).toLocaleString();
   }
 };

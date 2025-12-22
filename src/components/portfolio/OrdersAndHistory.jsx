@@ -36,17 +36,21 @@ import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvid
 // Format date in user's timezone
 const formatInTimezone = (date, timezone, is24h) => {
   try {
+    // Ensure we have a valid timezone
+    const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
     const options = {
-      timeZone: timezone || 'America/New_York',
+      timeZone: tz,
       month: 'short',
       day: 'numeric',
       hour: is24h ? '2-digit' : 'numeric',
       minute: '2-digit',
       hour12: !is24h
     };
-    return new Date(date).toLocaleString('en-US', options);
+    const result = new Date(date).toLocaleString('en-US', options);
+    console.log('[OrdersAndHistory] formatInTimezone:', date, 'tz:', tz, 'result:', result);
+    return result;
   } catch (e) {
-    // Fallback if timezone is invalid
+    console.error('[OrdersAndHistory] formatInTimezone error:', e);
     const d = new Date(date);
     return is24h 
       ? format(d, "MMM d, HH:mm") 

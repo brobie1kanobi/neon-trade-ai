@@ -9,16 +9,21 @@ import { base44 } from "@/api/base44Client";
 // Format date in user's timezone
 const formatInTimezone = (date, timezone, is24h) => {
   try {
+    // Ensure we have a valid timezone
+    const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
     const options = {
-      timeZone: timezone || 'America/New_York',
+      timeZone: tz,
       month: 'short',
       day: 'numeric',
       hour: is24h ? '2-digit' : 'numeric',
       minute: '2-digit',
       hour12: !is24h
     };
-    return new Date(date).toLocaleString('en-US', options);
+    const result = new Date(date).toLocaleString('en-US', options);
+    console.log('[RecentTrades] formatInTimezone:', date, 'tz:', tz, 'result:', result);
+    return result;
   } catch (e) {
+    console.error('[RecentTrades] formatInTimezone error:', e);
     return new Date(date).toLocaleString();
   }
 };
