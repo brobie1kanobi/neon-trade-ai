@@ -218,92 +218,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       console.log('[OrdersAndHistory] Mode filtered orders:', modeFilteredOrders.length, 'for isSimMode:', isSimMode);
 
-      // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
+      // CRITICAL: In LIVE mode, prioritize DB orders but augment/verify with Kraken data
+      // We do NOT overwrite activeOrders with Kraken API data because Kraken API often returns a subset
+      // or requires pagination, which hides valid orders that exist in our DB.
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
       
+      // We still fetch Kraken data for logging/debugging but we trust our DB (which syncs via background jobs)
       if (!isSimMode && krakenOpenOrders.length > 0) {
-        console.log('[OrdersAndHistory] Using', krakenOpenOrders.length, 'live Kraken orders from API');
-        
-        // Convert Kraken orders to our format
-        const krakenOrdersList = krakenOpenOrders
-          .filter(ko => {
-            const volume = parseFloat(ko.vol) || ko.volume || 0;
-            return volume > 0.00001;
-          })
-          .map(ko => {
-            // Parse Kraken order format
-            const descr = ko.descr || {};
-            const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || '');
-            const volume = parseFloat(ko.vol) || ko.volume || 0;
-            const price = parseFloat(descr.price) || ko.price || ko.limit_price || 0;
-            const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
-            const side = descr.type || ko.side || 'unknown';
-            
-            return {
-              id: ko.order_id,
-              symbol: symbol,
-              quantity: volume,
-              purchase_price: price,
-              status: 'active',
-              asset_type: 'crypto',
-              is_simulation: false,
-              kraken_order_id: ko.order_id,
-              created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : new Date().toISOString(),
-              order_type: orderType,
-              side: side,
-              gain_margin: 10,
-              loss_margin: 5,
-              trailing_enabled: orderType.includes('trailing'),
-              // Extra Kraken info
-              kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
-              trigger_price: parseFloat(descr.price) || 0,
-              group_id: ko.group_id,
-              group_type: ko.group_type
-            };
-          });
-
-        activeOrders = krakenOrdersList;
-        console.log('[OrdersAndHistory] Processed Kraken orders:', activeOrders.length);
-        
-        // Clean up invalid local orders
-        const invalidLocalOrders = modeFilteredOrders.filter(o => 
-          o.status === 'active' && 
-          o.is_simulation === false &&
-          (o.quantity <= 0.00001 || o.purchase_price <= 0)
-        );
-        
-        if (invalidLocalOrders.length > 0) {
-          console.log('[OrdersAndHistory] Cleaning up', invalidLocalOrders.length, 'invalid local orders');
-          Promise.all(invalidLocalOrders.map(o => 
-            ConditionalOrder.update(o.id, { 
-              status: 'cancelled',
-              closure_reason: 'Invalid order: zero quantity or price',
-              error_message: 'Order validation failed - quantity or price was zero'
-            })
-          )).catch(err => console.error('[OrdersAndHistory] Cleanup error:', err));
-        }
-      } else if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
-        // Fallback to WebSocket data if API fetch returned empty
-        console.log('[OrdersAndHistory] Using WebSocket orders as fallback');
-        const krakenOrdersList = Object.values(krakenOrders)
-          .filter(ko => (ko.volume || 0) > 0.00001)
-          .map(ko => ({
-            id: ko.order_id || ko.txid,
-            symbol: normalizeKrakenSymbol(ko.symbol || ''),
-            quantity: ko.volume || 0,
-            purchase_price: ko.price || ko.limit_price || 0,
-            status: 'active',
-            asset_type: 'crypto',
-            is_simulation: false,
-            kraken_order_id: ko.order_id || ko.txid,
-            created_date: ko.created_at || new Date().toISOString(),
-            order_type: ko.order_type || ko.ordertype,
-            side: ko.side,
-            gain_margin: 10,
-            loss_margin: 5,
-            trailing_enabled: (ko.order_type || ko.ordertype || '').includes('trailing')
-          }));
-        activeOrders = krakenOrdersList;
+        console.log('[OrdersAndHistory] Fetched', krakenOpenOrders.length, 'open orders from Kraken API');
       }
 
       // CRITICAL: Include ALL non-active orders in closed list
