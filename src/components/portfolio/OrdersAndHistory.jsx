@@ -788,7 +788,7 @@ function OrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, 
 }
 
 // Conditional order row
-function ConditionalOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling }) {
+function ConditionalOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, onCancel, isCancelling }) {
   const gainPrice = order.purchase_price * (1 + (order.gain_margin || 10) / 100);
   const lossPrice = order.purchase_price * (1 - (order.loss_margin || 5) / 100);
   // Normalize the symbol for display
