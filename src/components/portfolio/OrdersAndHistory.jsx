@@ -620,7 +620,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         order={selectedClosedOrder}
         isOpen={!!selectedClosedOrder}
         onClose={() => setSelectedClosedOrder(null)}
-        fullDateFmt={fullDateFmt}
+        timezone={timezone}
+        is24h={is24h}
         formatDisplayQuantity={formatDisplayQuantity}
         formatPrice={formatPrice} />
       
