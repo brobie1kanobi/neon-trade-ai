@@ -88,27 +88,47 @@ export default function AutoTraderHealth() {
       const now = new Date();
       const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       
-      const recentTrades = await Trade.filter({ 
-        created_by: user.email,
-        is_simulation: isSimMode
-      }, "-created_date", 100);
+      const [recentTrades, recentExecutedOrders] = await Promise.all([
+        Trade.filter({ 
+          created_by: user.email,
+          is_simulation: isSimMode,
+          is_auto_trade: true // Only auto-trades
+        }, "-created_date", 100),
+        ConditionalOrder.filter({
+          created_by: user.email,
+          status: 'executed',
+          is_simulation: isSimMode
+        }, "-updated_date", 100)
+      ]);
       
+      // Filter trades (Buys)
       const last24hTrades = recentTrades.filter(t => 
         new Date(t.created_date) >= yesterday
       );
+      const buys = last24hTrades.filter(t => t.type === 'buy');
+
+      // Filter executed orders (Sells - executed conditional orders)
+      // These represent auto-trader sells (TP/SL/Trailing)
+      const last24hExecutedOrders = recentExecutedOrders.filter(o => 
+        new Date(o.updated_date || o.created_date) >= yesterday
+      );
       
-      // Filter for auto-trades only since this is AutoTraderHealth
-      const autoTrades = last24hTrades.filter(t => t.is_auto_trade);
+      // Combine volume: Buys volume + Sells volume (approx from executed orders if trade missing)
+      const buyVolume = buys.reduce((sum, t) => sum + (t.total_value || 0), 0);
       
-      const buys = autoTrades.filter(t => t.type === 'buy');
-      const sells = autoTrades.filter(t => t.type === 'sell');
-      const volume = autoTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
-      
+      // For sells volume, we try to use the purchase price * quantity since we might not have execution price easily
+      // or we can just ignore it if it's too complex, but let's try to be helpful
+      const sellVolume = last24hExecutedOrders.reduce((sum, o) => {
+        // Use gain price if available, otherwise purchase price as fallback
+        const price = o.purchase_price || 0; 
+        return sum + (o.quantity * price);
+      }, 0);
+
       setTrades24h({
-        total: autoTrades.length,
+        total: buys.length + last24hExecutedOrders.length,
         buys: buys.length,
-        sells: sells.length,
-        volume
+        sells: last24hExecutedOrders.length,
+        volume: buyVolume + sellVolume
       });
       
       console.log('[AutoTraderHealth] Order count:', openOrderCount, '| 24h trades:', last24hTrades.length);
