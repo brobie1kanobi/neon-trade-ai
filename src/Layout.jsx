@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
 import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
+import { base44 } from "@/api/base44Client";
 
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
@@ -22,6 +23,7 @@ function LayoutContent({ children, currentPageName }) {
   const [showBiometricsPrompt, setShowBiometricsPrompt] = useState(false);
   const [biometricsCheckComplete, setBiometricsCheckComplete] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // This state controls the one-time splash screen for the session
   const [showInitialSplash, setShowInitialSplash] = useState(() => !sessionStorage.getItem('appInitialized'));
@@ -38,6 +40,38 @@ function LayoutContent({ children, currentPageName }) {
       return () => clearTimeout(timer);
     }
   }, [showInitialSplash]);
+
+  // Fetch unread notifications count
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      if (!user) return;
+      try {
+        const notifications = await base44.entities.Notification.filter({ read: false, created_by: user.email });
+        setUnreadCount(notifications.length);
+      } catch (e) {
+        console.error("Failed to fetch notification count:", e);
+      }
+    };
+
+    if (user) fetchUnreadCount();
+
+    const handleNewNotification = () => {
+      setUnreadCount(prev => prev + 1);
+    };
+    
+    // Also refetch when drawer is closed (user might have read some)
+    if (!isNotificationsOpen && user) {
+      fetchUnreadCount();
+    }
+
+    window.addEventListener('notification:created', handleNewNotification);
+    window.addEventListener('notification:read', fetchUnreadCount); // In case we add this later
+
+    return () => {
+      window.removeEventListener('notification:created', handleNewNotification);
+      window.removeEventListener('notification:read', fetchUnreadCount);
+    };
+  }, [user, isNotificationsOpen]);
 
   // REMOVED: useEffect for disableLiveMode
   // useEffect(() => {
@@ -295,7 +329,14 @@ function LayoutContent({ children, currentPageName }) {
                       color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                       backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                     }}>
-                    <item.icon className={`${isNotification ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'neon-glow' : ''}`} />
+                    <div className="relative">
+                      <item.icon className={`${isNotification ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'neon-glow' : ''}`} />
+                      {isNotification && unreadCount > 0 && (
+                        <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </div>
                     {!isNotification && <span className="text-xs font-medium">{item.title}</span>}
                   </Component>);
               })}

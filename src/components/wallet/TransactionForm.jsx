@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle, ArrowDownCircle, X, Loader2, CreditCard, Shield, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/components/utils/notifications";
 import { stripePayments } from "@/functions/stripePayments";
 
 export default function TransactionForm({ type, wallet, settings, onSubmit, onCancel, isSimMode = true }) {
@@ -43,7 +42,7 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
             bank_account: 'Demo Account',
             reference_id: `demo_${Date.now()}`
           });
-          toast.success(`Demo deposit of $${transactionAmount} completed!`);
+          notify.success(`Demo deposit of $${transactionAmount} completed!`);
         } else {
           // Create real Stripe checkout session
           const response = await stripePayments({
@@ -52,7 +51,7 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
           });
 
           if (response.data?.success && response.data?.data?.url) {
-            toast.success("Redirecting to secure payment...");
+            notify.success("Redirecting to secure payment...");
             // Open Stripe in a new tab to avoid issues with embedded iframes or security policies
             window.open(response.data.data.url, '_blank');
           } else {
@@ -66,7 +65,7 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
           const currentBalance = wallet?.cash_balance || 0;
           // Allow withdrawing up to full available balance with epsilon tolerance
           if (transactionAmount > (currentBalance + EPS)) {
-            toast.error("Insufficient demo funds for withdrawal");
+            notify.error("Insufficient demo funds for withdrawal");
             setIsSubmitting(false); // Stop submitting state if validation fails
             return;
           }
@@ -78,15 +77,15 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
             bank_account: 'Demo Account',
             reference_id: `demo_withdrawal_${Date.now()}`
           });
-          toast.success(`Demo withdrawal of $${transactionAmount} completed!`);
+          notify.success(`Demo withdrawal of $${transactionAmount} completed!`);
         } else {
-          toast.info("Real money withdrawals are coming soon!");
+          notify.info("Real money withdrawals are coming soon!");
           onCancel();
         }
       }
     } catch (error) {
       console.error('Transaction error:', error);
-      toast.error(`Unable to process ${type}. Please try again.`);
+      notify.error(`Unable to process ${type}. Please try again.`);
     } finally {
       setIsSubmitting(false);
     }

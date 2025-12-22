@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Clock, Save, Check } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/components/utils/notifications";
 
 // Common timezones with friendly names
 const TIMEZONES = [
@@ -56,12 +56,12 @@ export default function TimeSettings({ value = "12h", onChange, timezone, onTime
     try {
       await onTimezoneChange(pendingTimezone);
       setSaved(true);
-      toast.success("Timezone saved!", {
+      notify.success("Timezone saved!", {
         description: `Trade times will now display in ${TIMEZONES.find(tz => tz.value === pendingTimezone)?.label || pendingTimezone}`
       });
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
-      toast.error("Failed to save timezone");
+      notify.error("Failed to save timezone");
     } finally {
       setIsSaving(false);
     }

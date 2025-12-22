@@ -7,7 +7,7 @@ const saveNotification = async (title, message, type, details) => {
     const user = await base44.auth.me();
     if (!user) return;
     
-    await base44.entities.Notification.create({
+    const notification = await base44.entities.Notification.create({
       title,
       message: message || '',
       type,
@@ -15,6 +15,9 @@ const saveNotification = async (title, message, type, details) => {
       details_json: details ? JSON.stringify(details) : null,
       created_by: user.email
     });
+    
+    // Dispatch event to update badge
+    window.dispatchEvent(new CustomEvent('notification:created', { detail: notification }));
   } catch (err) {
     console.error("Failed to save notification:", err);
   }
