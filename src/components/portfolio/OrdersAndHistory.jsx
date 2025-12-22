@@ -519,7 +519,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                 <TradeRow
                   key={trade.id}
                   trade={trade}
-                  dateFmt={dateFmt}
+                  timezone={timezone}
+                  is24h={is24h}
                   formatDisplayQuantity={formatDisplayQuantity}
                   formatPrice={formatPrice}
                   onClick={() => setSelectedTrade(trade)} />
