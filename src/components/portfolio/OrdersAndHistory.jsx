@@ -965,7 +965,7 @@ function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatP
 }
 
 // Closed order details modal
-function ClosedOrderDetailsModal({ order, isOpen, onClose, fullDateFmt, formatDisplayQuantity, formatPrice }) {
+function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, formatDisplayQuantity, formatPrice }) {
   if (!order) return null;
 
   const isExecuted = order.status === "executed";
