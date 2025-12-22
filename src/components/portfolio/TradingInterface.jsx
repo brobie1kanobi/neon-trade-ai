@@ -12,7 +12,7 @@ import { UserSettings, User, ConditionalOrder } from "@/entities/all";
 import TradeConfirmationDialog from "./TradeConfirmationDialog";
 import AdvancedOrderModal from "./AdvancedOrderModal";
 import { base44 } from "@/api/base44Client";
-import { toast } from "sonner";
+import { notify } from "@/components/utils/notifications";
 
 export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, holdings, isSimMode = true, currentCashBalance }) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -174,7 +174,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
       setSettingsData(newSettings);
     }
     
-    toast.success("Trader settings saved", {
+    notify.success("Trader settings saved", {
       description: "AI trading margins updated successfully"
     });
   };
@@ -239,9 +239,10 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
         const krakenOrderId = krakenData.order_id || krakenData.txid || null;
         
-        toast.success("🟢 LIVE Order Executed", {
+        notify.success("🟢 LIVE Order Executed", {
           description: `${tradeData.type === 'buy' ? 'Bought' : 'Sold'} ${tradeData.quantity.toFixed(4)} ${tradeData.symbol} on Kraken`,
-          duration: 5000
+          duration: 5000,
+          data: { trade: tradeData }
         });
 
         // CRITICAL: Record trade directly in DB - bypass onTrade validation for LIVE mode
@@ -301,7 +302,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
                 stopLossOrderId = slData.order_id || slData.txid;
                 console.log('[TradingInterface] ✅ Kraken stop-loss order placed:', stopLossOrderId);
                 
-                toast.success("🟢 LIVE Stop-Loss Set", {
+                notify.success("🟢 LIVE Stop-Loss Set", {
                   description: `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%) on Kraken`,
                   duration: 3000
                 });
@@ -332,7 +333,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
             console.log('[TradingInterface] ✅ Created LIVE conditional order:', conditionalOrder);
 
-            toast.success("🤖 Auto-Trader Monitoring", {
+            notify.success("🤖 Auto-Trader Monitoring", {
               description: `TP: +${gainMargin}% | SL: -${lossMargin}% ${stopLossOrderId ? '(Kraken SL active)' : '(trailing enabled)'}`,
               duration: 3000
             });
@@ -346,7 +347,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
             }
           } catch (e) {
             console.error("[TradingInterface] Failed to create conditional order:", e);
-            toast.error("Warning: Trade executed but auto-sell not set", {
+            notify.error("Warning: Trade executed but auto-sell not set", {
               description: "You may need to manually sell this position"
             });
           }
@@ -354,9 +355,10 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
       } catch (krakenError) {
         console.error('[TradingInterface] Kraken order failed:', krakenError);
-        toast.error("🔴 LIVE Order Failed", {
+        notify.error("🔴 LIVE Order Failed", {
           description: krakenError.message || 'Failed to execute order on Kraken',
-          duration: 10000
+          duration: 10000,
+          data: { error: krakenError.message }
         });
         
         // Record failed order in database so it appears in "Failed Orders" list
@@ -446,7 +448,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
   const handleAdvancedOrder = () => {
     if (!selectedAsset || calculatedQuantity <= 0) {
-      toast.error("Please select an asset and enter quantity");
+      notify.error("Please select an asset and enter quantity");
       return;
     }
 
@@ -461,7 +463,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
   const handleExecuteAdvancedOrder = async (orderConfig) => {
     if (isSimMode) {
-      toast.error("Advanced orders only available in LIVE mode", {
+      notify.error("Advanced orders only available in LIVE mode", {
         description: "Switch to live trading to use advanced order types"
       });
       return;
@@ -495,9 +497,10 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         is_auto_trade: false
       });
 
-      toast.success("🟢 LIVE Order Placed", {
+      notify.success("🟢 LIVE Order Placed", {
         description: `${orderConfig.orderType} ${orderConfig.side} order for ${orderConfig.quantity} ${orderConfig.symbol}`,
-        duration: 5000
+        duration: 5000,
+        data: { order: orderConfig }
       });
 
       setSelectedAsset(null);
@@ -509,8 +512,9 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
     } catch (error) {
       console.error('[TradingInterface] Advanced order error:', error);
-      toast.error("Order Failed", {
-        description: error.message || "Failed to place order on Kraken"
+      notify.error("Order Failed", {
+        description: error.message || "Failed to place order on Kraken",
+        data: { error: error.message }
       });
       
       // Record failed advanced order
