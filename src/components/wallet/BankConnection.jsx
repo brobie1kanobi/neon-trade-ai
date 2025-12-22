@@ -272,12 +272,12 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
               <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
                 You're in simulation mode. Use virtual funds to practice trading.
               </p>
-              <div className="flex gap-2">
-                <Button onClick={() => onQuickAction?.('deposit')} className="flex-1">
+              <div className="flex justify-center gap-4">
+                <Button onClick={() => onQuickAction?.('deposit')} className="w-36">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Funds
                 </Button>
-                <Button onClick={() => onQuickAction?.('withdrawal')} variant="outline" className="flex-1">
+                <Button onClick={() => onQuickAction?.('withdrawal')} variant="outline" className="w-36">
                   <Minus className="w-4 h-4 mr-2" />
                   Remove Funds
                 </Button>
@@ -325,10 +325,10 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
                         </p>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex justify-center gap-4">
                         <Button 
                           size="sm" 
-                          className="flex-1"
+                          className="w-32"
                           onClick={() => onQuickAction?.('deposit')}
                         >
                           <Plus className="w-4 h-4 mr-1" />
@@ -337,7 +337,7 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
                         <Button 
                           size="sm" 
                           variant="outline"
-                          className="flex-1"
+                          className="w-32"
                           onClick={() => onQuickAction?.('withdrawal')}
                         >
                           <Minus className="w-4 h-4 mr-1" />
