@@ -146,10 +146,6 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         }));
 
         if (onSyncComplete) onSyncComplete();
-
-        setTimeout(() => {
-          window.location.href = window.location.pathname + '?t=' + Date.now();
-        }, 1000);
       } else {
         throw new Error(syncData?.error || 'Sync failed');
       }
