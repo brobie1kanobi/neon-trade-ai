@@ -311,7 +311,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
       const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
       const failed = modeFilteredOrders.filter((o) => o.status === "failed");
-      const withErrors = modeFilteredOrders.filter((o) => !!o.error_message && o.status !== "active");
+      // In Live mode, include ALL orders with errors (even if locally 'active') because activeOrders comes from Kraken
+      // In Sim mode, avoid duplicates by excluding active orders
+      const withErrors = modeFilteredOrders.filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode));
 
       console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
