@@ -273,11 +273,11 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
                 You're in simulation mode. Use virtual funds to practice trading.
               </p>
               <div className="flex gap-2 justify-center sm:justify-start">
-                <Button onClick={() => onQuickAction?.('deposit')} className="flex-1 sm:flex-none">
+                <Button onClick={() => onQuickAction?.('deposit')} className="flex-1 sm:flex-none text-sm px-3 py-2 sm:px-4 sm:py-2 h-auto">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Funds
                 </Button>
-                <Button onClick={() => onQuickAction?.('withdrawal')} variant="outline" className="flex-1 sm:flex-none">
+                <Button onClick={() => onQuickAction?.('withdrawal')} variant="outline" className="flex-1 sm:flex-none text-sm px-3 py-2 sm:px-4 sm:py-2 h-auto">
                   <Minus className="w-4 h-4 mr-2" />
                   Remove Funds
                 </Button>
