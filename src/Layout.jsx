@@ -148,14 +148,14 @@ function LayoutContent({ children, currentPageName }) {
     icon: Wallet
   },
   {
-    title: "Notifications",
-    action: () => setIsNotificationsOpen(true),
-    icon: Bell
-  },
-  {
     title: "Settings",
     url: createPageUrl("Settings"),
     icon: Settings
+  },
+  {
+    title: "Notifications",
+    action: () => setIsNotificationsOpen(true),
+    icon: Bell
   }];
 
   // Show the initial loading splash screen ONLY on the first load of a session
@@ -280,18 +280,24 @@ function LayoutContent({ children, currentPageName }) {
                   );
                 }
 
+                const isNotification = item.title === "Notifications";
+                const Component = item.url ? Link : 'button';
+                const props = item.url ? { to: item.url } : { onClick: item.action };
+                
                 return (
-                  <Link
+                  <Component
                     key={item.title}
-                    to={item.url}
-                    className="p-2 text-base flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg w-16 h-16 justify-center shadow-sm"
+                    {...props}
+                    className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm ${
+                      isNotification ? "w-10 h-10 p-1.5 ml-1" : "w-16 h-16 p-2 text-base"
+                    }`}
                     style={{
                       color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                       backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                     }}>
-                    <item.icon className={`w-5 h-5 ${isActive ? 'neon-glow' : ''}`} />
-                    <span className="text-xs font-medium">{item.title}</span>
-                  </Link>);
+                    <item.icon className={`${isNotification ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'neon-glow' : ''}`} />
+                    {!isNotification && <span className="text-xs font-medium">{item.title}</span>}
+                  </Component>);
               })}
             </div>
           </div>
