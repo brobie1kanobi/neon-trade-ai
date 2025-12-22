@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -10,11 +11,8 @@ import AssetInfoTabs from "../components/details/AssetInfoTabs";
 import AssetPriceChart from "../components/details/AssetPriceChart";
 import { getMarketData } from "@/functions/getMarketData";
 import TradeHistory from "../components/portfolio/TradeHistory";
-import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function CryptoDetails() {
-  const { settings } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
   const location = useLocation();
   const [assetData, setAssetData] = useState(null);
   const [holding, setHolding] = useState(null);
@@ -118,7 +116,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
             action: 'getAssetDetails',
             payload: { symbol: symbol, assetType: assetType }
           }),
-          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase(), is_simulation: isSimMode })
+          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase() })
         ]);
 
         if (userHoldings.length > 0) {
@@ -170,7 +168,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
 
     fetchAssetData();
-  }, [symbol, assetType, isSimMode]);
+  }, [symbol, assetType]);
 
   // Load full trade history for this asset (fast, before chart)
   useEffect(() => {
