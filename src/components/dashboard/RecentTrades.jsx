@@ -182,7 +182,7 @@ export default function RecentTrades({ trades, onTradeSelect }) {
               <div>
                 <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{normalizeKrakenSymbol(trade.symbol)}</p>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {format(new Date(trade.created_date), dateFmt)}
+                  {formatInTimezone(trade.created_date, timezone, is24h)}
                 </p>
               </div>
             </div>
