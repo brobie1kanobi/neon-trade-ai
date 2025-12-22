@@ -372,12 +372,18 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // Dismiss a failed order from the list (delete from database)
   const handleDismissFailedOrder = async (orderId) => {
     try {
+      // Optimistically remove from UI immediately without triggering full reload spinner
+      setClosedOrders(prev => prev.filter(o => o.id !== orderId));
+      
       await ConditionalOrder.delete(orderId);
       toast.success("Failed order dismissed");
-      loadOrders();
+      
+      // Notify parent to refresh balances/etc but don't force local loading spinner
+      if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to dismiss order:", err);
       toast.error("Failed to dismiss order");
+      loadOrders(); // Sync on error
     }
   };
 
