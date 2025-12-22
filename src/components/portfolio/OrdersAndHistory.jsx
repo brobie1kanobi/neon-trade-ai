@@ -600,7 +600,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                 <ClosedOrderRow
                   key={order.id}
                   order={order}
-                  dateFmt={dateFmt}
+                  timezone={timezone}
+                  is24h={is24h}
                   formatDisplayQuantity={formatDisplayQuantity}
                   formatPrice={formatPrice}
                   onClick={() => setSelectedClosedOrder(order)}
