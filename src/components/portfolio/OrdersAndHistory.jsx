@@ -1264,14 +1264,14 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-secondary)' }}>Created:</span>
                   <span style={{ color: 'var(--text-primary)' }}>
-                    {format(new Date(order.created_date), fullDateFmt)}
+                    {formatFullInTimezone(order.created_date, timezone, is24h)}
                   </span>
                 </div>
                 {order.updated_date &&
                 <div className="flex justify-between">
                     <span style={{ color: 'var(--text-secondary)' }}>{isFailed ? 'Failed:' : isExecuted ? 'Executed:' : 'Cancelled:'}</span>
                     <span style={{ color: 'var(--text-primary)' }}>
-                      {format(new Date(order.updated_date), fullDateFmt)}
+                      {formatFullInTimezone(order.updated_date, timezone, is24h)}
                     </span>
                   </div>
                 }
