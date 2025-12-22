@@ -33,6 +33,50 @@ import { toast } from "sonner";
 import OrderSyncButton from "./OrderSyncButton";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
+// Format date in user's timezone
+const formatInTimezone = (date, timezone, is24h) => {
+  try {
+    const options = {
+      timeZone: timezone || 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      hour: is24h ? '2-digit' : 'numeric',
+      minute: '2-digit',
+      hour12: !is24h
+    };
+    return new Date(date).toLocaleString('en-US', options);
+  } catch (e) {
+    // Fallback if timezone is invalid
+    const d = new Date(date);
+    return is24h 
+      ? format(d, "MMM d, HH:mm") 
+      : format(d, "MMM d, h:mm a");
+  }
+};
+
+// Format full date in user's timezone
+const formatFullInTimezone = (date, timezone, is24h) => {
+  try {
+    const options = {
+      timeZone: timezone || 'America/New_York',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: is24h ? '2-digit' : 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: !is24h
+    };
+    return new Date(date).toLocaleString('en-US', options);
+  } catch (e) {
+    // Fallback if timezone is invalid
+    const d = new Date(date);
+    return is24h 
+      ? format(d, "MMM d, yyyy HH:mm:ss") 
+      : format(d, "MMM d, yyyy h:mm:ss a");
+  }
+};
+
 // Normalize Kraken symbol - remove X/Z prefixes and suffixes
 const normalizeKrakenSymbol = (symbol) => {
   if (!symbol) return 'UNKNOWN';
