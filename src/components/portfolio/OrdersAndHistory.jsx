@@ -326,23 +326,35 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         // CRITICAL: API returned 0 but WebSocket has orders - use WebSocket as backup
         console.log('[OrdersAndHistory] ⚠️ API returned 0 orders, using WebSocket backup:', Object.keys(krakenOrders).length);
         const krakenOrdersList = Object.values(krakenOrders)
-          .filter(ko => (ko.volume || 0) > 0.00001)
-          .map(ko => ({
-            id: ko.order_id || ko.txid,
-            symbol: normalizeKrakenSymbol(ko.symbol || ''),
-            quantity: ko.volume || 0,
-            purchase_price: ko.price || ko.limit_price || 0,
-            status: 'active',
-            asset_type: 'crypto',
-            is_simulation: false,
-            kraken_order_id: ko.order_id || ko.txid,
-            created_date: ko.created_at || new Date().toISOString(),
-            order_type: ko.order_type || ko.ordertype,
-            side: ko.side,
-            gain_margin: 10,
-            loss_margin: 5,
-            trailing_enabled: (ko.order_type || ko.ordertype || '').includes('trailing')
-          }));
+          .map(ko => {
+             const descr = ko.descr || {};
+             const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
+             const side = descr.type || ko.side || 'unknown';
+             const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+             const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+             const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+             
+             return {
+               id: ko.order_id || ko.txid,
+               symbol: symbol,
+               quantity: volume,
+               purchase_price: price,
+               status: 'active',
+               asset_type: 'crypto',
+               is_simulation: false,
+               kraken_order_id: ko.order_id || ko.txid,
+               created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : (ko.created_at || new Date().toISOString()),
+               order_type: orderType,
+               side: side,
+               gain_margin: 10,
+               loss_margin: 5,
+               trailing_enabled: orderType.includes('trailing'),
+               kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+               trigger_price: parseFloat(descr.price) || 0
+             };
+          })
+          .filter(ko => ko.quantity > 0.00000001); // Use lower threshold and filter AFTER mapping to ensure volume is parsed
+          
         activeOrders = krakenOrdersList;
         console.log('[OrdersAndHistory] ✅ Set active orders from WebSocket backup:', activeOrders.length);
       } else if (!isSimMode && krakenOpenOrders.length === 0 && (!wsConnected || !krakenOrders || Object.keys(krakenOrders).length === 0)) {
