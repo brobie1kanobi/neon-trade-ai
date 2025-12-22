@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Home, PieChart, Wallet, Settings, Mic, RefreshCw } from "lucide-react";
+import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
 import AssistantModal from "./components/ai/AssistantModal";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
 import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
 import PushManager from "./components/utils/PushManager";
+import NotificationDrawer from "./components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
@@ -20,6 +21,7 @@ function LayoutContent({ children, currentPageName }) {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showBiometricsPrompt, setShowBiometricsPrompt] = useState(false);
   const [biometricsCheckComplete, setBiometricsCheckComplete] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // This state controls the one-time splash screen for the session
   const [showInitialSplash, setShowInitialSplash] = useState(() => !sessionStorage.getItem('appInitialized'));
@@ -146,6 +148,11 @@ function LayoutContent({ children, currentPageName }) {
     icon: Wallet
   },
   {
+    title: "Notifications",
+    action: () => setIsNotificationsOpen(true),
+    icon: Bell
+  },
+  {
     title: "Settings",
     url: createPageUrl("Settings"),
     icon: Settings
@@ -201,6 +208,7 @@ function LayoutContent({ children, currentPageName }) {
 
       <Toaster position="top-center" richColors />
       <AssistantModal isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
+      <NotificationDrawer isOpen={isNotificationsOpen} onOpenChange={setIsNotificationsOpen} />
       <PushManager />
 
       <div className="flex flex-col min-h-screen" style={{ backgroundColor: 'var(--primary-bg)' }}>
