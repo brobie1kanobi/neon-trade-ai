@@ -362,8 +362,23 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
-      setConditionalOrders(activeOrders);
-      setOpenOrders(activeOrders);
+      // CRITICAL: Separate conditional orders from regular open orders
+      // Conditional = stop-loss, take-profit, trailing-stop orders
+      // Open = limit, market orders
+      const conditionalOrdersList = activeOrders.filter(order => {
+        const orderType = (order.order_type || '').toLowerCase();
+        return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('trailing');
+      });
+      
+      const openOrdersList = activeOrders.filter(order => {
+        const orderType = (order.order_type || '').toLowerCase();
+        return !orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('trailing');
+      });
+      
+      console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);
+
+      setConditionalOrders(conditionalOrdersList);
+      setOpenOrders(openOrdersList);
 
       // Combine all closed orders - executed, cancelled, failed, and orders with errors
       // Use a Map to avoid duplicates (keyed by order ID)
