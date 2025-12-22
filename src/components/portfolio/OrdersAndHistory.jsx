@@ -165,20 +165,22 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       // CRITICAL: In LIVE mode, always fetch fresh from Kraken API
       let krakenOpenOrders = [];
       let krakenTrades = [];
-      
+
       if (!isSimMode) {
         const krakenData = await fetchKrakenData();
         krakenOpenOrders = krakenData.orders;
         krakenTrades = krakenData.trades;
         setKrakenTradesHistory(krakenTrades);
       }
-      
-      // Load local database orders
+
+      // Load ALL local database orders (not just active ones)
       const allOrders = await ConditionalOrder.filter(
         { created_by: user.email },
-        "-created_date",
-        100
+        "-updated_date",
+        200
       );
+
+      console.log('[OrdersAndHistory] Loaded', allOrders.length, 'total orders from database');
 
       // Filter orders based on simulation mode
       const modeFilteredOrders = allOrders.filter((o) => {
@@ -187,6 +189,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         }
         return isSimMode;
       });
+
+      console.log('[OrdersAndHistory] Mode filtered orders:', modeFilteredOrders.length, 'for isSimMode:', isSimMode);
 
       // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
