@@ -652,7 +652,7 @@ function LoadingState() {
 }
 
 // Trade row component
-function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick }) {
+function TradeRow({ trade, timezone, is24h, formatDisplayQuantity, formatPrice, onClick }) {
   const isBuy = trade.type === "buy";
   // Normalize the symbol for display (handles Kraken's X/Z prefixes/suffixes)
   const displaySymbol = normalizeKrakenSymbol(trade.symbol || '');
@@ -688,7 +688,7 @@ function TradeRow({ trade, dateFmt, formatDisplayQuantity, formatPrice, onClick 
             }
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {format(new Date(trade.created_date), dateFmt)}
+            {formatInTimezone(trade.created_date, timezone, is24h)}
           </p>
         </div>
       </div>
