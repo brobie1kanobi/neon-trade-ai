@@ -277,13 +277,21 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       }
 
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
-      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
-      const failed = modeFilteredOrders.filter((o) => o.status === "failed" || o.error_message);
+      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled" && !o.error_message);
+      const failed = modeFilteredOrders.filter((o) => o.status === "failed" || !!o.error_message);
 
       setConditionalOrders(activeOrders);
       setOpenOrders(activeOrders);
-      // Include failed orders in closed list, sorted by date (most recent first)
-      setClosedOrders([...executed, ...cancelled, ...failed].sort((a, b) => 
+
+      // Combine all closed orders - executed, cancelled, and failed
+      // Use a Set to avoid duplicates
+      const allClosedOrders = [...executed, ...cancelled, ...failed];
+      const uniqueClosedOrders = allClosedOrders.filter((order, index, self) =>
+        index === self.findIndex(o => o.id === order.id)
+      );
+
+      // Sort by date (most recent first)
+      setClosedOrders(uniqueClosedOrders.sort((a, b) => 
         new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
       ));
 
