@@ -65,8 +65,14 @@ export const SettingsProvider = ({ children }) => {
           tts_voice_uri: '',
           biometrics_enabled: false,
           has_seen_biometrics_prompt: false,
-          time_format: "12h"
+          time_format: "12h",
+          timezone: "America/New_York"
         };
+      }
+      
+      // Ensure timezone is always set (for existing users who don't have it)
+      if (!currentSettings.timezone) {
+        currentSettings.timezone = "America/New_York";
       }
 
       const isAdmin = (user?.role || '').toLowerCase() === 'admin';
