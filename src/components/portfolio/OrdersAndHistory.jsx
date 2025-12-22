@@ -118,9 +118,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [selectedClosedOrder, setSelectedClosedOrder] = useState(null);
 
-  const { settings, user } = useSettings();
+  const { settings, user, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
-  const timezone = settings?.timezone || 'America/New_York';
+  // CRITICAL: Only use timezone after settings have loaded to avoid showing UTC times
+  const timezone = (!settingsLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
+  
+  console.log('[OrdersAndHistory] Settings loaded:', !settingsLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
 
   // CRITICAL: Use global WebSocket connection
   const { 
