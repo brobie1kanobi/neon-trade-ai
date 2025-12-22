@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -11,8 +10,11 @@ import AssetInfoTabs from "../components/details/AssetInfoTabs";
 import AssetPriceChart from "../components/details/AssetPriceChart";
 import { getMarketData } from "@/functions/getMarketData";
 import TradeHistory from "../components/portfolio/TradeHistory";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function CryptoDetails() {
+  const { settings } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false;
   const location = useLocation();
   const [assetData, setAssetData] = useState(null);
   const [holding, setHolding] = useState(null);
