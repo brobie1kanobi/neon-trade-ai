@@ -38,6 +38,15 @@ const formatInTimezone = (date, timezone, is24h) => {
   try {
     // Ensure we have a valid timezone
     const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
+    
+    // CRITICAL: Ensure date string is treated as UTC if missing timezone offset
+    let dateObj;
+    if (typeof date === 'string' && date.includes('T') && !date.endsWith('Z') && !date.match(/[+-]\d{2}:?\d{2}$/)) {
+      dateObj = new Date(date + 'Z');
+    } else {
+      dateObj = new Date(date);
+    }
+
     const options = {
       timeZone: tz,
       month: 'short',
@@ -46,8 +55,8 @@ const formatInTimezone = (date, timezone, is24h) => {
       minute: '2-digit',
       hour12: !is24h
     };
-    const result = new Date(date).toLocaleString('en-US', options);
-    console.log('[OrdersAndHistory] formatInTimezone:', date, 'tz:', tz, 'result:', result);
+    const result = dateObj.toLocaleString('en-US', options);
+    // console.log('[OrdersAndHistory] formatInTimezone:', date, '->', dateObj.toISOString(), 'tz:', tz, 'result:', result);
     return result;
   } catch (e) {
     console.error('[OrdersAndHistory] formatInTimezone error:', e);
@@ -61,8 +70,18 @@ const formatInTimezone = (date, timezone, is24h) => {
 // Format full date in user's timezone
 const formatFullInTimezone = (date, timezone, is24h) => {
   try {
+    const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
+    
+    // CRITICAL: Ensure date string is treated as UTC if missing timezone offset
+    let dateObj;
+    if (typeof date === 'string' && date.includes('T') && !date.endsWith('Z') && !date.match(/[+-]\d{2}:?\d{2}$/)) {
+      dateObj = new Date(date + 'Z');
+    } else {
+      dateObj = new Date(date);
+    }
+
     const options = {
-      timeZone: timezone || 'America/New_York',
+      timeZone: tz,
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -71,7 +90,7 @@ const formatFullInTimezone = (date, timezone, is24h) => {
       second: '2-digit',
       hour12: !is24h
     };
-    return new Date(date).toLocaleString('en-US', options);
+    return dateObj.toLocaleString('en-US', options);
   } catch (e) {
     // Fallback if timezone is invalid
     const d = new Date(date);
