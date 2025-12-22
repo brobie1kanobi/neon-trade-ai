@@ -43,7 +43,7 @@ const normalizeKrakenSymbol = (symbol) => {
 export default function RecentTrades({ trades, onTradeSelect }) {
   const { settings } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
-  const dateFmt = is24h ? "MMM d, HH:mm" : "MMM d, h:mm a";
+  const timezone = settings?.timezone || 'America/New_York';
   const isSimMode = settings?.sim_trading_mode !== false;
   
   const [krakenTrades, setKrakenTrades] = useState([]);
