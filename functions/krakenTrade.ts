@@ -1182,75 +1182,84 @@ Deno.serve(async (req) => {
       }
 
       // CRITICAL: Minimum order validation (Kraken minimums - updated Dec 2024)
-      // Source: https://support.kraken.com/hc/en-us/articles/205893708-Minimum-order-size-volume-
+      // Source: https://support.kraken.com/articles/205893708-minimum-order-size-volume-for-trading
       const minOrderSizes = {
-        'BTC': 0.0001,
-        'XBT': 0.0001,
-        'ETH': 0.005,      // Updated: was 0.004
-        'SOL': 0.1,        // Updated: was 0.05
+        'BTC': 0.00005,    // Updated Dec 2024
+        'XBT': 0.00005,
+        'ETH': 0.001,      // Updated Dec 2024
+        'SOL': 0.02,       // Updated Dec 2024: mSOL is 0.017
         'XRP': 10.0,
-        'ADA': 10.0,
+        'ADA': 4.4,        // Updated Dec 2024
         'DOT': 0.5,
-        'DOGE': 50.0,
-        'XDG': 50.0,       // Kraken alias for DOGE
-        'LINK': 0.5,
+        'DOGE': 13.0,      // Updated Dec 2024
+        'XDG': 13.0,       // Kraken alias for DOGE
+        'LINK': 0.2,       // Updated Dec 2024
         'UNI': 0.5,
         'MATIC': 10.0,
-        'POL': 10.0,       // New Polygon symbol
+        'POL': 10.0,
         'ATOM': 0.5,
         'AVAX': 0.1,
-        'BCH': 0.002,
+        'BCH': 0.01,       // Updated Dec 2024
         'LTC': 0.04,
         'TRX': 50.0,
         'SHIB': 100000.0,
-        'XLM': 20.0,
+        'XLM': 20.0,       // Verified Dec 2024 - NOT in list, check Stellar docs
         'ALGO': 10.0,
-        'FIL': 0.2,
-        'NEAR': 1.0,
-        'APT': 0.5,
-        'ARB': 5.0,
-        'OP': 3.0,
-        'INJ': 0.3,
+        'FIL': 0.7,        // Updated Dec 2024
+        'NEAR': 0.7,       // Updated Dec 2024
+        'APT': 2.2,        // Updated Dec 2024
+        'ARB': 5.2,        // Updated Dec 2024
+        'OP': 16.0,        // Updated Dec 2024
+        'INJ': 0.9,        // Updated Dec 2024
         'PEPE': 500000.0,
         'SUI': 3.0,
-        'BABY': 100.0,     // Added BABY token min
-        'FLOKI': 5000.0,   // Added FLOKI
-        'WIF': 1.0,        // Added WIF
-        'BONK': 100000.0,  // Added BONK
-        'RENDER': 0.5,     // Added RENDER
-        'FET': 5.0,        // Added FET
-        'RNDR': 0.5,       // Added RNDR
-        'GRT': 10.0,       // Added GRT
-        'IMX': 2.0,        // Added IMX
-        'SAND': 5.0,       // Added SAND
-        'MANA': 5.0,       // Added MANA
-        'AXS': 0.2,        // Added AXS
-        'ENS': 0.1,        // Added ENS
-        'LDO': 1.0,        // Added LDO
-        'RPL': 0.1,        // Added RPL
-        'CRV': 5.0,        // Added CRV
-        'AAVE': 0.02,      // Added AAVE
-        'MKR': 0.002,      // Added MKR
-        'SNX': 2.0,        // Added SNX
-        'COMP': 0.05,      // Added COMP
-        'YFI': 0.0002,     // Added YFI
-        'SUSHI': 5.0,      // Added SUSHI
-        '1INCH': 5.0,      // Added 1INCH
-        'BAL': 0.5,        // Added BAL
-        'ZRX': 5.0,        // Added ZRX
-        'ENJ': 5.0,        // Added ENJ
-        'CHZ': 50.0,       // Added CHZ
-        'GALA': 50.0,      // Added GALA
-        'APE': 1.0,        // Added APE
-        'BLUR': 10.0,      // Added BLUR
-        'OP': 3.0,
-        'ARB': 5.0,
-        'SEI': 5.0,        // Added SEI
-        'TIA': 0.5,        // Added TIA
-        'JUP': 5.0,        // Added JUP
-        'PYTH': 10.0,      // Added PYTH
-        'WLD': 1.0,        // Added WLD
-        'STRK': 2.0        // Added STRK
+        'BABY': 50.0,      // Updated Dec 2024
+        'FLOKI': 105000.0, // Updated Dec 2024
+        'WIF': 14.0,       // Updated Dec 2024
+        'BONK': 500000.0,  // Updated Dec 2024
+        'RENDER': 0.5,
+        'FET': 18.0,       // Updated Dec 2024
+        'RNDR': 0.5,
+        'GRT': 10.0,
+        'IMX': 16.0,       // Updated Dec 2024
+        'SAND': 5.0,
+        'MANA': 8.0,       // Updated Dec 2024
+        'AXS': 4.5,        // Updated Dec 2024
+        'ENS': 0.12,       // Updated Dec 2024
+        'LDO': 2.8,        // Updated Dec 2024
+        'RPL': 0.1,
+        'CRV': 4.5,        // Updated Dec 2024
+        'AAVE': 0.015,     // Updated Dec 2024
+        'MKR': 0.0035,     // Updated Dec 2024
+        'SNX': 2.0,
+        'COMP': 0.06,      // Updated Dec 2024
+        'YFI': 0.0002,
+        'SUSHI': 5.0,
+        '1INCH': 11.0,     // Updated Dec 2024
+        'BAL': 1.5,        // Updated Dec 2024
+        'ZRX': 9.0,        // Updated Dec 2024
+        'ENJ': 148.0,      // Updated Dec 2024
+        'CHZ': 50.0,
+        'GALA': 650.0,     // Updated Dec 2024
+        'APE': 18.0,       // Updated Dec 2024
+        'BLUR': 129.0,     // Updated Dec 2024
+        'SEI': 5.0,
+        'TIA': 8.2,        // Updated Dec 2024
+        'JUP': 20.0,       // Updated Dec 2024
+        'PYTH': 10.0,
+        'WLD': 1.0,
+        'STRK': 2.0,
+        'HBAR': 20.0,      // Added
+        'KAS': 30.0,       // Added
+        'TAO': 0.008,      // Added
+        'EIGEN': 8.6,      // Added
+        'ENA': 4.0,        // Added
+        'GRASS': 13.0,     // Added
+        'GOAT': 5.0,       // Added
+        'TRUMP': 0.2,      // Added
+        'FARTCOIN': 5.0,   // Added
+        'MOVE': 6.0,       // Added
+        'KAITO': 2.5       // Added
       };
 
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
