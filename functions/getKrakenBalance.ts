@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Fetch prices - fetch individually for known pairs, skip unknown
     let prices = {};
-    if (symbols.length > 0 && !isTimedOut) {
+    if (symbols.length > 0) {
       try {
         // Only fetch prices for known pairs (some tokens like BABY may not have public tickers)
         const knownPairs = {
