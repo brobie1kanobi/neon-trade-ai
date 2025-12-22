@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Plus, Minus, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Building2, Plus, Minus, AlertCircle, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
@@ -15,6 +15,7 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
   const [krakenConnected, setKrakenConnected] = useState(false);
   const [krakenChecking, setKrakenChecking] = useState(true);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
@@ -143,6 +144,57 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
 
   return (
     <>
+      {/* Disclaimer Modal */}
+      {showDisclaimerModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-gray-900 rounded-xl max-w-md w-full p-6 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Manage Funds on Exchange</h3>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                To deposit or withdraw funds, please visit your connected exchange (Kraken) directly. We don't want to handle your money, only help you grow it. Think of your money like a seed. You bring it to your garden (exchange) and Neon Trade builds a greenhouse over it, waters and cares for it until you're ready to harvest it. 😁
+              </p>
+              
+              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-800 dark:text-red-300 mb-1">
+                      Important: Disable Auto-Trader First
+                    </p>
+                    <p className="text-xs text-red-700 dark:text-red-400">
+                      Before making deposits or withdrawals, turn off the Auto-Trader in Settings to prevent insufficient funds errors or failed trades during the transaction.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Once your transaction completes on the exchange, your balance will automatically sync with the app.
+              </p>
+            </div>
+
+            <Button 
+              className="w-full"
+              onClick={() => setShowDisclaimerModal(false)}
+            >
+              Got it
+            </Button>
+          </motion.div>
+        </div>
+      )}
+
       {/* Connection Modal */}
       {showConnectionModal &&
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -272,14 +324,14 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
               <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
                 You're in simulation mode. Use virtual funds to practice trading.
               </p>
-              <div className="flex gap-2 justify-center px-2">
-                <Button onClick={() => onQuickAction?.('deposit')} className="flex-1 max-w-[140px] text-sm px-3 py-2 h-auto">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Add Funds
-                </Button>
-                <Button onClick={() => onQuickAction?.('withdrawal')} variant="outline" className="flex-1 max-w-[140px] text-sm px-3 py-2 h-auto">
-                  <Minus className="w-4 h-4 mr-1.5" />
-                  Remove Funds
+              <div className="flex justify-center">
+                <Button 
+                  onClick={() => setShowDisclaimerModal(true)} 
+                  variant="outline"
+                  className="text-sm px-4 py-2 h-auto"
+                >
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Manage Funds
                 </Button>
               </div>
             </div> :
@@ -325,23 +377,14 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
                         </p>
                       </div>
 
-                      <div className="flex gap-2">
-                        <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => onQuickAction?.('deposit')}>
-
-                          <Plus className="w-4 h-4 mr-1" />
-                          Deposit
-                        </Button>
-                        <Button
-                    size="sm"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => onQuickAction?.('withdrawal')}>
-
-                          <Minus className="w-4 h-4 mr-1" />
-                          Withdraw
+                      <div className="flex justify-center">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => setShowDisclaimerModal(true)}
+                        >
+                          <AlertCircle className="w-4 h-4 mr-2" />
+                          Manage Funds
                         </Button>
                       </div>
                     </>
