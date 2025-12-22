@@ -115,45 +115,19 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
 }
 
 Deno.serve(async (req) => {
-  const startTime = Date.now();
-  let isTimedOut = false;
-  
-  // CRITICAL: 6-SECOND HARD TIMEOUT - returns response immediately
-  const globalTimeoutId = setTimeout(() => {
-    console.error('[krakenApi] ⏰ GLOBAL TIMEOUT (6s)');
-    isTimedOut = true;
-  }, 6000);
-
-  // Helper to check timeout
-  const checkTimeout = () => {
-    if (isTimedOut) {
-      throw new Error('Request timeout - please try again');
-    }
-  };
-
   try {
     const base44 = createClientFromRequest(req);
     
-    checkTimeout();
-    
-    // FASTER auth check - 1.5s timeout
-    const user = await Promise.race([
-      base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 1500))
-    ]);
+    const user = await base44.auth.me();
 
     if (!user) {
-      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
-
-    checkTimeout();
 
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
     const isCreator = !!user?.is_creator;
     
     if (!isAdmin && !isCreator) {
-      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Access denied', success: false }, { status: 403 });
     }
 
@@ -166,24 +140,14 @@ Deno.serve(async (req) => {
 
     const { action, payload } = body;
     if (!action) {
-      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Missing action', success: false }, { status: 400 });
     }
 
     console.log('[krakenApi] Action:', action, 'User:', user.email);
 
-    checkTimeout();
-
-    // All actions share same connection fetch - 1.5s timeout
-    const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection fetch timeout')), 1500))
-    ]);
+    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
     
-    checkTimeout();
-
     if (action === 'status') {
-      clearTimeout(globalTimeoutId);
       return Response.json({
         connected: connections?.length > 0,
         success: true,
@@ -256,8 +220,6 @@ Deno.serve(async (req) => {
 
     const connection = connections[0];
     
-    checkTimeout();
-
     if (action === 'getBalance') {
       const result = await callKraken(
         connection.api_key, 
@@ -265,8 +227,6 @@ Deno.serve(async (req) => {
         '/0/private/Balance', 
         {}
       );
-
-      checkTimeout();
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -288,7 +248,6 @@ Deno.serve(async (req) => {
         balances[normalizedAsset] = parseFloat(amount) || 0;
       }
 
-      clearTimeout(globalTimeoutId);
       return Response.json({ 
         success: true, 
         balance: balances,
@@ -305,8 +264,6 @@ Deno.serve(async (req) => {
         '/0/private/BalanceEx', 
         {}
       );
-
-      checkTimeout();
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -338,7 +295,6 @@ Deno.serve(async (req) => {
         };
       }
 
-      clearTimeout(globalTimeoutId);
       return Response.json({ 
         success: true, 
         balance: balances,
@@ -456,11 +412,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    clearTimeout(globalTimeoutId);
     return Response.json({ error: 'Unknown action', success: false }, { status: 400 });
 
   } catch (error) {
-    clearTimeout(globalTimeoutId);
     console.error('[krakenApi] ❌ Error:', error.message);
     
     // CRITICAL: Return 200 with success=false instead of 500

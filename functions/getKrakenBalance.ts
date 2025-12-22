@@ -101,37 +101,15 @@ function buildKrakenPair(symbol) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
-  let isTimedOut = false;
-  
-  // CRITICAL: 8-SECOND ABSOLUTE TIMEOUT - returns response immediately
-  const globalTimeoutId = setTimeout(() => {
-    console.error('[getKrakenBalance] ⏰ TIMEOUT (8s) - ABORTING');
-    isTimedOut = true;
-  }, 8000);
-  
-  // Helper to check timeout and return early
-  const checkTimeout = () => {
-    if (isTimedOut) {
-      throw new Error('Request timeout - please try again');
-    }
-  };
   
   try {
     const base44 = createClientFromRequest(req);
     
-    checkTimeout();
-    
-    const user = await Promise.race([
-      base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 1500))
-    ]);
+    const user = await base44.auth.me();
 
     if (!user) {
-      clearTimeout(globalTimeoutId);
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
-
-    checkTimeout();
 
     const userKey = user.email;
     if (!rateLimiters.has(userKey)) {
@@ -139,10 +117,7 @@ Deno.serve(async (req) => {
     }
     const limiter = rateLimiters.get(userKey);
 
-    const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
-    ]);
+    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
 
     if (!connections || connections.length === 0) {
       clearTimeout(globalTimeoutId);
@@ -153,8 +128,6 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
-    checkTimeout();
-
     // Wait for rate limit capacity (but don't wait forever)
     await Promise.race([
       limiter.waitForCapacity(1),
@@ -162,19 +135,10 @@ Deno.serve(async (req) => {
     ]);
     limiter.recordCall(1);
 
-    checkTimeout();
-
-    // CRITICAL: 4 second timeout for balance fetch
     // CRITICAL: Fetch BOTH balance AND extended balance (includes locked amounts)
     const [balanceResponse, extendedBalanceResponse] = await Promise.all([
-      Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 4000))
-      ]),
-      Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }),
-        new Promise((resolve) => setTimeout(() => resolve({ data: { success: false } }), 4000))
-      ]).catch(() => ({ data: { success: false } }))
+      base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
+      base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' })
     ]);
 
     let balanceData = balanceResponse?.data || balanceResponse;
@@ -185,7 +149,6 @@ Deno.serve(async (req) => {
     
     // CRITICAL: If not connected, return early with success=false
     if (balanceData?.success === false || balanceData?.connected === false) {
-      clearTimeout(globalTimeoutId);
       return Response.json({
         success: false,
         connected: false,
@@ -197,8 +160,6 @@ Deno.serve(async (req) => {
         total_portfolio_value_usd: 0
       }, { status: 200 });
     }
-    
-    checkTimeout();
     
     let krakenBalance = null;
     if (balanceData?.balance) {
@@ -217,10 +178,10 @@ Deno.serve(async (req) => {
     
     if (!krakenBalance) throw new Error('Invalid balance response');
 
-    // CRITICAL FIX: Use AVAILABLE balance only (NOT total which includes locked)
-    // Locked amounts are already in pending sell orders - counting them here double-counts
-    // Kraken UI shows "balance" field as the portfolio value, NOT "total"
+    // CRITICAL: Use TOTAL balance (Available + Hold) for USD to reflect true account equity
+    // This matches Kraken's "Total Balance" which includes funds locked in open buy orders
     const usdBalance = parseFloat(
+      extendedBalance?.ZUSD?.total || extendedBalance?.USD?.total ||
       extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
       krakenBalance.ZUSD || krakenBalance.USD || 0
     );
@@ -340,27 +301,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // CRITICAL: Calculate elapsed time BEFORE attempting cost basis
-    const elapsed = Date.now() - startTime;
-    const timeRemaining = 7000 - elapsed; // Leave 1s buffer before 8s timeout
-
     let costBasisAvailable = false;
 
-    // CRITICAL: Only try cost basis if we have TIME and RATE LIMIT allows AND not timed out
-    if (timeRemaining > 2000 && limiter.canMakeCall(2) && !isTimedOut) {
+    // CRITICAL: Only try cost basis if rate limit allows
+    if (limiter.canMakeCall(2)) {
       try {
-        console.log('[getKrakenBalance] Attempting cost basis fetch (', Math.floor(timeRemaining / 1000), 's remaining)');
+        console.log('[getKrakenBalance] Attempting cost basis fetch');
         
         await limiter.waitForCapacity(2);
         limiter.recordCall(2);
         
-        // Use remaining time - 500ms buffer, max 2s
-        const costBasisTimeout = Math.min(timeRemaining - 500, 2000);
-        
-        const tradesResponse = await Promise.race([
-          base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), costBasisTimeout))
-        ]);
+        const tradesResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' });
 
         const tradesData = tradesResponse?.data || tradesResponse;
         
@@ -411,8 +362,6 @@ Deno.serve(async (req) => {
     const totalCostBasis = holdingsWithValues.reduce((sum, h) => sum + (h.total_cost_basis || 0), 0);
     const totalUnrealizedPnL = totalCostBasis > 0 ? totalCryptoValue - totalCostBasis : 0;
 
-    clearTimeout(globalTimeoutId);
-
     console.log('[getKrakenBalance] ✅ Success:', {
       duration_ms: Date.now() - startTime,
       usd: usdBalance.toFixed(2),
@@ -440,7 +389,6 @@ Deno.serve(async (req) => {
     }, { status: 200 });
 
   } catch (error) {
-    clearTimeout(globalTimeoutId);
     console.error('[getKrakenBalance] Error:', error.message);
     
     // CRITICAL: Always return graceful error response with empty data
