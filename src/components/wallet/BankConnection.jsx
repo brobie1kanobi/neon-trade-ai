@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Plus, Minus, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Building2, Plus, Minus, AlertCircle, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
@@ -153,8 +153,8 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
             className="bg-white dark:bg-gray-900 rounded-xl max-w-md w-full p-6 shadow-2xl"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-yellow-600" />
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
               <div>
                 <h3 className="text-lg font-bold">Manage Funds on Exchange</h3>
