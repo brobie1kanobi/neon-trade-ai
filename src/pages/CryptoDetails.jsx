@@ -1,10 +1,11 @@
-
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { User, Holding, Trade } from "@/entities/all";
 import { InvokeLLM } from "@/integrations/Core";
+import { useSettings } from "@/components/utils/SettingsContext";
+import { base44 } from "@/api/base44Client";
 
 import AssetHeader from "../components/details/AssetHeader";
 import AssetInfoTabs from "../components/details/AssetInfoTabs";
@@ -14,6 +15,9 @@ import TradeHistory from "../components/portfolio/TradeHistory";
 
 export default function CryptoDetails() {
   const location = useLocation();
+  const { settings, user } = useSettings();
+  const isSimMode = settings?.sim_trading_mode !== false; // Default to sim if undefined
+  
   const [assetData, setAssetData] = useState(null);
   const [holding, setHolding] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -110,20 +114,60 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
 
     const fetchAssetData = async () => {
       try {
-        const user = await User.me();
-        const [{ data: details }, userHoldings] = await Promise.all([
-          getMarketData({
-            action: 'getAssetDetails',
-            payload: { symbol: symbol, assetType: assetType }
-          }),
-          Holding.filter({ created_by: user.email, symbol: symbol.toUpperCase() })
-        ]);
-
-        if (userHoldings.length > 0) {
-          setHolding(userHoldings[0]);
+        const currentUser = user || await User.me();
+        
+        // Fetch asset details (market data)
+        const marketDataPromise = getMarketData({
+          action: 'getAssetDetails',
+          payload: { symbol: symbol, assetType: assetType }
+        });
+        
+        let holdingData = null;
+        
+        // Fetch holdings based on mode
+        if (isSimMode) {
+          // Sim mode: Fetch from DB
+          const userHoldings = await Holding.filter({ 
+            created_by: currentUser.email, 
+            symbol: symbol.toUpperCase(),
+            is_simulation: true
+          });
+          holdingData = userHoldings.length > 0 ? userHoldings[0] : null;
         } else {
-          setHolding(null);
+          // Live mode: Try Kraken API first, fallback to DB
+          try {
+            const krakenRes = await base44.functions.invoke('getKrakenBalance', {});
+            const kData = krakenRes?.data || krakenRes;
+            
+            if (kData?.success && kData?.holdings) {
+              const found = kData.holdings.find(h => (h.symbol || "").toUpperCase() === symbol.toUpperCase());
+              if (found) {
+                holdingData = {
+                  ...found,
+                  is_simulation: false,
+                  asset_type: assetType // Ensure asset type is set
+                };
+              }
+            }
+          } catch (kErr) {
+            console.warn("Kraken balance fetch failed in CryptoDetails:", kErr);
+          }
+          
+          // Fallback to DB if not found in Kraken (or Kraken failed)
+          if (!holdingData) {
+            const userHoldings = await Holding.filter({ 
+              created_by: currentUser.email, 
+              symbol: symbol.toUpperCase(),
+              is_simulation: false
+            });
+            holdingData = userHoldings.length > 0 ? userHoldings[0] : null;
+          }
         }
+        
+        // Wait for market data
+        const { data: details } = await marketDataPromise;
+
+        setHolding(holdingData);
 
         if (!details) {
           throw new Error("Failed to fetch asset details.");
@@ -168,7 +212,7 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     };
 
     fetchAssetData();
-  }, [symbol, assetType]);
+  }, [symbol, assetType, isSimMode, user]);
 
   // Load full trade history for this asset (fast, before chart)
   useEffect(() => {
@@ -176,9 +220,13 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
     const loadTrades = async () => {
       try {
         setTradesLoading(true);
-        const user = await User.me();
+        const currentUser = user || await User.me();
         const list = await Trade.filter(
-          { created_by: user.email, symbol: (symbol || "").toUpperCase() },
+          { 
+            created_by: currentUser.email, 
+            symbol: (symbol || "").toUpperCase(),
+            is_simulation: isSimMode 
+          },
           "-created_date",
           500
         );
