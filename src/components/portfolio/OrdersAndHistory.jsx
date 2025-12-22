@@ -551,27 +551,33 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             <TabsList className="w-full grid grid-cols-4 mb-4 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
               <TabsTrigger
                 value="trades"
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                className="text-[10px] sm:text-xs px-1 sm:px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
                 
-                Trades {tradesCount > 0 && <span className="ml-1 text-xs opacity-60">({tradesCount})</span>}
+                <span className="hidden sm:inline">Trades</span>
+                <span className="sm:hidden">Trades</span>
+                {tradesCount > 0 && <span className="ml-0.5 sm:ml-1 text-[9px] sm:text-xs opacity-60">({tradesCount})</span>}
               </TabsTrigger>
               <TabsTrigger
                 value="open"
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                className="text-[10px] sm:text-xs px-1 sm:px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
                 
-                Open {openCount > 0 && <span className="ml-1 text-xs opacity-60">({openCount})</span>}
+                Open {openCount > 0 && <span className="ml-0.5 sm:ml-1 text-[9px] sm:text-xs opacity-60">({openCount})</span>}
               </TabsTrigger>
               <TabsTrigger
                 value="conditional"
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                className="text-[10px] sm:text-xs px-1 sm:px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded leading-tight">
                 
-                Conditional {conditionalCount > 0 && <span className="ml-1 text-xs opacity-60">({conditionalCount})</span>}
+                <span className="hidden sm:inline">Conditional</span>
+                <span className="sm:hidden">Cond.</span>
+                {conditionalCount > 0 && <span className="ml-0.5 sm:ml-1 text-[9px] sm:text-xs opacity-60">({conditionalCount})</span>}
               </TabsTrigger>
               <TabsTrigger
                 value="closed"
-                className="text-xs px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded">
+                className="text-[10px] sm:text-xs px-1 sm:px-2 py-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 data-[state=active]:shadow-sm rounded leading-tight">
                 
-                Closed/Failed {closedCount > 0 && <span className="ml-1 text-xs opacity-60">({closedCount})</span>}
+                <span className="hidden sm:inline">Closed/Failed</span>
+                <span className="sm:hidden">Closed</span>
+                {closedCount > 0 && <span className="ml-0.5 sm:ml-1 text-[9px] sm:text-xs opacity-60">({closedCount})</span>}
               </TabsTrigger>
             </TabsList>
 
