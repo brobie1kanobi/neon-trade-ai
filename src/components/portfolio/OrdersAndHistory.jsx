@@ -264,10 +264,6 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         
         // Convert Kraken orders to our format
         const krakenOrdersList = krakenOpenOrders
-          .filter(ko => {
-            const volume = parseFloat(ko.vol) || ko.volume || 0;
-            return volume > 0.00001;
-          })
           .map(ko => {
             // Parse Kraken order format
             const descr = ko.descr || {};
