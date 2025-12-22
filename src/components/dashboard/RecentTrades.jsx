@@ -3,9 +3,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowUpRight, ArrowDownRight, Clock, RefreshCw } from "lucide-react";
-import { format } from "date-fns";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { base44 } from "@/api/base44Client";
+
+// Format date in user's timezone
+const formatInTimezone = (date, timezone, is24h) => {
+  try {
+    const options = {
+      timeZone: timezone || 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      hour: is24h ? '2-digit' : 'numeric',
+      minute: '2-digit',
+      hour12: !is24h
+    };
+    return new Date(date).toLocaleString('en-US', options);
+  } catch (e) {
+    return new Date(date).toLocaleString();
+  }
+};
 
 // Normalize Kraken symbol - remove X/Z prefixes and suffixes
 const normalizeKrakenSymbol = (symbol) => {
