@@ -46,13 +46,13 @@ const normalizeKrakenSymbol = (symbol) => {
 };
 
 export default function RecentTrades({ trades, onTradeSelect }) {
-  const { settings, isLoading } = useSettings();
+  const { settings, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   // CRITICAL: Only use timezone after settings have loaded to avoid showing UTC times
-  const timezone = (!isLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
+  const timezone = (!settingsLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  console.log('[RecentTrades] Settings loaded:', !isLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
+  console.log('[RecentTrades] Settings loaded:', !settingsLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
   
   const [krakenTrades, setKrakenTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(false);

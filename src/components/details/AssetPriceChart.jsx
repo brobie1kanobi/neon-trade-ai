@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -136,7 +135,7 @@ export default function AssetPriceChart({ symbol, onPriceUpdate, assetType = "cr
   // Use preloaded trades if provided; otherwise, fallback to internal fetch
   useEffect(() => {
     const mapTradesToMarkers = (tradesArr) => {
-      const daysMap = { "24h": 1, "7d": 7, "1m": 30, "3m": 90, "3m": 90, "1y": 365 };
+      const daysMap = { "24h": 1, "7d": 7, "1m": 30, "3m": 90, "1y": 365 };
       const days = daysMap[timeframe] || 1;
       const startMs = Date.now() - days * 24 * 60 * 60 * 1000;
       return (tradesArr || [])
