@@ -706,7 +706,7 @@ function TradeRow({ trade, timezone, is24h, formatDisplayQuantity, formatPrice, 
 }
 
 // Open order row - enhanced for Kraken orders
-function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
+function OrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
   // Normalize the symbol for display
   const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
   
@@ -759,7 +759,7 @@ function OrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onCancel
             )}
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {order.kraken_description || format(new Date(order.created_date), dateFmt)}
+            {order.kraken_description || formatInTimezone(order.created_date, timezone, is24h)}
           </p>
         </div>
       </div>
