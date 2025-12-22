@@ -280,19 +280,28 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         activeOrders = krakenOrdersList;
       }
 
+      // CRITICAL: Include ALL non-active orders in closed list
+      // This includes: executed, cancelled, failed, and orders with error_message
       const executed = modeFilteredOrders.filter((o) => o.status === "executed");
-      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled" && !o.error_message);
-      const failed = modeFilteredOrders.filter((o) => o.status === "failed" || !!o.error_message);
+      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
+      const failed = modeFilteredOrders.filter((o) => o.status === "failed");
+      const withErrors = modeFilteredOrders.filter((o) => !!o.error_message && o.status !== "active");
+
+      console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
       setConditionalOrders(activeOrders);
       setOpenOrders(activeOrders);
 
-      // Combine all closed orders - executed, cancelled, and failed
-      // Use a Set to avoid duplicates
-      const allClosedOrders = [...executed, ...cancelled, ...failed];
-      const uniqueClosedOrders = allClosedOrders.filter((order, index, self) =>
-        index === self.findIndex(o => o.id === order.id)
-      );
+      // Combine all closed orders - executed, cancelled, failed, and orders with errors
+      // Use a Map to avoid duplicates (keyed by order ID)
+      const closedOrdersMap = new Map();
+      [...executed, ...cancelled, ...failed, ...withErrors].forEach(order => {
+        closedOrdersMap.set(order.id, order);
+      });
+
+      const uniqueClosedOrders = Array.from(closedOrdersMap.values());
+
+      console.log('[OrdersAndHistory] Total unique closed orders:', uniqueClosedOrders.length);
 
       // Sort by date (most recent first)
       setClosedOrders(uniqueClosedOrders.sort((a, b) => 
