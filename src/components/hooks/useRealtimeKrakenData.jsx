@@ -69,11 +69,23 @@ export function useRealtimeKrakenData(options = {}) {
       // CRITICAL: USD balance is the cash wallet
       const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
 
+      // CRITICAL: Count TOTAL assets (including those locked in orders)
+      // Use balance.balance (total) not just available
       const totalAssets = Object.keys(wsBalances).filter(asset => {
         if (asset === 'USD' || asset === 'ZUSD') return false;
-        const balance = wsBalances[asset]?.balance || 0;
-        return balance > 0.00001;
+        const balanceObj = wsBalances[asset];
+        const totalBalance = balanceObj?.balance || balanceObj?.available || 0;
+        return totalBalance > 0.00001;
       }).length;
+      
+      console.log('[useRealtimeKrakenData] Total assets calculation:', {
+        totalAssets,
+        allAssets: Object.keys(wsBalances),
+        cryptoAssets: Object.keys(wsBalances).filter(k => k !== 'USD' && k !== 'ZUSD'),
+        balancesWithValue: Object.entries(wsBalances)
+          .filter(([k, v]) => k !== 'USD' && k !== 'ZUSD' && ((v?.balance || v?.available || 0) > 0.00001))
+          .map(([k, v]) => ({ asset: k, balance: v?.balance, available: v?.available }))
+      });
 
       // CRITICAL: cryptoHoldingsValue is ONLY crypto assets (NOT including USD)
       // CRITICAL: Use balance.balance which is the TOTAL (including locked in orders)

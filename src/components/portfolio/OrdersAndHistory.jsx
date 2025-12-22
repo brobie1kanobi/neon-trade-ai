@@ -197,9 +197,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
   // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
-    if (!user?.email) return;
+    if (!user?.email) {
+      setIsLoading(false);
+      return;
+    }
 
+    console.log('[OrdersAndHistory] Starting loadOrders - isSimMode:', isSimMode);
     setIsLoading(true);
+    
     try {
       // CRITICAL: In LIVE mode, always fetch fresh from Kraken API
       let krakenOpenOrders = [];
@@ -207,15 +212,23 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       if (!isSimMode) {
         console.log('[OrdersAndHistory] LIVE MODE - Fetching Kraken data...');
-        const krakenData = await fetchKrakenData();
-        krakenOpenOrders = krakenData.orders;
-        krakenTrades = krakenData.trades;
-        console.log('[OrdersAndHistory] Kraken fetch complete - Orders:', krakenOpenOrders.length, 'Trades:', krakenTrades.length);
-        setKrakenTradesHistory(krakenTrades);
         
-        // If no orders from API but WebSocket has them, log warning
-        if (krakenOpenOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
-          console.warn('[OrdersAndHistory] API returned 0 orders but WebSocket has', Object.keys(krakenOrders).length, '- will use WebSocket');
+        try {
+          const krakenData = await fetchKrakenData();
+          krakenOpenOrders = krakenData.orders || [];
+          krakenTrades = krakenData.trades || [];
+          console.log('[OrdersAndHistory] ✅ Kraken fetch complete - Orders:', krakenOpenOrders.length, 'Trades:', krakenTrades.length);
+          setKrakenTradesHistory(krakenTrades);
+          
+          // If no orders from API but WebSocket has them, log warning
+          if (krakenOpenOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
+            console.warn('[OrdersAndHistory] ⚠️ API returned 0 orders but WebSocket has', Object.keys(krakenOrders).length, '- will use WebSocket');
+          }
+        } catch (fetchError) {
+          console.error('[OrdersAndHistory] ❌ Kraken fetch error:', fetchError);
+          // Continue with empty arrays - will use WebSocket or local DB
+          krakenOpenOrders = [];
+          krakenTrades = [];
         }
       }
 
@@ -239,11 +252,15 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       console.log('[OrdersAndHistory] Mode filtered orders:', modeFilteredOrders.length, 'for isSimMode:', isSimMode);
 
       // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
-      // ALWAYS use Kraken API orders when available - don't filter by length
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
       
-      if (!isSimMode && (krakenOpenOrders.length > 0 || wsConnected)) {
-        console.log('[OrdersAndHistory] LIVE MODE - Kraken API orders:', krakenOpenOrders.length, 'WebSocket orders:', Object.keys(krakenOrders || {}).length);
+      console.log('[OrdersAndHistory] Processing orders - isSimMode:', isSimMode, 'Kraken API:', krakenOpenOrders.length, 'WebSocket:', Object.keys(krakenOrders || {}).length, 'Local DB:', activeOrders.length);
+      
+      if (!isSimMode) {
+        console.log('[OrdersAndHistory] 🟢 LIVE MODE - Processing Kraken orders...');
+        if (krakenOpenOrders.length > 0) {
+          console.log('[OrdersAndHistory] Converting', krakenOpenOrders.length, 'Kraken API orders...');
+        }
         
         // Convert Kraken orders to our format
         const krakenOrdersList = krakenOpenOrders
@@ -366,8 +383,16 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
+      toast.error('Failed to load orders', {
+        description: err.message || 'Unknown error'
+      });
+      // CRITICAL: Still set empty arrays on error so UI doesn't stay stuck
+      setConditionalOrders([]);
+      setOpenOrders([]);
+      setClosedOrders([]);
     } finally {
       setIsLoading(false);
+      console.log('[OrdersAndHistory] Finished loadOrders');
     }
   }, [user?.email, isSimMode, wsConnected, krakenOrders, fetchKrakenData]);
 
