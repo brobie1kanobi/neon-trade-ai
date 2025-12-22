@@ -355,7 +355,7 @@ Deno.serve(async (req) => {
         // Continue without cost basis - not critical
       }
     } else {
-      console.warn('[getKrakenBalance] Skipping cost basis (time:', Math.floor(timeRemaining / 1000), 's, rate:', limiter.counter.toFixed(2), ')');
+      console.warn('[getKrakenBalance] Skipping cost basis (rate limited)');
     }
 
     const totalValue = usdBalance + totalCryptoValue;
