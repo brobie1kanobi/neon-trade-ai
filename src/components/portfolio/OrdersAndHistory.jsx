@@ -239,10 +239,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       console.log('[OrdersAndHistory] Mode filtered orders:', modeFilteredOrders.length, 'for isSimMode:', isSimMode);
 
       // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
+      // ALWAYS use Kraken API orders when available - don't filter by length
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
       
-      if (!isSimMode && krakenOpenOrders.length > 0) {
-        console.log('[OrdersAndHistory] Using', krakenOpenOrders.length, 'live Kraken orders from API');
+      if (!isSimMode && (krakenOpenOrders.length > 0 || wsConnected)) {
+        console.log('[OrdersAndHistory] LIVE MODE - Kraken API orders:', krakenOpenOrders.length, 'WebSocket orders:', Object.keys(krakenOrders || {}).length);
         
         // Convert Kraken orders to our format
         const krakenOrdersList = krakenOpenOrders
@@ -282,8 +283,10 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             };
           });
 
+        // CRITICAL: Always set activeOrders from Kraken in LIVE mode, even if empty
+        // This ensures Orders & History shows accurate state (no orders = empty list)
         activeOrders = krakenOrdersList;
-        console.log('[OrdersAndHistory] Processed Kraken orders:', activeOrders.length);
+        console.log('[OrdersAndHistory] ✅ Set active orders from Kraken API:', activeOrders.length);
         
         // Clean up invalid local orders
         const invalidLocalOrders = modeFilteredOrders.filter(o => 
@@ -302,9 +305,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             })
           )).catch(err => console.error('[OrdersAndHistory] Cleanup error:', err));
         }
-      } else if (!isSimMode && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
-        // Fallback to WebSocket data if API fetch returned empty
-        console.log('[OrdersAndHistory] Using WebSocket orders as fallback');
+      } else if (!isSimMode && krakenOpenOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
+        // CRITICAL: API returned 0 but WebSocket has orders - use WebSocket as backup
+        console.log('[OrdersAndHistory] ⚠️ API returned 0 orders, using WebSocket backup:', Object.keys(krakenOrders).length);
         const krakenOrdersList = Object.values(krakenOrders)
           .filter(ko => (ko.volume || 0) > 0.00001)
           .map(ko => ({
@@ -324,6 +327,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             trailing_enabled: (ko.order_type || ko.ordertype || '').includes('trailing')
           }));
         activeOrders = krakenOrdersList;
+        console.log('[OrdersAndHistory] ✅ Set active orders from WebSocket backup:', activeOrders.length);
+      } else if (!isSimMode && krakenOpenOrders.length === 0 && (!wsConnected || !krakenOrders || Object.keys(krakenOrders).length === 0)) {
+        // CRITICAL: No orders from API OR WebSocket - set empty array
+        console.log('[OrdersAndHistory] ⚠️ No orders from Kraken API or WebSocket - setting empty list');
+        activeOrders = [];
       }
 
       // CRITICAL: Include ALL non-active orders in closed list

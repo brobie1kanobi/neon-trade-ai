@@ -61,11 +61,9 @@ export function useRealtimeKrakenData(options = {}) {
       return;
     }
 
-    // CRITICAL: Only update if we actually have balance data
-    const hasBalanceData = wsBalances && Object.keys(wsBalances).length > 0;
-    if (!hasBalanceData) {
-      return;
-    }
+    // CRITICAL: Always process and update, even if balances appear empty
+    // This ensures we show "0 assets" correctly when there genuinely are no balances
+    // The previous check prevented initial load from working properly
 
     try {
       // CRITICAL: USD balance is the cash wallet
@@ -101,20 +99,18 @@ export function useRealtimeKrakenData(options = {}) {
       // totalPortfolioValue = cash + crypto for total balance display
       const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
-      // CRITICAL: Only update state if we have meaningful data
-      // This prevents showing $0 when WebSocket hasn't received data yet
-      if (usdBalance > 0 || cryptoHoldingsValue > 0 || totalAssets > 0) {
-        setData({
-          balances: wsBalances,
-          orders: wsOrders,
-          prices: wsPrices,
-          usdBalance,              // Cash Wallet
-          cryptoHoldingsValue,     // Portfolio (crypto only)
-          totalAssets,
-          totalPortfolioValue,     // Total Balance (cash + crypto)
-          lastUpdated: new Date().toISOString()
-        });
-      }
+      // CRITICAL: ALWAYS update state when WebSocket is connected and has data
+      // This fixes the issue where "0 assets" wasn't showing until manual refresh
+      setData({
+        balances: wsBalances,
+        orders: wsOrders,
+        prices: wsPrices,
+        usdBalance,              // Cash Wallet
+        cryptoHoldingsValue,     // Portfolio (crypto only)
+        totalAssets,
+        totalPortfolioValue,     // Total Balance (cash + crypto)
+        lastUpdated: new Date().toISOString()
+      });
 
       setLoading(false);
       setError(null);
