@@ -869,7 +869,7 @@ function ConditionalOrderRow({ order, timezone, is24h, formatDisplayQuantity, fo
 }
 
 // Closed order row
-function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, onClick, onDismiss }) {
+function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, onClick, onDismiss }) {
   const isExecuted = order.status === "executed";
   const isFailed = order.status === "failed" || !!order.error_message;
   // Normalize the symbol for display
@@ -941,7 +941,7 @@ function ClosedOrderRow({ order, dateFmt, formatDisplayQuantity, formatPrice, on
               <Info className="w-3 h-3 opacity-50" />
             </div>
             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {format(new Date(order.updated_date || order.created_date), dateFmt)}
+              {formatInTimezone(order.updated_date || order.created_date, timezone, is24h)}
             </p>
             {isFailed && order.error_message && (
               <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
