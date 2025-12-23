@@ -220,7 +220,27 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
     if (!isSimMode) {
       try {
         console.log('[TradingInterface] LIVE mode - sending order to Kraken:', tradeData);
-        
+
+        // Preflight funds check (LIVE BUY) against Kraken USD available
+        if (tradeData.type === 'buy') {
+          try {
+            const balRes = await base44.functions.invoke('getKrakenBalance', {});
+            const bal = balRes?.data || balRes;
+            const usdAvail = parseFloat(bal?.usd_balance || 0);
+            const estCost = Number(tradeData.total_value || (tradeData.quantity * tradeData.price) || 0);
+            const buffer = Math.max(0.5, estCost * 0.01); // 1% or $0.50 buffer
+            if (usdAvail + 1e-6 < estCost + buffer) {
+              notify.error('Insufficient USD on Kraken', {
+                description: `Available: $${usdAvail.toFixed(2)} • Needed: $${(estCost + buffer).toFixed(2)} (incl. 1% buffer)`
+              });
+              setIsExecuting(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('[TradingInterface] Balance preflight failed, proceeding:', e?.message || e);
+          }
+        }
+
         const krakenResponse = await base44.functions.invoke('krakenTrade', {
           action: 'place_order',
           symbol: tradeData.symbol,
