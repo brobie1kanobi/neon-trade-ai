@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
  * Kraken Trade Executor - COMPLETE WebSocket v2 Trading Implementation
@@ -1282,11 +1282,12 @@ Deno.serve(async (req) => {
       };
 
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
+      let finalQty = parsedQty;
+      let qtyAdjusted = false;
       if (parsedQty < minQty) {
-        return Response.json({
-          error: `Order too small. Minimum for ${symbol}: ${minQty}`,
-          success: false
-        }, { status: 400 });
+        finalQty = minQty;
+        qtyAdjusted = true;
+        console.warn('[krakenTrade] Quantity below minimum. Auto-adjusting', parsedQty, '->', finalQty);
       }
 
       console.log('[krakenTrade] Place order:', { symbol, side, quantity, orderType });
@@ -1295,7 +1296,7 @@ Deno.serve(async (req) => {
       const orderParams = buildOrderParams({
         orderType,
         side,
-        quantity,
+        quantity: finalQty,
         symbol,
         limitPrice,
         stopPrice,
@@ -1324,12 +1325,12 @@ Deno.serve(async (req) => {
       await base44.asServiceRole.entities.KrakenLog.create({
         event_type: 'create_order',
         status: 'success',
-        message: `${side} ${quantity} ${symbol} ${orderType} order executed`,
+        message: `${side} ${finalQty} ${symbol} ${orderType} order executed`,
         details_json: JSON.stringify({ 
           order_id: tradeResult.order_id,
           symbol,
           side,
-          quantity,
+          quantity: finalQty,
           orderType,
           result: tradeResult.result,
           warnings: tradeResult.warnings
@@ -1344,9 +1345,12 @@ Deno.serve(async (req) => {
         client_order_id: tradeResult.client_order_id,
         symbol: orderParams.symbol,
         side,
-        quantity,
+        quantity: finalQty,
         orderType,
-        warnings: tradeResult.warnings,
+        warnings: qtyAdjusted ? [
+          ...(Array.isArray(tradeResult.warnings) ? tradeResult.warnings : []),
+          `Adjusted to Kraken minimum for ${symbol}: ${minQty}`
+        ] : tradeResult.warnings,
         time_in: tradeResult.time_in,
         time_out: tradeResult.time_out,
         duration_ms: Date.now() - startTime
