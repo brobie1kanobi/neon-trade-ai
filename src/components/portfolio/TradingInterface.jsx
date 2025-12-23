@@ -263,6 +263,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         }
 
         const krakenOrderId = krakenData.order_id || krakenData.txid || null;
+const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.executed_qty : (typeof krakenData?.quantity === 'number' ? krakenData.quantity : undefined);
 
         // Use exchange-confirmed values (quantity may be adjusted to minimums)
         let recordedQty = typeof krakenData?.quantity === 'number' ? krakenData.quantity : tradeData.quantity;
