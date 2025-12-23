@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
       if (connections.length > 0) {
         await base44.asServiceRole.entities.KrakenConnection.delete(connections[0].id);
       }
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({ success: true }, { status: 200 });
     }
 
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
       const apiSecret = payload?.apiSecret || payload?.api_secret;
       
       if (!apiKey || !apiSecret) {
-        clearTimeout(globalTimeoutId);
+        
         return Response.json({ 
           error: 'Missing API credentials', 
           success: false 
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
       console.log('[krakenApi] Testing connection...');
       
-      checkTimeout();
+      
       
       // Test connection by fetching balance
       const balanceTest = await callKraken(apiKey, apiSecret, '/0/private/Balance', {});
@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
         throw new Error(balanceTest.error.join(', '));
       }
 
-      checkTimeout();
+      
 
       const connectionData = {
         api_key: apiKey,
@@ -202,13 +202,13 @@ Deno.serve(async (req) => {
       }
 
       console.log('[krakenApi] ✅ Connection verified');
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({ success: true }, { status: 200 });
     }
 
     // CRITICAL: Check if connected for all other actions
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({ 
         error: 'Kraken account not connected', 
         success: false, 
@@ -308,7 +308,7 @@ Deno.serve(async (req) => {
         { type: 'all' }
       );
 
-      checkTimeout();
+      
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -317,7 +317,7 @@ Deno.serve(async (req) => {
         trades.push({ txid, ...trade });
       }
 
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
     }
 
@@ -329,7 +329,7 @@ Deno.serve(async (req) => {
         {}
       );
 
-      checkTimeout();
+      
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -342,7 +342,7 @@ Deno.serve(async (req) => {
 
       console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
 
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({
         success: true,
         connected: true,
@@ -363,7 +363,7 @@ Deno.serve(async (req) => {
         { trades: true }
       );
 
-      checkTimeout();
+      
 
       if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
@@ -375,7 +375,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      clearTimeout(globalTimeoutId);
+      
       return Response.json({ 
         success: true, 
         orders: openOrders,
@@ -400,7 +400,7 @@ Deno.serve(async (req) => {
 
         if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
-        clearTimeout(globalTimeoutId);
+        
         return Response.json({ 
           success: true, 
           pairs: result.result || {} 
