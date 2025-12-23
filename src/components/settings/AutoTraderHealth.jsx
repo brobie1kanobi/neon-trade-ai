@@ -314,7 +314,7 @@ export default function AutoTraderHealth() {
       }
     } catch (stopError) {
       console.error('[AutoTraderHealth] Stop error:', stopError);
-      toast.error('Failed to stop', { description: stopError.message });
+      notify.error('Failed to stop', { description: stopError.message });
     } finally {
       setStopping(false);
     }
