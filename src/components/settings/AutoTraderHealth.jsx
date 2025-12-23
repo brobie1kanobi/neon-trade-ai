@@ -92,43 +92,50 @@ export default function AutoTraderHealth() {
         Trade.filter({ 
           created_by: user.email,
           is_simulation: isSimMode,
-          is_auto_trade: true // Only auto-trades
-        }, "-created_date", 100),
+          is_auto_trade: true // Only auto-trades (both buys and sells)
+        }, "-created_date", 200),
         ConditionalOrder.filter({
           created_by: user.email,
           status: 'executed',
           is_simulation: isSimMode
-        }, "-updated_date", 100)
+        }, "-updated_date", 200)
       ]);
       
-      // Filter trades (Buys)
-      const last24hTrades = recentTrades.filter(t => 
-        new Date(t.created_date) >= yesterday
-      );
-      const buys = last24hTrades.filter(t => t.type === 'buy');
+      // Last 24h auto-trader trades from Trade table
+      const last24hTrades = recentTrades.filter(t => new Date(t.created_date) >= yesterday);
+      const buyTrades = last24hTrades.filter(t => t.type === 'buy');
+      const sellTrades = last24hTrades.filter(t => t.type === 'sell');
 
-      // Filter executed orders (Sells - executed conditional orders)
-      // These represent auto-trader sells (TP/SL/Trailing)
-      const last24hExecutedOrders = recentExecutedOrders.filter(o => 
-        new Date(o.updated_date || o.created_date) >= yesterday
-      );
-      
-      // Combine volume: Buys volume + Sells volume (approx from executed orders if trade missing)
-      const buyVolume = buys.reduce((sum, t) => sum + (t.total_value || 0), 0);
-      
-      // For sells volume, we try to use the purchase price * quantity since we might not have execution price easily
-      // or we can just ignore it if it's too complex, but let's try to be helpful
-      const sellVolume = last24hExecutedOrders.reduce((sum, o) => {
-        // Use gain price if available, otherwise purchase price as fallback
-        const price = o.purchase_price || 0; 
-        return sum + (o.quantity * price);
+      // Executed conditional orders in the last 24h (backup source for auto sells)
+      const last24hExecutedOrders = recentExecutedOrders.filter(o => new Date(o.updated_date || o.created_date) >= yesterday);
+
+      // De-duplicate: ignore executed orders that already have a recorded sell trade nearby
+      const executedWithoutTrade = last24hExecutedOrders.filter(o => {
+        const oTime = new Date(o.updated_date || o.created_date).getTime();
+        return !sellTrades.some(t => (
+          t.symbol === o.symbol &&
+          Math.abs((t.quantity || 0) - (o.quantity || 0)) < 0.0001 &&
+          Math.abs(new Date(t.created_date).getTime() - oTime) < 5 * 60 * 1000 // 5 minutes
+        ));
+      });
+
+      // Volume calculations
+      const buyVolume = buyTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
+      const sellVolumeFromTrades = sellTrades.reduce((sum, t) => sum + (t.total_value || 0), 0);
+      // Estimate volume for executed orders lacking a Trade record
+      const sellVolumeFromExecutedFallback = executedWithoutTrade.reduce((sum, o) => {
+        const price = o.execution_price || o.purchase_price || 0;
+        return sum + (o.quantity || 0) * price;
       }, 0);
 
+      const buysCount = buyTrades.length;
+      const sellsCount = sellTrades.length + executedWithoutTrade.length;
+
       setTrades24h({
-        total: buys.length + last24hExecutedOrders.length,
-        buys: buys.length,
-        sells: last24hExecutedOrders.length,
-        volume: buyVolume + sellVolume
+        total: buysCount + sellsCount,
+        buys: buysCount,
+        sells: sellsCount,
+        volume: buyVolume + sellVolumeFromTrades + sellVolumeFromExecutedFallback
       });
       
       console.log('[AutoTraderHealth] Order count:', openOrderCount, '| 24h trades:', last24hTrades.length);
