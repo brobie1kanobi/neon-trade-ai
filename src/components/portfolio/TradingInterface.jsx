@@ -263,25 +263,55 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         }
 
         const krakenOrderId = krakenData.order_id || krakenData.txid || null;
-        
+
+        // Use exchange-confirmed values (quantity may be adjusted to minimums)
+        let recordedQty = typeof krakenData?.quantity === 'number' ? krakenData.quantity : tradeData.quantity;
+        let recordedPrice = tradeData.price;
+        let recordedTotal = roundToCents(recordedQty * recordedPrice);
+
+        // Try to resolve exact fills for precise price and cost
+        try {
+          const histRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+          const histData = histRes?.data || histRes;
+          const tradesArr = histData?.trades || [];
+          const match = tradesArr.find(t => t.ordertxid === krakenOrderId) || tradesArr.find(t => t.order_id === krakenOrderId);
+          if (match) {
+            const q = parseFloat(match.vol) || recordedQty;
+            const p = parseFloat(match.price) || recordedPrice;
+            const c = parseFloat(match.cost) || (q * p);
+            recordedQty = q;
+            recordedPrice = p;
+            recordedTotal = roundToCents(c);
+          }
+        } catch (e) {
+          console.warn('[TradingInterface] Could not resolve fill details:', e?.message || e);
+        }
+
+        // Inform user if exchange adjusted the quantity
+        if (Math.abs(recordedQty - tradeData.quantity) > 1e-8) {
+          notify.info('Quantity adjusted to exchange minimum', {
+            description: `Requested ${tradeData.quantity.toFixed(6)} → Executed ${recordedQty.toFixed(6)}`
+          });
+        }
+
         notify.success("🟢 LIVE Order Executed", {
-          description: `${tradeData.type === 'buy' ? 'Bought' : 'Sold'} ${tradeData.quantity.toFixed(4)} ${tradeData.symbol} on Kraken`,
+          description: `${tradeData.type === 'buy' ? 'Bought' : 'Sold'} ${recordedQty.toFixed(4)} ${tradeData.symbol} on Kraken`,
           duration: 5000,
-          data: { trade: tradeData },
+          data: { trade: { ...tradeData, quantity: recordedQty, price: recordedPrice, total_value: recordedTotal } },
           dedupKey: `${tradeData.type}:${tradeData.symbol}`
         });
 
         // CRITICAL: Record trade directly in DB - bypass onTrade validation for LIVE mode
         // Kraken already validated the order, so we trust it
-        console.log('[TradingInterface] Recording LIVE trade in DB:', tradeData);
+        console.log('[TradingInterface] Recording LIVE trade in DB:', { ...tradeData, quantity: recordedQty, price: recordedPrice, total_value: recordedTotal });
         
         await base44.entities.Trade.create({
           symbol: tradeData.symbol,
           type: tradeData.type,
           asset_type: tradeData.asset_type,
-          quantity: tradeData.quantity,
-          price: tradeData.price,
-          total_value: tradeData.total_value,
+          quantity: recordedQty,
+          price: recordedPrice,
+          total_value: recordedTotal,
           is_auto_trade: false,
           is_simulation: false,
           status: 'executed',
