@@ -190,6 +190,12 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
   const prepareTrade = async () => {
     if (!canExecuteTrade) return;
 
+    // Extra guard in LIVE mode: prevent over-spend vs shown available cash
+    if (!isSimMode && orderType === 'buy' && roundToCents(totalValue) > roundToCents(availableCash)) {
+      notify.error('Insufficient real funds', { description: 'Your available cash is lower than the order total.' });
+      return;
+    }
+
     // FIXED: ALWAYS include asset_type - get from ownedAsset if selling, otherwise use current assetType
     const effectiveAssetType = orderType === 'sell' && ownedAsset
       ? (ownedAsset.asset_type || 'crypto')
