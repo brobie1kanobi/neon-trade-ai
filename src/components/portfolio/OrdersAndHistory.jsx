@@ -365,13 +365,34 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       }
 
       // CRITICAL: Include ALL non-active orders in closed list
-      // This includes: executed, cancelled, failed, and orders with error_message
-      const executed = modeFilteredOrders.filter((o) => o.status === "executed");
-      const cancelled = modeFilteredOrders.filter((o) => o.status === "cancelled");
-      const failed = modeFilteredOrders.filter((o) => o.status === "failed");
+      // But EXCLUDE any local records whose Kraken order ID is still open on Kraken (prevents false "Cancelled")
+      const openOrderIdSet = new Set(
+        (activeOrders || [])
+          .flatMap(o => (o.kraken_order_id || '').split(',').map(id => id.trim()))
+          .filter(Boolean)
+      );
+      const isStillOpenOnKraken = (o) => {
+        if (!o?.kraken_order_id) return false;
+        return o.kraken_order_id.split(',').some(id => openOrderIdSet.has(id.trim()));
+      };
+
+      const executed = modeFilteredOrders
+        .filter((o) => o.status === "executed")
+        .filter(o => !isStillOpenOnKraken(o));
+
+      const cancelled = modeFilteredOrders
+        .filter((o) => o.status === "cancelled")
+        .filter(o => !isStillOpenOnKraken(o));
+
+      const failed = modeFilteredOrders
+        .filter((o) => o.status === "failed")
+        .filter(o => !isStillOpenOnKraken(o));
+
       // In Live mode, include ALL orders with errors (even if locally 'active') because activeOrders comes from Kraken
-      // In Sim mode, avoid duplicates by excluding active orders
-      const withErrors = modeFilteredOrders.filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode));
+      // In Sim mode, avoid duplicates by excluding active orders; also exclude those still open on Kraken
+      const withErrors = modeFilteredOrders
+        .filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode))
+        .filter(o => !isStillOpenOnKraken(o));
 
       // EXTRA: If API failed (e.g., permissions), fall back to local active orders so UI isn't empty
       if (!isSimMode && (krakenOpenOrders.length === 0) && (activeOrders.length === 0)) {
