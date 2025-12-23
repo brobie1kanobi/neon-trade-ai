@@ -226,8 +226,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           symbol: tradeData.symbol,
           side: tradeData.type, // 'buy' or 'sell'
           quantity: tradeData.quantity,
-          orderType: 'market',
-          timeInForce: 'ioc' // Market orders must be Immediate-or-Cancel for Kraken
+          orderType: 'market'
         });
 
         const krakenData = krakenResponse?.data || krakenResponse;
