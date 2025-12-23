@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { ConditionalOrder } from '@/entities/all';
-import { toast } from 'sonner';
+import { notify } from '@/components/utils/notifications';
 
 /**
  * BRACKET ORDER SYNCHRONIZATION HOOK
@@ -89,12 +89,15 @@ export function useBracketOrderSync(isSimMode, userEmail) {
           
           if (cancelData?.success) {
             console.log('[BracketSync] ✅ Successfully cancelled paired orders:', cancelData.order_ids);
-            toast.success(`🔄 Bracket Order Cleanup`, {
+            notify.success(`🔄 Bracket Order Cleanup`, {
               description: `${symbol} ${side === 'sell' ? 'Sold' : 'Bought'} - cancelled ${ordersToCancel.length} paired order(s)`,
               duration: 4000
             });
           } else {
             console.warn('[BracketSync] Cancel may have failed:', cancelData?.error);
+            notify.warning('Bracket cleanup may have failed', {
+              description: cancelData?.error || 'Orders may already be cancelled on Kraken'
+            });
             // Don't fail completely - the order might have already been cancelled
           }
         } catch (cancelError) {
@@ -153,7 +156,7 @@ export function useBracketOrderSync(isSimMode, userEmail) {
       
       // Show prominent notification
       const emoji = pnl >= 0 ? '💰' : '🛡️';
-      toast.success(`${emoji} ${orderType === 'take-profit' ? 'Profit Taken!' : 'Stop-Loss Triggered'}`, {
+      notify.success(`${emoji} ${orderType === 'take-profit' ? 'Profit Taken!' : 'Stop-Loss Triggered'}`, {
         description: `${symbol}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`,
         duration: 6000
       });

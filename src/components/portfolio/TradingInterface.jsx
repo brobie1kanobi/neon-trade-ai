@@ -242,7 +242,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         notify.success("🟢 LIVE Order Executed", {
           description: `${tradeData.type === 'buy' ? 'Bought' : 'Sold'} ${tradeData.quantity.toFixed(4)} ${tradeData.symbol} on Kraken`,
           duration: 5000,
-          data: { trade: tradeData }
+          data: { trade: tradeData },
+          dedupKey: `${tradeData.type}:${tradeData.symbol}`
         });
 
         // CRITICAL: Record trade directly in DB - bypass onTrade validation for LIVE mode
@@ -304,7 +305,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
                 
                 notify.success("🟢 LIVE Stop-Loss Set", {
                   description: `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%) on Kraken`,
-                  duration: 3000
+                  duration: 3000,
+                  dedupKey: `sl:${tradeData.symbol}`
                 });
               } else {
                 console.warn('[TradingInterface] Stop-loss order failed:', slData?.error);
@@ -358,7 +360,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         notify.error("🔴 LIVE Order Failed", {
           description: krakenError.message || 'Failed to execute order on Kraken',
           duration: 10000,
-          data: { error: krakenError.message }
+          data: { error: krakenError.message },
+          dedupKey: `${tradeData.type}:${tradeData.symbol}`
         });
         
         // Record failed order in database so it appears in "Failed Orders" list
@@ -500,7 +503,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
       notify.success("🟢 LIVE Order Placed", {
         description: `${orderConfig.orderType} ${orderConfig.side} order for ${orderConfig.quantity} ${orderConfig.symbol}`,
         duration: 5000,
-        data: { order: orderConfig }
+        data: { order: orderConfig },
+        dedupKey: `${orderConfig.side}:${orderConfig.symbol}`
       });
 
       setSelectedAsset(null);

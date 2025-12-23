@@ -23,15 +23,31 @@ const saveNotification = async (title, message, type, details) => {
   }
 };
 
+// Lightweight dedup/downgrade: if an error comes right after a success for the same key, downgrade to info
+const recentSuccessMap = new Map();
+const markRecentSuccess = (key) => { if (!key) return; recentSuccessMap.set(key, Date.now()); };
+const hadRecentSuccess = (key, ms = 10000) => {
+  if (!key) return false;
+  const t = recentSuccessMap.get(key);
+  return !!t && (Date.now() - t < ms);
+};
+
 export const notify = {
   success: (title, options = {}) => {
+    const dedupKey = options.dedupKey;
+    if (dedupKey) markRecentSuccess(dedupKey);
     toast.success(title, options);
-    // Don't save transient success messages unless specified? 
-    // User said "notifications that pop up at the top, to be able to be managed"
-    // I'll save them.
     saveNotification(title, options.description, 'success', options.data);
   },
   error: (title, options = {}) => {
+    const dedupKey = options.dedupKey;
+    if (hadRecentSuccess(dedupKey)) {
+      // Downgrade to info to avoid false failures right after confirmed success
+      const infoOpts = { ...options };
+      toast.info(title, infoOpts);
+      saveNotification(title, options.description, 'info', options.data);
+      return;
+    }
     toast.error(title, options);
     saveNotification(title, options.description, 'error', options.data);
   },

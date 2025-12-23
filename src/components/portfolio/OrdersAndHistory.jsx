@@ -29,7 +29,7 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { ConditionalOrder, Trade } from "@/entities/all";
 import { base44 } from "@/api/base44Client";
 import TradeDetailsModal from "../dashboard/TradeDetailsModal";
-import { toast } from "sonner";
+import { notify } from "@/components/utils/notifications";
 import OrderSyncButton from "./OrderSyncButton";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
@@ -190,7 +190,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       };
     } catch (err) {
       console.error('[OrdersAndHistory] Kraken fetch error:', err.message || err);
-      toast.error('Failed to fetch Kraken orders', {
+      notify.warning('Kraken orders temporarily unavailable', {
         description: 'Retrying... Check your Kraken connection in Settings.'
       });
       return { orders: [], trades: [] };
@@ -422,7 +422,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
-      toast.error('Failed to load orders', {
+      notify.warning('Orders refresh failed', {
         description: err.message || 'Unknown error'
       });
       // CRITICAL: Still set empty arrays on error so UI doesn't stay stuck
@@ -487,13 +487,13 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       setClosedOrders(prev => prev.filter(o => o.id !== orderId));
       
       await ConditionalOrder.delete(orderId);
-      toast.success("Failed order dismissed");
+      notify.success("Failed order dismissed");
       
       // Notify parent to refresh balances/etc but don't force local loading spinner
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to dismiss order:", err);
-      toast.error("Failed to dismiss order");
+      notify.error("Failed to dismiss order");
       loadOrders(); // Sync on error
     }
   };
@@ -520,20 +520,20 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
             const cancelData = cancelResponse?.data || cancelResponse;
             if (cancelData?.success) {
               console.log('[OrdersAndHistory] ✅ Kraken orders cancelled:', cancelData.order_ids);
-              toast.success("Kraken orders cancelled", {
+              notify.success("Kraken orders cancelled", {
                 description: `Cancelled ${cancelData.cancelled_count || krakenOrderIds.length} order(s) on Kraken`
               });
             } else {
               console.warn('[OrdersAndHistory] Kraken cancel response:', cancelData);
               // Don't block local cancellation if Kraken fails
-              toast.warning("Kraken cancel may have failed", {
+              notify.warning("Kraken cancel may have failed", {
                 description: cancelData?.error || "Orders may still be active on Kraken"
               });
             }
           } catch (krakenError) {
             console.error('[OrdersAndHistory] Kraken cancel error:', krakenError);
             // Don't block local cancellation - user can manually check Kraken
-            toast.warning("Could not cancel on Kraken", {
+            notify.warning("Could not cancel on Kraken", {
               description: "Please verify orders are cancelled on Kraken directly"
             });
           }
@@ -548,12 +548,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           : "Manually cancelled by user"
       });
       
-      toast.success("Order cancelled");
+      notify.success("Order cancelled");
       loadOrders();
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error("Failed to cancel order:", err);
-      toast.error("Failed to cancel order");
+      notify.error("Failed to cancel order");
     } finally {
       setCancellingOrderId(null);
     }
