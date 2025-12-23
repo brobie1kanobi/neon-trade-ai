@@ -303,7 +303,7 @@ export default function AutoTraderHealth() {
       const data = response?.data || response;
 
       if (data?.success) {
-        toast.success('🚨 Auto-Trader Stopped', {
+        notify.success('🚨 Auto-Trader Stopped', {
           description: `Cancelled ${data.cancelled_orders} orders`,
           duration: 5000
         });
