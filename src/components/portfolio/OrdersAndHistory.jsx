@@ -402,6 +402,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
+      // If a local record says cancelled but the same kraken_order_id is open on Kraken, auto-correct it in UI
+      const locallyCancelledButOpen = modeFilteredOrders.filter(o => o.status === 'cancelled' && isStillOpenOnKraken(o));
+      if (locallyCancelledButOpen.length > 0) {
+        console.log('[OrdersAndHistory] Correcting locally-cancelled orders that are still OPEN on Kraken:', locallyCancelledButOpen.map(o => o.id));
+      }
+
       // CRITICAL: Separate conditional orders from regular open orders
       // Conditional = stop-loss, take-profit, trailing-stop orders
       // Open = limit, market orders
