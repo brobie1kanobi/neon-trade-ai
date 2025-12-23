@@ -1317,6 +1317,8 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Order params:', JSON.stringify(orderParams, null, 2));
 
       // Execute trade via WebSocket
+      // Gentle pacing to avoid rate-limit burst when placing sequential orders
+      await new Promise(res => setTimeout(res, 350));
       const tradeResult = await executeKrakenTrade(wsToken, orderParams);
 
       console.log('[krakenTrade] ✅ Trade executed:', tradeResult);
