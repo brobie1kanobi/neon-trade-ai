@@ -544,6 +544,7 @@ function executeKrakenTrade(token, orderParams) {
     console.log('[krakenTrade] === SINGLE ORDER ===');
     console.log('[krakenTrade] Type:', orderParams.order_type, 'Symbol:', orderParams.symbol);
     
+    // Longer timeout for occasional auth latency
     const timeout = setTimeout(() => {
       if (!isResolved) {
         isResolved = true;
