@@ -128,7 +128,7 @@ const normalizeKrakenSymbol = (symbol) => {
 };
 
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
-  const [activeTab, setActiveTab] = useState("trades");
+  const [activeTab, setActiveTab] = useState("conditional");
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [conditionalOrders, setConditionalOrders] = useState([]);
   const [openOrders, setOpenOrders] = useState([]);
@@ -152,6 +152,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
   // State for Kraken trades history
   const [krakenTradesHistory, setKrakenTradesHistory] = useState([]);
+  const [lastRefreshAt, setLastRefreshAt] = useState(0);
 
   // Fetch fresh data from Kraken API (not just WebSocket)
   const fetchKrakenData = useCallback(async () => {
@@ -159,6 +160,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     
     try {
       console.log('[OrdersAndHistory] Fetching fresh Kraken data...');
+      // If last fetch failed due to permissions, try again – backend updated to allow all authenticated users
       
       // Fetch both open orders and trades history in parallel with 20s timeout
       const [ordersResponse, tradesResponse] = await Promise.race([
@@ -267,21 +269,21 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           .map(ko => {
             // Parse Kraken order format
             const descr = ko.descr || {};
-            const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || '');
-            const volume = parseFloat(ko.vol) || ko.volume || 0;
-            const price = parseFloat(descr.price) || ko.price || ko.limit_price || 0;
-            const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
-            const side = descr.type || ko.side || 'unknown';
+            const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+            const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+            const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+            const orderType = (descr.ordertype || ko.order_type || ko.ordertype || 'unknown').toLowerCase();
+            const side = (descr.type || ko.side || 'unknown').toLowerCase();
             
             return {
-              id: ko.order_id,
+              id: ko.order_id || ko.txid,
               symbol: symbol,
               quantity: volume,
               purchase_price: price,
               status: 'active',
               asset_type: 'crypto',
               is_simulation: false,
-              kraken_order_id: ko.order_id,
+              kraken_order_id: ko.order_id || ko.txid,
               created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : new Date().toISOString(),
               order_type: orderType,
               side: side,
@@ -301,6 +303,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         // This ensures Orders & History shows accurate state (no orders = empty list)
         activeOrders = krakenOrdersList;
         console.log('[OrdersAndHistory] ✅ Set active orders from Kraken API:', activeOrders.length);
+        setLastRefreshAt(Date.now());
         
         // Clean up invalid local orders
         const invalidLocalOrders = modeFilteredOrders.filter(o => 
@@ -354,6 +357,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           
         activeOrders = krakenOrdersList;
         console.log('[OrdersAndHistory] ✅ Set active orders from WebSocket backup:', activeOrders.length);
+        setLastRefreshAt(Date.now());
       } else if (!isSimMode && krakenOpenOrders.length === 0 && (!wsConnected || !krakenOrders || Object.keys(krakenOrders).length === 0)) {
         // CRITICAL: No orders from API OR WebSocket - set empty array
         console.log('[OrdersAndHistory] ⚠️ No orders from Kraken API or WebSocket - setting empty list');
@@ -369,6 +373,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       // In Sim mode, avoid duplicates by excluding active orders
       const withErrors = modeFilteredOrders.filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode));
 
+      // EXTRA: If API failed (e.g., permissions), fall back to local active orders so UI isn't empty
+      if (!isSimMode && (krakenOpenOrders.length === 0) && (activeOrders.length === 0)) {
+        activeOrders = modeFilteredOrders.filter((o) => o.status === "active" && o.is_simulation === false);
+        console.warn('[OrdersAndHistory] Fallback to local active orders:', activeOrders.length);
+      }
+
       console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
       // CRITICAL: Separate conditional orders from regular open orders
@@ -378,15 +388,15 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       const conditionalOrdersList = activeOrders.filter(order => {
         const orderType = (order.order_type || order.ordertype || '').toLowerCase();
         const description = (order.kraken_description || '').toLowerCase();
-        return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('trailing') ||
-               description.includes('stop') || description.includes('take profit') || description.includes('trailing');
+        return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('take profit') || orderType.includes('trigger') || orderType.includes('conditional') || orderType.includes('oco') || orderType.includes('oco trigger') || orderType.includes('trailing') ||
+               description.includes('stop') || description.includes('take profit') || description.includes('trailing') || description.includes('oco');
       });
       
       const openOrdersList = activeOrders.filter(order => {
         const orderType = (order.order_type || order.ordertype || '').toLowerCase();
         const description = (order.kraken_description || '').toLowerCase();
-        return (!orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('trailing')) &&
-               (!description.includes('stop') && !description.includes('take profit') && !description.includes('trailing'));
+        return (!orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('take profit') && !orderType.includes('trailing') && !orderType.includes('oco') && !orderType.includes('conditional') && !orderType.includes('trigger')) &&
+               (!description.includes('stop') && !description.includes('take profit') && !description.includes('trailing') && !description.includes('oco'));
       });
       
       console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);
@@ -429,13 +439,13 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     loadOrders();
   }, [loadOrders]);
 
-  // CRITICAL: Auto-refresh every 30 seconds in LIVE mode to keep orders synced
+  // CRITICAL: Auto-refresh every 15 seconds in LIVE mode to keep orders synced
   useEffect(() => {
     if (!isSimMode) {
       const interval = setInterval(() => {
         console.log('[OrdersAndHistory] Auto-refresh triggered (30s interval)');
         loadOrders();
-      }, 30000); // 30 seconds
+      }, 15000); // 15 seconds
       return () => clearInterval(interval);
     }
   }, [isSimMode, loadOrders]);

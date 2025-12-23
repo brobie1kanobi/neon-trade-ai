@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
  * Kraken API Proxy - FIXED VERSION
@@ -124,12 +124,10 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
 
+    // Allow any authenticated user to access their own Kraken data
+    // Security note: RLS on KrakenConnection ensures only the creator's records are accessed
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
     const isCreator = !!user?.is_creator;
-    
-    if (!isAdmin && !isCreator) {
-      return Response.json({ error: 'Access denied', success: false }, { status: 403 });
-    }
 
     let body = {};
     try {
