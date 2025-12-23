@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, AlertCircle, CheckCircle, TrendingUp, AlertTriangle, Power, RefreshCw, Wifi, HelpCircle, ArrowRight, Link as LinkIcon, XCircle } from "lucide-react";
 import { Link as RouterLink } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { toast } from "sonner";
+import { notify } from "@/components/utils/notifications";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createPageUrl } from "@/utils";
