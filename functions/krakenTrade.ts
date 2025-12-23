@@ -1352,7 +1352,10 @@ Deno.serve(async (req) => {
         symbol: orderParams.symbol,
         side,
         quantity: finalQty,
+        executed_qty: finalQty, // mirror until fills fetched on client
         orderType,
+        // Echo back calculated notional so client can prefill totals accurately
+        notional_usd: finalQty * (parseFloat(limitPrice) || 0),
         warnings: qtyAdjusted ? [
           ...(Array.isArray(tradeResult.warnings) ? tradeResult.warnings : []),
           `Adjusted to Kraken minimum for ${symbol}: ${minQty}`
