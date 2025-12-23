@@ -137,6 +137,19 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [selectedClosedOrder, setSelectedClosedOrder] = useState(null);
 
+  // Merge lists without wiping UI — prepend new items, update existing in place
+  const mergeLists = useCallback((prev, next) => {
+    const prevMap = new Map(prev.map(o => [o.id, o]));
+    const nextMap = new Map(next.map(o => [o.id, o]));
+    const newItems = next
+      .filter(o => !prevMap.has(o.id))
+      .sort((a, b) => new Date(b.created_date || b.updated_date || 0) - new Date(a.created_date || a.updated_date || 0));
+    const updatedExisting = prev
+      .filter(o => nextMap.has(o.id))
+      .map(o => ({ ...o, ...nextMap.get(o.id) }));
+    return [...newItems, ...updatedExisting];
+  }, []);
+
   const { settings, user, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   // CRITICAL: Only use timezone after settings have loaded to avoid showing UTC times
@@ -428,8 +441,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       
       console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);
 
-      setConditionalOrders(conditionalOrdersList);
-      setOpenOrders(openOrdersList);
+      setConditionalOrders(prev => mergeLists(prev, conditionalOrdersList));
+      setOpenOrders(prev => mergeLists(prev, openOrdersList));
 
       // Combine all closed orders - executed, cancelled, failed, and orders with errors
       // Use a Map to avoid duplicates (keyed by order ID)
@@ -442,10 +455,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       console.log('[OrdersAndHistory] Total unique closed orders:', uniqueClosedOrders.length);
 
-      // Sort by date (most recent first)
-      setClosedOrders(uniqueClosedOrders.sort((a, b) => 
+      // Sort by date (most recent first) and merge so UI doesn't jump
+      const sortedClosed = uniqueClosedOrders.sort((a, b) =>
         new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
-      ));
+      );
+      setClosedOrders(prev => mergeLists(prev, sortedClosed));
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
@@ -457,7 +471,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       setOpenOrders([]);
       setClosedOrders([]);
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // no UI spinner rendered; used only to disable the manual refresh button
       console.log('[OrdersAndHistory] Finished loadOrders');
     }
   }, [user?.email, isSimMode, wsConnected, krakenOrders, fetchKrakenData]);
@@ -745,84 +759,72 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
             {/* OPEN ORDERS TAB */}
             <TabsContent value="open" className="mt-0">
-              {isLoading ?
-              <LoadingState /> :
-              openOrders.length === 0 ?
-              <EmptyState
-                icon={Clock}
-                message="No open orders. Your active limit and stop orders will appear here." /> :
-
-
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {openOrders.map((order) =>
-                <OrderRow
-                  key={order.id}
-                  order={order}
-                  timezone={timezone}
-                  is24h={is24h}
-                  formatDisplayQuantity={formatDisplayQuantity}
-                  formatPrice={formatPrice}
-                  onCancel={handleCancelOrder}
-                  isCancelling={cancellingOrderId === order.id}
-                  type="open" />
-
-                )}
+              {openOrders.length === 0 ? (
+                <EmptyState
+                  icon={Clock}
+                  message="No open orders. Your active limit and stop orders will appear here." />
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {openOrders.map((order) => (
+                    <OrderRow
+                      key={order.id}
+                      order={order}
+                      timezone={timezone}
+                      is24h={is24h}
+                      formatDisplayQuantity={formatDisplayQuantity}
+                      formatPrice={formatPrice}
+                      onCancel={handleCancelOrder}
+                      isCancelling={cancellingOrderId === order.id}
+                      type="open" />
+                  ))}
                 </div>
-              }
+              )}
             </TabsContent>
 
             {/* CONDITIONAL ORDERS TAB */}
             <TabsContent value="conditional" className="mt-0">
-              {isLoading ?
-              <LoadingState /> :
-              conditionalOrders.length === 0 ?
-              <EmptyState
-                icon={Target}
-                message="No conditional orders. Auto-trader creates these when buying assets." /> :
-
-
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {conditionalOrders.map((order) =>
-                <ConditionalOrderRow
-                  key={order.id}
-                  order={order}
-                  timezone={timezone}
-                  is24h={is24h}
-                  formatDisplayQuantity={formatDisplayQuantity}
-                  formatPrice={formatPrice}
-                  onCancel={handleCancelOrder}
-                  isCancelling={cancellingOrderId === order.id} />
-
-                )}
+              {conditionalOrders.length === 0 ? (
+                <EmptyState
+                  icon={Target}
+                  message="No conditional orders. Auto-trader creates these when buying assets." />
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {conditionalOrders.map((order) => (
+                    <ConditionalOrderRow
+                      key={order.id}
+                      order={order}
+                      timezone={timezone}
+                      is24h={is24h}
+                      formatDisplayQuantity={formatDisplayQuantity}
+                      formatPrice={formatPrice}
+                      onCancel={handleCancelOrder}
+                      isCancelling={cancellingOrderId === order.id} />
+                  ))}
                 </div>
-              }
+              )}
             </TabsContent>
 
             {/* CLOSED/FAILED ORDERS TAB */}
             <TabsContent value="closed" className="mt-0">
-              {isLoading ?
-              <LoadingState /> :
-              closedOrders.length === 0 ?
-              <EmptyState
-                icon={CheckCircle2}
-                message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." /> :
-
-
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {closedOrders.slice(0, 50).map((order) =>
-                <ClosedOrderRow
-                  key={order.id}
-                  order={order}
-                  timezone={timezone}
-                  is24h={is24h}
-                  formatDisplayQuantity={formatDisplayQuantity}
-                  formatPrice={formatPrice}
-                  onClick={() => setSelectedClosedOrder(order)}
-                  onDismiss={handleDismissFailedOrder} />
-
-                )}
+              {closedOrders.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." />
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {closedOrders.slice(0, 50).map((order) => (
+                    <ClosedOrderRow
+                      key={order.id}
+                      order={order}
+                      timezone={timezone}
+                      is24h={is24h}
+                      formatDisplayQuantity={formatDisplayQuantity}
+                      formatPrice={formatPrice}
+                      onClick={() => setSelectedClosedOrder(order)}
+                      onDismiss={handleDismissFailedOrder} />
+                  ))}
                 </div>
-              }
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>
