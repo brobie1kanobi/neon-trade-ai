@@ -1100,6 +1100,9 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Rounded TP:', takeProfitPrice, '->', roundedTpPrice);
       console.log('[krakenTrade] Rounded SL:', stopLossPrice, '->', roundedSlPrice);
 
+      // Ensure small pacing gap between the two bracket legs to avoid 429/invalid nonce corner cases
+      await new Promise(res => setTimeout(res, 500));
+
       // Build TP order params
       const tpParams = {
         order_type: 'take-profit',
