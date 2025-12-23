@@ -184,7 +184,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
   totalValue > 0 && (
   orderType === 'sell' ?
   ownedAsset && calculatedQuantity <= ownedAsset.quantity :
-  roundToCents(availableCash) + 0.000001 >= totalValue
+  roundToCents(availableCash) + 0.000001 >= roundToCents(totalValue)
   );
 
   const prepareTrade = async () => {
