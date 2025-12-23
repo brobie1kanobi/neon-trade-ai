@@ -266,7 +266,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.executed_qty : (typeof krakenData?.quantity === 'number' ? krakenData.quantity : undefined);
 
         // Use exchange-confirmed values (quantity may be adjusted to minimums)
-        let recordedQty = typeof krakenData?.quantity === 'number' ? krakenData.quantity : tradeData.quantity;
+        let recordedQty = (typeof exchangeQty === 'number') ? exchangeQty : tradeData.quantity;
         let recordedPrice = tradeData.price;
         let recordedTotal = roundToCents(recordedQty * recordedPrice);
 
