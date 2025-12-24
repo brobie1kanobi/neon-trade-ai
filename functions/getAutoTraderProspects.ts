@@ -33,18 +33,23 @@ Deno.serve(async (req) => {
     console.log('[Prospects] Using record id:', rawRecord?.id || 'none');
     console.log('[Prospects] Full raw record:', JSON.stringify(rawRecord));
     
-    // Extract settings values directly from the record - check for both number 0 and actual values
-    const gain = rawRecord?.gain_margin;
-    const loss = rawRecord?.loss_margin;
-    console.log('[Prospects] Direct access - gain:', gain, 'type:', typeof gain, 'loss:', loss, 'type:', typeof loss);
+    // Extract and normalize settings values (support numbers or numeric strings)
+    const parseNum = (v) => {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) return Number(v);
+      return undefined;
+    };
+    const gain = parseNum(rawRecord?.gain_margin);
+    const loss = parseNum(rawRecord?.loss_margin);
+    console.log('[Prospects] Parsed settings - gain:', gain, 'loss:', loss);
     
     // Build settings with explicit user values taking priority
     // Use typeof check to allow 0 as valid value
     const settings = {
       sim_trading_mode: rawRecord?.sim_trading_mode !== undefined ? rawRecord.sim_trading_mode : true,
       auto_trading_enabled: rawRecord?.auto_trading_enabled !== undefined ? rawRecord.auto_trading_enabled : false,
-      gain_margin: typeof gain === 'number' ? gain : 10,
-      loss_margin: typeof loss === 'number' ? loss : 5,
+      gain_margin: typeof gain === 'number' ? Math.abs(gain) : 10,
+      loss_margin: typeof loss === 'number' ? Math.abs(loss) : 5,
       trailing_takeprofit_enabled: rawRecord?.trailing_takeprofit_enabled !== undefined ? rawRecord.trailing_takeprofit_enabled : true,
       trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
     };

@@ -117,8 +117,8 @@ export default function AutoTraderProspects() {
     try {
       const qty = parseFloat(prospect.quantity.toFixed(8));
       const price = prospect.current_price;
-      const tpPercent = prospect.user_gain_margin || userMargins.gain_margin || 10;
-      const slPercent = prospect.user_loss_margin || userMargins.loss_margin || 5;
+      const tpPercent = Math.abs((prospect.user_gain_margin ?? userMargins.gain_margin ?? 10));
+      const slPercent = Math.abs((prospect.user_loss_margin ?? userMargins.loss_margin ?? 5));
       const takeProfitPrice = parseFloat((price * (1 + tpPercent / 100)).toFixed(2));
       const stopLossPrice = parseFloat((price * (1 - slPercent / 100)).toFixed(2));
       
@@ -373,11 +373,11 @@ export default function AutoTraderProspects() {
                       <div className="flex gap-4 text-xs">
                         <span className="text-red-500 flex items-center gap-1">
                           <TrendingDown className="w-3 h-3" />
-                          SL: -{prospect.user_loss_margin || userMargins.loss_margin}%
+                          SL: -{Math.abs(prospect.user_loss_margin ?? userMargins.loss_margin)}%
                         </span>
                         <span className="text-green-500 flex items-center gap-1">
                           <TrendingUp className="w-3 h-3" />
-                          TP: +{prospect.user_gain_margin || userMargins.gain_margin}%
+                          TP: +{Math.abs(prospect.user_gain_margin ?? userMargins.gain_margin)}%
                         </span>
                       </div>
                     </div>
