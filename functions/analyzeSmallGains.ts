@@ -204,8 +204,8 @@ Provide actionable intelligence the auto-trader can use to make informed decisio
         pattern_reliability: r.pattern_reliability || 'moderate',
         optimal_action: r.optimal_action || r.action || 'buy', // Default to buy not hold
         timing_window: r.timing_window || 'short_term',
-        stop_loss_pct: r.stop_loss_pct || 5,
-        take_profit_pct: r.take_profit_pct || 10,
+        stop_loss_pct: r.stop_loss_pct || 1,
+        take_profit_pct: r.take_profit_pct || 3,
         sentiment_score: r.sentiment_score || 50,
         correlation_group: r.correlation_group || 'uncorrelated'
       }))
