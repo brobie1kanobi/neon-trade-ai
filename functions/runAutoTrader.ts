@@ -191,8 +191,8 @@ Deno.serve(async (req) => {
     }
 
     const tradesPlaced = [];
-    const gainMargin = settings.gain_margin || 10;
-    const lossMargin = settings.loss_margin || 5;
+    const gainMargin = settings.gain_margin || 3;
+    const lossMargin = settings.loss_margin || 1;
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
     const trailingMargin = settings.trailing_takeprofit_margin || 3;
     
