@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
     const settings = {
       sim_trading_mode: rawRecord?.sim_trading_mode !== undefined ? rawRecord.sim_trading_mode : true,
       auto_trading_enabled: rawRecord?.auto_trading_enabled !== undefined ? rawRecord.auto_trading_enabled : false,
-      gain_margin: typeof gain === 'number' ? Math.abs(gain) : 10,
-      loss_margin: typeof loss === 'number' ? Math.abs(loss) : 5,
+      gain_margin: typeof gain === 'number' ? Math.abs(gain) : 3,
+      loss_margin: typeof loss === 'number' ? Math.abs(loss) : 1,
       trailing_takeprofit_enabled: rawRecord?.trailing_takeprofit_enabled !== undefined ? rawRecord.trailing_takeprofit_enabled : true,
       trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
     };
@@ -196,8 +196,8 @@ Deno.serve(async (req) => {
             patternReliability: r.pattern_reliability || 'moderate',
             timingWindow: r.timing_window || 'short_term',
             entryZone: r.entry_zone_low && r.entry_zone_high ? { low: r.entry_zone_low, high: r.entry_zone_high } : null,
-            stopLossPct: r.stop_loss_pct || 5,
-            takeProfitPct: r.take_profit_pct || 10,
+            stopLossPct: r.stop_loss_pct || 1,
+            takeProfitPct: r.take_profit_pct || 3,
             sentimentScore: r.sentiment_score || 50,
             correlationGroup: r.correlation_group || null
           };
