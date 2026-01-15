@@ -563,7 +563,7 @@ function executeKrakenTrade(token, orderParams) {
           params: { token, ...orderParams, order_userref: uniqueUserRef },
           req_id: uniqueReqId
         };
-        const jitter = 120 + Math.floor(Math.random() * 180); // 120-300ms
+        const jitter = 150 + Math.floor(Math.random() * 250); // 150-400ms
         setTimeout(() => {
           console.log('[krakenTrade] 📤 Sending (delayed', jitter, 'ms):', JSON.stringify(message));
           ws.send(JSON.stringify(message));
@@ -874,12 +874,35 @@ Deno.serve(async (req) => {
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
-        return Response.json({
-          success: false,
-          error: `Buy order failed: ${buyError.message}`,
-          permission_hint: /permission denied/i.test(buyError.message) ? 'Your Trade API key likely lacks "Create and modify orders" permission.' : undefined,
-          duration_ms: Date.now() - startTime
-        }, { status: 200 });
+        const isPerm = /permission denied/i.test(buyError.message || '');
+        // If permission error, force refresh WS token from trade key and retry once
+        if (isPerm) {
+          try {
+            console.warn('[krakenTrade] Forcing WS token refresh and retrying BUY once...');
+            const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+            const freshToken = refresh?.data?.token || refresh?.token;
+            if (freshToken) {
+              buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams);
+              console.log('[krakenTrade] ✅ BUY executed after token refresh:', buyResult.order_id);
+            } else {
+              throw new Error('WS token refresh returned no token');
+            }
+          } catch (retryErr) {
+            console.error('[krakenTrade] Retry after token refresh failed:', retryErr?.message || retryErr);
+            return Response.json({
+              success: false,
+              error: `Buy order failed: ${retryErr?.message || buyError.message}`,
+              permission_hint: 'Token refreshed. If this persists, re-save your Trade key and ensure it is selected in the app.',
+              duration_ms: Date.now() - startTime
+            }, { status: 200 });
+          }
+        } else {
+          return Response.json({
+            success: false,
+            error: `Buy order failed: ${buyError.message}`,
+            duration_ms: Date.now() - startTime
+          }, { status: 200 });
+        }
       }
 
       // Step 2: Calculate TP and SL prices if percentages given
@@ -1351,7 +1374,19 @@ Deno.serve(async (req) => {
       // Execute trade via WebSocket
       // Gentle pacing to avoid rate-limit burst when placing sequential orders
       await new Promise(res => setTimeout(res, 350));
-      const tradeResult = await executeKrakenTradeWithRetry(wsToken, orderParams);
+      let tradeResult;
+      try {
+        tradeResult = await executeKrakenTradeWithRetry(wsToken, orderParams);
+      } catch (firstErr) {
+        if (/permission denied/i.test(firstErr?.message || '')) {
+          console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
+          const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+          const freshToken = refresh?.data?.token || refresh?.token;
+          tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams);
+        } else {
+          throw firstErr;
+        }
+      }
 
       console.log('[krakenTrade] ✅ Trade executed:', tradeResult);
 
