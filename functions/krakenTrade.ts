@@ -870,7 +870,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] 📤 Placing BUY order...');
       let buyResult;
       try {
-        buyResult = await executeKrakenTrade(wsToken, buyParams);
+        buyResult = await executeKrakenTradeWithRetry(wsToken, buyParams);
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
