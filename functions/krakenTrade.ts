@@ -948,7 +948,7 @@ Deno.serve(async (req) => {
 
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
-          slResult = await executeKrakenTrade(wsToken, slParams);
+          slResult = await executeKrakenTradeWithRetry(wsToken, slParams);
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
           console.error('[krakenTrade] ❌ SL failed:', slError.message);
