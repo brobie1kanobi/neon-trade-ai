@@ -629,8 +629,31 @@ function executeKrakenTrade(token, orderParams) {
   });
 }
 
+// Retry wrapper to mitigate rate limits and transient WS errors
+async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 4) {
+  let attempt = 0;
+  let lastErr;
+  while (attempt < maxAttempts) {
+    try {
+      return await executeKrakenTrade(token, orderParams);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || e || '');
+      // Don't retry permission issues
+      if (/permission denied/i.test(msg)) { throw e; }
+      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error/i.test(msg);
+      if (!shouldRetry) { throw e; }
+      const delay = 700 * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
+      console.warn(`[krakenTrade] Retry ${attempt + 1}/${maxAttempts} after ${delay}ms due to: ${msg}`);
+      await new Promise(r => setTimeout(r, delay));
+      attempt++;
+    }
+  }
+  throw lastErr;
+}
+
 /**
- * Cancel order via Kraken WebSocket v2
+  * Cancel order via Kraken WebSocket v2
  */
 function cancelKrakenOrder(token, orderIds) {
   return new Promise((resolve, reject) => {
