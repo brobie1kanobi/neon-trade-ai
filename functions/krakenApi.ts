@@ -170,34 +170,57 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'connect') {
-      // FIXED: Support both camelCase and snake_case field names
-      const apiKey = payload?.apiKey || payload?.api_key;
-      const apiSecret = payload?.apiSecret || payload?.api_secret;
-      
+      // Accept separate read-only (balance) and trade keys
+      const apiKey = payload?.apiKey || payload?.api_key || payload?.balanceApiKey || payload?.balance_api_key;
+      const apiSecret = payload?.apiSecret || payload?.api_secret || payload?.balanceApiSecret || payload?.balance_api_secret;
+      const tradeKey = payload?.tradeApiKey || payload?.trade_api_key;
+      const tradeSecret = payload?.tradeApiSecret || payload?.trade_api_secret;
+
       if (!apiKey || !apiSecret) {
-        
         return Response.json({ 
-          error: 'Missing API credentials', 
+          error: 'Missing API credentials: provide balance (read-only) apiKey/apiSecret', 
           success: false 
         }, { status: 400 });
       }
 
-      console.log('[krakenApi] Testing connection...');
-      
-      
-      
-      // Test connection by fetching balance
+      console.log('[krakenApi] Testing balance key...');
       const balanceTest = await callKraken(apiKey, apiSecret, '/0/private/Balance', {});
-
       if (balanceTest.error?.length > 0) {
         throw new Error(balanceTest.error.join(', '));
       }
 
-      
+      // Optionally verify trade key and WebSocket permission
+      let tradeVerified = false;
+      if (tradeKey && tradeSecret) {
+        try {
+          console.log('[krakenApi] Testing trade key (WebSocket token)...');
+          const wsTest = await callKraken(tradeKey, tradeSecret, '/0/private/GetWebSocketsToken', {});
+          if (wsTest.error?.length > 0) {
+            const msg = wsTest.error.join(', ');
+            throw new Error(msg);
+          }
+          tradeVerified = true;
+        } catch (e) {
+          return Response.json({
+            success: false,
+            error: `Trade key test failed: ${e.message}. Ensure permissions: Access WebSockets API, Create & Modify Orders.`
+          }, { status: 200 });
+        }
+      }
 
       const connectionData = {
         api_key: apiKey,
         api_secret_encrypted: apiSecret,
+        // Save dedicated keys when provided
+        ...(tradeKey && tradeSecret ? {
+          trade_api_key: tradeKey,
+          trade_api_secret_encrypted: tradeSecret
+        } : {}),
+        // Optional separate balance key fields if explicitly supplied
+        ...(payload?.balanceApiKey || payload?.balance_api_key ? {
+          balance_api_key: payload?.balanceApiKey || payload?.balance_api_key,
+          balance_api_secret_encrypted: payload?.balanceApiSecret || payload?.balance_api_secret
+        } : {}),
         account_verified: true,
         last_verified: new Date().toISOString(),
         created_by: user.email
@@ -209,9 +232,9 @@ Deno.serve(async (req) => {
         await base44.asServiceRole.entities.KrakenConnection.create(connectionData);
       }
 
-      console.log('[krakenApi] ✅ Connection verified');
+      console.log('[krakenApi] ✅ Keys saved. Balance OK. Trade key:', tradeVerified ? 'verified' : 'not provided');
       
-      return Response.json({ success: true }, { status: 200 });
+      return Response.json({ success: true, trade_key_verified: tradeVerified }, { status: 200 });
     }
 
     // CRITICAL: Check if connected for all other actions
@@ -228,11 +251,20 @@ Deno.serve(async (req) => {
     
     // Helper to select correct API key pair per action (split keys)
     const getCreds = (purpose) => {
-      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders']);
+      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders', 'place_order']);
       const useTrade = tradeActions.has(purpose);
-      const apiKeyToUse = useTrade ? (connection.trade_api_key || connection.api_key) : (connection.balance_api_key || connection.api_key);
-      const apiSecretToUse = useTrade ? (connection.trade_api_secret_encrypted || connection.api_secret_encrypted) : (connection.balance_api_secret_encrypted || connection.api_secret_encrypted);
-      return { apiKeyToUse, apiSecretToUse };
+      if (useTrade) {
+        if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
+          throw new Error('Missing trade API key/secret. Please add a Trade key with permissions: "Create and modify orders", "Access WebSockets API".');
+        }
+        return { apiKeyToUse: connection.trade_api_key, apiSecretToUse: connection.trade_api_secret_encrypted };
+      }
+      // Read-only/balance operations
+      if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
+        return { apiKeyToUse: connection.balance_api_key, apiSecretToUse: connection.balance_api_secret_encrypted };
+      }
+      // Fallback to legacy single key
+      return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
     };
     
     if (action === 'getBalance') {
@@ -342,52 +374,63 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
-      const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
-      const result = await callKraken(
-        apiKeyToUse,
-        apiSecretToUse,
-        '/0/private/GetWebSocketsToken',
-        {}
-      );
+      try {
+        const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
+        const result = await callKraken(
+          apiKeyToUse,
+          apiSecretToUse,
+          '/0/private/GetWebSocketsToken',
+          {}
+        );
 
-      
+        if (result.error?.length > 0) {
+          const msg = result.error.join(', ');
+          if (/permission denied/i.test(msg)) {
+            return Response.json({
+              success: false,
+              connected: false,
+              error: 'Permission denied: Trade API key lacks required permissions. Enable "Access WebSockets API" and "Create and modify orders".'
+            }, { status: 200 });
+          }
+          throw new Error(msg);
+        }
 
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+        const token = result.result?.token;
+        const expires = result.result?.expires || 900; // Default 15 minutes
+        if (!token) {
+          throw new Error('Failed to get WebSocket token from Kraken');
+        }
 
-      const token = result.result?.token;
-      const expires = result.result?.expires || 900; // Default 15 minutes
-      
-      if (!token) {
-        throw new Error('Failed to get WebSocket token from Kraken');
+        console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
+        return Response.json({
+          success: true,
+          connected: true,
+          wsUrl: 'wss://ws-auth.kraken.com/v2',
+          publicWsUrl: 'wss://ws.kraken.com/v2',
+          token: token,
+          expires_in: expires
+        }, { status: 200 });
+      } catch (e) {
+        return Response.json({
+          success: false,
+          connected: false,
+          error: e.message
+        }, { status: 200 });
       }
-
-      console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
-
-      
-      return Response.json({
-        success: true,
-        connected: true,
-        wsUrl: 'wss://ws-auth.kraken.com/v2',
-        publicWsUrl: 'wss://ws.kraken.com/v2',
-        token: token,
-        expires_in: expires
-      }, { status: 200 });
     }
 
     // ACTION: Get open orders
     if (action === 'getOpenOrders') {
       // CRITICAL: Include trades=true to get detailed info
-      const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
-      const result = await callKraken(
-        apiKeyToUse,
-        apiSecretToUse,
-        '/0/private/OpenOrders',
-        { trades: true }
-      );
-
-      
-
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+      try {
+        const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
+        const result = await callKraken(
+          apiKeyToUse,
+          apiSecretToUse,
+          '/0/private/OpenOrders',
+          { trades: true }
+        );
+        if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
       const openOrders = [];
       for (const [orderId, order] of Object.entries(result.result?.open || {})) {
