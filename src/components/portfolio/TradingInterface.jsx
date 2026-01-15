@@ -232,7 +232,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           try {
             const balRes = await base44.functions.invoke('getKrakenBalance', {});
             const bal = balRes?.data || balRes;
-            const usdAvail = parseFloat(bal?.usd_balance || 0);
+            const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
             const estCost = Number(tradeData.total_value || (tradeData.quantity * tradeData.price) || 0);
             const buffer = Math.max(0.5, estCost * 0.01); // 1% or $0.50 buffer
             if (usdAvail + 1e-6 < estCost + buffer) {

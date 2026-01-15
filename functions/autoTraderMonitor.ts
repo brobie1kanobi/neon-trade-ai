@@ -82,13 +82,13 @@ Deno.serve(async (req) => {
           t.is_simulation === false  // ONLY count LIVE trades
         );
         
-        // CRITICAL: Use robust balance response (cash = usd_balance)
+        // Prefer total_usd_balance if available, fallback to usd_balance
         let balance = 0;
         const krakenData = krakenBalanceResult?.data || krakenBalanceResult;
         if (krakenData?.success) {
-          const usd = Number(krakenData.usd_balance || 0);
+          const usd = Number((krakenData.total_usd_balance ?? krakenData.usd_balance) || 0);
           balance = isFinite(usd) ? usd : 0;
-          console.log('[autoTraderMonitor] Kraken USD balance = $' + balance.toFixed(2));
+          console.log('[autoTraderMonitor] Kraken USD (total) = $' + balance.toFixed(2));
         } else {
           console.log('[autoTraderMonitor] No Kraken balance available, using 0');
         }

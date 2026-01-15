@@ -17,7 +17,7 @@ class RateLimiter {
   constructor() {
     this.counter = 0;
     this.maxCounter = 15;
-    this.decayRate = 0.33;
+    this.decayRate = 1.66;
     this.lastUpdate = Date.now();
   }
 
@@ -154,6 +154,8 @@ Deno.serve(async (req) => {
         connected: false,
         error: balanceData?.error || 'Kraken not connected',
         usd_balance: 0,
+        total_usd_balance: 0,
+        available_usd_balance: 0,
         holdings: [],
         total_assets: 0,
         total_crypto_value_usd: 0,
@@ -178,10 +180,14 @@ Deno.serve(async (req) => {
     
     if (!krakenBalance) throw new Error('Invalid balance response');
 
-    // CRITICAL: Use TOTAL balance (Available + Hold) for USD to reflect true account equity
-    // This matches Kraken's "Total Balance" which includes funds locked in open buy orders
-    const usdBalance = parseFloat(
+    // USD balances
+    const totalUsdBalance = parseFloat(
       extendedBalance?.ZUSD?.total || extendedBalance?.USD?.total ||
+      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
+      krakenBalance.ZUSD || krakenBalance.USD || 0
+    );
+
+    const availableUsdBalance = parseFloat(
       extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
       krakenBalance.ZUSD || krakenBalance.USD || 0
     );
@@ -357,7 +363,7 @@ Deno.serve(async (req) => {
       console.warn('[getKrakenBalance] Skipping cost basis (rate limited)');
     }
 
-    const totalValue = usdBalance + totalCryptoValue;
+    const totalValue = totalUsdBalance + totalCryptoValue;
     const totalCostBasis = holdingsWithValues.reduce((sum, h) => sum + (h.total_cost_basis || 0), 0);
     const totalUnrealizedPnL = totalCostBasis > 0 ? totalCryptoValue - totalCostBasis : 0;
 
@@ -373,7 +379,9 @@ Deno.serve(async (req) => {
     return Response.json({
       success: true,
       connected: true,
-      usd_balance: usdBalance,
+      usd_balance: totalUsdBalance,
+      total_usd_balance: totalUsdBalance,
+      available_usd_balance: availableUsdBalance,
       holdings: holdingsWithValues,
       total_assets: holdingsWithValues.length,
       total_crypto_value_usd: totalCryptoValue,
@@ -396,6 +404,8 @@ Deno.serve(async (req) => {
       error: error.message,
       connected: false,
       usd_balance: 0,
+      total_usd_balance: 0,
+      available_usd_balance: 0,
       holdings: [],
       total_assets: 0,
       total_crypto_value_usd: 0,

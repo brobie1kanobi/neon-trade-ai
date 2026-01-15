@@ -26,7 +26,7 @@ export function KrakenWebSocketProvider({ children }) {
   // Initialize WebSocket manager with ALL subscriptions
   const wsManager = useKrakenWebSocketManager({
     subscribeToPrices: shouldConnect,
-    priceSymbols: [],
+    priceSymbols: settings?.watched_crypto || [],
     subscribeToBalances: shouldConnect,
     subscribeToOrders: shouldConnect,
     subscribeToExecutions: shouldConnect
@@ -52,9 +52,9 @@ export function KrakenWebSocketProvider({ children }) {
       try {
         const isConnected = wsManager.isConnected?.() || false;
         const prices = await wsManager.getAllPrices?.() || {};
-        const balances = await wsManager.getBalances?.() || {};
-        const orders = await wsManager.getOpenOrders?.() || {};
-        const executions = await wsManager.getExecutions?.() || [];
+        const balances = await wsManager.getAllBalances?.() || {};
+        const orders = await wsManager.getAllOrders?.() || {};
+        const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
         // Calculate portfolio metrics
         let usdBalance = 0;
@@ -122,9 +122,9 @@ export function KrakenWebSocketProvider({ children }) {
       // CRITICAL: Force immediate state update after refresh
       const isConnected = wsManager.isConnected?.() || false;
       const prices = await wsManager.getAllPrices?.() || {};
-      const balances = await wsManager.getBalances?.() || {};
-      const orders = await wsManager.getOpenOrders?.() || {};
-      const executions = await wsManager.getExecutions?.() || [];
+      const balances = await wsManager.getAllBalances?.() || {};
+      const orders = await wsManager.getAllOrders?.() || {};
+      const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
       // Recalculate portfolio metrics
       let usdBalance = 0;
