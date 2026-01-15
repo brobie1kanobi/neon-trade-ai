@@ -851,6 +851,7 @@ Deno.serve(async (req) => {
         return Response.json({
           success: false,
           error: `Buy order failed: ${buyError.message}`,
+          permission_hint: /permission denied/i.test(buyError.message) ? 'Your Trade API key likely lacks "Create and modify orders" permission.' : undefined,
           duration_ms: Date.now() - startTime
         }, { status: 200 });
       }
