@@ -9,12 +9,12 @@ const FETCH_TIMEOUT = 4000;
 const AUTH_TIMEOUT = 2000;
 
 // Helper: Proper timeout with AbortController
-async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT, init = {}) {
+async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     return response;
   } catch (error) {
@@ -90,7 +90,7 @@ async function handleRequest(req, startTime) {
       
       const [cryptoData, stockData] = await Promise.all([
         Array.isArray(cryptoSymbols) && cryptoSymbols.length > 0 
-          ? getCryptoData(cryptoSymbols)
+          ? getCryptoData(base44, cryptoSymbols)
           : [],
         Array.isArray(stockSymbols) && stockSymbols.length > 0 
           ? getStockData(stockSymbols)
@@ -163,56 +163,92 @@ async function handleRequest(req, startTime) {
 // HELPER FUNCTIONS
 // ============================================
 
-async function getCryptoData(cryptoSymbols) {
+async function getCryptoData(base44, cryptoSymbols) {
   try {
     if (!cryptoSymbols || cryptoSymbols.length === 0) return [];
-    
-    const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
-    
-    const coinGeckoIds = {
-      'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
-      'BNB': 'binancecoin', 'XRP': 'ripple', 'USDC': 'usd-coin', 'ADA': 'cardano',
-      'DOGE': 'dogecoin', 'TRX': 'tron', 'TON': 'the-open-network', 'LINK': 'chainlink',
-      'MATIC': 'polygon', 'DOT': 'polkadot', 'SHIB': 'shiba-inu', 'AVAX': 'avalanche-2',
-      'UNI': 'uniswap', 'ATOM': 'cosmos', 'LTC': 'litecoin', 'BCH': 'bitcoin-cash',
-      'XLM': 'stellar', 'BABY': 'babydoge'
-    };
-    
-    const ids = cryptoSymbols
-      .map(s => coinGeckoIds[s.toUpperCase()])
-      .filter(Boolean)
-      .join(',');
-    
-    if (!ids) return [];
-    
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=1h,24h`;
-    
-    const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
-      headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
-    });
-    
-    if (!response || !response.ok) {
-      return [];
+
+    const upper = cryptoSymbols.map(s => String(s).toUpperCase().trim());
+    const results = [];
+    const foundMap = {};
+
+    // 1) Try Kraken first (fast, real-time)
+    try {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('kraken-timeout')), 2500));
+      const krakenRes = await Promise.race([
+        base44.functions.invoke('getKrakenMarketPrices', { symbols: upper }),
+        timeout
+      ]);
+      const k = krakenRes?.data || krakenRes;
+      if (k && k.success && k.prices) {
+        for (const sym of upper) {
+          const p = k.prices[sym];
+          if (p && typeof p.price === 'number' && p.price > 0) {
+            foundMap[sym] = {
+              symbol: sym,
+              name: sym,
+              price: p.price,
+              change: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
+              price_change_percentage_24h: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
+              percent_change: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
+              change_1h_percent: null,
+              change_1h_value: null,
+              icon_url: null
+            };
+          }
+        }
+      }
+    } catch (_e) {
+      // Kraken unavailable, will fall back
     }
-    
-    const data = await response.json();
-    
-    if (!Array.isArray(data)) return [];
-    
-    return data.map(coin => ({
-      symbol: cryptoSymbols.find(s => coinGeckoIds[s.toUpperCase()] === coin.id) || coin.symbol.toUpperCase(),
-      name: coin.name,
-      price: coin.current_price,
-      change: coin.price_change_percentage_24h,
-      price_change_percentage_24h: coin.price_change_percentage_24h,
-      percent_change: coin.price_change_percentage_24h,
-      change_1h_percent: coin.price_change_percentage_1h_in_currency,
-      change_1h_value: coin.current_price && coin.price_change_percentage_1h_in_currency 
-        ? (coin.current_price * coin.price_change_percentage_1h_in_currency / 100)
-        : null,
-      icon_url: coin.image
-    }));
-    
+
+    // 2) Fallback to CoinGecko for any missing symbols
+    const missing = upper.filter(s => !foundMap[s]);
+    if (missing.length > 0) {
+      const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
+      const coinGeckoIds = {
+        'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
+        'BNB': 'binancecoin', 'XRP': 'ripple', 'USDC': 'usd-coin', 'ADA': 'cardano',
+        'DOGE': 'dogecoin', 'TRX': 'tron', 'TON': 'the-open-network', 'LINK': 'chainlink',
+        'MATIC': 'polygon', 'DOT': 'polkadot', 'SHIB': 'shiba-inu', 'AVAX': 'avalanche-2',
+        'UNI': 'uniswap', 'ATOM': 'cosmos', 'LTC': 'litecoin', 'BCH': 'bitcoin-cash',
+        'XLM': 'stellar', 'BABY': 'babydoge'
+      };
+      const ids = missing.map(s => coinGeckoIds[s]).filter(Boolean).join(',');
+      if (ids) {
+        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=1h,24h${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+        const response = await fetchWithTimeout(url);
+        if (response && response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            for (const coin of data) {
+              const sym = missing.find(s => coinGeckoIds[s] === coin.id) || (coin.symbol || '').toUpperCase();
+              if (sym) {
+                foundMap[sym] = {
+                  symbol: sym,
+                  name: coin.name,
+                  price: coin.current_price,
+                  change: coin.price_change_percentage_24h,
+                  price_change_percentage_24h: coin.price_change_percentage_24h,
+                  percent_change: coin.price_change_percentage_24h,
+                  change_1h_percent: coin.price_change_percentage_1h_in_currency ?? null,
+                  change_1h_value: coin.current_price && coin.price_change_percentage_1h_in_currency
+                    ? (coin.current_price * coin.price_change_percentage_1h_in_currency / 100)
+                    : null,
+                  icon_url: coin.image
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Build array in requested order
+    for (const sym of upper) {
+      if (foundMap[sym]) results.push(foundMap[sym]);
+    }
+    return results;
+
   } catch (error) {
     console.error('[getCryptoData] Error:', error.message);
     return [];
@@ -279,11 +315,9 @@ async function getChartData(symbol, assetType, days) {
       const coinId = coinGeckoIds[symbol.toUpperCase()];
       if (!coinId) return [];
       
-      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
       
-      const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
-        headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
-      });
+      const response = await fetchWithTimeout(url);
       
       if (!response || !response.ok) {
         return [];
@@ -330,11 +364,9 @@ async function getTopMovers() {
   try {
     const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
     
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=percent_change_24h_desc&per_page=20&page=1&price_change_percentage=1h,24h`;
+    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=percent_change_24h_desc&per_page=20&page=1&price_change_percentage=1h,24h${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
     
-    const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
-      headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
-    });
+    const response = await fetchWithTimeout(url);
     
     if (!response || !response.ok) {
       return { gainers: [], losers: [] };
@@ -428,10 +460,8 @@ async function getAssetDetails(symbol, assetType) {
       const coinId = coinGeckoIds[symbol.toUpperCase()];
       if (!coinId) return null;
 
-      const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false`;
-      const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
-        headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
-      });
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+      const response = await fetchWithTimeout(url);
       if (response && response.ok) {
         const data = await response.json();
         return {
