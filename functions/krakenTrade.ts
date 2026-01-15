@@ -1351,7 +1351,7 @@ Deno.serve(async (req) => {
       // Execute trade via WebSocket
       // Gentle pacing to avoid rate-limit burst when placing sequential orders
       await new Promise(res => setTimeout(res, 350));
-      const tradeResult = await executeKrakenTrade(wsToken, orderParams);
+      const tradeResult = await executeKrakenTradeWithRetry(wsToken, orderParams);
 
       console.log('[krakenTrade] ✅ Trade executed:', tradeResult);
 
