@@ -917,7 +917,7 @@ Deno.serve(async (req) => {
 
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
-          tpResult = await executeKrakenTrade(wsToken, tpParams);
+          tpResult = await executeKrakenTradeWithRetry(wsToken, tpParams);
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
           console.error('[krakenTrade] ❌ TP failed:', tpError.message);
