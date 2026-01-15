@@ -175,14 +175,13 @@ Deno.serve(async (req) => {
     let extendedBalance = null;
     if (extendedData?.success && extendedData?.balance) {
       extendedBalance = extendedData.balance;
-      console.log('[getKrakenBalance] Using extended balance (available amounts only)');
+      console.log('[getKrakenBalance] Using extended balance');
     }
     
     if (!krakenBalance) throw new Error('Invalid balance response');
 
     // USD balances
     const totalUsdBalance = parseFloat(
-      extendedBalance?.ZUSD?.total || extendedBalance?.USD?.total ||
       extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
       krakenBalance.ZUSD || krakenBalance.USD || 0
     );
@@ -195,16 +194,16 @@ Deno.serve(async (req) => {
     const cryptoHoldings = [];
     const symbols = [];
     
-    // CRITICAL: Use extended balance for more accurate data, but use "balance" field (available)
-    // NOT "total" which includes locked amounts in pending orders
+    // CRITICAL: Use extended balance where available. Use the BALANCE field for quantity
+    // to avoid double-counting amounts reserved in open orders (hold_trade).
     const balanceSource = extendedBalance || krakenBalance;
     
     for (const [asset, balanceInfo] of Object.entries(balanceSource)) {
       // Handle both simple balance (number/string) and extended balance (object with total/balance/hold_trade)
       let qty;
       if (typeof balanceInfo === 'object' && balanceInfo !== null) {
-        // Use TOTAL for crypto (includes funds locked in orders) to reflect true holdings
-        qty = parseFloat((balanceInfo.total ?? balanceInfo.balance) || 0);
+        // Use BALANCE primarily; total can double-count if entire amount is on hold
+        qty = parseFloat((balanceInfo.balance ?? balanceInfo.total ?? 0));
       } else {
         // Simple balance format
         qty = parseFloat(balanceInfo);
