@@ -197,9 +197,8 @@ Deno.serve(async (req) => {
       // Handle both simple balance (number/string) and extended balance (object with total/balance/hold_trade)
       let qty;
       if (typeof balanceInfo === 'object' && balanceInfo !== null) {
-        // Extended balance format: use "balance" (available) NOT "total" (includes locked)
-        // CRITICAL: "total" = balance + hold_trade, but hold_trade is already in pending sell orders
-        qty = parseFloat(balanceInfo.balance || 0);
+        // Use TOTAL for crypto (includes funds locked in orders) to reflect true holdings
+        qty = parseFloat((balanceInfo.total ?? balanceInfo.balance) || 0);
       } else {
         // Simple balance format
         qty = parseFloat(balanceInfo);

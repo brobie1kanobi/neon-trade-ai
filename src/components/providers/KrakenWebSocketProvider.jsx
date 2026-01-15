@@ -25,8 +25,11 @@ export function KrakenWebSocketProvider({ children }) {
 
   // Initialize WebSocket manager with ALL subscriptions
   const wsManager = useKrakenWebSocketManager({
-    enabled: shouldConnect,
-    subscriptions: shouldConnect ? ['ticker', 'openOrders', 'ownTrades', 'balances'] : []
+    subscribeToPrices: shouldConnect,
+    priceSymbols: [],
+    subscribeToBalances: shouldConnect,
+    subscribeToOrders: shouldConnect,
+    subscribeToExecutions: shouldConnect
   });
 
   const [state, setState] = useState({

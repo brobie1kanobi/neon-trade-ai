@@ -61,9 +61,9 @@ Deno.serve(async (req) => {
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
           ]).catch(() => []),
           
-          // Fetch REAL Kraken balance
+          // Fetch robust Kraken balance (includes USD cash and crypto values)
           Promise.race([
-            base44.functions.invoke('krakenApi', { action: 'getBalance' }),
+            base44.functions.invoke('getKrakenBalance', {}),
             new Promise((_, reject) => setTimeout(() => reject(new Error('kraken timeout')), 3000))
           ]).catch((e) => {
             console.log('[autoTraderMonitor] Kraken balance fetch failed:', e.message);
@@ -82,34 +82,13 @@ Deno.serve(async (req) => {
           t.is_simulation === false  // ONLY count LIVE trades
         );
         
-        // CRITICAL: Use REAL Kraken balance for Auto-Trader
+        // CRITICAL: Use robust balance response (cash = usd_balance)
         let balance = 0;
         const krakenData = krakenBalanceResult?.data || krakenBalanceResult;
-        
-        if (krakenData?.success && krakenData?.balances) {
-          // Calculate total portfolio value from Kraken balances
-          const balances = krakenData.balances;
-          
-          // USD balance
-          const usdBalance = Number(balances['USD']?.balance || balances['ZUSD']?.balance || 0);
-          
-          // Crypto holdings value (use Kraken's reported values)
-          let cryptoValue = 0;
-          for (const [asset, info] of Object.entries(balances)) {
-            if (asset === 'USD' || asset === 'ZUSD') continue;
-            const qty = Number(info?.balance || 0);
-            if (qty <= 0.00001) continue;
-            
-            // Use estimated_usd_value if available from Kraken
-            if (info?.estimated_usd_value) {
-              cryptoValue += Number(info.estimated_usd_value);
-            } else if (info?.price_usd) {
-              cryptoValue += qty * Number(info.price_usd);
-            }
-          }
-          
-          balance = usdBalance + cryptoValue;
-          console.log('[autoTraderMonitor] Kraken balance: USD=$' + usdBalance.toFixed(2) + ', Crypto=$' + cryptoValue.toFixed(2) + ', Total=$' + balance.toFixed(2));
+        if (krakenData?.success) {
+          const usd = Number(krakenData.usd_balance || 0);
+          balance = isFinite(usd) ? usd : 0;
+          console.log('[autoTraderMonitor] Kraken USD balance = $' + balance.toFixed(2));
         } else {
           console.log('[autoTraderMonitor] No Kraken balance available, using 0');
         }

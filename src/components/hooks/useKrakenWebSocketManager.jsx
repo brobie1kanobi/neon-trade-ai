@@ -487,7 +487,7 @@ export function useKrakenWebSocketManager(options = {}) {
     connectAttemptedRef.current = true;
 
     // Connect to public WebSocket if price subscription requested
-    if (subscribeToPrices && priceSymbols.length > 0) {
+    if (subscribeToPrices) {
       connectPublicWebSocket(priceSymbols);
     }
 
@@ -626,6 +626,37 @@ export function useKrakenWebSocketManager(options = {}) {
       );
     };
   }, [subscribeToExecutions]);
+
+  // Proactive token refresh + watchdog reconnect
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        // Refresh token and re-subscribe if private connected
+        if (GLOBAL_WS_STATE.isPrivateConnected) {
+          const token = await getWebSocketToken();
+          if (GLOBAL_WS_STATE.privateWs && GLOBAL_WS_STATE.privateWs.readyState === WebSocket.OPEN) {
+            subscribeToBalances(GLOBAL_WS_STATE.privateWs, token);
+            subscribeToExecutions(GLOBAL_WS_STATE.privateWs, token);
+          }
+        }
+      } catch {}
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // If disconnected, try reconnecting automatically
+      if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
+        connectPublicWebSocket(priceSymbols);
+      }
+      if ((subscribeToBalances || subscribeToOrders || subscribeToExecutions) && !GLOBAL_WS_STATE.isPrivateConnected) {
+        GLOBAL_WS_STATE.reconnectAttempts = 0;
+        connectPrivateWebSocket();
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 
   return {
     isConnected,
