@@ -281,7 +281,9 @@ async function getChartData(symbol, assetType, days) {
       
       const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
       
-      const response = await fetchWithTimeout(url);
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
+        headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
+      });
       
       if (!response || !response.ok) {
         return [];
@@ -330,7 +332,9 @@ async function getTopMovers() {
     
     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=percent_change_24h_desc&per_page=20&page=1&price_change_percentage=1h,24h`;
     
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
+      headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
+    });
     
     if (!response || !response.ok) {
       return { gainers: [], losers: [] };
@@ -425,7 +429,9 @@ async function getAssetDetails(symbol, assetType) {
       if (!coinId) return null;
 
       const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false`;
-      const response = await fetchWithTimeout(url);
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
+        headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
+      });
       if (response && response.ok) {
         const data = await response.json();
         return {
