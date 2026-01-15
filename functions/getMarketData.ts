@@ -279,7 +279,7 @@ async function getChartData(symbol, assetType, days) {
       const coinId = coinGeckoIds[symbol.toUpperCase()];
       if (!coinId) return [];
       
-      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
       
       const response = await fetchWithTimeout(url);
       
@@ -328,7 +328,7 @@ async function getTopMovers() {
   try {
     const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
     
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=percent_change_24h_desc&per_page=20&page=1&price_change_percentage=1h,24h${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=percent_change_24h_desc&per_page=20&page=1&price_change_percentage=1h,24h`;
     
     const response = await fetchWithTimeout(url);
     
@@ -424,7 +424,7 @@ async function getAssetDetails(symbol, assetType) {
       const coinId = coinGeckoIds[symbol.toUpperCase()];
       if (!coinId) return null;
 
-      const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false`;
       const response = await fetchWithTimeout(url);
       if (response && response.ok) {
         const data = await response.json();
