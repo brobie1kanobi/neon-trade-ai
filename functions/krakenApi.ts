@@ -32,39 +32,6 @@ function generateNonce() {
   return lastNonce.toString();
 }
 
-// Choose API credentials based on purpose ('balance' | 'trade')
-function getApiCredentials(connection, purpose) {
-  const candidates = [];
-  if (purpose === 'balance') {
-    candidates.push(
-      { key: connection.balance_api_key, secret: connection.balance_api_secret_encrypted },
-      { key: connection.Kraken_API_Key, secret: connection.Kraken_API_Secret || connection.Kraken_API_Private },
-      { key: connection.kraken_api_key, secret: connection.kraken_api_secret }
-    );
-  } else {
-    candidates.push(
-      { key: connection.trading_api_key, secret: connection.trading_api_secret_encrypted },
-      { key: connection.Trade_Key, secret: connection.Trade_Secret || connection.Trade_Private },
-      { key: connection.trade_api_key, secret: connection.trade_api_secret }
-    );
-  }
-  // Fallback to legacy single-key fields
-  candidates.push({ key: connection.api_key, secret: connection.api_secret_encrypted });
-  for (const c of candidates) {
-    if (c && typeof c.key === 'string' && typeof c.secret === 'string' && c.key && c.secret) {
-      return { apiKey: c.key, apiSecret: c.secret };
-    }
-  }
-  // Handle nested object form
-  const nested = (purpose === 'balance' ? connection.Kraken_API_Key : connection.Trade_Key);
-  if (nested && typeof nested === 'object') {
-    const k = nested.api_key || nested.key;
-    const s = nested.api_secret_encrypted || nested.secret || nested.private || nested.private_key;
-    if (k && s) return { apiKey: k, apiSecret: s };
-  }
-  return { apiKey: connection.api_key, apiSecret: connection.api_secret_encrypted };
-}
-
 async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0) {
   const nonce = generateNonce();
   const postData = new URLSearchParams({ nonce, ...data }).toString();
@@ -111,6 +78,14 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
     // CRITICAL: Check for errors
     if (result.error?.length > 0) {
       const errorMsg = result.error.join(', ');
+      
+      // Retry on rate-limit errors with gentle backoff
+      if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
+        const delay = 600 * Math.pow(2, retryCount); // 600ms, 1200ms, ...
+        console.warn(`[krakenApi] Rate limited, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
+      }
       
       // CRITICAL: Retry on nonce errors
       if (/nonce/i.test(errorMsg) && retryCount < MAX_NONCE_RETRIES) {
@@ -250,13 +225,21 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
-    const balCreds = getApiCredentials(connection, 'balance');
-    const tradeCreds = getApiCredentials(connection, 'trade');
+    
+    // Helper to select correct API key pair per action (split keys)
+    const getCreds = (purpose) => {
+      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders']);
+      const useTrade = tradeActions.has(purpose);
+      const apiKeyToUse = useTrade ? (connection.trade_api_key || connection.api_key) : (connection.balance_api_key || connection.api_key);
+      const apiSecretToUse = useTrade ? (connection.trade_api_secret_encrypted || connection.api_secret_encrypted) : (connection.balance_api_secret_encrypted || connection.api_secret_encrypted);
+      return { apiKeyToUse, apiSecretToUse };
+    };
     
     if (action === 'getBalance') {
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getBalance');
       const result = await callKraken(
-        balCreds.apiKey,
-        balCreds.apiSecret,
+        apiKeyToUse,
+        apiSecretToUse,
         '/0/private/Balance',
         {}
       );
@@ -291,9 +274,10 @@ Deno.serve(async (req) => {
     // ACTION: Get extended balance (includes locked/hold amounts)
     // CRITICAL: This returns the TOTAL balance including amounts locked in orders
     if (action === 'getExtendedBalance') {
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getExtendedBalance');
       const result = await callKraken(
-        balCreds.apiKey,
-        balCreds.apiSecret,
+        apiKeyToUse,
+        apiSecretToUse,
         '/0/private/BalanceEx',
         {}
       );
@@ -336,9 +320,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'getTradesHistory') {
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
       const result = await callKraken(
-        balCreds.apiKey,
-        balCreds.apiSecret,
+        apiKeyToUse,
+        apiSecretToUse,
         '/0/private/TradesHistory',
         { type: 'all' }
       );
@@ -357,9 +342,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
       const result = await callKraken(
-        tradeCreds.apiKey,
-        tradeCreds.apiSecret,
+        apiKeyToUse,
+        apiSecretToUse,
         '/0/private/GetWebSocketsToken',
         {}
       );
@@ -391,9 +377,10 @@ Deno.serve(async (req) => {
     // ACTION: Get open orders
     if (action === 'getOpenOrders') {
       // CRITICAL: Include trades=true to get detailed info
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
       const result = await callKraken(
-        tradeCreds.apiKey,
-        tradeCreds.apiSecret,
+        apiKeyToUse,
+        apiSecretToUse,
         '/0/private/OpenOrders',
         { trades: true }
       );
