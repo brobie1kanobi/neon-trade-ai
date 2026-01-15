@@ -785,7 +785,8 @@ Deno.serve(async (req) => {
     const wsToken = tokenData?.token;
 
     if (!wsToken) {
-      throw new Error('Failed to get WebSocket token');
+      const detail = tokenData?.error || 'Failed to get WebSocket token';
+      throw new Error(detail);
     }
 
     console.log('[krakenTrade] ✅ Got WebSocket token');
