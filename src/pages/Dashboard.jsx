@@ -1057,7 +1057,8 @@ export default function Dashboard() {
     totalPortfolioValue: wsTotalValue,
     totalAssets: wsTotalAssets,
     balances: wsBalances,
-    prices: wsPrices
+    prices: wsPrices,
+    wsManager
   } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1177,9 +1178,21 @@ export default function Dashboard() {
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
 
   const allSymbols = React.useMemo(() => {
-    return [...new Set(effectiveHoldings.map(h => (h.symbol || "").toUpperCase()))];
-  }, [effectiveHoldings]);
+    const holdingSyms = effectiveHoldings.map(h => (h.symbol || "").toUpperCase());
+    const watchedSyms = (settings?.watched_crypto || []).map(s => (s || "").toUpperCase());
+    return [...new Set([...holdingSyms, ...watchedSyms])];
+  }, [effectiveHoldings, settings?.watched_crypto]);
   
+  // Ensure WebSocket is subscribed to all relevant tickers (holdings + watchlist)
+  React.useEffect(() => {
+    if (!wsConnected || !wsManager) return;
+    const toPair = (s) => (typeof s === 'string' && s.includes('/') ? s : `${String(s || '').toUpperCase()}/USD`);
+    const symbols = allSymbols.map(toPair);
+    if (symbols.length > 0) {
+      wsManager.subscribe('ticker', { symbols });
+    }
+  }, [wsConnected, wsManager, allSymbols.join(',')]);
+
   const { priceData, loading: pricesLoading, refresh: refreshPrices } = usePriceData(allSymbols);
 
   const isLoading = walletLoading || tradesLoading || holdingsLoading || pricesLoading;

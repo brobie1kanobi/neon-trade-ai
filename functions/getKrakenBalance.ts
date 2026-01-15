@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
 
     console.log('[getKrakenBalance] ✅ Success:', {
       duration_ms: Date.now() - startTime,
-      usd: usdBalance.toFixed(2),
+      usd: totalUsdBalance.toFixed(2),
       crypto: totalCryptoValue.toFixed(2),
       total: totalValue.toFixed(2),
       assets: holdingsWithValues.length,
