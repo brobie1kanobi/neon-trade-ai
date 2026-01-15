@@ -1586,7 +1586,13 @@ export default function Dashboard() {
     setEnrichedHoldings(updatedEnrichedHoldings);
     setPortfolioMarketValue(currentHoldingsValue);
 
-    const cash = isSimMode ? (wallet?.cash_balance || 0) : (wsUsdBalance || wallet?.real_cash_balance || 0);
+    const cash = isSimMode
+      ? (wallet?.cash_balance || 0)
+      : (
+          krakenApiBalances.loaded
+            ? (krakenApiBalances.usdBalance ?? 0)
+            : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
+        );
     const totalDelta = currentHoldingsValue - prevHoldingsValue;
     const prevTotal = (cash || 0) + prevHoldingsValue;
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
