@@ -285,18 +285,24 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build holdings with prices
+    // Build holdings with prices (dedup by symbol to avoid double-counting)
     const holdingsWithValues = [];
     let totalCryptoValue = 0;
 
-    for (const holding of cryptoHoldings) {
-      const currentPrice = prices[holding.symbol] || 0;
-      const usdValue = holding.quantity * currentPrice;
+    const qtyBySymbol = cryptoHoldings.reduce((acc, h) => {
+      const sym = String(h.symbol || '').toUpperCase();
+      acc[sym] = (acc[sym] || 0) + (Number(h.quantity) || 0);
+      return acc;
+    }, {});
+
+    for (const [sym, qty] of Object.entries(qtyBySymbol)) {
+      const currentPrice = prices[sym] || 0;
+      const usdValue = qty * currentPrice;
       totalCryptoValue += usdValue;
-      
+
       holdingsWithValues.push({
-        symbol: holding.symbol,
-        quantity: holding.quantity,
+        symbol: sym,
+        quantity: qty,
         current_price: currentPrice,
         current_price_usd: currentPrice,
         total_value_usd: usdValue,

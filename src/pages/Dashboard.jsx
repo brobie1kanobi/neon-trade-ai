@@ -1734,15 +1734,12 @@ export default function Dashboard() {
   // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
   
   // Cash Wallet = USD balance from Kraken
-  const rawCashBalance = isSimMode 
-    ? (wallet?.cash_balance || 0) 
+  const rawCashBalance = isSimMode
+    ? (wallet?.cash_balance || 0)
     : (
-        // REST API first (most reliable source)
-        (krakenApiBalances.loaded && krakenApiBalances.usdBalance >= 0) ? krakenApiBalances.usdBalance :
-        // WebSocket fallback - only if has positive balance
-        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
-        // Wallet DB last resort
-        (wallet?.real_cash_balance || 0)
+        krakenApiBalances.loaded
+          ? (krakenApiBalances.usdBalance ?? 0)
+          : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
       );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
@@ -1750,26 +1747,21 @@ export default function Dashboard() {
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        // REST API first (most reliable source)
-        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue >= 0) ? krakenApiBalances.cryptoValue :
-        // WebSocket fallback - only if has positive value
-        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
-        // Calculated from holdings last resort
-        portfolioMarketValue
+        krakenApiBalances.loaded
+          ? (krakenApiBalances.cryptoValue ?? 0)
+          : (lastKnownBalancesRef.current.portfolio ?? portfolioMarketValue)
       );
     
   // Update cache when we have valid data
   React.useEffect(() => {
-    if (rawCashBalance > 0) {
-      lastKnownBalancesRef.current.cash = rawCashBalance;
+    if (isSimMode) return;
+    if (krakenApiBalances.loaded) {
+      lastKnownBalancesRef.current.cash = krakenApiBalances.usdBalance ?? 0;
+      lastKnownBalancesRef.current.portfolio = krakenApiBalances.cryptoValue ?? 0;
+      lastKnownBalancesRef.current.total =
+        (lastKnownBalancesRef.current.cash || 0) + (lastKnownBalancesRef.current.portfolio || 0);
     }
-    if (rawPortfolioValue > 0) {
-      lastKnownBalancesRef.current.portfolio = rawPortfolioValue;
-    }
-    if (rawCashBalance > 0 || rawPortfolioValue > 0) {
-      lastKnownBalancesRef.current.total = (lastKnownBalancesRef.current.cash || 0) + (lastKnownBalancesRef.current.portfolio || 0);
-    }
-  }, [rawCashBalance, rawPortfolioValue]);
+  }, [isSimMode, krakenApiBalances.loaded, krakenApiBalances.usdBalance, krakenApiBalances.cryptoValue]);
   
   // Use cached values if current values are zero but we had data before
   const currentCashBalance = rawCashBalance > 0 
