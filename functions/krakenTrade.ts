@@ -563,8 +563,11 @@ function executeKrakenTrade(token, orderParams) {
           params: { token, ...orderParams, order_userref: uniqueUserRef },
           req_id: uniqueReqId
         };
-        console.log('[krakenTrade] 📤 Sending:', JSON.stringify(message));
-        ws.send(JSON.stringify(message));
+        const jitter = 120 + Math.floor(Math.random() * 180); // 120-300ms
+        setTimeout(() => {
+          console.log('[krakenTrade] 📤 Sending (delayed', jitter, 'ms):', JSON.stringify(message));
+          ws.send(JSON.stringify(message));
+        }, jitter);
       };
       
       ws.onmessage = (event) => {

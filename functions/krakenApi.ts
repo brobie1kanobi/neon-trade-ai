@@ -13,7 +13,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
 const API_TIMEOUT = 5000; // 5 second timeout for Kraken API calls
-const MAX_NONCE_RETRIES = 2; // Retry up to 2 times on nonce errors
+const MAX_NONCE_RETRIES = 4; // Retry up to 4 times on nonce/rate-limit errors
 
 // CRITICAL: Nonce counter to prevent duplicate nonces in rapid calls
 let lastNonce = 0;
@@ -81,7 +81,7 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
       
       // Retry on rate-limit errors with gentle backoff
       if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
-        const delay = 600 * Math.pow(2, retryCount); // 600ms, 1200ms, ...
+        const delay = 1200 * Math.pow(2, retryCount) + Math.floor(Math.random() * 400); // backoff + jitter
         console.warn(`[krakenApi] Rate limited, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
@@ -375,6 +375,20 @@ Deno.serve(async (req) => {
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       try {
+        // Use cached token if still valid (60s buffer)
+        const now = Date.now();
+        const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
+        if (connection?.ws_token && (expiresAt - now) > 60000) {
+          return Response.json({
+            success: true,
+            connected: true,
+            wsUrl: 'wss://ws-auth.kraken.com/v2',
+            publicWsUrl: 'wss://ws.kraken.com/v2',
+            token: connection.ws_token,
+            expires_in: Math.floor((expiresAt - now) / 1000)
+          }, { status: 200 });
+        }
+
         const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
         const result = await callKraken(
           apiKeyToUse,
@@ -399,6 +413,16 @@ Deno.serve(async (req) => {
         const expires = result.result?.expires || 900; // Default 15 minutes
         if (!token) {
           throw new Error('Failed to get WebSocket token from Kraken');
+        }
+
+        // Cache token on the connection
+        try {
+          await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
+            ws_token: token,
+            ws_token_expires_at: new Date(now + expires * 1000).toISOString()
+          });
+        } catch (cacheErr) {
+          console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
         }
 
         console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
