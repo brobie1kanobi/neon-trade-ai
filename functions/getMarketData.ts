@@ -9,12 +9,12 @@ const FETCH_TIMEOUT = 4000;
 const AUTH_TIMEOUT = 2000;
 
 // Helper: Proper timeout with AbortController
-async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT) {
+async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT, init = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
     clearTimeout(timeoutId);
     return response;
   } catch (error) {
@@ -175,7 +175,7 @@ async function getCryptoData(cryptoSymbols) {
       'DOGE': 'dogecoin', 'TRX': 'tron', 'TON': 'the-open-network', 'LINK': 'chainlink',
       'MATIC': 'polygon', 'DOT': 'polkadot', 'SHIB': 'shiba-inu', 'AVAX': 'avalanche-2',
       'UNI': 'uniswap', 'ATOM': 'cosmos', 'LTC': 'litecoin', 'BCH': 'bitcoin-cash',
-      'XLM': 'stellar'
+      'XLM': 'stellar', 'BABY': 'babydoge'
     };
     
     const ids = cryptoSymbols
@@ -185,9 +185,11 @@ async function getCryptoData(cryptoSymbols) {
     
     if (!ids) return [];
     
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=1h,24h${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=1h,24h`;
     
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(url, FETCH_TIMEOUT, {
+      headers: coinGeckoKey ? { 'x-cg-demo-api-key': coinGeckoKey, 'x_cg_demo_api_key': coinGeckoKey } : {}
+    });
     
     if (!response || !response.ok) {
       return [];
