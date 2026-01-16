@@ -12,8 +12,8 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
-const API_TIMEOUT = 5000; // 5 second timeout for Kraken API calls
-const MAX_NONCE_RETRIES = 4; // Retry up to 4 times on nonce/rate-limit errors
+const API_TIMEOUT = 8000; // 8s timeout as Kraken can be slow
+const MAX_NONCE_RETRIES = 5; // Slightly higher to smooth occasional spikes
 
 // CRITICAL: Nonce counter to prevent duplicate nonces in rapid calls
 let lastNonce = 0;
@@ -269,14 +269,14 @@ Deno.serve(async (req) => {
     
     if (action === 'getBalance') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getBalance');
-      const result = await callKraken(
-        apiKeyToUse,
-        apiSecretToUse,
-        '/0/private/Balance',
-        {}
-      );
-
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+      const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/Balance', {});
+      if (result.error?.length > 0) {
+        const msg = result.error.join(', ');
+        if (/Permission denied/i.test(msg)) {
+          throw new Error('Permission denied fetching Balance. Ensure the BALANCE key has Query Funds and Query Ledger Entries.');
+        }
+        throw new Error(msg);
+      }
 
       // Parse balances and return in standardized format
       const rawBalances = result.result || {};
@@ -307,14 +307,14 @@ Deno.serve(async (req) => {
     // CRITICAL: This returns the TOTAL balance including amounts locked in orders
     if (action === 'getExtendedBalance') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getExtendedBalance');
-      const result = await callKraken(
-        apiKeyToUse,
-        apiSecretToUse,
-        '/0/private/BalanceEx',
-        {}
-      );
-
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+      const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/BalanceEx', {});
+      if (result.error?.length > 0) {
+        const msg = result.error.join(', ');
+        if (/Permission denied/i.test(msg)) {
+          throw new Error('Permission denied fetching BalanceEx. Ensure the BALANCE key has Query Funds and Query Ledger Entries.');
+        }
+        throw new Error(msg);
+      }
 
       // Parse extended balances - format: { asset: { balance, hold_trade, credit, credit_used } }
       const rawBalances = result.result || {};
@@ -353,16 +353,14 @@ Deno.serve(async (req) => {
 
     if (action === 'getTradesHistory') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
-      const result = await callKraken(
-        apiKeyToUse,
-        apiSecretToUse,
-        '/0/private/TradesHistory',
-        { type: 'all' }
-      );
-
-      
-
-      if (result.error?.length > 0) throw new Error(result.error.join(', '));
+      const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
+      if (result.error?.length > 0) {
+        const msg = result.error.join(', ');
+        if (/Permission denied/i.test(msg)) {
+          throw new Error('Permission denied fetching TradesHistory. Ensure the BALANCE key has Query Trades and Query Ledger Entries.');
+        }
+        throw new Error(msg);
+      }
 
       const trades = [];
       for (const [txid, trade] of Object.entries(result.result?.trades || {})) {
@@ -390,20 +388,14 @@ Deno.serve(async (req) => {
         }
 
         const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
-        const result = await callKraken(
-          apiKeyToUse,
-          apiSecretToUse,
-          '/0/private/GetWebSocketsToken',
-          {}
-        );
-
+        const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
           const msg = result.error.join(', ');
           if (/permission denied/i.test(msg)) {
             return Response.json({
               success: false,
               connected: false,
-              error: 'Permission denied: Trade API key lacks required permissions. Enable "Access WebSockets API" and "Create and modify orders".'
+              error: 'Permission denied: Trade API key lacks required permissions. Enable "Access WebSockets API", "Query open/closed orders", and "Create & modify orders".'
             }, { status: 200 });
           }
           throw new Error(msg);

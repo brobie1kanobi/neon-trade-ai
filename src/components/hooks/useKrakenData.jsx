@@ -251,11 +251,8 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
       setError(err.message);
       setConnected(false);
       
-      // Keep stale data if available
-      if (GLOBAL_CACHE.data) {
-        console.log('[useKrakenData] Using stale cache due to error');
-        setKrakenData(GLOBAL_CACHE.data);
-      }
+      // Clear data to avoid misleading stale display when requests fail repeatedly
+      setKrakenData(null);
 
       return null;
     } finally {

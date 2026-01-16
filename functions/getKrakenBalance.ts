@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
     const [balanceResponse, extendedBalanceResponse] = await Promise.all([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' })
-    ]);
+    ]); // getBalance/getExtendedBalance already select the BALANCE key
 
     let balanceData = balanceResponse?.data || balanceResponse;
     if (balanceData?.data) balanceData = balanceData.data;

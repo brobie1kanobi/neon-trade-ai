@@ -804,7 +804,7 @@ Deno.serve(async (req) => {
     console.log('[krakenTrade] Getting WebSocket token...');
     const tokenResponse = await Promise.race([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
     ]);
 
     const tokenData = tokenResponse?.data || tokenResponse;
