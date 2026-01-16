@@ -802,6 +802,8 @@ Deno.serve(async (req) => {
 
     // Get WebSocket token
     console.log('[krakenTrade] Getting WebSocket token...');
+    // Rate-limit token and order placement calls per user to avoid EAPI:Rate limit exceeded
+    await tradeRateGate(user.email, 2);
     const tokenResponse = await Promise.race([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl' }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
