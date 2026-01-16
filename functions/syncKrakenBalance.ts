@@ -1,4 +1,3 @@
-
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
@@ -98,9 +97,7 @@ async function handleSync(req, startTime) {
     console.log('[syncKrakenBalance] Starting for:', user.email);
 
     // CRITICAL: 2-second timeout for connection check
-    const connectionsPromise = base44.asServiceRole.entities.KrakenConnection.filter({
-      created_by: user.email
-    });
+    const connectionsPromise = base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
     
     const connections = await Promise.race([
       connectionsPromise,

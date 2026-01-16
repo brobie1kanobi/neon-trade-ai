@@ -789,7 +789,7 @@ Deno.serve(async (req) => {
 
     // Get Kraken connection
     const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
+      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
     ]);
 

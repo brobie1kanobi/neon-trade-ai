@@ -20,9 +20,7 @@ Deno.serve(async (req) => {
     }
 
     // Check connection
-    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({
-      created_by: user.email
-    });
+    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
 
     if (!connections || connections.length === 0) {
       return Response.json({ 

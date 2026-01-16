@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
 
     console.log('[krakenApi] Action:', action, 'User:', user.email);
 
-    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
+    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
     
     if (action === 'status') {
       return Response.json({
