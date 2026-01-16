@@ -913,8 +913,8 @@ Deno.serve(async (req) => {
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
         const isPerm = /permission denied/i.test(buyError.message || '');
-        // If permission error, force refresh WS token from trade key and retry once
         if (isPerm) {
+          // 1) Try refreshing token from trade key
           try {
             console.warn('[krakenTrade] Forcing WS token refresh and retrying BUY once...');
             const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
@@ -926,13 +926,23 @@ Deno.serve(async (req) => {
               throw new Error('WS token refresh returned no token');
             }
           } catch (retryErr) {
-            console.error('[krakenTrade] Retry after token refresh failed:', retryErr?.message || retryErr);
-            return Response.json({
-              success: false,
-              error: `Buy order failed: ${retryErr?.message || buyError.message}`,
-              permission_hint: 'Token refreshed. If this persists, re-save your Trade key and ensure it is selected in the app.',
-              duration_ms: Date.now() - startTime
-            }, { status: 200 });
+            // 2) Fallback to LEGACY single key token (what previously worked)
+            try {
+              console.warn('[krakenTrade] Retrying BUY using legacy key token...');
+              const legacy = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceLegacyKey: true } });
+              const legacyToken = legacy?.data?.token || legacy?.token;
+              if (!legacyToken) throw new Error('Legacy token unavailable');
+              buyResult = await executeKrakenTradeWithRetry(legacyToken, buyParams);
+              console.log('[krakenTrade] ✅ BUY executed with legacy key:', buyResult.order_id);
+            } catch (legacyErr) {
+              console.error('[krakenTrade] Legacy BUY path failed:', legacyErr?.message || legacyErr);
+              return Response.json({
+                success: false,
+                error: `Buy order failed: ${legacyErr?.message || retryErr?.message || buyError.message}`,
+                permission_hint: 'Legacy key also failed. Ensure Trade key has "Create & modify orders" and WebSockets permissions, or re-save the original single key.',
+                duration_ms: Date.now() - startTime
+              }, { status: 200 });
+            }
           }
         } else {
           return Response.json({
@@ -1125,7 +1135,19 @@ Deno.serve(async (req) => {
 
       try {
         await tradeRateGate(user.email, 2);
-        const result = await executeKrakenTrade(wsToken, orderParams);
+        let result;
+        try {
+          result = await executeKrakenTrade(wsToken, orderParams);
+        } catch (e) {
+          if (/permission denied/i.test(String(e?.message || ''))) {
+            const legacy = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceLegacyKey: true } });
+            const legacyToken = legacy?.data?.token || legacy?.token;
+            if (!legacyToken) throw e;
+            result = await executeKrakenTrade(legacyToken, orderParams);
+          } else {
+            throw e;
+          }
+        }
         console.log('[krakenTrade] ✅ Trailing stop placed:', result.order_id);
 
         // Log the order
@@ -1225,7 +1247,19 @@ Deno.serve(async (req) => {
 
       // Execute both orders over single WebSocket connection
       await tradeRateGate(user.email, 2);
-      const bracketResult = await withOrderLock(user.email, () => executeBracketOrders(wsToken, tpParams, slParams, 4000));
+      let bracketResult;
+      try {
+        bracketResult = await withOrderLock(user.email, () => executeBracketOrders(wsToken, tpParams, slParams, 4000));
+      } catch (e) {
+        if (/permission denied/i.test(String(e?.message || ''))) {
+          const legacy = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceLegacyKey: true } });
+          const legacyToken = legacy?.data?.token || legacy?.token;
+          if (!legacyToken) throw e;
+          bracketResult = await withOrderLock(user.email, () => executeBracketOrders(legacyToken, tpParams, slParams, 4000));
+        } else {
+          throw e;
+        }
+      }
 
       console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
 
@@ -1422,10 +1456,18 @@ Deno.serve(async (req) => {
         tradeResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, orderParams));
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
-          console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
-          const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
-          const freshToken = refresh?.data?.token || refresh?.token;
-          tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams);
+          try {
+            console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
+            const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+            const freshToken = refresh?.data?.token || refresh?.token;
+            tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams);
+          } catch (retryErr) {
+            console.warn('[krakenTrade] Retrying single order with legacy key token...');
+            const legacy = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceLegacyKey: true } });
+            const legacyToken = legacy?.data?.token || legacy?.token;
+            if (!legacyToken) throw retryErr;
+            tradeResult = await executeKrakenTradeWithRetry(legacyToken, orderParams);
+          }
         } else {
           throw firstErr;
         }
