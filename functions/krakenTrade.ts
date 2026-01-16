@@ -42,6 +42,19 @@ export async function tradeRateGate(userEmail, cost = 1) {
   await new Promise(r => setTimeout(r, Math.min(wait, 3000)));
 }
 
+// Per-user in-memory queue to serialize add_order calls (prevents EAPI:Rate limit exceeded)
+const __orderLocks = new Map();
+async function withOrderLock(userEmail, task) {
+  const key = String(userEmail || 'anon');
+  const prev = __orderLocks.get(key) || Promise.resolve();
+  let resolveNext;
+  const next = (async () => {
+    try { return await prev; } catch (_) { /* ignore previous errors in chain */ }
+  })().then(task);
+  __orderLocks.set(key, next.then(() => {}, () => {}));
+  return next;
+}
+
 /**
  * Format symbol for Kraken (e.g., "BTC" -> "BTC/USD")
  * CRITICAL: Uses official Kraken trading pair format
@@ -652,7 +665,7 @@ function executeKrakenTrade(token, orderParams) {
 }
 
 // Retry wrapper to mitigate rate limits and transient WS errors
-async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 4) {
+async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) {
   let attempt = 0;
   let lastErr;
   while (attempt < maxAttempts) {
@@ -665,7 +678,7 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 4) 
       if (/permission denied/i.test(msg)) { throw e; }
       const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error/i.test(msg);
       if (!shouldRetry) { throw e; }
-      const delay = 700 * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
+      const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 400);
       console.warn(`[krakenTrade] Retry ${attempt + 1}/${maxAttempts} after ${delay}ms due to: ${msg}`);
       await new Promise(r => setTimeout(r, delay));
       attempt++;
@@ -895,7 +908,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, 2);
       let buyResult;
       try {
-        buyResult = await executeKrakenTradeWithRetry(wsToken, buyParams);
+        buyResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, buyParams));
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
@@ -966,7 +979,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
           await tradeRateGate(user.email, 2);
-          tpResult = await executeKrakenTradeWithRetry(wsToken, tpParams);
+          tpResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, tpParams));
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
           console.error('[krakenTrade] ❌ TP failed:', tpError.message);
@@ -998,7 +1011,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
           await tradeRateGate(user.email, 2);
-          slResult = await executeKrakenTradeWithRetry(wsToken, slParams);
+          slResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, slParams));
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
           console.error('[krakenTrade] ❌ SL failed:', slError.message);
@@ -1212,7 +1225,7 @@ Deno.serve(async (req) => {
 
       // Execute both orders over single WebSocket connection
       await tradeRateGate(user.email, 2);
-      const bracketResult = await executeBracketOrders(wsToken, tpParams, slParams, 4000);
+      const bracketResult = await withOrderLock(user.email, () => executeBracketOrders(wsToken, tpParams, slParams, 4000));
 
       console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
 
@@ -1406,7 +1419,7 @@ Deno.serve(async (req) => {
       let tradeResult;
       try {
         await tradeRateGate(user.email, 2);
-        tradeResult = await executeKrakenTradeWithRetry(wsToken, orderParams);
+        tradeResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, orderParams));
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
