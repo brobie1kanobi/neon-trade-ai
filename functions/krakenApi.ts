@@ -15,6 +15,51 @@ const KRAKEN_API_URL = 'https://api.kraken.com';
 const API_TIMEOUT = 8000; // 8s timeout as Kraken can be slow
 const MAX_NONCE_RETRIES = 5; // Slightly higher to smooth occasional spikes
 
+// Per-key token bucket rate limiter (separate buckets for balance vs trade keys)
+class TokenBucket {
+  constructor(capacity, refillPerSec) {
+    this.capacity = capacity;
+    this.refillPerSec = refillPerSec;
+    this.tokens = capacity;
+    this.lastRefill = Date.now();
+  }
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;
+    this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerSec);
+    this.lastRefill = now;
+  }
+  async remove(cost = 1, maxWaitMs = 3000) {
+    this.refill();
+    if (this.tokens >= cost) { this.tokens -= cost; return; }
+    const deficit = cost - this.tokens;
+    const waitMs = Math.ceil((deficit / this.refillPerSec) * 1000) + 50;
+    const capped = Math.min(waitMs, maxWaitMs);
+    await new Promise(res => setTimeout(res, capped));
+    this.refill();
+    if (this.tokens >= cost) { this.tokens -= cost; return; }
+    // If still not enough, consume and serialize
+    this.tokens = Math.max(0, this.tokens - cost);
+  }
+}
+const rateLimiters = new Map();
+function getLimiter(bucketKey, type = 'balance') {
+  const key = `${bucketKey}:${type}`;
+  if (!rateLimiters.has(key)) {
+    // Conservative defaults: trade is stricter
+    const cfg = type === 'trade' ? { capacity: 5, refillPerSec: 0.5 } : { capacity: 10, refillPerSec: 1.2 };
+    rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
+  }
+  return rateLimiters.get(key);
+}
+function endpointCost(endpoint) {
+  if (endpoint.includes('GetWebSocketsToken')) return 3;
+  if (endpoint.includes('OpenOrders')) return 2;
+  if (endpoint.includes('TradesHistory')) return 2;
+  if (endpoint.includes('BalanceEx')) return 2;
+  return 1;
+}
+
 // CRITICAL: Nonce counter to prevent duplicate nonces in rapid calls
 let lastNonce = 0;
 
@@ -184,6 +229,7 @@ Deno.serve(async (req) => {
       }
 
       console.log('[krakenApi] Testing balance key...');
+      await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/Balance'));
       const balanceTest = await callKraken(apiKey, apiSecret, '/0/private/Balance', {});
       if (balanceTest.error?.length > 0) {
         throw new Error(balanceTest.error.join(', '));
@@ -194,6 +240,7 @@ Deno.serve(async (req) => {
       if (tradeKey && tradeSecret) {
         try {
           console.log('[krakenApi] Testing trade key (WebSocket token)...');
+          await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/GetWebSocketsToken'));
           const wsTest = await callKraken(tradeKey, tradeSecret, '/0/private/GetWebSocketsToken', {});
           if (wsTest.error?.length > 0) {
             const msg = wsTest.error.join(', ');
@@ -269,6 +316,7 @@ Deno.serve(async (req) => {
     
     if (action === 'getBalance') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getBalance');
+      await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/Balance'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/Balance', {});
       if (result.error?.length > 0) {
         const msg = result.error.join(', ');
@@ -307,6 +355,7 @@ Deno.serve(async (req) => {
     // CRITICAL: This returns the TOTAL balance including amounts locked in orders
     if (action === 'getExtendedBalance') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getExtendedBalance');
+      await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/BalanceEx'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/BalanceEx', {});
       if (result.error?.length > 0) {
         const msg = result.error.join(', ');
@@ -353,6 +402,7 @@ Deno.serve(async (req) => {
 
     if (action === 'getTradesHistory') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
+      await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
       if (result.error?.length > 0) {
         const msg = result.error.join(', ');
@@ -388,6 +438,7 @@ Deno.serve(async (req) => {
         }
 
         const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
+        await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
           const msg = result.error.join(', ');
@@ -440,6 +491,7 @@ Deno.serve(async (req) => {
       // CRITICAL: Include trades=true to get detailed info
       try {
         const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
+        await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/OpenOrders'));
         const result = await callKraken(
           apiKeyToUse,
           apiSecretToUse,
