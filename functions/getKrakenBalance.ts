@@ -181,15 +181,25 @@ Deno.serve(async (req) => {
     if (!krakenBalance) throw new Error('Invalid balance response');
 
     // USD balances
-    const totalUsdBalance = parseFloat(
-      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
-      krakenBalance.ZUSD || krakenBalance.USD || 0
-    );
+    // TOTAL USD (available + on hold in orders) to match Kraken "Total value"
+    const totalUsdBalance = (() => {
+      if (extendedBalance?.ZUSD || extendedBalance?.USD) {
+        const ext = extendedBalance?.ZUSD || extendedBalance?.USD;
+        const bal = parseFloat(ext?.balance || 0);
+        const hold = parseFloat(ext?.hold_trade || 0);
+        return bal + hold;
+      }
+      return parseFloat(krakenBalance.ZUSD || krakenBalance.USD || 0);
+    })();
 
-    const availableUsdBalance = parseFloat(
-      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
-      krakenBalance.ZUSD || krakenBalance.USD || 0
-    );
+    // AVAILABLE USD (excludes hold) for display/ordering context
+    const availableUsdBalance = (() => {
+      if (extendedBalance?.ZUSD || extendedBalance?.USD) {
+        const ext = extendedBalance?.ZUSD || extendedBalance?.USD;
+        return parseFloat(ext?.balance || 0);
+      }
+      return parseFloat(krakenBalance.ZUSD || krakenBalance.USD || 0);
+    })();
     
     const cryptoHoldings = [];
     const symbols = [];
@@ -199,20 +209,22 @@ Deno.serve(async (req) => {
     const balanceSource = extendedBalance || krakenBalance;
     
     for (const [asset, balanceInfo] of Object.entries(balanceSource)) {
-      // Handle both simple balance (number/string) and extended balance (object with total/balance/hold_trade)
-      let qty;
+      // Handle both simple balance (number/string) and extended balance (object with balance/hold_trade/total)
+      let qtyTotal;
       if (typeof balanceInfo === 'object' && balanceInfo !== null) {
-        // Use BALANCE primarily; total can double-count if entire amount is on hold
-        qty = parseFloat((balanceInfo.balance ?? balanceInfo.total ?? 0));
+        const available = parseFloat(balanceInfo.balance ?? 0);
+        const onHold = parseFloat(balanceInfo.hold_trade ?? 0);
+        // TOTAL = available + on-hold, to match Kraken "Total value"
+        qtyTotal = available + onHold;
       } else {
         // Simple balance format
-        qty = parseFloat(balanceInfo);
+        qtyTotal = parseFloat(balanceInfo);
       }
       
-      if (asset === 'ZUSD' || asset === 'USD' || qty <= 0.00001) continue;
+      if (asset === 'ZUSD' || asset === 'USD' || qtyTotal <= 0.00001) continue;
       
       const symbol = parseKrakenAsset(asset);
-      cryptoHoldings.push({ symbol, quantity: qty });
+      cryptoHoldings.push({ symbol, quantity: qtyTotal });
       symbols.push(symbol);
     }
 
@@ -285,6 +297,7 @@ Deno.serve(async (req) => {
     }
 
     // Build holdings with prices (dedup by symbol to avoid double-counting)
+    // Uses TOTAL quantities (including amounts on hold) for valuation parity with Kraken
     const holdingsWithValues = [];
     let totalCryptoValue = 0;
 
@@ -384,8 +397,8 @@ Deno.serve(async (req) => {
     return Response.json({
       success: true,
       connected: true,
-      usd_balance: totalUsdBalance,
-      total_usd_balance: totalUsdBalance,
+      usd_balance: totalUsdBalance,              // Backward-compatible: total
+      total_usd_balance: totalUsdBalance,        // Explicit total
       available_usd_balance: availableUsdBalance,
       holdings: holdingsWithValues,
       total_assets: holdingsWithValues.length,
