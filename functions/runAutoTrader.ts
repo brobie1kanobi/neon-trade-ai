@@ -62,6 +62,42 @@ function roundPriceForKraken(price, symbol) {
   return Math.round(price * factor) / factor;
 }
 
+// Small helper sleep
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Invoke krakenTrade with robust retries and token refresh on permission errors
+async function invokeKrakenTrade(base44, payload, maxAttempts = 4) {
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await base44.functions.invoke('krakenTrade', payload);
+      const data = res?.data || res;
+      if (data?.success === false) {
+        const msg = String(data?.error || '');
+        if (/permission denied/i.test(msg)) {
+          await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+        }
+        if (/rate limit|429|timeout|websocket|nonce/i.test(msg)) { throw new Error(msg); }
+      }
+      return data;
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || e || '');
+      if (/permission denied/i.test(msg)) {
+        await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+      }
+      if (/rate limit|429|timeout|websocket|nonce/i.test(msg) && attempt < maxAttempts - 1) {
+        const delay = 800 * Math.pow(2, attempt) + Math.floor(Math.random() * 600);
+        console.warn(`[runAutoTrader] Rate/WS limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+        await sleep(delay);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 async function getLatestWallet(base44, email) {
   const list = await base44.entities.Wallet.filter({ created_by: email }, "-updated_date");
   return list[0] || null;
@@ -236,16 +272,15 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 TP: $${takeProfitPrice} (+${gainMargin}%)`);
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
-          // Step 1: Place market BUY order
-          const buyResponse = await base44.functions.invoke('krakenTrade', {
+          // Step 1: Place market BUY order (with pacing)
+          await sleep(300 + Math.floor(Math.random() * 700));
+          const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
             side: 'buy',
             quantity: qty,
             orderType: 'market'
           });
-
-          const buyData = buyResponse?.data || buyResponse;
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');
           }
@@ -276,7 +311,7 @@ Deno.serve(async (req) => {
           // Place Take Profit order
           try {
             console.log(`[runAutoTrader] 📤 Placing Take Profit at $${takeProfitPrice}...`);
-            const tpResponse = await base44.functions.invoke('krakenTrade', {
+            const tpData = await invokeKrakenTrade(base44, {
               action: 'place_order',
               symbol: sym,
               side: 'sell',
@@ -285,8 +320,6 @@ Deno.serve(async (req) => {
               triggerPrice: takeProfitPrice,
               timeInForce: 'gtc'
             });
-            
-            const tpData = tpResponse?.data || tpResponse;
             console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
             
             if (tpData?.success) {
@@ -310,7 +343,7 @@ Deno.serve(async (req) => {
             // Use trailing stop if enabled, otherwise use static stop-loss
             if (trailingEnabled && trailingMargin > 0) {
               console.log(`[runAutoTrader] 📤 Placing Trailing Stop (${trailingMargin}% from peak)...`);
-              const slResponse = await base44.functions.invoke('krakenTrade', {
+              const slData = await invokeKrakenTrade(base44, {
                 action: 'place_trailing_stop',
                 symbol: sym,
                 quantity: qty,
@@ -319,15 +352,13 @@ Deno.serve(async (req) => {
                 triggerReference: 'last',
                 useLimit: false // Use market order on trigger for guaranteed execution
               });
-              
-              const slData = slResponse?.data || slResponse;
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
               } else {
                 console.warn(`[runAutoTrader] ⚠️ Trailing Stop failed: ${slData?.error}, falling back to static SL`);
                 // Fallback to static stop-loss
-                const fallbackResponse = await base44.functions.invoke('krakenTrade', {
+                const fallbackData = await invokeKrakenTrade(base44, {
                   action: 'place_order',
                   symbol: sym,
                   side: 'sell',
@@ -336,7 +367,6 @@ Deno.serve(async (req) => {
                   stopPrice: staticStopLossPrice,
                   timeInForce: 'gtc'
                 });
-                const fallbackData = fallbackResponse?.data || fallbackResponse;
                 if (fallbackData?.success) {
                   slOrderId = fallbackData.order_id;
                   console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
@@ -345,7 +375,7 @@ Deno.serve(async (req) => {
             } else {
               // Use static stop-loss if trailing not enabled
               console.log(`[runAutoTrader] 📤 Placing Static Stop-Loss at $${staticStopLossPrice}...`);
-              const slResponse = await base44.functions.invoke('krakenTrade', {
+              const slData = await invokeKrakenTrade(base44, {
                 action: 'place_order',
                 symbol: sym,
                 side: 'sell',
@@ -354,8 +384,6 @@ Deno.serve(async (req) => {
                 stopPrice: staticStopLossPrice,
                 timeInForce: 'gtc'
               });
-              
-              const slData = slResponse?.data || slResponse;
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
@@ -454,6 +482,9 @@ Deno.serve(async (req) => {
       });
 
       console.log(`[runAutoTrader] ✅ Trade completed for ${sym}`);
+
+      // Pace between prospects to avoid Kraken burst limits
+      await sleep(1200 + Math.floor(Math.random() * 1500));
 
       if (availableCash < 1) break;
     }
