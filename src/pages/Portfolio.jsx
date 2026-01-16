@@ -46,7 +46,7 @@ export default function Portfolio() {
   const [error, setError] = useState(null);
 
   // CRITICAL: Determine sim mode FIRST
-  const isSimMode = settings?.sim_trading_mode !== false;
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
   // CRITICAL: Use global WebSocket connection
   const {
@@ -68,7 +68,7 @@ export default function Portfolio() {
     const now = Date.now();
 
     // CRITICAL: Use cache if available and fresh
-    if (!force && cache.data && (now - cache.timestamp) < CACHE_TTL) {
+    if (!force && cache.data && (now - cache.timestamp) < CACHE_TTL && (cache.data.settings?.sim_trading_mode !== false)) {
       console.log('[Portfolio] Using cached data (age:', Math.floor((now - cache.timestamp) / 1000), 'sec)');
       
       setUser(cache.data.user);

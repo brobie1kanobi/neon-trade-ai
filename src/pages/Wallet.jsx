@@ -25,7 +25,7 @@ export default function WalletPage() {
   const [portfolioMarketValue, setPortfolioMarketValue] = useState(0);
   const [lastLoadTime, setLastLoadTime] = useState(0);
 
-  const isSimMode = settings?.sim_trading_mode !== false;
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
   // CRITICAL: Use global WebSocket connection
   const {
@@ -63,7 +63,11 @@ export default function WalletPage() {
     if (isSimMode) return 0;
 
     // PRIORITY 1: Use Kraken REST API data (most reliable)
-    if (krakenData?.total_crypto_value >= 0 && krakenData?.total_crypto_value !== undefined) {
+    if (krakenData?.total_crypto_value_usd !== undefined) {
+      console.log('[Wallet] ✅ Using Kraken API total_crypto_value_usd:', krakenData.total_crypto_value_usd.toFixed(2));
+      return krakenData.total_crypto_value_usd;
+    }
+    if (krakenData?.total_crypto_value !== undefined) {
       console.log('[Wallet] ✅ Using Kraken API total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
       return krakenData.total_crypto_value;
     }

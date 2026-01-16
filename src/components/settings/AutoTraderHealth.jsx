@@ -42,9 +42,9 @@ export default function AutoTraderHealth() {
   const { orders: krakenOrders, isConnected: wsConnected } = useKrakenWebSocket();
 
   // Extract balance values from the SAME source as other pages
-  const effectiveBalance = krakenData?.total_portfolio_value || 0;
-  const effectiveCash = krakenData?.usd_balance || 0;
-  const effectiveAssets = krakenData?.total_crypto_value || 0;
+  const effectiveBalance = (krakenData?.total_portfolio_value_usd ?? krakenData?.total_portfolio_value) ?? ((krakenData?.usd_balance || 0) + (krakenData?.total_crypto_value_usd || krakenData?.total_crypto_value || 0));
+  const effectiveCash = krakenData?.usd_balance ?? 0;
+  const effectiveAssets = krakenData?.total_crypto_value_usd ?? krakenData?.total_crypto_value ?? 0;
   const isKrakenConnected = krakenConnected || (krakenData?.connected === true);
 
   // CRITICAL: Fetch order counts using same logic as OrdersAndHistory
