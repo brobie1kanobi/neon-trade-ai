@@ -567,7 +567,7 @@ export function useKrakenWebSocketManager(options = {}) {
     };
     
     const handlePublicDisconnected = () => {
-      if (!GLOBAL_WS_STATE.isPrivateConnected) {
+      if (!GLOBAL_WS_STATE.isPrivateBalancesConnected && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
         setIsConnected(false);
       }
     };
