@@ -437,12 +437,7 @@ Deno.serve(async (req) => {
           }, { status: 200 });
         }
 
-        // Allow forcing legacy key (single-key setup) if requested
-        let creds = getCreds('getWebSocketUrl');
-        if (payload?.forceLegacyKey) {
-          creds = { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
-        }
-        const { apiKeyToUse, apiSecretToUse } = creds;
+        const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
         await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
