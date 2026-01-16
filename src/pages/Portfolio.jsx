@@ -13,21 +13,12 @@ import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import AutoTraderHealth from "../components/settings/AutoTraderHealth";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
-import { useKrakenData } from "@/components/hooks/useKrakenData";
+
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
-// GLOBAL CACHE to prevent duplicate API calls
-if (typeof window !== 'undefined') {
-  window.__portfolioCache = window.__portfolioCache || {
-    data: null,
-    timestamp: 0,
-    inFlight: null
-  };
-}
 
-const CACHE_TTL = 30000; // 30 seconds
 
 export default function Portfolio() {
   const [trades, setTrades] = useState([]);
@@ -57,231 +48,144 @@ export default function Portfolio() {
     prices: wsPrices
   } = useKrakenWebSocket();
 
-  // CRITICAL: Use Kraken data in LIVE mode
-  const { krakenData, loading: krakenLoading, error: krakenError, refresh: refreshKraken } = useKrakenData(isSimMode, true);
+  // LIVE mode: fetch Kraken balance directly (no client cache)
+  const [krakenData, setKrakenData] = useState(null);
+  const [krakenLoading, setKrakenLoading] = useState(false);
+  const fetchKrakenLive = useCallback(async () => {
+    if (isSimMode) return;
+    setKrakenLoading(true);
+    try {
+      const res = await base44.functions.invoke('getKrakenBalance', {});
+      const data = res?.data || res;
+      setKrakenData(data?.success ? data : null);
+    } finally {
+      setKrakenLoading(false);
+    }
+  }, [isSimMode]);
+
+  useEffect(() => {
+    if (!isSimMode) fetchKrakenLive();
+  }, [isSimMode, fetchKrakenLive]);
+
+  useEffect(() => {
+    const handler = () => fetchKrakenLive();
+    window.addEventListener('trade:completed', handler);
+    window.addEventListener('kraken:synced', handler);
+    return () => {
+      window.removeEventListener('trade:completed', handler);
+      window.removeEventListener('kraken:synced', handler);
+    };
+  }, [fetchKrakenLive]);
 
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
 
   const loadData = useCallback(async (force = false) => {
-    const cache = window.__portfolioCache;
-    const now = Date.now();
-
-    // CRITICAL: Use cache if available and fresh
-    if (!force && cache.data && (now - cache.timestamp) < CACHE_TTL && (cache.data.settings?.sim_trading_mode !== false)) {
-      console.log('[Portfolio] Using cached data (age:', Math.floor((now - cache.timestamp) / 1000), 'sec)');
-      
-      setUser(cache.data.user);
-      setSettings(cache.data.settings);
-      setWallet(cache.data.wallet);
-      setTrades(cache.data.trades);
-      setHoldings(cache.data.holdings);
-      setShowDataSync(cache.data.showDataSync);
-      setIsLoading(false);
-      return;
-    }
-
-    // CRITICAL: If request is already in flight, wait for it
-    if (cache.inFlight) {
-      console.log('[Portfolio] Request in flight, waiting...');
-      try {
-        const result = await cache.inFlight;
-        setUser(result.user);
-        setSettings(result.settings);
-        setWallet(result.wallet);
-        setTrades(result.trades);
-        setHoldings(result.holdings);
-        setShowDataSync(result.showDataSync);
-        setIsLoading(false);
-        return;
-      } catch (e) {
-        console.error('[Portfolio] In-flight request failed:', e);
-        // If in-flight failed, clear it to allow new attempts
-        cache.inFlight = null;
-        throw e; // Re-throw to be caught by the outer try-catch
-      }
-    }
-
     setIsLoading(true);
-    console.log('[Portfolio] Fetching fresh data...');
-
-    // Create the fetch promise
-    const fetchPromise = (async () => {
-      try {
-        // FIXED: Increased timeouts from 2s to 8s for heavy queries
-        const [currentUser, userSettingsResult, userWalletArr, userTradesArr, userHoldingsArr] = await Promise.all([
-          Promise.race([
-            base44.auth.me(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
-          ]),
-          
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me(); // This will execute base44.auth.me() again
-              return UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Settings timeout')), 5000))
-          ]),
-          
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me(); // This will execute base44.auth.me() again
-              return Wallet.filter({ created_by: u.email }, "-updated_date", 1);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet timeout')), 5000))
-          ]),
-          
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-              const simMode = s[0]?.sim_trading_mode !== false;
-              return Trade.filter({ created_by: u.email, is_simulation: simMode }, "-created_date", 200);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 8000))
-          ]),
-          
-          Promise.race([
-            (async () => {
-              const u = await base44.auth.me();
-              const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-              const simMode = s[0]?.sim_trading_mode !== false;
-              return Holding.filter({ created_by: u.email, is_simulation: simMode }, "-updated_date", 500);
-            })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings timeout')), 8000))
-          ])
-        ]);
-
-        const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
-        const isCreator = !!currentUser?.is_creator;
-        const isAdminOrCreator = isAdmin || isCreator;
-
-        const currentSettings = userSettingsResult[0] || { sim_trading_mode: true };
-        if (!isAdminOrCreator) {
-          currentSettings.sim_trading_mode = true;
-        }
-
-        const effectiveSimMode = currentSettings.sim_trading_mode !== false;
-
-        let currentWallet = userWalletArr[0];
-
-        // Handle wallet initialization for sim mode
-        if (effectiveSimMode) {
-          const cashBuildUpInterval = 24 * 60 * 60 * 1000;
-          const cashBuildUpAmount = 1000;
-          const currentTime = Date.now();
-
-          if (!currentWallet) {
-            currentWallet = {
-              cash_balance: 10000 + cashBuildUpAmount,
-              total_deposits: 0,
-              total_withdrawals: 0,
-              real_cash_balance: 0,
-              real_total_deposits: 0,
-              real_total_withdrawals: 0,
-              last_cash_build_up_time: currentTime,
-              created_by: currentUser.email
-            };
-            const newWallet = await Wallet.create(currentWallet);
-            currentWallet = newWallet;
-          } else if (!currentWallet.last_cash_build_up_time || (currentTime - currentWallet.last_cash_build_up_time) >= cashBuildUpInterval) {
-            currentWallet.cash_balance = (currentWallet.cash_balance || 0) + cashBuildUpAmount;
-            currentWallet.last_cash_build_up_time = currentTime;
-            await Wallet.update(currentWallet.id, { 
-              cash_balance: currentWallet.cash_balance, 
-              last_cash_build_up_time: currentWallet.last_cash_build_up_time 
-            });
-          }
-        } else if (!currentWallet) {
-            currentWallet = {
-              cash_balance: 0,
-              total_deposits: 0,
-              total_withdrawals: 0,
-              real_cash_balance: 0,
-              real_total_deposits: 0,
-              real_total_withdrawals: 0,
-              created_by: currentUser.email
-            };
-            const newWallet = await Wallet.create(currentWallet);
-            currentWallet = newWallet;
-        }
-
-        console.log('[Portfolio] Loaded:', {
-          holdings: userHoldingsArr.length,
-          trades: userTradesArr.length,
-          mode: effectiveSimMode ? 'sim' : 'real'
-        });
-
-        const result = {
-          user: currentUser,
-          settings: currentSettings,
-          wallet: currentWallet,
-          trades: userTradesArr,
-          holdings: userHoldingsArr,
-          showDataSync: effectiveSimMode && userTradesArr.length > 0 && userHoldingsArr.length === 0
-        };
-
-        // Update cache
-        cache.data = result;
-        cache.timestamp = Date.now();
-        cache.inFlight = null;
-
-        return result;
-
-      } catch (err) {
-        cache.inFlight = null;
-        throw err;
-      }
-    })();
-
-    // Store in-flight request
-    cache.inFlight = fetchPromise;
-
+    console.log('[Portfolio] Fetching fresh data (no cache)...');
     try {
-      const result = await fetchPromise;
-      
-      setUser(result.user);
-      setSettings(result.settings);
-      setWallet(result.wallet);
-      setTrades(result.trades);
-      setHoldings(result.holdings);
-      setShowDataSync(result.showDataSync);
-      setError(null);
+      const [currentUser, userSettingsResult, userWalletArr, userTradesArr, userHoldingsArr] = await Promise.all([
+        Promise.race([
+          base44.auth.me(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
+        ]),
+        Promise.race([
+          (async () => {
+            const u = await base44.auth.me();
+            return UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
+          })(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Settings timeout')), 5000))
+        ]),
+        Promise.race([
+          (async () => {
+            const u = await base44.auth.me();
+            return Wallet.filter({ created_by: u.email }, "-updated_date", 1);
+          })(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet timeout')), 5000))
+        ]),
+        Promise.race([
+          (async () => {
+            const u = await base44.auth.me();
+            const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
+            const simMode = s[0]?.sim_trading_mode !== false;
+            return Trade.filter({ created_by: u.email, is_simulation: simMode }, "-created_date", 200);
+          })(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 8000))
+        ]),
+        Promise.race([
+          (async () => {
+            const u = await base44.auth.me();
+            const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
+            const simMode = s[0]?.sim_trading_mode !== false;
+            return Holding.filter({ created_by: u.email, is_simulation: simMode }, "-updated_date", 500);
+          })(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings timeout')), 8000))
+        ])
+      ]);
 
+      const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!currentUser?.is_creator;
+      const currentSettings = userSettingsResult[0] || { sim_trading_mode: true };
+      if (!isAdmin && !isCreator) currentSettings.sim_trading_mode = true;
+
+      const effectiveSimMode = currentSettings.sim_trading_mode !== false;
+      let currentWallet = userWalletArr[0];
+
+      // Wallet initialization logic retained
+      if (effectiveSimMode) {
+        const cashBuildUpInterval = 24 * 60 * 60 * 1000;
+        const cashBuildUpAmount = 1000;
+        const currentTime = Date.now();
+
+        if (!currentWallet) {
+          currentWallet = {
+            cash_balance: 10000 + cashBuildUpAmount,
+            total_deposits: 0,
+            total_withdrawals: 0,
+            real_cash_balance: 0,
+            real_total_deposits: 0,
+            real_total_withdrawals: 0,
+            last_cash_build_up_time: currentTime,
+            created_by: currentUser.email
+          };
+          const newWallet = await Wallet.create(currentWallet);
+          currentWallet = newWallet;
+        } else if (!currentWallet.last_cash_build_up_time || (Date.now() - currentWallet.last_cash_build_up_time) >= cashBuildUpInterval) {
+          currentWallet.cash_balance = (currentWallet.cash_balance || 0) + cashBuildUpAmount;
+          currentWallet.last_cash_build_up_time = currentTime;
+          await Wallet.update(currentWallet.id, {
+            cash_balance: currentWallet.cash_balance,
+            last_cash_build_up_time: currentWallet.last_cash_build_up_time
+          });
+        }
+      } else if (!currentWallet) {
+        currentWallet = {
+          cash_balance: 0,
+          total_deposits: 0,
+          total_withdrawals: 0,
+          real_cash_balance: 0,
+          real_total_deposits: 0,
+          real_total_withdrawals: 0,
+          created_by: currentUser.email
+        };
+        const newWallet = await Wallet.create(currentWallet);
+        currentWallet = newWallet;
+      }
+
+      setUser(currentUser);
+      setSettings(currentSettings);
+      setWallet(currentWallet);
+      setTrades(userTradesArr);
+      setHoldings(userHoldingsArr);
+      setShowDataSync(effectiveSimMode && userTradesArr.length > 0 && userHoldingsArr.length === 0);
+      setError(null);
     } catch (err) {
       console.error('[Portfolio] Loading error:', err);
-      
-      const status = err?.response?.status || err?.status || 0;
-      const message = err?.message || '';
-      
-      if (status === 429 || message.includes('429') || message.toLowerCase().includes('rate limit')) {
-        setError('Rate limit reached. Using cached data if available. Please wait a moment.');
-        
-        // Try to use cached data even if stale
-        if (cache.data) {
-          console.log('[Portfolio] Rate limited, using stale cache');
-          setUser(cache.data.user);
-          setSettings(cache.data.settings);
-          setWallet(cache.data.wallet);
-          setTrades(cache.data.trades);
-          setHoldings(cache.data.holdings);
-          setShowDataSync(cache.data.showDataSync);
-        }
-        
-        // Auto-retry after 60 seconds
-        setTimeout(() => {
-          console.log('[Portfolio] Auto-retrying after rate limit...');
-          cache.data = null; // Invalidate cache for retry
-          cache.timestamp = 0;
-          loadData(false);
-        }, 60000);
-      } else {
-        setError('Failed to load portfolio data. Please try again.');
-      }
+      setError('Failed to load portfolio data. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []); // Dependencies are empty as it fetches all data internally
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -289,22 +193,8 @@ export default function Portfolio() {
 
   useEffect(() => {
     const onDataUpdated = () => {
-      // Invalidate cache on data update
-      window.__portfolioCache.data = null;
-      window.__portfolioCache.timestamp = 0;
-      
-      if (typeof window !== 'undefined') {
-        if (window.__portfolioRefreshTimeout) {
-          clearTimeout(window.__portfolioRefreshTimeout);
-        }
-        window.__portfolioRefreshTimeout = setTimeout(() => {
-          console.log('[Portfolio] Data updated event, reloading...');
-          loadData(true); // Force a fresh load
-          window.__portfolioRefreshTimeout = null;
-        }, 900);
-      } else {
-        loadData(true); // Force a fresh load
-      }
+      // Reload fresh data (no cache)
+      loadData(true);
     };
     window.addEventListener('app:data-updated', onDataUpdated);
     return () => {
@@ -568,15 +458,12 @@ export default function Portfolio() {
         await Wallet.create(newWalletData);
       }
 
-      // Invalidate cache and reload
-      window.__portfolioCache.data = null;
-      window.__portfolioCache.timestamp = 0;
       await loadData(true);
       
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'trade', source: 'portfolio' } }));
       
       if (!tradeIsSimMode) {
-        refreshKraken();
+        fetchKrakenLive();
       }
     } catch (err) {
       console.error("Error executing trade:", err);
@@ -587,11 +474,9 @@ export default function Portfolio() {
 
   const handleSyncComplete = () => {
     setShowDataSync(false);
-    window.__portfolioCache.data = null; // Invalidate cache
-    window.__portfolioCache.timestamp = 0;
     loadData(true); // Force fresh load
     if (!isSimMode) {
-      refreshKraken();
+      fetchKrakenLive();
     }
   };
 
@@ -653,8 +538,6 @@ export default function Portfolio() {
           wallet={wallet} 
           isSimMode={isSimMode}
           onRepairComplete={() => {
-            window.__portfolioCache.data = null;
-            window.__portfolioCache.timestamp = 0;
             setTimeout(() => loadData(true), 500);
           }}
         />
@@ -677,7 +560,7 @@ export default function Portfolio() {
           lifetimeChange={lifetimeChange}
           onSyncClick={() => {
             if (!isSimMode) {
-              refreshKraken();
+              fetchKrakenLive();
             } else {
               setShowDataSync(true);
             }
@@ -718,8 +601,6 @@ export default function Portfolio() {
           trades={trades} 
           isSimMode={isSimMode}
           onRefresh={() => {
-            window.__portfolioCache.data = null;
-            window.__portfolioCache.timestamp = 0;
             loadData(true);
           }}
         />
