@@ -480,24 +480,69 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     loadOrders();
   }, [loadOrders]);
 
-  // CRITICAL: Auto-refresh every 15 seconds in LIVE mode to keep orders synced
+  // CRITICAL: Auto-refresh every 5 minutes in LIVE mode to reconcile with REST
   useEffect(() => {
     if (!isSimMode) {
       const interval = setInterval(() => {
-        console.log('[OrdersAndHistory] Auto-refresh triggered (30s interval)');
+        console.log('[OrdersAndHistory] Auto-refresh triggered (5m interval)');
         loadOrders();
-      }, 15000); // 15 seconds
+      }, 300000); // 5 minutes
       return () => clearInterval(interval);
     }
   }, [isSimMode, loadOrders]);
 
-  // CRITICAL: Reload orders when Kraken WebSocket data changes
+  // CRITICAL: Update orders from WebSocket without REST calls to avoid rate limits
   useEffect(() => {
     if (!isSimMode && wsConnected && krakenOrders) {
-      console.log('[OrdersAndHistory] Kraken WebSocket orders updated, reloading...', Object.keys(krakenOrders).length, 'orders');
-      loadOrders();
+      console.log('[OrdersAndHistory] WebSocket orders updated, syncing state from WS (no REST):', Object.keys(krakenOrders).length);
+      const list = Object.values(krakenOrders)
+        .map(ko => {
+          const descr = ko.descr || {};
+          const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
+          const side = descr.type || ko.side || 'unknown';
+          const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+          const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+          const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+          return {
+            id: ko.order_id || ko.txid,
+            symbol,
+            quantity: volume,
+            purchase_price: price,
+            status: 'active',
+            asset_type: 'crypto',
+            is_simulation: false,
+            kraken_order_id: ko.order_id || ko.txid,
+            created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : (ko.created_at || new Date().toISOString()),
+            order_type: orderType,
+            side,
+            gain_margin: 10,
+            loss_margin: 5,
+            trailing_enabled: String(orderType).toLowerCase().includes('trailing'),
+            kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+            trigger_price: parseFloat(descr.price) || 0
+          };
+        })
+        .filter(o => o.quantity > 0.00000001);
+
+      const conditionalList = list.filter(order => {
+        const ot = (order.order_type || '').toLowerCase();
+        const desc = (order.kraken_description || '').toLowerCase();
+        return ot.includes('stop') || ot.includes('take-profit') || ot.includes('take profit') || ot.includes('trailing') || ot.includes('oco') || ot.includes('conditional') || ot.includes('trigger') ||
+               desc.includes('stop') || desc.includes('take profit') || desc.includes('trailing') || desc.includes('oco');
+      });
+
+      const openList = list.filter(order => {
+        const ot = (order.order_type || '').toLowerCase();
+        const desc = (order.kraken_description || '').toLowerCase();
+        return (!ot.includes('stop') && !ot.includes('take-profit') && !ot.includes('take profit') && !ot.includes('trailing') && !ot.includes('oco') && !ot.includes('conditional') && !ot.includes('trigger')) &&
+               (!desc.includes('stop') && !desc.includes('take profit') && !desc.includes('trailing') && !desc.includes('oco'));
+      });
+
+      setConditionalOrders(prev => mergeLists(prev, conditionalList));
+      setOpenOrders(prev => mergeLists(prev, openList));
+      setLastRefreshAt(Date.now());
     }
-  }, [krakenOrders, wsConnected, isSimMode, loadOrders]);
+  }, [krakenOrders, wsConnected, isSimMode]);
 
   // CRITICAL: Force refresh when tab becomes visible (tab switching)
   useEffect(() => {

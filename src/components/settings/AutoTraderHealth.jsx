@@ -56,21 +56,12 @@ export default function AutoTraderHealth() {
       let openOrderCount = 0;
       
       if (!isSimMode) {
-        // Try Kraken API first
-        try {
-          const ordersResponse = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders' });
-          const ordersData = ordersResponse?.data || ordersResponse;
-          if (ordersData?.orders) {
-            openOrderCount = ordersData.orders.filter(o => {
-              const volume = parseFloat(o.vol) || o.volume || 0;
-              return volume > 0.00001;
-            }).length;
-          }
-        } catch (apiErr) {
-          // Fallback to WebSocket data
-          if (wsConnected && krakenOrders) {
-            openOrderCount = Object.values(krakenOrders).filter(o => (o.volume || 0) > 0.00001).length;
-          }
+        // Use WebSocket as source of truth to avoid REST rate limits
+        if (wsConnected && krakenOrders) {
+          openOrderCount = Object.values(krakenOrders).filter(o => {
+            const volume = parseFloat(o.vol) || o.volume || 0;
+            return volume > 0.00001;
+          }).length;
         }
       } else {
         // SIM mode: Count from database
