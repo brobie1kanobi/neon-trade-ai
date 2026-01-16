@@ -77,6 +77,33 @@ export default function Portfolio() {
     };
   }, [fetchKrakenLive]);
 
+  // Live: auto-refresh from WS changes, focus/visibility, and periodic interval
+  useEffect(() => {
+    if (!isSimMode) {
+      fetchKrakenLive();
+    }
+  }, [wsConnected, wsBalances, isSimMode, fetchKrakenLive]);
+
+  useEffect(() => {
+    if (isSimMode) return;
+    const id = setInterval(() => {
+      fetchKrakenLive();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [isSimMode, fetchKrakenLive]);
+
+  useEffect(() => {
+    if (isSimMode) return;
+    const onVis = () => { if (document.visibilityState === 'visible') fetchKrakenLive(); };
+    const onFocus = () => fetchKrakenLive();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isSimMode, fetchKrakenLive]);
+
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
 
@@ -483,30 +510,23 @@ export default function Portfolio() {
   // CRITICAL: Use REST API (krakenData) as PRIMARY source - it's most reliable
   // WebSocket can return stale/zero data
   // krakenData uses getKrakenBalance which now calls BalanceEx to get TOTAL (including locked orders)
-  const currentCashBalance = isSimMode 
-    ? (wallet?.cash_balance || 0) 
+  const currentCashBalance = isSimMode
+    ? (wallet?.cash_balance || 0)
     : (
-        // REST API first (krakenData from useKrakenData hook)
-        // This now includes locked amounts via BalanceEx
-        (krakenData?.usd_balance > 0) ? krakenData.usd_balance :
-        // WebSocket fallback
-        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance :
-        // Wallet DB last resort
-        (wallet?.real_cash_balance || 0)
+        typeof krakenData?.usd_balance === 'number'
+          ? krakenData.usd_balance
+          : (wsConnected && typeof wsUsdBalance === 'number' ? wsUsdBalance : (wallet?.real_cash_balance || 0))
       );
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
     : (
-        // REST API first (krakenData from useKrakenData hook)
-        // Use total_crypto_value_usd - this now includes locked amounts via BalanceEx
-        (krakenData?.total_crypto_value_usd > 0) ? krakenData.total_crypto_value_usd :
-        // Fallback to old field name
-        (krakenData?.total_crypto_value > 0) ? krakenData.total_crypto_value :
-        // WebSocket fallback
-        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
-        // Calculated from holdings last resort
-        detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
+        typeof krakenData?.total_crypto_value_usd === 'number'
+          ? krakenData.total_crypto_value_usd
+          : (typeof krakenData?.total_crypto_value === 'number'
+              ? krakenData.total_crypto_value
+              : (wsConnected && typeof wsCryptoValue === 'number' ? wsCryptoValue
+                  : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)))
       );
 
   if (isLoading && !wallet && !user) {
