@@ -20,6 +20,28 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 const WS_URL = 'wss://ws-auth.kraken.com/v2';
 const WS_TIMEOUT = 30000; // 30 second timeout for robustness
 
+// Per-user trade-key token bucket to avoid EAPI:Rate limit exceeded
+const __tradeBuckets = new Map();
+function __getTradeBucket(userEmail) {
+  const key = String(userEmail || 'anon');
+  if (!__tradeBuckets.has(key)) {
+    __tradeBuckets.set(key, { tokens: 4, last: Date.now() });
+  }
+  return __tradeBuckets.get(key);
+}
+export async function tradeRateGate(userEmail, cost = 1) {
+  const bucket = __getTradeBucket(userEmail);
+  const now = Date.now();
+  const elapsed = (now - bucket.last) / 1000;
+  // ~0.6 tokens/sec refill, cap 4
+  bucket.tokens = Math.min(4, bucket.tokens + elapsed * 0.6);
+  bucket.last = now;
+  if (bucket.tokens >= cost) { bucket.tokens -= cost; return; }
+  const deficit = cost - bucket.tokens;
+  const wait = Math.ceil((deficit / 0.6) * 1000) + 50;
+  await new Promise(r => setTimeout(r, Math.min(wait, 3000)));
+}
+
 /**
  * Format symbol for Kraken (e.g., "BTC" -> "BTC/USD")
  * CRITICAL: Uses official Kraken trading pair format
@@ -870,6 +892,7 @@ Deno.serve(async (req) => {
       }
 
       console.log('[krakenTrade] 📤 Placing BUY order...');
+      await tradeRateGate(user.email, 2);
       let buyResult;
       try {
         buyResult = await executeKrakenTradeWithRetry(wsToken, buyParams);
@@ -942,6 +965,7 @@ Deno.serve(async (req) => {
 
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
+          await tradeRateGate(user.email, 2);
           tpResult = await executeKrakenTradeWithRetry(wsToken, tpParams);
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
@@ -973,6 +997,7 @@ Deno.serve(async (req) => {
 
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
+          await tradeRateGate(user.email, 2);
           slResult = await executeKrakenTradeWithRetry(wsToken, slParams);
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
@@ -1086,6 +1111,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] 📤 Placing trailing stop order:', JSON.stringify(orderParams));
 
       try {
+        await tradeRateGate(user.email, 2);
         const result = await executeKrakenTrade(wsToken, orderParams);
         console.log('[krakenTrade] ✅ Trailing stop placed:', result.order_id);
 
@@ -1185,6 +1211,7 @@ Deno.serve(async (req) => {
       };
 
       // Execute both orders over single WebSocket connection
+      await tradeRateGate(user.email, 2);
       const bracketResult = await executeBracketOrders(wsToken, tpParams, slParams, 4000);
 
       console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
@@ -1378,6 +1405,7 @@ Deno.serve(async (req) => {
       await new Promise(res => setTimeout(res, 350));
       let tradeResult;
       try {
+        await tradeRateGate(user.email, 2);
         tradeResult = await executeKrakenTradeWithRetry(wsToken, orderParams);
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
