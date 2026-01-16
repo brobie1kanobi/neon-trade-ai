@@ -525,7 +525,7 @@ export function useKrakenWebSocketManager(options = {}) {
   } = options;
 
   const [isConnected, setIsConnected] = useState(
-    GLOBAL_WS_STATE.isPublicConnected || GLOBAL_WS_STATE.isPrivateConnected
+    GLOBAL_WS_STATE.isPublicConnected || GLOBAL_WS_STATE.isPrivateBalancesConnected || GLOBAL_WS_STATE.isPrivateOrdersConnected
   );
   const [prices, setPrices] = useState({});
   const [balances, setBalances] = useState({});
