@@ -484,7 +484,8 @@ Deno.serve(async (req) => {
       console.log(`[runAutoTrader] ✅ Trade completed for ${sym}`);
 
       // Pace between prospects to avoid Kraken burst limits
-      await sleep(1200 + Math.floor(Math.random() * 1500));
+      // Extra pacing between orders to avoid WS bursts
+      await sleep(2200 + Math.floor(Math.random() * 1800));
 
       if (availableCash < 1) break;
     }

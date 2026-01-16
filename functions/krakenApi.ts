@@ -47,14 +47,14 @@ function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
     // Conservative defaults: trade is stricter
-    const cfg = type === 'trade' ? { capacity: 5, refillPerSec: 0.5 } : { capacity: 10, refillPerSec: 1.2 };
+    const cfg = type === 'trade' ? { capacity: 3, refillPerSec: 0.35 } : { capacity: 10, refillPerSec: 1.0 };
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);
 }
 function endpointCost(endpoint) {
-  if (endpoint.includes('GetWebSocketsToken')) return 3;
-  if (endpoint.includes('OpenOrders')) return 2;
+  if (endpoint.includes('GetWebSocketsToken')) return 4;
+  if (endpoint.includes('OpenOrders')) return 3;
   if (endpoint.includes('TradesHistory')) return 2;
   if (endpoint.includes('BalanceEx')) return 2;
   return 1;
@@ -124,9 +124,9 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
     if (result.error?.length > 0) {
       const errorMsg = result.error.join(', ');
       
-      // Retry on rate-limit errors with gentle backoff
+      // Retry on rate-limit errors with more conservative backoff
       if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
-        const delay = 1200 * Math.pow(2, retryCount) + Math.floor(Math.random() * 400); // backoff + jitter
+        const delay = 1500 * Math.pow(2, retryCount) + Math.floor(Math.random() * 600); // backoff + jitter
         console.warn(`[krakenApi] Rate limited, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
