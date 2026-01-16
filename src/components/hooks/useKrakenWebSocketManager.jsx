@@ -231,6 +231,48 @@ async function connectPrivateBalancesWebSocket() {
  * Subscribe to ticker channel (prices)
  * Format per Kraken v2 docs
  */
+async function connectPrivateOrdersWebSocket() {
+  if (GLOBAL_WS_STATE.privateWsOrders && GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+    return;
+  }
+  try {
+    const token = await getWebSocketToken('trade');
+    const ws = new WebSocket(PRIVATE_WS_URL);
+    ws.onopen = () => {
+      GLOBAL_WS_STATE.isPrivateOrdersConnected = true;
+      emitEvent('privateConnected', {});
+      // Subscribe to executions only (trade key)
+      subscribeToExecutions(ws, token);
+    };
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        handlePrivateMessage(message);
+      } catch (e) {
+        // Silent parse error
+      }
+    };
+    ws.onerror = (error) => {
+      emitEvent('error', { source: 'private-orders', error });
+    };
+    ws.onclose = () => {
+      GLOBAL_WS_STATE.isPrivateOrdersConnected = false;
+      GLOBAL_WS_STATE.privateWsOrders = null;
+      emitEvent('privateDisconnected', {});
+      if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        GLOBAL_WS_STATE.reconnectAttempts++;
+        setTimeout(() => connectPrivateOrdersWebSocket(), RECONNECT_DELAY);
+      }
+    };
+    GLOBAL_WS_STATE.privateWsOrders = ws;
+  } catch (error) {
+    if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      GLOBAL_WS_STATE.reconnectAttempts++;
+      setTimeout(() => connectPrivateOrdersWebSocket(), RECONNECT_DELAY);
+    }
+  }
+}
+
 function subscribeToTicker(symbols) {
   const ws = GLOBAL_WS_STATE.publicWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
