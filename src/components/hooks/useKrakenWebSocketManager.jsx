@@ -18,10 +18,18 @@ import { base44 } from '@/api/base44Client';
 const GLOBAL_WS_STATE = {
   publicWs: null,
   privateWs: null,
+  privateWsBalances: null,
+  privateWsOrders: null,
   isPublicConnected: false,
   isPrivateConnected: false,
+  isPrivateBalancesConnected: false,
+  isPrivateOrdersConnected: false,
   token: null,
   tokenExpiry: 0,
+  tokenTrade: null,
+  tokenTradeExpiry: 0,
+  tokenBalance: null,
+  tokenBalanceExpiry: 0,
   reconnectAttempts: 0,
   
   // Data stores
