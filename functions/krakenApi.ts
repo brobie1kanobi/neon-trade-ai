@@ -424,9 +424,11 @@ Deno.serve(async (req) => {
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       try {
         // Use cached token if still valid (60s buffer) unless forceRefresh requested
+        const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
         const now = Date.now();
         const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
-        if (!payload?.forceRefresh && connection?.ws_token && (expiresAt - now) > 60000) {
+        // Only reuse cached token for TRADE key (we don't persist balance tokens)
+        if (keyType === 'trade' && !payload?.forceRefresh && connection?.ws_token && (expiresAt - now) > 60000) {
           return Response.json({
             success: true,
             connected: true,
@@ -437,8 +439,9 @@ Deno.serve(async (req) => {
           }, { status: 200 });
         }
 
-        const { apiKeyToUse, apiSecretToUse } = getCreds('getWebSocketUrl');
-        await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/GetWebSocketsToken'));
+        const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
+        const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketUrl');
+        await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
           const msg = result.error.join(', ');
@@ -458,14 +461,16 @@ Deno.serve(async (req) => {
           throw new Error('Failed to get WebSocket token from Kraken');
         }
 
-        // Cache token on the connection
-        try {
-          await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
-            ws_token: token,
-            ws_token_expires_at: new Date(now + expires * 1000).toISOString()
-          });
-        } catch (cacheErr) {
-          console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
+        // Cache token ONLY for TRADE key to avoid mixing tokens
+        if ((payload?.keyType !== 'balance')) {
+          try {
+            await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
+              ws_token: token,
+              ws_token_expires_at: new Date(now + expires * 1000).toISOString()
+            });
+          } catch (cacheErr) {
+            console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
+          }
         }
 
         console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');

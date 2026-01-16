@@ -28,7 +28,7 @@ export function KrakenWebSocketProvider({ children }) {
     subscribeToPrices: shouldConnect,
     priceSymbols: settings?.watched_crypto || [],
     subscribeToBalances: shouldConnect,
-    subscribeToOrders: shouldConnect,
+    subscribeToOrders: false,
     subscribeToExecutions: shouldConnect
   });
 

@@ -87,7 +87,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4) {
         await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
       }
       if (/rate limit|429|timeout|websocket|nonce/i.test(msg) && attempt < maxAttempts - 1) {
-        const delay = 800 * Math.pow(2, attempt) + Math.floor(Math.random() * 600);
+        const delay = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
         console.warn(`[runAutoTrader] Rate/WS limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
         await sleep(delay);
         continue;

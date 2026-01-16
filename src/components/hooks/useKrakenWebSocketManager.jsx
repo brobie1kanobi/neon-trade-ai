@@ -61,25 +61,33 @@ function emitEvent(eventName, data) {
 /**
  * Get or refresh WebSocket token
  */
-async function getWebSocketToken() {
+async function getWebSocketToken(keyType = 'trade') {
   const now = Date.now();
   
   // Return cached token if still valid
-  if (GLOBAL_WS_STATE.token && now < GLOBAL_WS_STATE.tokenExpiry - TOKEN_REFRESH_BUFFER) {
-    return GLOBAL_WS_STATE.token;
+  const isTrade = keyType === 'trade';
+  const cachedToken = isTrade ? GLOBAL_WS_STATE.tokenTrade : GLOBAL_WS_STATE.tokenBalance;
+  const cachedExpiry = isTrade ? GLOBAL_WS_STATE.tokenTradeExpiry : GLOBAL_WS_STATE.tokenBalanceExpiry;
+  if (cachedToken && now < (cachedExpiry || 0) - TOKEN_REFRESH_BUFFER) {
+    return cachedToken;
   }
 
   try {
     const response = await base44.functions.invoke('krakenApi', { 
-      action: 'getWebSocketUrl'
+      action: 'getWebSocketUrl',
+      payload: { keyType }
     });
     
     const data = response?.data || response;
     
     if (data?.success && data?.token) {
-      GLOBAL_WS_STATE.token = data.token;
-      // Token valid for 15 minutes (900 seconds)
-      GLOBAL_WS_STATE.tokenExpiry = now + (data.expires_in || 900) * 1000;
+      if (keyType === 'trade') {
+        GLOBAL_WS_STATE.tokenTrade = data.token;
+        GLOBAL_WS_STATE.tokenTradeExpiry = now + (data.expires_in || 900) * 1000;
+      } else {
+        GLOBAL_WS_STATE.tokenBalance = data.token;
+        GLOBAL_WS_STATE.tokenBalanceExpiry = now + (data.expires_in || 900) * 1000;
+      }
       return data.token;
     }
     
@@ -153,26 +161,23 @@ function connectPublicWebSocket(priceSymbols = []) {
 /**
  * Connect to PRIVATE WebSocket (balances, executions)
  */
-async function connectPrivateWebSocket() {
-  if (GLOBAL_WS_STATE.privateWs && GLOBAL_WS_STATE.isPrivateConnected) {
+async function connectPrivateBalancesWebSocket() {
+  if (GLOBAL_WS_STATE.privateWsBalances && GLOBAL_WS_STATE.isPrivateBalancesConnected) {
     return;
   }
 
   try {
-    // Get fresh token
-    const token = await getWebSocketToken();
+    // Get fresh token for BALANCE key
+    const token = await getWebSocketToken('balance');
 
     const ws = new WebSocket(PRIVATE_WS_URL);
 
     ws.onopen = () => {
-      GLOBAL_WS_STATE.isPrivateConnected = true;
+      GLOBAL_WS_STATE.isPrivateBalancesConnected = true;
       emitEvent('privateConnected', {});
       
-      // Subscribe to balances
+      // Subscribe to balances only (balance key)
       subscribeToBalances(ws, token);
-      
-      // Subscribe to executions
-      subscribeToExecutions(ws, token);
     };
 
     ws.onmessage = (event) => {
@@ -189,28 +194,27 @@ async function connectPrivateWebSocket() {
     };
 
     ws.onclose = () => {
-      GLOBAL_WS_STATE.isPrivateConnected = false;
-      GLOBAL_WS_STATE.privateWs = null;
+      GLOBAL_WS_STATE.isPrivateBalancesConnected = false;
+      GLOBAL_WS_STATE.privateWsBalances = null;
       emitEvent('privateDisconnected', {});
       
-      // Auto-reconnect (with token refresh)
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
-        setTimeout(() => connectPrivateWebSocket(), RECONNECT_DELAY);
+        setTimeout(() => connectPrivateBalancesWebSocket(), RECONNECT_DELAY);
       }
     };
 
-    GLOBAL_WS_STATE.privateWs = ws;
+    GLOBAL_WS_STATE.privateWsBalances = ws;
 
   } catch (error) {
-    if (error.message.includes('not connected')) {
+    if (error.message && error.message.includes('not connected')) {
       emitEvent('error', { message: 'Kraken account not connected', fatal: true });
       return;
     }
     
     if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       GLOBAL_WS_STATE.reconnectAttempts++;
-      setTimeout(() => connectPrivateWebSocket(), RECONNECT_DELAY);
+      setTimeout(() => connectPrivateBalancesWebSocket(), RECONNECT_DELAY);
     }
   }
 }
@@ -492,8 +496,11 @@ export function useKrakenWebSocketManager(options = {}) {
     }
 
     // Connect to private WebSocket if any private subscription requested
-    if (subscribeToBalances || subscribeToOrders || subscribeToExecutions) {
-      connectPrivateWebSocket();
+    if (subscribeToBalances) {
+      connectPrivateBalancesWebSocket();
+    }
+    if (subscribeToExecutions) {
+      connectPrivateOrdersWebSocket();
     }
   }, []);
 
@@ -516,7 +523,7 @@ export function useKrakenWebSocketManager(options = {}) {
     };
     
     const handlePrivateDisconnected = () => {
-      if (!GLOBAL_WS_STATE.isPublicConnected) {
+      if (!GLOBAL_WS_STATE.isPublicConnected && !GLOBAL_WS_STATE.isPrivateBalancesConnected && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
         setIsConnected(false);
       }
     };
@@ -631,13 +638,14 @@ export function useKrakenWebSocketManager(options = {}) {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        // Refresh token and re-subscribe if private connected
-        if (GLOBAL_WS_STATE.isPrivateConnected) {
-          const token = await getWebSocketToken();
-          if (GLOBAL_WS_STATE.privateWs && GLOBAL_WS_STATE.privateWs.readyState === WebSocket.OPEN) {
-            subscribeToBalances(GLOBAL_WS_STATE.privateWs, token);
-            subscribeToExecutions(GLOBAL_WS_STATE.privateWs, token);
-          }
+        // Refresh tokens and re-subscribe if private connections are alive
+        if (GLOBAL_WS_STATE.isPrivateBalancesConnected && GLOBAL_WS_STATE.privateWsBalances?.readyState === WebSocket.OPEN) {
+          const balToken = await getWebSocketToken('balance');
+          subscribeToBalances(GLOBAL_WS_STATE.privateWsBalances, balToken);
+        }
+        if (GLOBAL_WS_STATE.isPrivateOrdersConnected && GLOBAL_WS_STATE.privateWsOrders?.readyState === WebSocket.OPEN) {
+          const tradeToken = await getWebSocketToken('trade');
+          subscribeToExecutions(GLOBAL_WS_STATE.privateWsOrders, tradeToken);
         }
       } catch {}
     }, 60000);
@@ -650,9 +658,13 @@ export function useKrakenWebSocketManager(options = {}) {
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
         connectPublicWebSocket(priceSymbols);
       }
-      if ((subscribeToBalances || subscribeToOrders || subscribeToExecutions) && !GLOBAL_WS_STATE.isPrivateConnected) {
+      if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
         GLOBAL_WS_STATE.reconnectAttempts = 0;
-        connectPrivateWebSocket();
+        connectPrivateBalancesWebSocket();
+      }
+      if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+        GLOBAL_WS_STATE.reconnectAttempts = 0;
+        connectPrivateOrdersWebSocket();
       }
     }, 15000);
     return () => clearInterval(interval);
@@ -692,15 +704,22 @@ export function disconnectKrakenWebSocket() {
     GLOBAL_WS_STATE.publicWs = null;
   }
   
-  if (GLOBAL_WS_STATE.privateWs) {
-    GLOBAL_WS_STATE.privateWs.close();
-    GLOBAL_WS_STATE.privateWs = null;
+  if (GLOBAL_WS_STATE.privateWsBalances) {
+    GLOBAL_WS_STATE.privateWsBalances.close();
+    GLOBAL_WS_STATE.privateWsBalances = null;
+  }
+  if (GLOBAL_WS_STATE.privateWsOrders) {
+    GLOBAL_WS_STATE.privateWsOrders.close();
+    GLOBAL_WS_STATE.privateWsOrders = null;
   }
   
   GLOBAL_WS_STATE.isPublicConnected = false;
-  GLOBAL_WS_STATE.isPrivateConnected = false;
-  GLOBAL_WS_STATE.token = null;
-  GLOBAL_WS_STATE.tokenExpiry = 0;
+  GLOBAL_WS_STATE.isPrivateBalancesConnected = false;
+  GLOBAL_WS_STATE.isPrivateOrdersConnected = false;
+  GLOBAL_WS_STATE.tokenTrade = null;
+  GLOBAL_WS_STATE.tokenTradeExpiry = 0;
+  GLOBAL_WS_STATE.tokenBalance = null;
+  GLOBAL_WS_STATE.tokenBalanceExpiry = 0;
   GLOBAL_WS_STATE.prices.clear();
   GLOBAL_WS_STATE.balances.clear();
   GLOBAL_WS_STATE.orders.clear();
