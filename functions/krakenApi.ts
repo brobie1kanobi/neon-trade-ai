@@ -423,10 +423,10 @@ Deno.serve(async (req) => {
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       try {
-        // Use cached token if still valid (60s buffer)
+        // Use cached token if still valid (60s buffer) unless forceRefresh requested
         const now = Date.now();
         const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
-        if (connection?.ws_token && (expiresAt - now) > 60000) {
+        if (!payload?.forceRefresh && connection?.ws_token && (expiresAt - now) > 60000) {
           return Response.json({
             success: true,
             connected: true,
