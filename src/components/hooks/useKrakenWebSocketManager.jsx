@@ -175,8 +175,14 @@ async function connectPrivateBalancesWebSocket() {
   }
 
   try {
-    // Get fresh token for BALANCE key
-    const token = await getWebSocketToken('balance');
+    // Get fresh token for BALANCE key; if missing WS permission on balance key, fallback to TRADE key
+    let token;
+    try {
+      token = await getWebSocketToken('balance');
+    } catch (_e) {
+      console.warn('[WS] Balance token failed, falling back to trade key token');
+      token = await getWebSocketToken('trade');
+    }
 
     const ws = new WebSocket(PRIVATE_WS_URL);
 
