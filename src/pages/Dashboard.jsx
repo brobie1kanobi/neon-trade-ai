@@ -31,7 +31,7 @@ import CryptoMarketOverview from "../components/dashboard/CryptoMarketOverview";
 import CryptoPriceChart from "../components/dashboard/CryptoPriceChart";
 import StockPriceChart from "../components/dashboard/StockPriceChart";
 
-const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange, isSimMode) => {
+const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange, isSimMode, wsConnected, wsUsdBalance, wsBalances, wsPrices) => {
   const isRunningRef = useRef(false);
   const lastRunRef = useRef(0);
   const backoffUntilRef = useRef(0);
@@ -121,29 +121,23 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
       console.log('[AutoTrader] Starting trade cycle - isSimMode:', isSimMode);
       
       try {
-        // CRITICAL: For LIVE mode, fetch Kraken balances directly
+        // LIVE mode: derive balances from WebSocket (balance key) to avoid REST rate limits
         let krakenHoldings = [];
         let krakenCashBalance = 0;
-        
-        if (!isSimMode) {
+        if (!isSimMode && wsConnected) {
+          krakenCashBalance = typeof wsUsdBalance === 'number' ? wsUsdBalance : 0;
+          // Build holdings from wsBalances + wsPrices
           try {
-            console.log('[AutoTrader] Fetching Kraken balances...');
-            const krakenResponse = await Promise.race([
-              base44.functions.invoke('getKrakenBalance', {}),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken balance timeout')), 15000))
-            ]);
-            
-            const krakenData = krakenResponse?.data || krakenResponse;
-            console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenData));
-            
-            if (krakenData?.success && krakenData?.connected) {
-              krakenCashBalance = krakenData.usd_balance || 0;
-              krakenHoldings = (krakenData.holdings || []).filter(h => h.quantity > 0.00001);
-              console.log('[AutoTrader] Kraken cash:', krakenCashBalance, 'holdings:', krakenHoldings.length);
-            }
-          } catch (krakenError) {
-            console.error('[AutoTrader] Kraken fetch error:', krakenError.message);
-          }
+            const entries = Object.entries(wsBalances || {});
+            krakenHoldings = entries
+              .filter(([asset, bal]) => asset !== 'USD' && asset !== 'ZUSD' && (Number(bal?.available ?? bal?.balance ?? 0) > 0.00001))
+              .map(([asset, bal]) => {
+                const symbol = String(asset).toUpperCase();
+                const qty = Number(bal?.available ?? bal?.balance ?? 0);
+                const price = wsPrices?.[`${symbol}/USD`]?.price || 0;
+                return { symbol, quantity: qty, current_price_usd: price, total_value_usd: qty * price };
+              });
+          } catch {}
         }
         
         const freshWallets = await base44.entities.Wallet.filter({ created_by: user.email }, "-updated_date", 1);
@@ -1094,88 +1088,34 @@ export default function Dashboard() {
   // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
   // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
   React.useEffect(() => {
-    if (isSimMode) return;
-    
-    const fetchKrakenBalance = async () => {
-      try {
-        console.log('[Dashboard] Fetching Kraken balance from REST API...');
-        const response = await base44.functions.invoke('getKrakenBalance', {});
-        const data = response?.data || response;
-        
-        console.log('[Dashboard] Kraken REST response:', JSON.stringify(data));
-        
-        if (data?.success && data?.connected) {
-          const newBalances = {
-            usdBalance: data.usd_balance || 0,
-            cryptoValue: data.total_crypto_value_usd || 0,
-            totalValue: data.total_portfolio_value_usd || 0,
-            holdings: data.holdings || [],
-            costBasis: data.total_cost_basis_usd || 0,
-            unrealizedPnL: data.total_unrealized_pnl_usd || 0,
-            loaded: true
-          };
-          
-          console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
-          setKrakenApiBalances(newBalances);
-          
-          // Always update cache with fresh data (even if 0 - that's valid)
-          lastKnownBalancesRef.current = {
-            cash: newBalances.usdBalance,
-            portfolio: newBalances.cryptoValue,
-            total: newBalances.totalValue
-          };
-        } else {
-          console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
-        }
-      } catch (err) {
-        console.error('[Dashboard] Kraken balance fetch failed:', err);
-      }
-    };
-    
-    // Fetch immediately
-    fetchKrakenBalance();
-    
-    // Refresh every 15 seconds for more accurate data
-    const interval = setInterval(fetchKrakenBalance, 15000);
-    return () => clearInterval(interval);
+    // Live mode: rely on WebSocket for balances; REST sync only from explicit user action elsewhere
   }, [isSimMode]);
 
   // CRITICAL: Build effective holdings - prioritize REST API in LIVE mode
   const effectiveHoldings = React.useMemo(() => {
-    if (isSimMode) {
-      return holdings;
-    } else {
-      // LIVE MODE: Prioritize Kraken REST API holdings (most accurate)
-      if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
-        return krakenApiBalances.holdings.map(h => ({
-          ...h,
-          is_simulation: false
-        }));
-      }
-      // Fallback to WebSocket balances
-      if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-        return Object.entries(wsBalances)
-          .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
-          .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
-          .map(([asset, balance]) => {
-            const pair = `${asset}/USD`;
-            const priceInfo = wsPrices[pair];
-            
-            return {
-              symbol: asset,
-              quantity: balance.balance || 0,
-              average_cost_price: priceInfo?.price || 0,
-              asset_type: 'crypto',
-              current_price_usd: priceInfo?.price || 0,
-              total_value_usd: (balance.balance || 0) * (priceInfo?.price || 0),
-              is_simulation: false
-            };
-          });
-      } else {
-        return holdings;
-      }
+    if (isSimMode) return holdings;
+    if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+      return Object.entries(wsBalances)
+        .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+        .filter(([_, balance]) => (Number(balance?.available ?? balance?.balance ?? 0) > 0.00001))
+        .map(([asset, balance]) => {
+          const symbol = String(asset).toUpperCase();
+          const qty = Number(balance?.available ?? balance?.balance ?? 0);
+          const pair = `${symbol}/USD`;
+          const priceInfo = wsPrices[pair];
+          return {
+            symbol,
+            quantity: qty,
+            average_cost_price: priceInfo?.price || 0,
+            asset_type: 'crypto',
+            current_price_usd: priceInfo?.price || 0,
+            total_value_usd: qty * (priceInfo?.price || 0),
+            is_simulation: false
+          };
+        });
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
+    return holdings;
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices]);
 
   const allSymbols = React.useMemo(() => {
     const holdingSyms = effectiveHoldings.map(h => (h.symbol || "").toUpperCase());
@@ -1529,7 +1469,7 @@ export default function Dashboard() {
     [user, settings, addTrade, refreshWallet, refreshHoldings, refreshPrices]
   );
 
-  useAutoTrader(settings, user, handleTradeExecuted, wallet, effectiveHoldings, lifetimeChange, isSimMode);
+  useAutoTrader(settings, user, handleTradeExecuted, wallet, effectiveHoldings, lifetimeChange, isSimMode, wsConnected, wsUsdBalance, wsBalances, wsPrices);
 
   // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
@@ -1743,8 +1683,8 @@ export default function Dashboard() {
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.usdBalance ?? 0)
+        (wsConnected && typeof wsUsdBalance === 'number')
+          ? wsUsdBalance
           : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
       );
   
@@ -1753,8 +1693,8 @@ export default function Dashboard() {
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.cryptoValue ?? 0)
+        (wsConnected && typeof wsCryptoValue === 'number')
+          ? wsCryptoValue
           : (lastKnownBalancesRef.current.portfolio ?? portfolioMarketValue)
       );
     
@@ -1779,7 +1719,7 @@ export default function Dashboard() {
     : (lastKnownBalancesRef.current.portfolio ?? 0);
     
   // Total Balance = Cash + Portfolio (crypto)
-  const totalBalance = currentCashBalance + currentPortfolioValue;
+  const totalBalance = isSimMode ? (currentCashBalance + currentPortfolioValue) : (wsConnected && typeof wsTotalValue === 'number' ? wsTotalValue : (currentCashBalance + currentPortfolioValue));
 
   const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
   const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
