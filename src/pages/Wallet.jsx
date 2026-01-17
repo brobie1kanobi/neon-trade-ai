@@ -36,18 +36,9 @@ export default function WalletPage() {
   } = useKrakenWebSocket();
 
   // CRITICAL: Fetch real Kraken data in LIVE mode (autoFetch ALWAYS enabled for non-sim)
-  const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
+  const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, false);
 
-  // AGGRESSIVE: Force Kraken refresh on page mount in LIVE mode
-  useEffect(() => {
-    if (!isSimMode) {
-      console.log('[Wallet] 🚀 FORCING initial Kraken data refresh');
-      invalidateKrakenCache();
-      setTimeout(() => {
-        refreshKraken();
-      }, 500); // Small delay to allow settings to load
-    }
-  }, [isSimMode, refreshKraken]);
+  // Removed forced REST refresh on mount; WebSocket is source of truth in LIVE mode
 
   // Get prices for Kraken holdings
   const krakenSymbols = React.useMemo(() => {
@@ -61,51 +52,22 @@ export default function WalletPage() {
   // WebSocket can return stale/zero data
   const krakenPortfolioValue = React.useMemo(() => {
     if (isSimMode) return 0;
-
-    // PRIORITY 1: Use Kraken REST API data (most reliable)
-    if (krakenData?.total_crypto_value_usd !== undefined) {
-      console.log('[Wallet] ✅ Using Kraken API total_crypto_value_usd:', krakenData.total_crypto_value_usd.toFixed(2));
-      return krakenData.total_crypto_value_usd;
-    }
-    if (krakenData?.total_crypto_value !== undefined) {
-      console.log('[Wallet] ✅ Using Kraken API total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
-      return krakenData.total_crypto_value;
-    }
-
-    // PRIORITY 2: Sum up total_value_usd from individual holdings
-    if (krakenData?.holdings && krakenData.holdings.length > 0) {
-      const sumOfHoldings = krakenData.holdings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
-      if (sumOfHoldings >= 0) {
-        console.log('[Wallet] ✅ Using sum of holding values:', sumOfHoldings.toFixed(2));
-        return sumOfHoldings;
-      }
-    }
-
-    // PRIORITY 3: Use WebSocket as fallback (can be unreliable)
-    if (wsConnected && wsCryptoValue > 0) {
-      console.log('[Wallet] ✅ Using WebSocket portfolio value (fallback):', wsCryptoValue.toFixed(2));
-      return wsCryptoValue;
-    }
-
-    console.warn('[Wallet] ⚠️ No valid portfolio data');
+    // PRIORITY 1: WebSocket crypto value
+    if (wsConnected && typeof wsCryptoValue === 'number') return wsCryptoValue;
+    // PRIORITY 2: REST (manual or fallback)
+    if (typeof krakenData?.total_crypto_value_usd === 'number') return krakenData.total_crypto_value_usd;
+    if (typeof krakenData?.total_crypto_value === 'number') return krakenData.total_crypto_value;
+    // PRIORITY 3: derive from holdings/prices if available
     return 0;
-  }, [isSimMode, wsConnected, wsCryptoValue, krakenData, priceData]);
+  }, [isSimMode, wsConnected, wsCryptoValue, krakenData]);
   
   // CRITICAL: Cash balance from Kraken REST API
   const krakenCashBalance = React.useMemo(() => {
     if (isSimMode) return 0;
-    
-    // REST API first
-    if (krakenData?.usd_balance >= 0 && krakenData?.usd_balance !== undefined) {
-      console.log('[Wallet] ✅ Using Kraken API usd_balance:', krakenData.usd_balance.toFixed(2));
-      return krakenData.usd_balance;
-    }
-    
-    // WebSocket fallback
-    if (wsConnected && wsUsdBalance > 0) {
-      return wsUsdBalance;
-    }
-    
+    // WebSocket first
+    if (wsConnected && typeof wsUsdBalance === 'number') return wsUsdBalance;
+    // REST fallback
+    if (typeof krakenData?.usd_balance === 'number') return krakenData.usd_balance;
     return 0;
   }, [isSimMode, krakenData, wsConnected, wsUsdBalance]);
 
