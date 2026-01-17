@@ -136,19 +136,22 @@ Deno.serve(async (req) => {
     limiter.recordCall(1);
 
     // CRITICAL: Fetch BOTH balance AND extended balance (includes locked amounts)
-    const [balanceResponse, extendedBalanceResponse] = await Promise.all([
-      base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
-      base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' })
-    ]); // getBalance/getExtendedBalance already select the BALANCE key
+    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }); // use BalanceEx only (includes locked)
 
-    let balanceData = balanceResponse?.data || balanceResponse;
-    if (balanceData?.data) balanceData = balanceData.data;
-    
     let extendedData = extendedBalanceResponse?.data || extendedBalanceResponse;
     if (extendedData?.data) extendedData = extendedData.data;
+
+    // Derive a simple balance map from extended data for downstream logic
+    let balanceData = { success: true, balance: {} };
+    if (extendedData?.success && extendedData?.balance) {
+      for (const [asset, info] of Object.entries(extendedData.balance)) {
+        const num = typeof info === 'object' && info !== null ? parseFloat(info.balance ?? info.total ?? 0) : parseFloat(info || 0);
+        balanceData.balance[asset] = isNaN(num) ? 0 : num;
+      }
+    }
     
     // CRITICAL: If not connected, return early with success=false
-    if (balanceData?.success === false || balanceData?.connected === false) {
+    if (extendedData?.success === false || extendedData?.connected === false) {
       return Response.json({
         success: false,
         connected: false,

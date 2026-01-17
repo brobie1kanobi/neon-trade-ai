@@ -51,8 +51,12 @@ export default function Portfolio() {
   // LIVE mode: fetch Kraken balance directly (no client cache)
   const [krakenData, setKrakenData] = useState(null);
   const [krakenLoading, setKrakenLoading] = useState(false);
+  const lastLiveFetchRef = React.useRef(0);
   const fetchKrakenLive = useCallback(async () => {
     if (isSimMode) return;
+    const now = Date.now();
+    if (now - lastLiveFetchRef.current < 4000) return; // throttle to avoid rate limits
+    lastLiveFetchRef.current = now;
     setKrakenLoading(true);
     try {
       const res = await base44.functions.invoke('getKrakenBalance', {});
@@ -80,7 +84,9 @@ export default function Portfolio() {
   // Live: auto-refresh from WS changes, focus/visibility, and periodic interval
   useEffect(() => {
     if (!isSimMode) {
-      fetchKrakenLive();
+      // debounce WS-triggered refresh slightly to coalesce bursts
+      const t = setTimeout(() => fetchKrakenLive(), 400);
+      return () => clearTimeout(t);
     }
   }, [wsConnected, wsBalances, isSimMode, fetchKrakenLive]);
 
@@ -88,7 +94,7 @@ export default function Portfolio() {
     if (isSimMode) return;
     const id = setInterval(() => {
       fetchKrakenLive();
-    }, 15000);
+    }, 20000); // gentler polling to reduce rate-limit pressure
     return () => clearInterval(id);
   }, [isSimMode, fetchKrakenLive]);
 

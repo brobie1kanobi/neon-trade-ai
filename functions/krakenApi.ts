@@ -43,6 +43,8 @@ class TokenBucket {
   }
 }
 const rateLimiters = new Map();
+// Short-term per-user cache for extended balance to reduce burst calls (2s TTL)
+const extBalCache = new Map();
 function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
@@ -355,6 +357,12 @@ Deno.serve(async (req) => {
     // CRITICAL: This returns the TOTAL balance including amounts locked in orders
     if (action === 'getExtendedBalance') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getExtendedBalance');
+      // Short-term per-user cache (2s) to coalesce bursts and avoid rate limits
+      const __cacheKey = `${user.email}:${apiKeyToUse}:extbal`;
+      const __cached = extBalCache.get(__cacheKey);
+      if (__cached && (Date.now() - __cached.ts) < 2000 && __cached.data) {
+        return Response.json(__cached.data, { status: 200 });
+      }
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/BalanceEx'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/BalanceEx', {});
       if (result.error?.length > 0) {
@@ -439,7 +447,6 @@ Deno.serve(async (req) => {
           }, { status: 200 });
         }
 
-        const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketUrl');
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
@@ -462,7 +469,7 @@ Deno.serve(async (req) => {
         }
 
         // Cache token ONLY for TRADE key to avoid mixing tokens
-        if ((payload?.keyType !== 'balance')) {
+        if (keyType !== 'balance') {
           try {
             await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
               ws_token: token,
