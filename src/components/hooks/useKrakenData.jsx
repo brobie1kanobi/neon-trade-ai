@@ -20,7 +20,7 @@ const GLOBAL_CACHE = {
   subscribers: new Set()
 };
 
-const CACHE_TTL = 30000; // 30 seconds - avoid spamming Kraken REST
+const CACHE_TTL = 30000; // 30 seconds
 const REQUEST_TIMEOUT = 12000; // 12 seconds HARD LIMIT (increased from 8s)
 const MAX_RETRIES = 3;
 
@@ -318,8 +318,6 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
       window.removeEventListener('trade:completed', handleTradeCompleted);
     };
   }, [isSimMode, fetchData]);
-
-  /* REST fetch is manual/rare in live mode to prevent rate limits. */
 
   const refresh = useCallback(() => {
     console.log('[useKrakenData] 🔄 Manual refresh requested');

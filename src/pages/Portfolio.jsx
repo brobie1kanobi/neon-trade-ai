@@ -63,8 +63,9 @@ export default function Portfolio() {
     }
   }, [isSimMode]);
 
-  // Disabled auto REST fetch in live mode to avoid rate limits; manual only via Sync button
-  useEffect(() => {}, [isSimMode]);
+  useEffect(() => {
+    if (!isSimMode) fetchKrakenLive();
+  }, [isSimMode, fetchKrakenLive]);
 
   useEffect(() => {
     const handler = () => fetchKrakenLive();
@@ -76,7 +77,32 @@ export default function Portfolio() {
     };
   }, [fetchKrakenLive]);
 
-  // Removed periodic REST polling; WebSocket is the source of truth in live mode
+  // Live: auto-refresh from WS changes, focus/visibility, and periodic interval
+  useEffect(() => {
+    if (!isSimMode) {
+      fetchKrakenLive();
+    }
+  }, [wsConnected, wsBalances, isSimMode, fetchKrakenLive]);
+
+  useEffect(() => {
+    if (isSimMode) return;
+    const id = setInterval(() => {
+      fetchKrakenLive();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [isSimMode, fetchKrakenLive]);
+
+  useEffect(() => {
+    if (isSimMode) return;
+    const onVis = () => { if (document.visibilityState === 'visible') fetchKrakenLive(); };
+    const onFocus = () => fetchKrakenLive();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isSimMode, fetchKrakenLive]);
 
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
@@ -209,48 +235,38 @@ export default function Portfolio() {
 
   // CRITICAL: Merge holdings from Kraken (if LIVE mode) with local holdings (if SIM mode)
   const effectiveHoldings = React.useMemo(() => {
-    if (isSimMode) return holdings;
-    // LIVE MODE: derive holdings from WebSocket balances/prices (balance key)
-    const normalize = (a) => {
-      if (!a) return '';
-      let s = String(a).toUpperCase();
-      if (s === 'ZUSD' || s === 'USD') return 'USD';
-      if (s.startsWith('XX')) s = s.substring(1);
-      if (s.startsWith('X') && s.length <= 4) s = s.substring(1);
-      if (s.endsWith('Z')) s = s.slice(0, -1);
-      if (s === 'XBT') s = 'BTC';
-      return s;
-    };
-    try {
-      const list = Object.values(wsBalances || {})
-        .map(b => ({ asset: normalize(b.asset || b.symbol || ''), qty: Number(b.available ?? b.balance ?? b.qty ?? 0) }))
-        .filter(x => x.asset && x.asset !== 'USD' && x.qty > 0.00001)
-        .map(x => {
-          const pair = `${x.asset}/USD`;
-          const p = wsPrices?.[pair]?.price || 0;
-          return {
-            symbol: x.asset,
-            quantity: x.qty,
-            average_cost_price: 0,
-            asset_type: 'crypto',
-            currentPrice: p,
-            currentValue: x.qty * p,
-            costBasis: 0,
-            gainLoss: 0,
-            gainLossPercent: 0,
-            is_simulation: false
-          };
-        });
-      return list;
-    } catch { return []; }
-  }, [isSimMode, holdings, wsBalances, wsPrices]);
+    if (isSimMode) {
+      // SIM MODE: Use local holdings
+      return holdings;
+    } else {
+      // LIVE MODE: Use Kraken holdings if available
+      if (krakenData?.holdings && krakenData.holdings.length > 0) {
+        console.log('[Portfolio] Using Kraken holdings in LIVE mode:', krakenData.holdings.length);
+        return krakenData.holdings.map(kh => ({
+          symbol: kh.symbol,
+          quantity: kh.quantity,
+          average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
+          asset_type: 'crypto',
+          currentPrice: kh.current_price_usd,
+          costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
+          currentValue: kh.total_value_usd,
+          gainLoss: kh.unrealized_pnl || 0,
+          gainLossPercent: kh.pnl_percent || 0,
+          is_simulation: false
+        }));
+      } else {
+        console.log('[Portfolio] No Kraken holdings, using local (empty)');
+        return holdings;
+      }
+    }
+  }, [isSimMode, holdings, krakenData]);
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
     return [...new Set(effectiveHoldings.map(h => h.symbol))];
   }, [effectiveHoldings]);
 
-  const { priceData, loading: pricesLoading } = usePriceData(isSimMode ? allSymbols : []);
+  const { priceData, loading: pricesLoading } = usePriceData(allSymbols);
 
   // Calculate detailed holdings with prices
   useEffect(() => {
@@ -269,19 +285,19 @@ export default function Portfolio() {
         console.log('[Portfolio] Processing', effectiveHoldings.length, 'holdings with', priceData?.length || 0, 'prices');
 
         // If LIVE mode and Kraken data already has prices, use them directly
-        if (!isSimMode) {
+        if (!isSimMode && krakenData?.holdings) {
           const updated = effectiveHoldings.map(h => ({
             ...h,
-            currentPrice: (typeof h.current_price_usd === 'number' ? h.current_price_usd : (h.currentPrice ?? h.average_cost_price)),
-            currentValue: (typeof h.total_value_usd === 'number' ? h.total_value_usd : (h.currentValue ?? (h.quantity * (h.current_price_usd ?? h.average_cost_price)))),
-            costBasis: (typeof h.total_cost_basis === 'number' ? h.total_cost_basis : (h.costBasis ?? (h.quantity * (h.average_cost_price ?? 0)))) ,
-            gainLoss: (typeof h.unrealized_pnl === 'number' ? h.unrealized_pnl : (h.gainLoss ?? 0)),
-            gainLossPercent: (typeof h.pnl_percent === 'number' ? h.pnl_percent : (h.gainLossPercent ?? 0))
+            currentPrice: h.currentPrice || h.average_cost_price,
+            currentValue: h.currentValue || (h.quantity * h.average_cost_price),
+            costBasis: h.costBasis || (h.quantity * h.average_cost_price),
+            gainLoss: h.gainLoss || 0,
+            gainLossPercent: h.gainLossPercent || 0
           }));
           
           setDetailedHoldings(updated);
           
-          const currentTotalValue = updated.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+          const currentTotalValue = updated.reduce((sum, h) => sum + h.currentValue, 0);
           const totalCostBasis = updated.reduce((sum, h) => sum + h.costBasis, 0);
           
           // Calculate lifetime PnL
@@ -505,9 +521,11 @@ export default function Portfolio() {
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
     : (
-        (wsConnected && typeof wsCryptoValue === 'number') ? wsCryptoValue
-          : (typeof krakenData?.total_crypto_value_usd === 'number' ? krakenData.total_crypto_value_usd
-              : (typeof krakenData?.total_crypto_value === 'number' ? krakenData.total_crypto_value
+        typeof krakenData?.total_crypto_value_usd === 'number'
+          ? krakenData.total_crypto_value_usd
+          : (typeof krakenData?.total_crypto_value === 'number'
+              ? krakenData.total_crypto_value
+              : (wsConnected && typeof wsCryptoValue === 'number' ? wsCryptoValue
                   : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)))
       );
 
