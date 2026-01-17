@@ -455,7 +455,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
           renderData.length > 0 ?
           <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-              data={chartData}
+              data={renderData}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
               onClick={handleClick}>
