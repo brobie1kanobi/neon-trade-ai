@@ -21,7 +21,11 @@ export function KrakenWebSocketProvider({ children }) {
   const isSimMode = settings?.sim_trading_mode !== false;
   
   // Only connect in LIVE mode with authenticated user
-  const shouldConnect = !isSimMode && !!user?.email;
+  const shouldConnect = !isSimMode && !!user?.email; // live mode only
+  // Force balances subscription even if prices not requested
+  const subscribeToPrices = shouldConnect;
+  const subscribeToBalances = shouldConnect;
+  const subscribeToExecutions = shouldConnect;
 
   // Initialize WebSocket manager with ALL subscriptions
   const wsManager = useKrakenWebSocketManager({
