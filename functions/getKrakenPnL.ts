@@ -141,45 +141,30 @@ Deno.serve(async (req) => {
     const balanceData = balanceResponse?.data || balanceResponse;
     const balances = balanceData?.balance || {};
     
-    // Get current prices from Kraken
+    // Get current prices from public sources (no Kraken) to avoid rate limit coupling
     const symbols = Object.keys(balances)
       .filter(asset => asset !== 'ZUSD' && asset !== 'USD')
       .map(asset => parseKrakenAsset(asset));
-    
+
     let totalUnrealizedPnL = 0;
-    
+
     if (symbols.length > 0) {
       try {
-        const pairs = symbols.map(sym => {
-          const map = {
-            'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'XRP': 'XXRPZUSD',
-            'SOL': 'SOLUSD', 'ADA': 'ADAUSD', 'DOT': 'DOTUSD'
-          };
-          return map[sym] || `${sym}USD`;
-        }).join(',');
-        
-        const priceResponse = await Promise.race([
-          fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs}`),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Price timeout')), 3000))
-        ]);
+        const mdRes = await base44.asServiceRole.functions.invoke('getMarketData', {
+          action: 'getWatchlistData',
+          payload: { cryptoSymbols: symbols, stockSymbols: [] }
+        });
+        const quotes = Array.isArray(mdRes?.data) ? mdRes.data : [];
+        const priceMap = Object.fromEntries(quotes.map(q => [String(q.symbol || '').toUpperCase(), Number(q.price) || 0]));
 
-        if (priceResponse.ok) {
-          const priceData = await priceResponse.json();
-          
-          if (priceData?.result) {
-            for (const [pair, ticker] of Object.entries(priceData.result)) {
-              const symbol = parseKrakenAsset(pair.replace(/ZUSD$|USD$/g, ''));
-              const currentPrice = parseFloat(ticker.c?.[0]) || 0;
-              const balance = parseFloat(balances[`X${symbol}`] || balances[symbol] || 0);
-              
-              const position = positionMap[symbol];
-              
-              if (position && balance > 0 && currentPrice > 0) {
-                const currentValue = balance * currentPrice;
-                const costBasis = position.avgPrice * balance;
-                totalUnrealizedPnL += (currentValue - costBasis);
-              }
-            }
+        for (const sym of symbols) {
+          const currentPrice = priceMap[String(sym || '').toUpperCase()] || 0;
+          const balance = parseFloat(balances[`X${sym}`] || balances[sym] || 0);
+          const position = positionMap[sym];
+          if (position && balance > 0 && currentPrice > 0) {
+            const currentValue = balance * currentPrice;
+            const costBasis = position.avgPrice * balance;
+            totalUnrealizedPnL += (currentValue - costBasis);
           }
         }
       } catch (e) {

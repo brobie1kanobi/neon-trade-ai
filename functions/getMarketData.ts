@@ -171,35 +171,7 @@ async function getCryptoData(base44, cryptoSymbols) {
     const results = [];
     const foundMap = {};
 
-    // 1) Try Kraken first (fast, real-time)
-    try {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('kraken-timeout')), 2500));
-      const krakenRes = await Promise.race([
-        base44.functions.invoke('getKrakenMarketPrices', { symbols: upper }),
-        timeout
-      ]);
-      const k = krakenRes?.data || krakenRes;
-      if (k && k.success && k.prices) {
-        for (const sym of upper) {
-          const p = k.prices[sym];
-          if (p && typeof p.price === 'number' && p.price > 0) {
-            foundMap[sym] = {
-              symbol: sym,
-              name: sym,
-              price: p.price,
-              change: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
-              price_change_percentage_24h: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
-              percent_change: typeof p.change_24h_percent === 'number' ? p.change_24h_percent : null,
-              change_1h_percent: null,
-              change_1h_value: null,
-              icon_url: null
-            };
-          }
-        }
-      }
-    } catch (_e) {
-      // Kraken unavailable, will fall back
-    }
+    // 1) Skip Kraken public API for watchlist prices to avoid impacting private rate limits
 
     // 2) Fallback to CoinGecko for any missing symbols
     const missing = upper.filter(s => !foundMap[s]);
@@ -239,6 +211,58 @@ async function getCryptoData(base44, cryptoSymbols) {
               }
             }
           }
+        }
+      }
+    }
+
+    // 3) Extra public fallbacks (no Kraken): Coinbase and Binance
+    const stillMissing = upper.filter(s => !foundMap[s]);
+    if (stillMissing.length > 0) {
+      // Coinbase spot prices
+      const coinbaseResults = await Promise.all(
+        stillMissing.map(async (sym) => {
+          try {
+            const resp = await fetchWithTimeout(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`, 2500);
+            if (resp && resp.ok) {
+              const data = await resp.json();
+              const price = parseFloat(data?.data?.amount || '0');
+              if (price > 0) {
+                return { sym, price };
+              }
+            }
+          } catch (_) {}
+          return null;
+        })
+      );
+      for (const item of coinbaseResults.filter(Boolean)) {
+        if (!foundMap[item.sym]) {
+          foundMap[item.sym] = { symbol: item.sym, name: item.sym, price: item.price, change: null, price_change_percentage_24h: null, percent_change: null, change_1h_percent: null, change_1h_value: null, icon_url: null };
+        }
+      }
+    }
+
+    const stillMissing2 = upper.filter(s => !foundMap[s]);
+    if (stillMissing2.length > 0) {
+      // Binance ticker price (USDT pairs)
+      const limited = stillMissing2.slice(0, 12);
+      const binanceResults = await Promise.all(
+        limited.map(async (sym) => {
+          try {
+            const resp = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`, 2500);
+            if (resp && resp.ok) {
+              const data = await resp.json();
+              const price = parseFloat(data?.price || '0');
+              if (price > 0) {
+                return { sym, price };
+              }
+            }
+          } catch (_) {}
+          return null;
+        })
+      );
+      for (const item of binanceResults.filter(Boolean)) {
+        if (!foundMap[item.sym]) {
+          foundMap[item.sym] = { symbol: item.sym, name: item.sym, price: item.price, change: null, price_change_percentage_24h: null, percent_change: null, change_1h_percent: null, change_1h_value: null, icon_url: null };
         }
       }
     }
