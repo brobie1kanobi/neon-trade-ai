@@ -288,11 +288,11 @@ export default function Portfolio() {
         if (!isSimMode && krakenData?.holdings) {
           const updated = effectiveHoldings.map(h => ({
             ...h,
-            currentPrice: h.currentPrice || h.average_cost_price,
-            currentValue: h.currentValue || (h.quantity * h.average_cost_price),
-            costBasis: h.costBasis || (h.quantity * h.average_cost_price),
-            gainLoss: h.gainLoss || 0,
-            gainLossPercent: h.gainLossPercent || 0
+            currentPrice: (typeof h.current_price_usd === 'number' ? h.current_price_usd : (h.currentPrice ?? h.average_cost_price)),
+            currentValue: (typeof h.total_value_usd === 'number' ? h.total_value_usd : (h.currentValue ?? (h.quantity * (h.current_price_usd ?? h.average_cost_price)))),
+            costBasis: (typeof h.total_cost_basis === 'number' ? h.total_cost_basis : (h.costBasis ?? (h.quantity * (h.average_cost_price ?? 0)))) ,
+            gainLoss: (typeof h.unrealized_pnl === 'number' ? h.unrealized_pnl : (h.gainLoss ?? 0)),
+            gainLossPercent: (typeof h.pnl_percent === 'number' ? h.pnl_percent : (h.gainLossPercent ?? 0))
           }));
           
           setDetailedHoldings(updated);

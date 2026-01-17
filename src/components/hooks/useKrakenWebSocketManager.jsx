@@ -409,6 +409,11 @@ function handlePrivateMessage(message) {
       });
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+if (typeof window !== 'undefined') {
+  try {
+    window.dispatchEvent(new CustomEvent('kraken:balances-updated', { detail: { balances: Object.fromEntries(GLOBAL_WS_STATE.balances) } }));
+  } catch {}
+}
     } else if (type === 'update' && Array.isArray(data)) {
       // CRITICAL: Handle balance updates (trades, deposits, withdrawals)
       data.forEach(update => {
@@ -423,6 +428,11 @@ function handlePrivateMessage(message) {
       });
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+if (typeof window !== 'undefined') {
+  try {
+    window.dispatchEvent(new CustomEvent('kraken:balances-updated', { detail: { balances: Object.fromEntries(GLOBAL_WS_STATE.balances) } }));
+  } catch {}
+}
     }
   }
 
@@ -508,6 +518,11 @@ function handlePrivateMessage(message) {
       });
       
       emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
+if (typeof window !== 'undefined') {
+  try {
+    window.dispatchEvent(new CustomEvent('kraken:orders-updated', { detail: { orders: Object.fromEntries(GLOBAL_WS_STATE.orders) } }));
+  } catch {}
+}
     }
   }
 }
