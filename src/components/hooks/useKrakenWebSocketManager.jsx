@@ -727,6 +727,31 @@ export function useKrakenWebSocketManager(options = {}) {
     return () => clearInterval(interval);
   }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 
+  const refreshBalances = useCallback(async () => {
+    try {
+      if (!GLOBAL_WS_STATE.privateWsBalances || GLOBAL_WS_STATE.privateWsBalances.readyState !== WebSocket.OPEN) {
+        await connectPrivateBalancesWebSocket();
+      }
+      let token;
+      try { token = await getWebSocketToken('balance'); } catch (_e) { token = await getWebSocketToken('trade'); }
+      if (GLOBAL_WS_STATE.privateWsBalances && token) {
+        subscribeToBalances(GLOBAL_WS_STATE.privateWsBalances, token);
+      }
+    } catch (_) {}
+  }, []);
+
+  const refreshOrders = useCallback(async () => {
+    try {
+      if (!GLOBAL_WS_STATE.privateWsOrders || GLOBAL_WS_STATE.privateWsOrders.readyState !== WebSocket.OPEN) {
+        await connectPrivateOrdersWebSocket();
+      }
+      const token = await getWebSocketToken('trade');
+      if (GLOBAL_WS_STATE.privateWsOrders && token) {
+        subscribeToExecutions(GLOBAL_WS_STATE.privateWsOrders, token);
+      }
+    } catch (_) {}
+  }, []);
+
   return {
     isConnected,
     prices,
