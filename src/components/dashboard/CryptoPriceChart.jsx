@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -156,6 +155,19 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     }
     return ticks;
   }, [yDomain, chartData]);
+
+  // Render dataset: real chartData or minimal 2-point fallback to keep chart visible
+  const renderData = useMemo(() => {
+    if (Array.isArray(chartData) && chartData.length > 0) return chartData;
+    if (typeof currentPrice === 'number' && currentPrice > 0) {
+      const now = Date.now();
+      return [
+        { timestamp: new Date(now - 60000).toISOString(), price: currentPrice, formattedTime: '' },
+        { timestamp: new Date(now).toISOString(), price: currentPrice, formattedTime: '' }
+      ];
+    }
+    return [];
+  }, [chartData, currentPrice]);
 
   // Persistent pinned label renderer (SVG), attached to the pinned dot
   const PinnedDotLabel = (props) => {
