@@ -773,7 +773,9 @@ export function useKrakenWebSocketManager(options = {}) {
     // Get current data
     getAllPrices: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.prices), []),
     getAllBalances: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.balances), []),
-    getAllOrders: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.orders), [])
+    getAllOrders: useCallback(() => Object.fromEntries(GLOBAL_WS_STATE.orders), []),
+    refreshBalances,
+    refreshOrders
   };
 }
 
