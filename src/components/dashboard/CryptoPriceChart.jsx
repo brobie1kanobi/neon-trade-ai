@@ -452,7 +452,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
           <div className="h-full flex items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin neon-text" />
             </div> :
-          chartData.length > 0 ?
+          renderData.length > 0 ?
           <ResponsiveContainer width="100%" height="100%">
                 <LineChart
               data={chartData}
