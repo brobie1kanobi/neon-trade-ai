@@ -515,7 +515,7 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
               }
                 </LineChart>
               </ResponsiveContainer> :
-          // If we have no chart points, quietly show a subtle placeholder without error text
+          // If we truly have nothing, show a subtle loader (rare)
           <div className="h-full flex items-center justify-center text-center p-4">
                 {currentPrice !== null ?
             <div>
