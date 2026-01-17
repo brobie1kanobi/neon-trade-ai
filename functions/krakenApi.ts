@@ -401,14 +401,16 @@ Deno.serve(async (req) => {
         };
       }
 
-      return Response.json({ 
+      const __response = { 
         success: true, 
         balance: balances,
         raw_balance: rawBalances 
-      }, { status: 200 });
-    }
+      };
+      extBalCache.set(__cacheKey, { ts: Date.now(), data: __response });
+      return Response.json(__response, { status: 200 });
+      }
 
-    if (action === 'getTradesHistory') {
+      if (action === 'getTradesHistory') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
