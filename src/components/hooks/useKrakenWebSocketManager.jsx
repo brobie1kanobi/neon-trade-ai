@@ -300,6 +300,7 @@ function subscribeToTicker(symbols) {
  * Requires token per Kraken v2 docs
  */
 function subscribeToBalances(ws, token) {
+  if (!token) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   const subscription = {
