@@ -25,7 +25,7 @@ const __tradeBuckets = new Map();
 function __getTradeBucket(userEmail) {
   const key = String(userEmail || 'anon');
   if (!__tradeBuckets.has(key)) {
-    __tradeBuckets.set(key, { tokens: 4, last: Date.now() });
+    __tradeBuckets.set(key, { tokens: 2, last: Date.now() });
   }
   return __tradeBuckets.get(key);
 }
@@ -33,8 +33,8 @@ export async function tradeRateGate(userEmail, cost = 1) {
   const bucket = __getTradeBucket(userEmail);
   const now = Date.now();
   const elapsed = (now - bucket.last) / 1000;
-  // ~0.6 tokens/sec refill, cap 4
-  bucket.tokens = Math.min(4, bucket.tokens + elapsed * 0.6);
+  // ~0.3 tokens/sec refill, cap 2 (more conservative to avoid EAPI rate limits)
+  bucket.tokens = Math.min(2, bucket.tokens + elapsed * 0.3);
   bucket.last = now;
   if (bucket.tokens >= cost) { bucket.tokens -= cost; return; }
   const deficit = cost - bucket.tokens;
@@ -1123,7 +1123,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] 📤 Placing trailing stop order:', JSON.stringify(orderParams));
 
       try {
-        await tradeRateGate(user.email, 2);
+        await tradeRateGate(user.email, 3);
         const result = await executeKrakenTrade(wsToken, orderParams);
         console.log('[krakenTrade] ✅ Trailing stop placed:', result.order_id);
 
@@ -1414,7 +1414,7 @@ Deno.serve(async (req) => {
 
       // Execute trade via WebSocket
       // Gentle pacing to avoid rate-limit burst when placing sequential orders
-      await new Promise(res => setTimeout(res, 350));
+      await new Promise(res => setTimeout(res, 800));
       let tradeResult;
       try {
         await tradeRateGate(user.email, 2);

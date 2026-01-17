@@ -1013,8 +1013,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     console.log('[AutoTrader] Hook initialized - running first trade cycle');
     performRuleBasedTrade();
 
-    // Run every 90 seconds for aggressive live trading
-    const interval = setInterval(performRuleBasedTrade, 90000);
+    // Run every 150 seconds to reduce API pressure
+    const interval = setInterval(performRuleBasedTrade, 150000);
     const flushCheckInterval = setInterval(checkAndFlushBatch, 30000);
     return () => {
       if (interval) clearInterval(interval);

@@ -47,7 +47,7 @@ function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
     // Conservative defaults: trade is stricter
-    const cfg = type === 'trade' ? { capacity: 3, refillPerSec: 0.35 } : { capacity: 10, refillPerSec: 1.0 };
+    const cfg = type === 'trade' ? { capacity: 2, refillPerSec: 0.25 } : { capacity: 10, refillPerSec: 1.0 };
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);
