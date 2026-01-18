@@ -16,9 +16,12 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
   const [krakenChecking, setKrakenChecking] = useState(true);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
-  const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
-  const [showSecret, setShowSecret] = useState(false);
+  const [balanceApiKey, setBalanceApiKey] = useState("");
+  const [balanceApiSecret, setBalanceApiSecret] = useState("");
+  const [tradeApiKey, setTradeApiKey] = useState("");
+  const [tradeApiSecret, setTradeApiSecret] = useState("");
+  const [showBalanceSecret, setShowBalanceSecret] = useState(false);
+  const [showTradeSecret, setShowTradeSecret] = useState(false);
   const { user } = useSettings();
 
   // CRITICAL: Prevent duplicate requests
@@ -66,8 +69,8 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
       return;
     }
 
-    if (!apiKey || !apiSecret) {
-      toast.error('Please enter both API Key and API Secret');
+    if (!balanceApiKey || !balanceApiSecret) {
+      toast.error('Please enter Balance API Key and Secret');
       return;
     }
 
@@ -80,8 +83,11 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
       const response = await base44.functions.invoke('krakenApi', {
         action: 'connect',
         payload: {
-          apiKey,
-          apiSecret
+          balanceApiKey,
+          balanceApiSecret,
+          // Trade key is optional but recommended for live trading
+          tradeApiKey: tradeApiKey || undefined,
+          tradeApiSecret: tradeApiSecret || undefined
         }
       });
 
@@ -93,8 +99,10 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
         });
         setKrakenConnected(true);
         setShowConnectionModal(false);
-        setApiKey("");
-        setApiSecret("");
+        setBalanceApiKey("");
+        setBalanceApiSecret("");
+        setTradeApiKey("");
+        setTradeApiSecret("");
 
         // Notify parent
         if (onConnectionChange) {
@@ -226,40 +234,82 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
 
             </div>
 
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="apiKey">API Key</Label>
-                  <Input
-                  id="apiKey"
-                  type="text"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your Kraken API Key"
-                  className="mt-1"
-                  disabled={isConnecting} />
-
+              <div className="space-y-5">
+                {/* Balance (Read-Only) Key */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Balance Key (Read-only)</p>
+                  <div>
+                    <Label htmlFor="balanceApiKey">API Key</Label>
+                    <Input
+                      id="balanceApiKey"
+                      type="text"
+                      value={balanceApiKey}
+                      onChange={(e) => setBalanceApiKey(e.target.value)}
+                      placeholder="Enter your Balance API Key"
+                      className="mt-1"
+                      disabled={isConnecting}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="balanceApiSecret">API Secret</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        id="balanceApiSecret"
+                        type={showBalanceSecret ? "text" : "password"}
+                        value={balanceApiSecret}
+                        onChange={(e) => setBalanceApiSecret(e.target.value)}
+                        placeholder="Enter your Balance API Secret"
+                        className="pr-10"
+                        disabled={isConnecting}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowBalanceSecret(!showBalanceSecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                        disabled={isConnecting}
+                      >
+                        {showBalanceSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="apiSecret">API Secret</Label>
-                  <div className="relative mt-1">
+                {/* Trade Key (Optional) */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Trade Key (Orders/WebSocket) – optional but required for live trading</p>
+                  <div>
+                    <Label htmlFor="tradeApiKey">API Key</Label>
                     <Input
-                    id="apiSecret"
-                    type={showSecret ? "text" : "password"}
-                    value={apiSecret}
-                    onChange={(e) => setApiSecret(e.target.value)}
-                    placeholder="Enter your Kraken API Secret"
-                    className="pr-10"
-                    disabled={isConnecting} />
-
-                    <button
-                    type="button"
-                    onClick={() => setShowSecret(!showSecret)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                    disabled={isConnecting}>
-
-                      {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                      id="tradeApiKey"
+                      type="text"
+                      value={tradeApiKey}
+                      onChange={(e) => setTradeApiKey(e.target.value)}
+                      placeholder="Enter your Trade API Key"
+                      className="mt-1"
+                      disabled={isConnecting}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="tradeApiSecret">API Secret</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        id="tradeApiSecret"
+                        type={showTradeSecret ? "text" : "password"}
+                        value={tradeApiSecret}
+                        onChange={(e) => setTradeApiSecret(e.target.value)}
+                        placeholder="Enter your Trade API Secret"
+                        className="pr-10"
+                        disabled={isConnecting}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTradeSecret(!showTradeSecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                        disabled={isConnecting}
+                      >
+                        {showTradeSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -272,7 +322,7 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
                       API Key Permissions Required
                     </p>
                     <p className="text-xs text-yellow-700 dark:text-yellow-400">
-                      Your API key must have permissions for: Query Funds, Query Open/Closed Orders, Create/Modify Orders, Deposit, and Withdraw.
+                      Balance key: Query Funds + Access WebSockets API. Trade key: Access WebSockets API + Query open/closed orders + Create/Modify orders (no withdraw needed).
                     </p>
                   </div>
                 </div>
@@ -285,8 +335,10 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
               className="flex-1"
               onClick={() => {
                 setShowConnectionModal(false);
-                setApiKey("");
-                setApiSecret("");
+                setBalanceApiKey("");
+                setBalanceApiSecret("");
+                setTradeApiKey("");
+                setTradeApiSecret("");
               }}
               disabled={isConnecting}>
 
@@ -295,7 +347,7 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
               <Button
               className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
               onClick={handleConfirmConnection}
-              disabled={isConnecting || !apiKey || !apiSecret}>
+              disabled={isConnecting || !balanceApiKey || !balanceApiSecret}>
 
                 {isConnecting ? 'Connecting...' : 'Connect Kraken'}
               </Button>
