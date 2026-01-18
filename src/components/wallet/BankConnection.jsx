@@ -115,25 +115,20 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
       }
     } catch (error) {
       console.error('[BankConnection] Connection failed:', error);
-      const errorMsg = error.message || 'Unknown error';
+      const respData = error?.response?.data;
+      const errorMsg = respData?.error || respData?.message || error?.message || 'Unknown error';
 
       // Provide helpful error messages
-      if (errorMsg.includes('Invalid signature') || errorMsg.includes('EAPI:Invalid signature')) {
-        toast.error('Invalid API credentials', {
-          description: 'Please check your API Key and Secret are correct'
-        });
-      } else if (errorMsg.includes('Invalid nonce') || errorMsg.includes('EAPI:Invalid nonce')) {
-        toast.error('Authentication timing issue', {
-          description: 'Please try again in a few seconds'
-        });
-      } else if (errorMsg.includes('Invalid key') || errorMsg.includes('EAPI:Invalid key')) {
-        toast.error('API Key not recognized', {
-          description: 'Please verify your API key is correct and active'
-        });
+      if (/(Invalid signature|EAPI:Invalid signature)/i.test(errorMsg)) {
+        toast.error('Invalid API credentials', { description: 'Please check your API Key and Secret are correct' });
+      } else if (/(Invalid nonce|EAPI:Invalid nonce)/i.test(errorMsg)) {
+        toast.error('Authentication timing issue', { description: 'Please try again in a few seconds' });
+      } else if (/(Invalid key|EAPI:Invalid key)/i.test(errorMsg)) {
+        toast.error('API Key not recognized', { description: 'Please verify your API key is correct and active' });
+      } else if (/Unknown action|Missing action/i.test(errorMsg)) {
+        toast.error('App error', { description: 'Please refresh and try again (action parse failed)' });
       } else {
-        toast.error('Failed to connect', {
-          description: errorMsg
-        });
+        toast.error('Failed to connect', { description: errorMsg });
       }
     } finally {
       setIsConnecting(false);
