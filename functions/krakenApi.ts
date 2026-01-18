@@ -433,12 +433,28 @@ Deno.serve(async (req) => {
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       try {
-        // Use cached token if still valid (60s buffer) unless forceRefresh requested
+        // Decide key type (default to TRADE for placing orders)
         const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
         const now = Date.now();
+
+        // Select credentials up-front so we can fingerprint the key actually used
+        const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketUrl');
+        const fingerprint = `${keyType}:${String(apiKeyToUse || '').slice(0,6)}...${String(apiKeyToUse || '').slice(-4)}`;
+
+        // Reuse cached token ONLY if:
+        // - it's for TRADE key
+        // - fingerprint matches the stored one (prevents using a BALANCE token for trading)
+        // - not expiring within 60s
         const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
-        // Only reuse cached token for TRADE key (we don't persist balance tokens)
-        if (keyType === 'trade' && !payload?.forceRefresh && connection?.ws_token && (expiresAt - now) > 60000) {
+        const safeToReuse = (
+          keyType === 'trade' &&
+          !payload?.forceRefresh &&
+          connection?.ws_token &&
+          connection?.ws_token_fingerprint === fingerprint &&
+          (expiresAt - now) > 60000
+        );
+
+        if (safeToReuse) {
           return Response.json({
             success: true,
             connected: true,
@@ -449,7 +465,7 @@ Deno.serve(async (req) => {
           }, { status: 200 });
         }
 
-        const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketUrl');
+        // Request a fresh token from Kraken for the chosen key
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
@@ -458,7 +474,7 @@ Deno.serve(async (req) => {
             return Response.json({
               success: false,
               connected: false,
-              error: 'Permission denied: Trade API key lacks required permissions. Enable "Access WebSockets API", "Query open/closed orders", and "Create & modify orders".'
+              error: 'Permission denied: API key lacks required permissions. Enable Access WebSockets API.' + (keyType === 'trade' ? ' Also enable Create & Modify Orders and Query open/closed orders.' : '')
             }, { status: 200 });
           }
           throw new Error(msg);
@@ -470,19 +486,20 @@ Deno.serve(async (req) => {
           throw new Error('Failed to get WebSocket token from Kraken');
         }
 
-        // Cache token ONLY for TRADE key to avoid mixing tokens
+        // Cache token ONLY for TRADE key and bind it to the key fingerprint
         if (keyType !== 'balance') {
           try {
             await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
               ws_token: token,
-              ws_token_expires_at: new Date(now + expires * 1000).toISOString()
+              ws_token_expires_at: new Date(now + expires * 1000).toISOString(),
+              ws_token_fingerprint: fingerprint
             });
           } catch (cacheErr) {
             console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
           }
         }
 
-        console.log('[krakenApi] ✅ WebSocket token retrieved, expires in', expires, 'seconds');
+        console.log('[krakenApi] ✅ WebSocket token retrieved for', keyType.toUpperCase(), 'expires in', expires, 'seconds');
         return Response.json({
           success: true,
           connected: true,
