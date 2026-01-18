@@ -75,7 +75,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4) {
       if (data?.success === false) {
         const msg = String(data?.error || '');
         if (/permission denied/i.test(msg)) {
-          await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+          await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
         }
         if (/rate limit|429|timeout|websocket|nonce/i.test(msg)) { throw new Error(msg); }
       }
@@ -84,7 +84,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4) {
       lastErr = e;
       const msg = String(e?.message || e || '');
       if (/permission denied/i.test(msg)) {
-        await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { forceRefresh: true } });
+        await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
       }
       if (/rate limit|429|timeout|websocket|nonce/i.test(msg) && attempt < maxAttempts - 1) {
         const delay = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);

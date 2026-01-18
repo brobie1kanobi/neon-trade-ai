@@ -126,7 +126,8 @@ Deno.serve(async (req) => {
 
     // Get WebSocket token
     const tokenResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
-      action: 'getWebSocketUrl' 
+      action: 'getWebSocketUrl',
+      payload: { keyType: 'trade' }
     });
 
     const tokenData = tokenResponse?.data || tokenResponse;
