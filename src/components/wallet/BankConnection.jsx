@@ -83,11 +83,13 @@ export default function BankConnection({ settings, onConnectionChange, onQuickAc
       const response = await base44.functions.invoke('krakenApi', {
         action: 'connect',
         payload: {
-          balanceApiKey,
-          balanceApiSecret,
-          // Trade key is optional but recommended for live trading
-          tradeApiKey: tradeApiKey || undefined,
-          tradeApiSecret: tradeApiSecret || undefined
+          // Send as both legacy and new fields for maximum compatibility
+          apiKey: (balanceApiKey || '').trim(),
+          apiSecret: (balanceApiSecret || '').trim(),
+          balanceApiKey: (balanceApiKey || '').trim(),
+          balanceApiSecret: (balanceApiSecret || '').trim(),
+          tradeApiKey: (tradeApiKey || '').trim() || undefined,
+          tradeApiSecret: (tradeApiSecret || '').trim() || undefined
         }
       });
 
