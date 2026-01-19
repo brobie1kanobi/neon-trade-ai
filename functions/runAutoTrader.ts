@@ -66,7 +66,7 @@ function roundPriceForKraken(price, symbol) {
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // Invoke krakenTrade with robust retries and token refresh on permission errors
-async function invokeKrakenTrade(base44, payload, maxAttempts = 4) {
+async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = null) {
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
