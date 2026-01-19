@@ -292,7 +292,7 @@ Deno.serve(async (req) => {
             side: 'buy',
             quantity: qty,
             orderType: 'market'
-          });
+          }, 4, wsToken);
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');
           }
