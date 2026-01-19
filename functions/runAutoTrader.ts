@@ -378,7 +378,7 @@ Deno.serve(async (req) => {
                   orderType: 'stop-loss',
                   stopPrice: staticStopLossPrice,
                   timeInForce: 'gtc'
-                });
+                }, 4, wsToken);
                 if (fallbackData?.success) {
                   slOrderId = fallbackData.order_id;
                   console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
