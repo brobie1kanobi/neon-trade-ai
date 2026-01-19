@@ -395,7 +395,7 @@ Deno.serve(async (req) => {
                 orderType: 'stop-loss',
                 stopPrice: staticStopLossPrice,
                 timeInForce: 'gtc'
-              });
+              }, 4, wsToken);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
