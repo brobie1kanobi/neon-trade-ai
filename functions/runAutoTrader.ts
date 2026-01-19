@@ -363,7 +363,7 @@ Deno.serve(async (req) => {
                 trailingPriceType: 'pct',
                 triggerReference: 'last',
                 useLimit: false // Use market order on trigger for guaranteed execution
-              });
+              }, 4, wsToken);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
