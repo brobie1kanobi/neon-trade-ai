@@ -70,7 +70,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const res = await base44.functions.invoke('krakenTrade', payload);
+      const res = await base44.functions.invoke('krakenTrade', wsToken ? { ...payload, wsToken } : payload);
       const data = res?.data || res;
       if (data?.success === false) {
         const msg = String(data?.error || '');
