@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
               orderType: 'take-profit',
               triggerPrice: takeProfitPrice,
               timeInForce: 'gtc'
-            });
+            }, 4, wsToken);
             console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
             
             if (tpData?.success) {
