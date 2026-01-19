@@ -234,6 +234,16 @@ Deno.serve(async (req) => {
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
     const trailingMargin = settings.trailing_takeprofit_margin || 3;
     
+    // Fetch a single TRADE WebSocket token once for this run (reuse to avoid rate limits)
+    let wsToken = null;
+    try {
+      const tokenRes = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+      const tokenData = tokenRes?.data || tokenRes;
+      wsToken = tokenData?.token || null;
+    } catch (e) {
+      console.warn('[runAutoTrader] Could not prefetch trade WS token (will let krakenTrade fetch):', e.message);
+    }
+
     // Process each eligible prospect
     for (const prospect of eligibleProspects) {
       const sym = (prospect.symbol || '').toUpperCase();
