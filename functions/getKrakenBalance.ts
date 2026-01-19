@@ -136,7 +136,8 @@ Deno.serve(async (req) => {
     limiter.recordCall(1);
 
     // CRITICAL: Fetch BOTH balance AND extended balance (includes locked amounts)
-    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }); // use BalanceEx only (includes locked)
+    // CRITICAL: Balance endpoints must use BALANCE key (separate from trade)
+    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }); // uses balance key internally
 
     let extendedData = extendedBalanceResponse?.data || extendedBalanceResponse;
     if (extendedData?.data) extendedData = extendedData.data;
