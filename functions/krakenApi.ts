@@ -300,7 +300,8 @@ Deno.serve(async (req) => {
     
     // Helper to select correct API key pair per action (split keys)
     const getCreds = (purpose) => {
-      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders', 'place_order']);
+      // Treat all trading-related ops as TRADE (ws token, open orders, placing orders, trades history)
+      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders', 'place_order', 'getTradesHistory']);
       const useTrade = tradeActions.has(purpose);
       if (useTrade) {
         if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
