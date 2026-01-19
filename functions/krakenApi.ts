@@ -412,7 +412,7 @@ Deno.serve(async (req) => {
       }
 
       if (action === 'getTradesHistory') {
-      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory'); // uses TRADE key
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
       if (result.error?.length > 0) {
