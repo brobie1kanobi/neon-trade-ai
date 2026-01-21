@@ -13,7 +13,6 @@ import { Link } from "react-router-dom";
 import { KrakenConnection, AutoBuyPreference, ConditionalOrder, Trade } from "@/entities/all";
 import { useKrakenData } from "@/components/hooks/useKrakenData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
-import AutoTraderChecklist from "@/components/settings/AutoTraderChecklist";
 
 export default function AutoTraderHealth() {
   const { settings, user } = useSettings();
@@ -154,9 +153,8 @@ export default function AutoTraderHealth() {
       const hasKrakenCredentials = krakenConns.length > 0 && krakenConns[0]?.account_verified;
       const isConnected = isKrakenConnected || hasKrakenCredentials;
 
-      // For balance check, use AVAILABLE USD cash from Kraken (exclude holds)
-      const availableCash = krakenData?.available_usd_balance ?? krakenData?.usd_balance ?? 0;
-      const hasBalance = availableCash > 1;
+      // For balance check, use effective balance
+      const hasBalance = effectiveBalance > 1;
 
       const prereqs = {
         krakenConnected: isConnected,
@@ -173,8 +171,8 @@ export default function AutoTraderHealth() {
       if (!prereqs.hasAutoBuyPrefs) {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
-      // Only show balance issue if Kraken is connected and AVAILABLE cash is actually low
-      if (isConnected && ((krakenData?.available_usd_balance ?? krakenData?.usd_balance ?? 0) <= 1)) {
+      // Only show balance issue if Kraken is connected and balance is actually low
+      if (isConnected && effectiveBalance <= 1) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
       }
       
@@ -339,12 +337,11 @@ export default function AutoTraderHealth() {
   const isWarning = effectiveBalance > 0 && effectiveBalance <= 10;
   const isCritical = effectiveBalance <= 0;
   
-  // Check if auto-trader can actually operate (needs AVAILABLE USD cash)
-  const availableCashUI = krakenData?.available_usd_balance ?? krakenData?.usd_balance ?? 0;
+  // Check if auto-trader can actually operate
   const canOperate = prerequisites.krakenConnected && 
                      prerequisites.autoTradingEnabled && 
                      prerequisites.hasAutoBuyPrefs && 
-                     availableCashUI > 1;
+                     effectiveBalance > 1;
 
   return (
     <Card className="border-2" style={{ 
@@ -579,10 +576,7 @@ export default function AutoTraderHealth() {
             )}
           </div>
         </div>
-
-        {/* Always-visible checklist panel (was Popover) */}
-        <AutoTraderChecklist prerequisites={prerequisites} isKrakenConnected={isKrakenConnected} />
-
+        
         {/* Show operational issues if any */}
         {operationalIssues.length > 0 && prerequisites.autoTradingEnabled && (
           <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
