@@ -837,6 +837,7 @@ Deno.serve(async (req) => {
 
     // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
     let wsToken = body?.wsToken || body?.token;
+    let tokenData;
     if (!wsToken) {
       console.log('[krakenTrade] Getting WebSocket token...');
       // Rate-limit token and order placement calls per user to avoid EAPI:Rate limit exceeded
@@ -845,13 +846,12 @@ Deno.serve(async (req) => {
         base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ]);
-  
-      const tokenData = tokenResponse?.data || tokenResponse;
+      tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;
     }
 
     if (!wsToken) {
-      const detail = tokenData?.error || 'Failed to get WebSocket token';
+      const detail = (tokenData && tokenData.error) ? tokenData.error : 'Failed to get WebSocket token';
       throw new Error(detail);
     }
 
