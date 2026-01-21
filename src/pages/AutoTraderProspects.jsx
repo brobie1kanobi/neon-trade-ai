@@ -30,7 +30,7 @@ export default function AutoTraderProspects() {
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [krakenRestBalance, setKrakenRestBalance] = useState(0);
+  const [serverCash, setServerCash] = useState(0);
   // Initialize margins from settings context, fall back to defaults
   const [userMargins, setUserMargins] = useState({
     gain_margin: settings?.gain_margin ?? 10,
@@ -51,32 +51,11 @@ export default function AutoTraderProspects() {
   // Determine mode from settings
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // Fetch Kraken balance via REST API as fallback when WebSocket isn't providing data
-  useEffect(() => {
-    if (isSimMode) return;
+  // Balance display is authoritative from backend prospects (eliminates WS/REST flicker)
+  // No separate REST balance polling here.
 
-    const fetchKrakenBalance = async () => {
-      try {
-        const response = await base44.functions.invoke('getKrakenBalance', {});
-        const data = response?.data || response;
-        if (data?.success && data?.connected) {
-          setKrakenRestBalance(data.usd_balance || 0);
-        }
-      } catch (e) {
-        console.error('[Prospects] Kraken balance fetch error:', e);
-      }
-    };
-
-    // Fetch if WebSocket balance is not available
-    if (!wsConnected || wsUsdBalance <= 0) {
-      fetchKrakenBalance();
-    }
-  }, [isSimMode, wsConnected, wsUsdBalance]);
-
-  // Calculate cash balance - prioritize WebSocket, then REST API, then wallet DB
-  const cashAvailable = isSimMode ?
-  wallet?.cash_balance || 0 :
-  wsConnected && wsUsdBalance > 0 ? wsUsdBalance : krakenRestBalance > 0 ? krakenRestBalance : wallet?.real_cash_balance || 0;
+  // Display cash from backend prospects only (authoritative, stable)
+  const cashAvailable = isSimMode ? (wallet?.cash_balance || 0) : (serverCash ?? 0);
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
@@ -92,6 +71,7 @@ export default function AutoTraderProspects() {
       if (data?.success) {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
+        setServerCash(typeof data.cash_available === 'number' ? data.cash_available : 0);
         // Update margins from backend response (authoritative source)
         if (data.user_settings) {
           console.log('[Prospects UI] Got margins from backend:', data.user_settings);

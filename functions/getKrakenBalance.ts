@@ -185,14 +185,15 @@ Deno.serve(async (req) => {
     if (!krakenBalance) throw new Error('Invalid balance response');
 
     // USD balances
-    const totalUsdBalance = parseFloat(
-      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
-      krakenBalance.ZUSD || krakenBalance.USD || 0
+    // Available = 'balance' (excludes hold_trade), Total = 'total' (includes held)
+    const availableUsdBalance = parseFloat(
+      (extendedBalance?.USD?.balance ?? extendedBalance?.ZUSD?.balance ?? krakenBalance.USD ?? krakenBalance.ZUSD ?? 0)
     );
 
-    const availableUsdBalance = parseFloat(
-      extendedBalance?.ZUSD?.balance || extendedBalance?.USD?.balance ||
-      krakenBalance.ZUSD || krakenBalance.USD || 0
+    const totalUsdBalance = parseFloat(
+      (extendedBalance?.USD?.total ?? extendedBalance?.ZUSD?.total ?? (
+        (extendedBalance?.USD?.balance ?? extendedBalance?.ZUSD?.balance ?? 0) + (extendedBalance?.USD?.hold_trade ?? extendedBalance?.ZUSD?.hold_trade ?? 0)
+      ) ?? krakenBalance.USD ?? krakenBalance.ZUSD ?? 0)
     );
     
     const cryptoHoldings = [];

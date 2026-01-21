@@ -59,14 +59,19 @@ Deno.serve(async (req) => {
     // ALWAYS show prospects - even if auto-trading is disabled
 
     // AutoTraderProspects is ALWAYS for LIVE trading - never use sim wallet
-    // This page shows what would be traded on Kraken, so always use Kraken balance
+    // This page shows what would be traded on Kraken, so always use Kraken balance (AVAILABLE cash)
     let cashAvailable = 0;
     try {
       const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
       if (krakenData?.success && krakenData?.connected) {
-        cashAvailable = krakenData.usd_balance || 0;
-        console.log('[Prospects] Using Kraken USD balance:', cashAvailable);
+        // Prefer AVAILABLE USD (excludes amounts on hold); fallback to total if needed
+        cashAvailable = (
+          (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
+          (krakenData.balances?.USD?.balance ?? krakenData.balances?.ZUSD?.balance) ??
+          (typeof krakenData.total_usd_balance === 'number' ? krakenData.total_usd_balance : 0)
+        );
+        console.log('[Prospects] Using Kraken available USD balance:', cashAvailable);
       } else {
         console.log('[Prospects] Kraken not connected or no balance');
       }
