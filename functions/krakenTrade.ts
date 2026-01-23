@@ -18,6 +18,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  */
 
 const WS_URL = 'wss://ws-auth.kraken.com/v2';
+const WS_PUBLIC_URL = 'wss://ws.kraken.com/v2';
 const WS_TIMEOUT = 30000; // 30 second timeout for robustness
 
 // Per-user trade-key token bucket to avoid EAPI:Rate limit exceeded
