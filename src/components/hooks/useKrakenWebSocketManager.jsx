@@ -52,6 +52,24 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 3000;
 const TOKEN_REFRESH_BUFFER = 60000; // Refresh token 1 minute before expiry
 
+// Cache Kraken connection status to prevent repeated token requests when disconnected
+let __krakenStatusCache = { connected: null, ts: 0 };
+async function ensureKrakenConnected() {
+  const now = Date.now();
+  if (__krakenStatusCache.connected !== null && (now - __krakenStatusCache.ts) < 60000) {
+    return __krakenStatusCache.connected;
+  }
+  try {
+    const resp = await base44.functions.invoke('krakenApi', { action: 'status' });
+    const data = resp?.data || resp;
+    __krakenStatusCache = { connected: !!data?.connected, ts: now };
+    return __krakenStatusCache.connected;
+  } catch (_) {
+    __krakenStatusCache = { connected: false, ts: now };
+    return false;
+  }
+}
+
 /**
  * Emit custom events to all listeners
  */
@@ -70,6 +88,9 @@ function emitEvent(eventName, data) {
  * Get or refresh WebSocket token
  */
 async function getWebSocketToken(keyType = 'trade') {
+  // Do not attempt token retrieval if no Kraken connection
+  const connected = await ensureKrakenConnected();
+  if (!connected) { throw new Error('Kraken account not connected'); }
   const now = Date.now();
   
   // Return cached token if still valid
@@ -175,6 +196,8 @@ async function connectPrivateBalancesWebSocket() {
   }
 
   try {
+    // Abort if kraken not connected
+    if (!(await ensureKrakenConnected())) { return; }
     // Get fresh token using BALANCE key only (avoid consuming trade key rate limits)
     const token = await getWebSocketToken('balance');
 
@@ -236,6 +259,7 @@ async function connectPrivateOrdersWebSocket() {
     return;
   }
   try {
+    if (!(await ensureKrakenConnected())) { return; }
     const token = await getWebSocketToken('trade');
     const ws = new WebSocket(PRIVATE_WS_URL);
     ws.onopen = () => {
@@ -689,6 +713,7 @@ export function useKrakenWebSocketManager(options = {}) {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
+        if (!(await ensureKrakenConnected())) { return; }
         // Refresh tokens and re-subscribe if private connections are alive
         if (GLOBAL_WS_STATE.isPrivateBalancesConnected && GLOBAL_WS_STATE.privateWsBalances?.readyState === WebSocket.OPEN) {
           const balToken = await getWebSocketToken('balance');
@@ -704,16 +729,18 @@ export function useKrakenWebSocketManager(options = {}) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
+      // If user not connected to Kraken, skip any private reconnect attempts
+      const connected = await ensureKrakenConnected();
       // If disconnected, try reconnecting automatically
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
         connectPublicWebSocket(priceSymbols);
       }
-      if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
+      if (connected && subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
         GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateBalancesWebSocket();
       }
-      if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+      if (connected && subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
         GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateOrdersWebSocket();
       }
@@ -723,6 +750,7 @@ export function useKrakenWebSocketManager(options = {}) {
 
   const refreshBalances = useCallback(async () => {
     try {
+      if (!(await ensureKrakenConnected())) { return; }
       if (!GLOBAL_WS_STATE.privateWsBalances || GLOBAL_WS_STATE.privateWsBalances.readyState !== WebSocket.OPEN) {
         await connectPrivateBalancesWebSocket();
       }
@@ -736,6 +764,7 @@ export function useKrakenWebSocketManager(options = {}) {
 
   const refreshOrders = useCallback(async () => {
     try {
+      if (!(await ensureKrakenConnected())) { return; }
       if (!GLOBAL_WS_STATE.privateWsOrders || GLOBAL_WS_STATE.privateWsOrders.readyState !== WebSocket.OPEN) {
         await connectPrivateOrdersWebSocket();
       }
