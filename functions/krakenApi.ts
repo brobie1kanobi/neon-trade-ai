@@ -80,6 +80,9 @@ function generateNonce() {
 }
 
 async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0) {
+  // Sanitize possible whitespace/newlines from keys
+  const cleanKey = typeof apiKey === 'string' ? apiKey.trim().replace(/\s+/g, '') : apiKey;
+  const cleanSecret = typeof apiSecret === 'string' ? apiSecret.trim().replace(/\s+/g, '') : apiSecret;
   const nonce = generateNonce();
   const postData = new URLSearchParams({ nonce, ...data }).toString();
   
@@ -87,7 +90,7 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
   const hmacKey = await crypto.subtle.importKey(
     'raw',
-    Uint8Array.from(atob(apiSecret), c => c.charCodeAt(0)),
+    Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)),
     { name: 'HMAC', hash: 'SHA-512' },
     false,
     ['sign']
@@ -109,7 +112,7 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
     const response = await fetch(`${KRAKEN_API_URL}${endpoint}`, {
       method: 'POST',
       headers: {
-        'API-Key': apiKey,
+        'API-Key': cleanKey,
         'API-Sign': apiSign,
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'NeonTrade-AI/1.0'
@@ -296,27 +299,28 @@ Deno.serve(async (req) => {
     const connection = connections[0];
     
     // Helper to select correct API key pair per action (split keys)
+    const normalize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
     const getCreds = (purpose) => {
       const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
       if (useTrade) {
         // Prefer dedicated trade key; fallback to legacy api_key for backward compatibility
         if (connection.trade_api_key && connection.trade_api_secret_encrypted) {
-          return { apiKeyToUse: connection.trade_api_key, apiSecretToUse: connection.trade_api_secret_encrypted };
+          return { apiKeyToUse: normalize(connection.trade_api_key), apiSecretToUse: normalize(connection.trade_api_secret_encrypted) };
         }
         if (connection.api_key && connection.api_secret_encrypted) {
           console.warn('[krakenApi] Using legacy api_key for trade WS token (fallback). Please update to dedicated trade key.');
-          return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
+          return { apiKeyToUse: normalize(connection.api_key), apiSecretToUse: normalize(connection.api_secret_encrypted) };
         }
         throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
       }
       // For reads prefer dedicated balance key; fallback to legacy api_key
       if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
-        return { apiKeyToUse: connection.balance_api_key, apiSecretToUse: connection.balance_api_secret_encrypted };
+        return { apiKeyToUse: normalize(connection.balance_api_key), apiSecretToUse: normalize(connection.balance_api_secret_encrypted) };
       }
       if (connection.api_key && connection.api_secret_encrypted) {
         console.warn('[krakenApi] Using legacy api_key for balance reads (fallback). Please update to split keys.');
-        return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
+        return { apiKeyToUse: normalize(connection.api_key), apiSecretToUse: normalize(connection.api_secret_encrypted) };
       }
       throw new Error('Missing balance API key/secret. Add a Read-only key with: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
     };
