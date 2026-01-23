@@ -835,14 +835,8 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
-    // Enforce presence of a dedicated TRADE key before any trading
     const connection = connections[0];
-    if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
-      return Response.json({
-        error: 'Trade API key missing: add a Trade key with Access WebSockets API and Create & Modify Orders.',
-        success: false
-      }, { status: 200 });
-    }
+    // Proceed without early trade key presence check; WebSocket token request will validate permissions
 
     // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
     let wsToken = body?.wsToken || body?.token;

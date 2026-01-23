@@ -104,6 +104,13 @@ export default function AutoTraderProspects() {
       
       console.log(`[Prospects] Executing BUY with bracket: ${prospect.symbol} qty=${qty} TP=$${takeProfitPrice} SL=$${stopLossPrice}`);
       
+      // Prefetch WS token from TRADE key to avoid extra calls/rate limits
+      let __wsToken = null;
+      try {
+        const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+        __wsToken = (__t?.data || __t)?.token || null;
+      } catch (_) {}
+      
       // Step 1: Execute market BUY order
       const buyResponse = await base44.functions.invoke('krakenTrade', {
         action: 'place_order',
@@ -111,7 +118,8 @@ export default function AutoTraderProspects() {
         side: 'buy',
         quantity: qty,
         orderType: 'market',
-        timeInForce: 'ioc'
+        timeInForce: 'ioc',
+        wsToken: __wsToken
       });
 
       const buyData = buyResponse?.data || buyResponse;
@@ -133,7 +141,8 @@ export default function AutoTraderProspects() {
           symbol: prospect.symbol,
           quantity: qty,
           takeProfitPrice: takeProfitPrice,
-          stopLossPrice: stopLossPrice
+          stopLossPrice: stopLossPrice,
+          wsToken: __wsToken
         });
         
         const bracketData = bracketResponse?.data || bracketResponse;

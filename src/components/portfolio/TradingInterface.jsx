@@ -247,12 +247,20 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           }
         }
 
+        // Prefetch a trade WS token to ensure Trade key usage and reduce rate limits
+        let __wsToken = null;
+        try {
+          const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+          __wsToken = (__t?.data || __t)?.token || null;
+        } catch (_) {}
+        
         const krakenResponse = await base44.functions.invoke('krakenTrade', {
           action: 'place_order',
           symbol: tradeData.symbol,
           side: tradeData.type, // 'buy' or 'sell'
           quantity: tradeData.quantity,
-          orderType: 'market'
+          orderType: 'market',
+          wsToken: __wsToken
         });
 
         const krakenData = krakenResponse?.data || krakenResponse;
@@ -351,7 +359,8 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
                 quantity: tradeData.quantity,
                 orderType: 'stop-loss',
                 stopPrice: stopLossPrice,
-                timeInForce: 'gtc'
+                timeInForce: 'gtc',
+                wsToken: __wsToken
               });
 
               const slData = stopLossResponse?.data || stopLossResponse;
@@ -533,9 +542,17 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
     try {
       console.log('[TradingInterface] Executing advanced order:', orderConfig);
 
+      // Prefetch a Trade WS token
+      let __wsToken = null;
+      try {
+        const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+        __wsToken = (__t?.data || __t)?.token || null;
+      } catch (_) {}
+
       const response = await base44.functions.invoke('krakenTrade', {
         action: 'place_order',
-        ...orderConfig
+        ...orderConfig,
+        wsToken: __wsToken
       });
 
       const data = response?.data || response;
