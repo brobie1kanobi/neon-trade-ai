@@ -300,21 +300,20 @@ Deno.serve(async (req) => {
     
     // Helper to select correct API key pair per action (split keys)
     const getCreds = (purpose) => {
-      // Treat all trading-related ops as TRADE (ws token, open orders, placing orders, trades history)
-      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken', 'getOpenOrders', 'place_order', 'getTradesHistory']);
+      // Only WS token for trading uses TRADE key; all reads (balances, open/closed orders, trades history) use BALANCE key
+      const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
       if (useTrade) {
         if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
-          throw new Error('Missing trade API key/secret. Please add a Trade key with permissions: "Create and modify orders", "Access WebSockets API".');
+          throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
         }
         return { apiKeyToUse: connection.trade_api_key, apiSecretToUse: connection.trade_api_secret_encrypted };
       }
-      // Read-only/balance operations
+      // Read-only/balance operations must use the balance key; no legacy fallback
       if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
         return { apiKeyToUse: connection.balance_api_key, apiSecretToUse: connection.balance_api_secret_encrypted };
       }
-      // Fallback to legacy single key
-      return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
+      throw new Error('Missing balance API key/secret. Add a Read-only key with: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
     };
     
     if (action === 'getBalance') {
@@ -523,7 +522,7 @@ Deno.serve(async (req) => {
       // CRITICAL: Include trades=true to get detailed info
       try {
         const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
-        await getLimiter(user.email, 'trade').remove(endpointCost('/0/private/OpenOrders'));
+        await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/OpenOrders'));
         const result = await callKraken(
           apiKeyToUse,
           apiSecretToUse,
