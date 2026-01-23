@@ -218,10 +218,11 @@ Deno.serve(async (req) => {
 
     if (action === 'connect') {
       // Accept separate read-only (balance) and trade keys
-      const apiKey = payload?.apiKey || payload?.api_key || payload?.balanceApiKey || payload?.balance_api_key;
-      const apiSecret = payload?.apiSecret || payload?.api_secret || payload?.balanceApiSecret || payload?.balance_api_secret;
-      const tradeKey = payload?.tradeApiKey || payload?.trade_api_key;
-      const tradeSecret = payload?.tradeApiSecret || payload?.trade_api_secret;
+      const sanitize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
+      const apiKey = sanitize(payload?.apiKey || payload?.api_key || payload?.balanceApiKey || payload?.balance_api_key);
+      const apiSecret = sanitize(payload?.apiSecret || payload?.api_secret || payload?.balanceApiSecret || payload?.balance_api_secret);
+      const tradeKey = sanitize(payload?.tradeApiKey || payload?.trade_api_key);
+      const tradeSecret = sanitize(payload?.tradeApiSecret || payload?.trade_api_secret);
 
       if (!apiKey || !apiSecret) {
         return Response.json({ 
@@ -296,18 +297,26 @@ Deno.serve(async (req) => {
     
     // Helper to select correct API key pair per action (split keys)
     const getCreds = (purpose) => {
-      // Only WS token for trading uses TRADE key; all reads (balances, open/closed orders, trades history) use BALANCE key
       const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
       if (useTrade) {
-        if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
-          throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
+        // Prefer dedicated trade key; fallback to legacy api_key for backward compatibility
+        if (connection.trade_api_key && connection.trade_api_secret_encrypted) {
+          return { apiKeyToUse: connection.trade_api_key, apiSecretToUse: connection.trade_api_secret_encrypted };
         }
-        return { apiKeyToUse: connection.trade_api_key, apiSecretToUse: connection.trade_api_secret_encrypted };
+        if (connection.api_key && connection.api_secret_encrypted) {
+          console.warn('[krakenApi] Using legacy api_key for trade WS token (fallback). Please update to dedicated trade key.');
+          return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
+        }
+        throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
       }
-      // Read-only/balance operations must use the balance key; no legacy fallback
+      // For reads prefer dedicated balance key; fallback to legacy api_key
       if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
         return { apiKeyToUse: connection.balance_api_key, apiSecretToUse: connection.balance_api_secret_encrypted };
+      }
+      if (connection.api_key && connection.api_secret_encrypted) {
+        console.warn('[krakenApi] Using legacy api_key for balance reads (fallback). Please update to split keys.');
+        return { apiKeyToUse: connection.api_key, apiSecretToUse: connection.api_secret_encrypted };
       }
       throw new Error('Missing balance API key/secret. Add a Read-only key with: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
     };
@@ -473,6 +482,21 @@ Deno.serve(async (req) => {
               success: false,
               connected: false,
               error: 'Permission denied: API key lacks required permissions. Enable Access WebSockets API.' + (keyType === 'trade' ? ' Also enable Create & Modify Orders and Query open/closed orders.' : '')
+            }, { status: 200 });
+          }
+          if (/unknown|invalid key/i.test(msg)) {
+            try {
+              await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
+                ws_token: null,
+                ws_token_expires_at: null,
+                ws_token_fingerprint: null
+              });
+            } catch (_) {}
+            return Response.json({
+              success: false,
+              connected: false,
+              error: 'Unknown/invalid API key: please re-enter and save your Trade key in Settings.',
+              code: 'unknown_key'
             }, { status: 200 });
           }
           throw new Error(msg);
