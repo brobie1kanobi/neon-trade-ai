@@ -461,7 +461,9 @@ Deno.serve(async (req) => {
             wsUrl: 'wss://ws-auth.kraken.com/v2',
             publicWsUrl: 'wss://ws.kraken.com/v2',
             token: connection.ws_token,
-            expires_in: Math.floor((expiresAt - now) / 1000)
+            expires_in: Math.floor((expiresAt - now) / 1000),
+            used_key_type: keyType,
+            fingerprint
           }, { status: 200 });
         }
 
@@ -506,7 +508,9 @@ Deno.serve(async (req) => {
           wsUrl: 'wss://ws-auth.kraken.com/v2',
           publicWsUrl: 'wss://ws.kraken.com/v2',
           token: token,
-          expires_in: expires
+          expires_in: expires,
+          used_key_type: keyType,
+          fingerprint
         }, { status: 200 });
       } catch (e) {
         return Response.json({

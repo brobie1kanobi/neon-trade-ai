@@ -127,10 +127,10 @@ Deno.serve(async (req) => {
     // Fetch open orders via REST using BALANCE key
     const ordersResp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getOpenOrders' });
     const ordersData = ordersResp?.data || ordersResp;
-    if (ordersData?.success === false) {
-      throw new Error(ordersData?.error || 'Failed to fetch open orders');
+    if (!ordersData || ordersData.success === false) {
+      throw new Error((ordersData && ordersData.error) || 'Failed to fetch open orders');
     }
-    const activeKrakenOrderIds = (ordersData?.orders || []).map(o => o.order_id).filter(Boolean);
+    const activeKrakenOrderIds = Array.isArray(ordersData.orders) ? ordersData.orders.map(o => o.order_id).filter(Boolean) : [];
     
     console.log('[syncKrakenOrders] Active Kraken orders:', activeKrakenOrderIds.length);
 

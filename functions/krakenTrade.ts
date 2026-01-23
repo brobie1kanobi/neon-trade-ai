@@ -835,6 +835,15 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
+    // Enforce presence of a dedicated TRADE key before any trading
+    const connection = connections[0];
+    if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
+      return Response.json({
+        error: 'Trade API key missing: add a Trade key with Access WebSockets API and Create & Modify Orders.',
+        success: false
+      }, { status: 200 });
+    }
+
     // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
     let wsToken = body?.wsToken || body?.token;
     let tokenData;
@@ -848,10 +857,14 @@ Deno.serve(async (req) => {
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;
+      // Guard: token must come from TRADE key
+      if (tokenData?.used_key_type && tokenData.used_key_type !== 'trade') {
+        throw new Error('Invalid token source: expected TRADE key');
+      }
     }
 
     if (!wsToken) {
-      const detail = (tokenData && tokenData.error) ? tokenData.error : 'Failed to get WebSocket token';
+      const detail = (tokenData && (tokenData.error || tokenData.used_key_type)) ? (`Failed to get WebSocket token (${tokenData.used_key_type || 'unknown'} key)`) : 'Failed to get WebSocket token';
       throw new Error(detail);
     }
 
