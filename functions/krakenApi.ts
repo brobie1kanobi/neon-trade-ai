@@ -411,7 +411,7 @@ Deno.serve(async (req) => {
       }
 
       if (action === 'getTradesHistory') {
-      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory'); // uses TRADE key
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory'); // uses BALANCE key
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
       if (result.error?.length > 0) {
@@ -519,10 +519,10 @@ Deno.serve(async (req) => {
 
     // ACTION: Get open orders
     if (action === 'getOpenOrders') {
-      // CRITICAL: Include trades=true to get detailed info
+      // CRITICAL: Include trades=true to get detailed info (reads via BALANCE key)
       try {
         const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
-        await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/OpenOrders'));
+        await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/OpenOrders')); // balance bucket
         const result = await callKraken(
           apiKeyToUse,
           apiSecretToUse,
