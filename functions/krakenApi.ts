@@ -448,7 +448,7 @@ Deno.serve(async (req) => {
 
         // Select credentials up-front so we can fingerprint the key actually used
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketToken');
-        const fingerprint = `${keyType}:${String(apiKeyToUse || '').slice(0,6)}...${String(apiKeyToUse || '').slice(-4)}`;
+        const fingerprint = `${keyType}:${String(apiKeyToUse || '').trim().slice(0,6)}...${String(apiKeyToUse || '').trim().slice(-4)}`;
 
         // Reuse cached token ONLY if:
         // - it's for TRADE key

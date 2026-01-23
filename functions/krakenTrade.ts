@@ -847,7 +847,7 @@ Deno.serve(async (req) => {
       // Rate-limit token and order placement calls per user to avoid EAPI:Rate limit exceeded
       await tradeRateGate(user.email, 2);
       const tokenResponse = await Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } }),
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
