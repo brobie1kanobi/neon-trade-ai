@@ -304,17 +304,13 @@ Deno.serve(async (req) => {
       const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
       if (useTrade) {
-        // Prefer dedicated trade key; fallback to legacy api_key for backward compatibility
-        if (connection.trade_api_key && connection.trade_api_secret_encrypted) {
-          return { apiKeyToUse: normalize(connection.trade_api_key), apiSecretToUse: normalize(connection.trade_api_secret_encrypted) };
+        // STRICT: Trading actions must use the dedicated Trade key only (no legacy fallback)
+        if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
+          throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
         }
-        if (connection.api_key && connection.api_secret_encrypted) {
-          console.warn('[krakenApi] Using legacy api_key for trade WS token (fallback). Please update to dedicated trade key.');
-          return { apiKeyToUse: normalize(connection.api_key), apiSecretToUse: normalize(connection.api_secret_encrypted) };
-        }
-        throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
+        return { apiKeyToUse: normalize(connection.trade_api_key), apiSecretToUse: normalize(connection.trade_api_secret_encrypted) };
       }
-      // For reads prefer dedicated balance key; fallback to legacy api_key
+      // For reads prefer dedicated balance key; fallback to legacy api_key as last resort
       if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
         return { apiKeyToUse: normalize(connection.balance_api_key), apiSecretToUse: normalize(connection.balance_api_secret_encrypted) };
       }
