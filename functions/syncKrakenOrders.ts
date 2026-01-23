@@ -124,22 +124,13 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
-    // Get WebSocket token
-    const tokenResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
-      action: 'getWebSocketUrl',
-      payload: { keyType: 'balance' }
-    });
-
-    const tokenData = tokenResponse?.data || tokenResponse;
-    const wsToken = tokenData?.token;
-
-    if (!wsToken) {
-      throw new Error('Failed to get WebSocket token');
+    // Fetch open orders via REST using BALANCE key
+    const ordersResp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getOpenOrders' });
+    const ordersData = ordersResp?.data || ordersResp;
+    if (ordersData?.success === false) {
+      throw new Error(ordersData?.error || 'Failed to fetch open orders');
     }
-
-    // Fetch open orders from Kraken
-    const krakenOrders = await getKrakenOpenOrders(wsToken);
-    const activeKrakenOrderIds = krakenOrders.order_ids || [];
+    const activeKrakenOrderIds = (ordersData?.orders || []).map(o => o.order_id).filter(Boolean);
     
     console.log('[syncKrakenOrders] Active Kraken orders:', activeKrakenOrderIds.length);
 
