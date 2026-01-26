@@ -12,7 +12,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
-const API_TIMEOUT = 8000; // 8s timeout as Kraken can be slow
+const API_TIMEOUT = 15000; // 15s timeout as Kraken can be slow
 const MAX_NONCE_RETRIES = 5; // Slightly higher to smooth occasional spikes
 
 // Per-key token bucket rate limiter (separate buckets for balance vs trade keys)
