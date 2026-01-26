@@ -50,14 +50,14 @@ export function KrakenWebSocketProvider({ children }) {
 
   // Update state when WebSocket data changes
   useEffect(() => {
-    if (!shouldConnect || !wsManager) return;
+    if (!shouldConnect) return;
 
     const updateState = async () => {
       try {
         const isConnected = !!wsManager.isConnected;
-        const prices = await wsManager.getAllPrices?.() || {};
-        const balances = await wsManager.getAllBalances?.() || {};
-        const orders = await wsManager.getAllOrders?.() || {};
+        const prices = wsManager.getAllPrices?.() || {};
+        const balances = wsManager.getAllBalances?.() || {};
+        const orders = wsManager.getAllOrders?.() || {};
         const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
         // Calculate portfolio metrics
@@ -113,7 +113,7 @@ export function KrakenWebSocketProvider({ children }) {
     const interval = setInterval(updateState, 2000);
 
     return () => clearInterval(interval);
-  }, [shouldConnect, wsManager]);
+  }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
 
   // Provide refresh function - CRITICAL: Force immediate state update after refresh
   const refresh = async () => {
