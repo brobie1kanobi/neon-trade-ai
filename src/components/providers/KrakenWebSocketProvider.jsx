@@ -189,7 +189,7 @@ export function KrakenWebSocketProvider({ children }) {
       window.removeEventListener('trade:completed', handleTradeCompleted);
       window.removeEventListener('kraken:synced', handleTradeCompleted);
     };
-  }, [wsManager]);
+  }, []); // Empty deps - refresh is stable
 
   const value = {
     ...state,
