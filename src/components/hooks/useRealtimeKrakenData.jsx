@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useKrakenWebSocketManager } from './useKrakenWebSocketManager';
 
 /**
@@ -49,6 +49,7 @@ export function useRealtimeKrakenData(options = {}) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const lastCalcRef = useRef(0); // throttle realtime updates
 
   // Process WebSocket data - NO THROTTLING for immediate updates
   useEffect(() => {
@@ -60,6 +61,13 @@ export function useRealtimeKrakenData(options = {}) {
     if (!isConnected) {
       return;
     }
+
+    // Throttle: at most once per second to prevent render storms
+    const nowTs = Date.now();
+    if (nowTs - lastCalcRef.current < 1000) {
+      return;
+    }
+    lastCalcRef.current = nowTs;
 
     // CRITICAL: Always process and update, even if balances appear empty
     // This ensures we show "0 assets" correctly when there genuinely are no balances
@@ -78,14 +86,6 @@ export function useRealtimeKrakenData(options = {}) {
         return totalBalance > 0.00001;
       }).length;
       
-      console.log('[useRealtimeKrakenData] Total assets calculation:', {
-        totalAssets,
-        allAssets: Object.keys(wsBalances),
-        cryptoAssets: Object.keys(wsBalances).filter(k => k !== 'USD' && k !== 'ZUSD'),
-        balancesWithValue: Object.entries(wsBalances)
-          .filter(([k, v]) => k !== 'USD' && k !== 'ZUSD' && ((v?.balance || v?.available || 0) > 0.00001))
-          .map(([k, v]) => ({ asset: k, balance: v?.balance, available: v?.available }))
-      });
 
       // CRITICAL: cryptoHoldingsValue is ONLY crypto assets (NOT including USD)
       // CRITICAL: Use balance.balance which is the TOTAL (including locked in orders)
