@@ -848,7 +848,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, 2);
       const tokenResponse = await Promise.race([
         base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;

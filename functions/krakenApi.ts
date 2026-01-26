@@ -12,7 +12,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
-const API_TIMEOUT = 15000; // 15s timeout as Kraken can be slow
+const API_TIMEOUT = 8000; // 8s timeout as Kraken can be slow
 const MAX_NONCE_RETRIES = 5; // Slightly higher to smooth occasional spikes
 
 // Per-key token bucket rate limiter (separate buckets for balance vs trade keys)
@@ -263,19 +263,13 @@ Deno.serve(async (req) => {
 
       // Normalize and store dedicated keys explicitly to avoid ambiguity
       const connectionData = {
-        // Explicitly set balance keys (null to clear stale values)
-        balance_api_key: apiKey || null,
-        balance_api_secret_encrypted: apiSecret || null,
-        // Explicitly set trade keys (null to clear stale values)
-        trade_api_key: tradeKey || null,
-        trade_api_secret_encrypted: tradeSecret || null,
-        // Clear legacy fields to avoid ambiguity
-        api_key: null,
-        api_secret_encrypted: null,
-        // Clear any cached WebSocket token because keys may have changed
-        ws_token: null,
-        ws_token_expires_at: null,
-        ws_token_fingerprint: null,
+        // Always persist a balance (read-only) key using provided balance key or generic apiKey
+        ...(apiKey ? { balance_api_key: apiKey } : {}),
+        ...(apiSecret ? { balance_api_secret_encrypted: apiSecret } : {}),
+        // Persist trade key if provided
+        ...(tradeKey ? { trade_api_key: tradeKey } : {}),
+        ...(tradeSecret ? { trade_api_secret_encrypted: tradeSecret } : {}),
+        // Leave legacy api_key fields untouched to avoid null writes; getCreds prefers dedicated fields
         account_verified: true,
         last_verified: new Date().toISOString(),
         created_by: user.email
@@ -287,9 +281,7 @@ Deno.serve(async (req) => {
         await base44.asServiceRole.entities.KrakenConnection.create(connectionData);
       }
 
-      console.log('[krakenApi] ✅ Keys saved. Balance API key test OK. Trade API key:', tradeVerified ? 'verified' : 'not provided');
-      console.log('[krakenApi]   - Balance key should have: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
-      console.log('[krakenApi]   - Trade key should have: Access WebSockets API, Create & Modify Orders, Cancel/Close Orders, Query Open/Closed Orders.');
+      console.log('[krakenApi] ✅ Keys saved. Balance OK. Trade key:', tradeVerified ? 'verified' : 'not provided');
       
       return Response.json({ success: true, trade_key_verified: tradeVerified }, { status: 200 });
     }
