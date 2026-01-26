@@ -88,7 +88,8 @@ export default function AutoTraderProspects() {
 
   useEffect(() => {
     fetchProspects();
-    const interval = setInterval(() => fetchProspects(false), 30000);
+    // Increase interval to 60 seconds to avoid rate limiting
+    const interval = setInterval(() => fetchProspects(false), 60000);
     return () => clearInterval(interval);
   }, []);
 
