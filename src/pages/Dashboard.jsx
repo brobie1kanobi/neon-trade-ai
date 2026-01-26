@@ -1135,8 +1135,8 @@ export default function Dashboard() {
     // Fetch immediately
     fetchKrakenBalance();
     
-    // Refresh every 15 seconds for more accurate data
-    const interval = setInterval(fetchKrakenBalance, 15000);
+    // Refresh every 60 seconds to avoid rate limiting (429 errors)
+    const interval = setInterval(fetchKrakenBalance, 60000);
     return () => clearInterval(interval);
   }, [isSimMode]);
 
