@@ -117,7 +117,6 @@ export function KrakenWebSocketProvider({ children }) {
 
   // Provide refresh function - CRITICAL: Force immediate state update after refresh
   const refresh = async () => {
-    if (!wsManager) return;
     console.log('[KrakenWebSocketProvider] Manual refresh requested');
     try {
       await wsManager.refreshBalances?.();
@@ -125,9 +124,9 @@ export function KrakenWebSocketProvider({ children }) {
       
       // CRITICAL: Force immediate state update after refresh
       const isConnected = !!wsManager.isConnected;
-      const prices = await wsManager.getAllPrices?.() || {};
-      const balances = await wsManager.getAllBalances?.() || {};
-      const orders = await wsManager.getAllOrders?.() || {};
+      const prices = wsManager.getAllPrices?.() || {};
+      const balances = wsManager.getAllBalances?.() || {};
+      const orders = wsManager.getAllOrders?.() || {};
       const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
       // Recalculate portfolio metrics
