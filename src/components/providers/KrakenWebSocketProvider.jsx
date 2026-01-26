@@ -54,7 +54,7 @@ export function KrakenWebSocketProvider({ children }) {
 
     const updateState = async () => {
       try {
-        const isConnected = wsManager.isConnected?.() || false;
+        const isConnected = !!wsManager.isConnected;
         const prices = await wsManager.getAllPrices?.() || {};
         const balances = await wsManager.getAllBalances?.() || {};
         const orders = await wsManager.getAllOrders?.() || {};
