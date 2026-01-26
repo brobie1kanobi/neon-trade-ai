@@ -62,7 +62,7 @@ export default function RecentTrades({ trades, onTradeSelect }) {
   const timezone = (!settingsLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
   const isSimMode = settings?.sim_trading_mode !== false;
   
-  console.log('[RecentTrades] Settings loaded:', !settingsLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
+
   
   const [krakenTrades, setKrakenTrades] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
