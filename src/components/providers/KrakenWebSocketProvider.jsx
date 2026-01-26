@@ -124,7 +124,7 @@ export function KrakenWebSocketProvider({ children }) {
       await wsManager.refreshOrders?.();
       
       // CRITICAL: Force immediate state update after refresh
-      const isConnected = wsManager.isConnected?.() || false;
+      const isConnected = !!wsManager.isConnected;
       const prices = await wsManager.getAllPrices?.() || {};
       const balances = await wsManager.getAllBalances?.() || {};
       const orders = await wsManager.getAllOrders?.() || {};
