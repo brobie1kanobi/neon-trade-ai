@@ -263,13 +263,15 @@ Deno.serve(async (req) => {
 
       // Normalize and store dedicated keys explicitly to avoid ambiguity
       const connectionData = {
-        // Always persist a balance (read-only) key using provided balance key or generic apiKey
-        ...(apiKey ? { balance_api_key: apiKey } : {}),
-        ...(apiSecret ? { balance_api_secret_encrypted: apiSecret } : {}),
-        // Persist trade key if provided
-        ...(tradeKey ? { trade_api_key: tradeKey } : {}),
-        ...(tradeSecret ? { trade_api_secret_encrypted: tradeSecret } : {}),
-        // Leave legacy api_key fields untouched to avoid null writes; getCreds prefers dedicated fields
+        // Explicitly set balance keys; null clears any previous values to avoid ambiguity
+        balance_api_key: apiKey || null,
+        balance_api_secret_encrypted: apiSecret || null,
+        // Explicitly set trade keys; null clears previous values so we never use stale keys
+        trade_api_key: tradeKey || null,
+        trade_api_secret_encrypted: tradeSecret || null,
+        // Clear legacy fields to prevent accidental fallback
+        api_key: null,
+        api_secret_encrypted: null,
         account_verified: true,
         last_verified: new Date().toISOString(),
         created_by: user.email
