@@ -281,8 +281,10 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      if (total_value > availableCash) {
-        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${total_value.toFixed(2)} > $${availableCash.toFixed(2)})`);
+      // CRITICAL: Add buffer for slippage/fees (2% or $1 minimum)
+      const requiredCash = total_value + Math.max(1.0, total_value * 0.02);
+      if (requiredCash > availableCash) {
+        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${requiredCash.toFixed(2)} needed > $${availableCash.toFixed(2)} available)`);
         continue;
       }
 
