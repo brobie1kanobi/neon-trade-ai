@@ -132,7 +132,7 @@ export function useBracketOrderSync(isSimMode, userEmail) {
       // Record the trade in local DB
       try {
         await base44.entities.Trade.create({
-          symbol: matchingOrder.symbol,
+          symbol: displaySymbol,
           type: 'sell',
           asset_type: matchingOrder.asset_type || 'crypto',
           quantity: fillQty,
