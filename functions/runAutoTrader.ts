@@ -66,6 +66,7 @@ function roundPriceForKraken(price, symbol) {
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // Invoke krakenTrade with robust retries and token refresh on permission errors
+// CRITICAL: Does NOT retry on insufficient funds or other order-specific errors
 async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = null) {
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -74,6 +75,21 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
       const data = res?.data || res;
       if (data?.success === false) {
         const msg = String(data?.error || '');
+        
+        // CRITICAL: Don't retry on insufficient funds - this won't resolve
+        if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) {
+          console.error('[runAutoTrader] Insufficient funds - aborting order');
+          return data; // Return the error response, don't retry
+        }
+        if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) {
+          console.error('[runAutoTrader] Insufficient margin - aborting order');
+          return data;
+        }
+        // Don't retry other order-specific errors
+        if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { return data; }
+        if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { return data; }
+        if (/unknown order/i.test(msg) || /EOrder:Unknown order/i.test(msg)) { return data; }
+        
         if (/permission denied/i.test(msg)) {
           await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
           wsToken = null; // force refetch on next loop
@@ -84,6 +100,13 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
     } catch (e) {
       lastErr = e;
       const msg = String(e?.message || e || '');
+      
+      // CRITICAL: Don't retry on insufficient funds or order errors - throw immediately
+      if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) { throw e; }
+      if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) { throw e; }
+      if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
+      if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
+      
       if (/permission denied/i.test(msg)) {
         await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
         wsToken = null; // force refetch on next loop
