@@ -675,8 +675,21 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) 
     } catch (e) {
       lastErr = e;
       const msg = String(e?.message || e || '');
-      // Don't retry permission issues
+      // CRITICAL: Don't retry permission issues or insufficient funds - these won't resolve with retries
       if (/permission denied/i.test(msg)) { throw e; }
+      if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) {
+        console.error('[krakenTrade] Insufficient funds - not retrying');
+        throw e;
+      }
+      if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) {
+        console.error('[krakenTrade] Insufficient margin - not retrying');
+        throw e;
+      }
+      // Don't retry order-specific errors that won't resolve
+      if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
+      if (/unknown order/i.test(msg) || /EOrder:Unknown order/i.test(msg)) { throw e; }
+      if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
+      
       const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error/i.test(msg);
       if (!shouldRetry) { throw e; }
       const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 400);
