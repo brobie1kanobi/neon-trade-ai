@@ -155,10 +155,21 @@ export function useBracketOrderSync(isSimMode, userEmail) {
       }));
       
       // Show prominent notification
+      // CRITICAL: Use matchingOrder.symbol as fallback since event symbol may be undefined
+      const displaySymbol = symbol || matchingOrder.symbol || 'Unknown';
       const emoji = pnl >= 0 ? '💰' : '🛡️';
       notify.success(`${emoji} ${orderType === 'take-profit' ? 'Profit Taken!' : 'Stop-Loss Triggered'}`, {
-        description: `${symbol}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`,
-        duration: 6000
+        description: `${displaySymbol}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`,
+        duration: 6000,
+        data: {
+          symbol: displaySymbol,
+          orderType,
+          pnl: pnl.toFixed(2),
+          pnlPct: pnlPct.toFixed(2),
+          fillPrice: fillPrice.toFixed(2),
+          quantity: fillQty.toFixed(4),
+          purchasePrice: purchasePrice.toFixed(2)
+        }
       });
       
       // Send push notification if app is in background
