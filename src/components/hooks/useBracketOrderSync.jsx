@@ -177,9 +177,9 @@ export function useBracketOrderSync(isSimMode, userEmail) {
         base44.functions.invoke('pushNotifications', {
           action: 'sendNotification',
           payload: {
-            title: `${emoji} ${orderType === 'take-profit' ? 'Profit Taken!' : 'Stop-Loss Triggered'} • ${symbol}`,
+            title: `${emoji} ${orderType === 'take-profit' ? 'Profit Taken!' : 'Stop-Loss Triggered'} • ${displaySymbol}`,
             body: `Sold at $${fillPrice.toFixed(2)} | PnL: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct.toFixed(1)}%)`,
-            data: { type: 'bracket_executed', symbol, orderType, pnl }
+            data: { type: 'bracket_executed', symbol: displaySymbol, orderType, pnl }
           }
         }).catch(() => {});
       }
