@@ -153,7 +153,7 @@ export function useBracketOrderSync(isSimMode, userEmail) {
         detail: { 
           type: 'bracket-order-filled', 
           source: 'bracket-sync',
-          data: { order_id, symbol, side, quantity, price, pnl, orderType }
+          data: { order_id, symbol: displaySymbol, side, quantity, price, pnl, orderType }
         }
       }));
       
