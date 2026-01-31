@@ -98,12 +98,33 @@ export default function AutoTraderProspects() {
     try {
       const qty = parseFloat(prospect.quantity.toFixed(8));
       const price = prospect.current_price;
+      const estimatedCost = qty * price;
       const tpPercent = Math.abs((prospect.user_gain_margin ?? userMargins.gain_margin ?? 10));
       const slPercent = Math.abs((prospect.user_loss_margin ?? userMargins.loss_margin ?? 5));
       const takeProfitPrice = parseFloat((price * (1 + tpPercent / 100)).toFixed(2));
       const stopLossPrice = parseFloat((price * (1 - slPercent / 100)).toFixed(2));
       
       console.log(`[Prospects] Executing BUY with bracket: ${prospect.symbol} qty=${qty} TP=$${takeProfitPrice} SL=$${stopLossPrice}`);
+      
+      // CRITICAL: Preflight balance check to prevent "Insufficient funds" errors
+      try {
+        const balRes = await base44.functions.invoke('getKrakenBalance', {});
+        const bal = balRes?.data || balRes;
+        const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
+        const buffer = Math.max(1.0, estimatedCost * 0.02); // 2% or $1 buffer for slippage
+        
+        console.log(`[Prospects] Balance check: Available $${usdAvail.toFixed(2)}, Need $${(estimatedCost + buffer).toFixed(2)}`);
+        
+        if (usdAvail < estimatedCost + buffer) {
+          toast.error("Insufficient USD on Kraken", {
+            description: `Available: $${usdAvail.toFixed(2)} • Need: $${(estimatedCost + buffer).toFixed(2)} (incl. buffer)`
+          });
+          setExecuting(false);
+          return;
+        }
+      } catch (balErr) {
+        console.warn('[Prospects] Balance preflight failed, proceeding cautiously:', balErr?.message);
+      }
       
       // Prefetch WS token from TRADE key to avoid extra calls/rate limits
       let __wsToken = null;
