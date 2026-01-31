@@ -355,6 +355,14 @@ async function getStockData(stockSymbols) {
 async function getChartData(symbol, assetType, days) {
   try {
     if (assetType === 'crypto') {
+      // PRIMARY: Try Kraken OHLC public API first (no rate limits like CoinGecko)
+      const krakenChartData = await getKrakenChartData(symbol, days);
+      if (krakenChartData && krakenChartData.length > 0) {
+        console.log(`[getChartData] Got ${krakenChartData.length} points from Kraken for ${symbol}`);
+        return krakenChartData;
+      }
+      
+      // FALLBACK: CoinGecko if Kraken doesn't have the pair
       const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
       const coinGeckoIds = {
         'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
@@ -371,16 +379,11 @@ async function getChartData(symbol, assetType, days) {
         return [];
       }
       
-      // CoinGecko auto-granularity:
-      // 1 day = 5-minute intervals (~288 points)
-      // 2-90 days = hourly intervals
-      // 90+ days = daily intervals
-      // Adding precision=full for maximum data points
       const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}&precision=full${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
       
-      console.log(`[getChartData] Fetching ${days} days of data for ${symbol} (${coinId})`);
+      console.log(`[getChartData] Falling back to CoinGecko for ${symbol} (${coinId})`);
       
-      const response = await fetchWithTimeout(url, 8000); // Longer timeout for chart data
+      const response = await fetchWithTimeout(url, 8000);
       
       if (!response || !response.ok) {
         console.warn(`[getChartData] CoinGecko response not OK for ${symbol}`);
@@ -394,9 +397,8 @@ async function getChartData(symbol, assetType, days) {
         return [];
       }
       
-      console.log(`[getChartData] Got ${data.prices.length} data points for ${symbol}`);
+      console.log(`[getChartData] Got ${data.prices.length} data points from CoinGecko for ${symbol}`);
       
-      // Return all data points - CoinGecko already provides appropriate granularity
       return data.prices.map(([time, price]) => ({ time, price }));
     }
     else if (assetType === 'stocks') {
