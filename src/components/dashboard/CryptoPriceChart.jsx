@@ -290,9 +290,20 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         const historyResponse = await Promise.race([historyPromise, timeoutPromise]);
 
         const historyChartData = Array.isArray(historyResponse?.data) ? historyResponse.data : [];
+        
+        console.log(`[CryptoPriceChart] Received ${historyChartData.length} data points for ${effectiveSymbol} (${timeframe})`);
 
         if (historyChartData.length > 0) {
-          const processedData = historyChartData.map((point) => ({
+          // Downsample for display if we have too many points (keep ~100-200 for smooth chart)
+          let dataToProcess = historyChartData;
+          const maxPoints = 200;
+          if (historyChartData.length > maxPoints) {
+            const step = Math.ceil(historyChartData.length / maxPoints);
+            dataToProcess = historyChartData.filter((_, idx) => idx % step === 0 || idx === historyChartData.length - 1);
+            console.log(`[CryptoPriceChart] Downsampled from ${historyChartData.length} to ${dataToProcess.length} points`);
+          }
+          
+          const processedData = dataToProcess.map((point) => ({
             timestamp: new Date(point.time).toISOString(),
             price: point.price,
             formattedTime: formatXAxisLabel(new Date(point.time).toISOString())
