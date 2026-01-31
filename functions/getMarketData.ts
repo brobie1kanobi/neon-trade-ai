@@ -333,24 +333,44 @@ async function getChartData(symbol, assetType, days) {
       const coinGeckoIds = {
         'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
         'BNB': 'binancecoin', 'XRP': 'ripple', 'USDC': 'usd-coin', 'ADA': 'cardano',
-        'XLM': 'stellar'
+        'XLM': 'stellar', 'DOGE': 'dogecoin', 'LINK': 'chainlink', 'MATIC': 'polygon',
+        'DOT': 'polkadot', 'SHIB': 'shiba-inu', 'AVAX': 'avalanche-2', 'UNI': 'uniswap',
+        'ATOM': 'cosmos', 'LTC': 'litecoin', 'BCH': 'bitcoin-cash', 'TRX': 'tron',
+        'TON': 'the-open-network', 'PEPE': 'pepe', 'HBAR': 'hedera-hashgraph'
       };
       
       const coinId = coinGeckoIds[symbol.toUpperCase()];
-      if (!coinId) return [];
+      if (!coinId) {
+        console.log(`[getChartData] No CoinGecko ID mapping for symbol: ${symbol}`);
+        return [];
+      }
       
-      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+      // CoinGecko auto-granularity:
+      // 1 day = 5-minute intervals (~288 points)
+      // 2-90 days = hourly intervals
+      // 90+ days = daily intervals
+      // Adding precision=full for maximum data points
+      const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=${days}&precision=full${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
       
-      const response = await fetchWithTimeout(url);
+      console.log(`[getChartData] Fetching ${days} days of data for ${symbol} (${coinId})`);
+      
+      const response = await fetchWithTimeout(url, 8000); // Longer timeout for chart data
       
       if (!response || !response.ok) {
+        console.warn(`[getChartData] CoinGecko response not OK for ${symbol}`);
         return [];
       }
       
       const data = await response.json();
       
-      if (!data || !data.prices) return [];
+      if (!data || !data.prices || !Array.isArray(data.prices)) {
+        console.warn(`[getChartData] No prices array in response for ${symbol}`);
+        return [];
+      }
       
+      console.log(`[getChartData] Got ${data.prices.length} data points for ${symbol}`);
+      
+      // Return all data points - CoinGecko already provides appropriate granularity
       return data.prices.map(([time, price]) => ({ time, price }));
     }
     else if (assetType === 'stocks') {
