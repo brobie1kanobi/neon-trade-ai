@@ -7,7 +7,7 @@ import AccountSettings from "../components/settings/AccountSettings";
 import NotificationSettings from "../components/settings/NotificationSettings";
 import CurrencySettings from "../components/settings/CurrencySettings";
 import DonateSection from "../components/settings/DonateSection";
-import CreditsSection from "../components/settings/CreditsSection";
+
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
@@ -64,10 +64,7 @@ export default function Settings() {
         </motion.div>
       )}
 
-      {/* 3) AI Trading Credits */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        <CreditsSection creditsBalance={settings?.credits_balance || 0} />
-      </motion.div>
+
 
       {/* 4) AI Voice & Speech */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
