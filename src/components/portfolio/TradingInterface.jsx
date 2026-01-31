@@ -234,16 +234,41 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
             const bal = balRes?.data || balRes;
             const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
             const estCost = Number(tradeData.total_value || (tradeData.quantity * tradeData.price) || 0);
-            const buffer = Math.max(0.5, estCost * 0.01); // 1% or $0.50 buffer
+            const buffer = Math.max(0.5, estCost * 0.02); // 2% or $0.50 buffer for slippage
             if (usdAvail + 1e-6 < estCost + buffer) {
               notify.error('Insufficient USD on Kraken', {
-                description: `Available: $${usdAvail.toFixed(2)} • Needed: $${(estCost + buffer).toFixed(2)} (incl. 1% buffer)`
+                description: `Available: $${usdAvail.toFixed(2)} • Needed: $${(estCost + buffer).toFixed(2)} (incl. 2% buffer)`
               });
               setIsExecuting(false);
               return;
             }
           } catch (e) {
             console.warn('[TradingInterface] Balance preflight failed, proceeding:', e?.message || e);
+          }
+        }
+        
+        // Preflight holdings check (LIVE SELL) against Kraken asset balance
+        if (tradeData.type === 'sell') {
+          try {
+            const balRes = await base44.functions.invoke('getKrakenBalance', {});
+            const bal = balRes?.data || balRes;
+            const holdings = bal?.holdings || {};
+            
+            // Find matching asset (handle Kraken naming: BTC, XBT, etc.)
+            const symbol = tradeData.symbol.toUpperCase();
+            const assetBalance = holdings[symbol]?.quantity || holdings[`X${symbol}`]?.quantity || 0;
+            
+            console.log(`[TradingInterface] SELL preflight: ${symbol} owned=${assetBalance}, selling=${tradeData.quantity}`);
+            
+            if (assetBalance < tradeData.quantity - 1e-8) {
+              notify.error(`Insufficient ${symbol} on Kraken`, {
+                description: `Available: ${assetBalance.toFixed(6)} • Trying to sell: ${tradeData.quantity.toFixed(6)}`
+              });
+              setIsExecuting(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('[TradingInterface] Holdings preflight failed, proceeding:', e?.message || e);
           }
         }
 
