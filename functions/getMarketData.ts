@@ -163,6 +163,90 @@ async function handleRequest(req, startTime) {
 // HELPER FUNCTIONS
 // ============================================
 
+// Kraken OHLC chart data fetcher (public API, no auth needed)
+async function getKrakenChartData(symbol, days) {
+  try {
+    // Kraken pair mappings
+    const krakenPairMap = {
+      'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+      'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+      'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+      'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+      'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'TON': 'TONCOINUSD', 'HBAR': 'HBARUSD',
+      'USDT': 'USDTZUSD', 'USDC': 'USDCUSD', 'BNB': 'BNBUSD'
+    };
+    
+    const pair = krakenPairMap[symbol.toUpperCase()];
+    if (!pair) {
+      console.log(`[getKrakenChartData] No Kraken pair mapping for ${symbol}`);
+      return null;
+    }
+    
+    // Kraken OHLC intervals: 1, 5, 15, 30, 60, 240, 1440, 10080, 21600 (minutes)
+    // For different timeframes:
+    // 24h (1 day): 5-minute intervals = 288 points
+    // 7d: 60-minute (1 hour) intervals = 168 points
+    // 1m (30 days): 240-minute (4 hour) intervals = 180 points
+    // 3m (90 days): 1440-minute (daily) intervals = 90 points
+    // 1y (365 days): 1440-minute (daily) intervals = 365 points
+    let interval;
+    if (days <= 1) {
+      interval = 5; // 5-min candles for 24h
+    } else if (days <= 7) {
+      interval = 60; // 1-hour candles for 7 days
+    } else if (days <= 30) {
+      interval = 240; // 4-hour candles for 1 month
+    } else {
+      interval = 1440; // Daily candles for 3m/1y
+    }
+    
+    // Calculate 'since' timestamp (Kraken uses Unix seconds)
+    const sinceMs = Date.now() - (days * 24 * 60 * 60 * 1000);
+    const since = Math.floor(sinceMs / 1000);
+    
+    const url = `https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=${interval}&since=${since}`;
+    console.log(`[getKrakenChartData] Fetching ${days} days for ${symbol} with interval=${interval}`);
+    
+    const response = await fetchWithTimeout(url, 6000);
+    if (!response || !response.ok) {
+      console.warn(`[getKrakenChartData] Kraken OHLC response not OK for ${symbol}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (data.error && data.error.length > 0) {
+      console.warn(`[getKrakenChartData] Kraken error for ${symbol}:`, data.error);
+      return null;
+    }
+    
+    if (!data.result) {
+      return null;
+    }
+    
+    // Kraken returns result with pair as key (may have variations like XXBTZUSD or XBTUSD)
+    const resultKey = Object.keys(data.result).find(k => k !== 'last');
+    if (!resultKey || !Array.isArray(data.result[resultKey])) {
+      return null;
+    }
+    
+    const ohlcData = data.result[resultKey];
+    
+    // OHLC format: [time, open, high, low, close, vwap, volume, count]
+    // We'll use the close price for the chart
+    const chartData = ohlcData.map(candle => ({
+      time: candle[0] * 1000, // Convert to milliseconds
+      price: parseFloat(candle[4]) // Close price
+    }));
+    
+    return chartData;
+    
+  } catch (error) {
+    console.error('[getKrakenChartData] Error:', error.message);
+    return null;
+  }
+}
+
 async function getCryptoData(base44, cryptoSymbols) {
   try {
     if (!cryptoSymbols || cryptoSymbols.length === 0) return [];
