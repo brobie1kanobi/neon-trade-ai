@@ -29,16 +29,16 @@ export default function DonateSection() {
     // This will redirect to the Cash App profile page
     // The user can then manually enter the amount.
     // This avoids hardcoding a specific tag and is more flexible.
-    const cashAppProfileUrl = "https://cash.app/CTFDan"; 
-    
+    const cashAppProfileUrl = "https://cash.app/CTFDan";
+
     // Open in a new tab
     window.open(cashAppProfileUrl, "_blank");
 
     toast.success("Redirecting to Cash App...", {
-      description: "Thank you for considering a donation!",
+      description: "Thank you for considering a donation!"
     });
   };
-  
+
   const handleViewPolicy = () => {
     if (user?.role === 'admin') {
       // Admin users go to the RefundManagement page
@@ -52,10 +52,10 @@ export default function DonateSection() {
 
   return (
     <>
-      <RefundPolicyModal 
-        isOpen={showRefundModal} 
-        onClose={() => setShowRefundModal(false)} 
-      />
+      <RefundPolicyModal
+        isOpen={showRefundModal}
+        onClose={() => setShowRefundModal(false)} />
+
       
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <CardHeader>
@@ -65,27 +65,27 @@ export default function DonateSection() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            If you enjoy NeonTrade AI, please consider supporting its development. Your contribution helps us improve features and cover operational costs.
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>If you enjoy NeonTrade AI, please consider supporting its development. Your contribution and support will always be greatly appreciated.
+
           </p>
           
           <div className="flex flex-col sm:flex-row items-center gap-2">
             <Button
               onClick={handleDonate}
-              className="w-full sm:w-auto flex-grow neon-glow bg-green-600 hover:bg-green-700"
-            >
+              className="w-full sm:w-auto flex-grow neon-glow bg-green-600 hover:bg-green-700">
+
               Donate via Cash App
             </Button>
             <Button
               onClick={handleViewPolicy}
               variant="outline"
-              className="w-full sm:w-auto flex-grow"
-            >
+              className="w-full sm:w-auto flex-grow">
+
               View Refund Policy
             </Button>
           </div>
         </CardContent>
       </Card>
-    </>
-  );
+    </>);
+
 }
