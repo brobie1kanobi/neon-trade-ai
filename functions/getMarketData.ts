@@ -215,35 +215,61 @@ async function getCryptoData(base44, cryptoSymbols) {
       }
     }
 
-    // 3) Extra public fallbacks (no Kraken): Coinbase and Binance
+    // 3) Extra public fallbacks: Kraken public API and Binance
     const stillMissing = upper.filter(s => !foundMap[s]);
     if (stillMissing.length > 0) {
-      // Coinbase spot prices
-      const coinbaseResults = await Promise.all(
-        stillMissing.map(async (sym) => {
-          try {
-            const resp = await fetchWithTimeout(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`, 2500);
-            if (resp && resp.ok) {
-              const data = await resp.json();
-              const price = parseFloat(data?.data?.amount || '0');
-              if (price > 0) {
-                return { sym, price };
+      // Kraken public ticker API (no auth required)
+      // Kraken uses pairs like XXBTZUSD, XETHZUSD, etc.
+      const krakenPairMap = {
+        'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+        'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+        'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+        'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+        'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'TON': 'TONCOINUSD', 'HBAR': 'HBARUSD'
+      };
+      
+      const krakenPairs = stillMissing.map(s => krakenPairMap[s]).filter(Boolean);
+      if (krakenPairs.length > 0) {
+        try {
+          const pairsParam = krakenPairs.join(',');
+          const resp = await fetchWithTimeout(`https://api.kraken.com/0/public/Ticker?pair=${pairsParam}`, 3000);
+          if (resp && resp.ok) {
+            const data = await resp.json();
+            if (data && data.result) {
+              for (const sym of stillMissing) {
+                const pair = krakenPairMap[sym];
+                // Kraken may return with slightly different key (e.g., XXBTZUSD or XBTUSD)
+                const tickerData = data.result[pair] || data.result[pair?.replace('X', '')?.replace('Z', '')];
+                if (tickerData) {
+                  const price = parseFloat(tickerData.c?.[0] || tickerData.a?.[0] || '0');
+                  const open24h = parseFloat(tickerData.o || '0');
+                  const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
+                  if (price > 0 && !foundMap[sym]) {
+                    foundMap[sym] = {
+                      symbol: sym,
+                      name: sym,
+                      price: price,
+                      change: change24h,
+                      price_change_percentage_24h: change24h,
+                      percent_change: change24h,
+                      change_1h_percent: null,
+                      change_1h_value: null,
+                      icon_url: null
+                    };
+                  }
+                }
               }
             }
-          } catch (_) {}
-          return null;
-        })
-      );
-      for (const item of coinbaseResults.filter(Boolean)) {
-        if (!foundMap[item.sym]) {
-          foundMap[item.sym] = { symbol: item.sym, name: item.sym, price: item.price, change: null, price_change_percentage_24h: null, percent_change: null, change_1h_percent: null, change_1h_value: null, icon_url: null };
+          }
+        } catch (e) {
+          console.warn('[getCryptoData] Kraken public API error:', e.message);
         }
       }
     }
 
     const stillMissing2 = upper.filter(s => !foundMap[s]);
     if (stillMissing2.length > 0) {
-      // Binance ticker price (USDT pairs)
+      // Binance ticker price (USDT pairs) as final fallback
       const limited = stillMissing2.slice(0, 12);
       const binanceResults = await Promise.all(
         limited.map(async (sym) => {
