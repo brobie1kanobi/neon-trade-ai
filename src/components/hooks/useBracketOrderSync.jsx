@@ -22,7 +22,10 @@ export function useBracketOrderSync(isSimMode, userEmail) {
 
   // Handle when an order is filled on Kraken
   const handleOrderFilled = useCallback(async (event) => {
-    const { order_id, symbol, side, quantity, price, exec_type } = event.detail || event;
+    const eventData = event.detail || event;
+    const { order_id, side, quantity, price, exec_type } = eventData;
+    // CRITICAL: symbol may come as 'symbol' or 'pair' from Kraken WebSocket
+    const symbol = eventData.symbol || eventData.pair || null;
     
     if (!order_id || !userEmail || isSimMode) return;
     
