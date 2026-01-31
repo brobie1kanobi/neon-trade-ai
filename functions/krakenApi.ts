@@ -48,14 +48,15 @@ const extBalCache = new Map();
 function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
-    // Conservative defaults: trade is stricter
-    const cfg = type === 'trade' ? { capacity: 3, refillPerSec: 0.35 } : { capacity: 10, refillPerSec: 1.0 };
+    // More generous defaults to avoid rate limits - trade key needs breathing room for WS token
+    const cfg = type === 'trade' ? { capacity: 5, refillPerSec: 0.25 } : { capacity: 12, refillPerSec: 0.8 };
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);
 }
 function endpointCost(endpoint) {
-  if (endpoint.includes('GetWebSocketsToken')) return 4;
+  // Higher costs = more tokens consumed = longer waits between calls
+  if (endpoint.includes('GetWebSocketsToken')) return 6; // Increased - most rate-limit sensitive
   if (endpoint.includes('OpenOrders')) return 3;
   if (endpoint.includes('TradesHistory')) return 2;
   if (endpoint.includes('BalanceEx')) return 2;
@@ -129,10 +130,13 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0
     if (result.error?.length > 0) {
       const errorMsg = result.error.join(', ');
       
-      // Retry on rate-limit errors with more conservative backoff
+      // Retry on rate-limit errors with more aggressive backoff (longer waits)
       if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
-        const delay = 1500 * Math.pow(2, retryCount) + Math.floor(Math.random() * 600); // backoff + jitter
-        console.warn(`[krakenApi] Rate limited, retrying in ${delay}ms...`);
+        // Longer base delay for WS token endpoint which is rate-limit sensitive
+        const isWsToken = endpoint.includes('GetWebSocketsToken');
+        const baseDelay = isWsToken ? 3000 : 1500;
+        const delay = baseDelay * Math.pow(2, retryCount) + Math.floor(Math.random() * 1000); // longer backoff + jitter
+        console.warn(`[krakenApi] Rate limited on ${endpoint}, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_NONCE_RETRIES})...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
       }
