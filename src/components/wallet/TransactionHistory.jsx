@@ -83,11 +83,55 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
 
   // CRITICAL: Filter trades based on current mode (trades affect cash)
   const filteredTrades = (trades || []).filter(t => t.is_simulation === isSimMode);
+  
+  // In LIVE mode, also include Kraken trades
+  // CRITICAL: Kraken trades have EXACT values - use them directly
+  const krakenFormattedTrades = !isSimMode && Array.isArray(krakenTrades) ? krakenTrades.map(kt => {
+    const symbol = normalizeKrakenSymbol(kt.pair || kt.symbol || '');
+    // CRITICAL: Use EXACT values from Kraken API
+    const quantity = parseFloat(kt.vol || kt.quantity) || 0;
+    const price = parseFloat(kt.price) || 0;
+    const cost = parseFloat(kt.cost || kt.total_value) || 0;
+    
+    return {
+      id: kt.trade_id || kt.txid || `kraken-${kt.time}`,
+      symbol: symbol,
+      type: kt.type || 'unknown',
+      quantity: quantity,       // EXACT from Kraken
+      price: price,             // EXACT from Kraken
+      total_value: cost,        // EXACT from Kraken (cash impact)
+      // CRITICAL: Kraken 'time' is Unix seconds - convert to ISO string
+      created_date: kt.time ? new Date(kt.time * 1000).toISOString() : (kt.created_date || new Date().toISOString()),
+      is_simulation: false,
+      is_auto_trade: false,
+      asset_type: 'crypto',
+      status: 'executed',
+      fee: parseFloat(kt.fee) || 0,
+      itemType: 'trade'
+    };
+  }) : [];
 
   // Combine transactions and trades into one timeline
+  // CRITICAL: Avoid duplicates when merging Kraken trades with local trades
+  const mergedTrades = [...filteredTrades.map(t => ({ ...t, itemType: 'trade' }))];
+  
+  if (!isSimMode && krakenFormattedTrades.length > 0) {
+    krakenFormattedTrades.forEach(kt => {
+      // Check for duplicates by comparing symbol, quantity, and time within 60s
+      const isDupe = mergedTrades.some(lt => 
+        lt.symbol === kt.symbol && 
+        Math.abs(lt.quantity - kt.quantity) < 0.0001 &&
+        Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
+      );
+      if (!isDupe) {
+        mergedTrades.push(kt);
+      }
+    });
+  }
+  
   const allItems = [
     ...filteredTransactions.map(tx => ({ ...tx, itemType: 'transaction' })),
-    ...filteredTrades.map(t => ({ ...t, itemType: 'trade' }))
+    ...mergedTrades
   ].sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime());
 
   if (allItems.length === 0) {
