@@ -433,12 +433,40 @@ Deno.serve(async (req) => {
         throw new Error(msg);
       }
 
+      // CRITICAL: Return EXACT values from Kraken API
+      // Kraken trade object fields:
+      // - ordertxid: order transaction id
+      // - pair: asset pair (e.g., "XXLMZUSD")
+      // - time: Unix timestamp in SECONDS
+      // - type: "buy" or "sell"
+      // - ordertype: order type (market, limit, etc.)
+      // - price: price per unit (EXACT)
+      // - cost: total cost/proceeds in quote currency (EXACT USD amount)
+      // - fee: fee paid (EXACT)
+      // - vol: volume/quantity traded (EXACT)
+      // - margin: margin used
+      // - misc: miscellaneous info
       const trades = [];
       for (const [txid, trade] of Object.entries(result.result?.trades || {})) {
-        trades.push({ txid, ...trade });
+        trades.push({
+          trade_id: txid,
+          txid,
+          ordertxid: trade.ordertxid,
+          pair: trade.pair,
+          time: trade.time,           // Unix timestamp in SECONDS
+          type: trade.type,           // "buy" or "sell"
+          ordertype: trade.ordertype,
+          price: trade.price,         // EXACT price per unit as string
+          cost: trade.cost,           // EXACT total USD cost/proceeds as string
+          fee: trade.fee,             // EXACT fee as string
+          vol: trade.vol,             // EXACT quantity as string
+          margin: trade.margin,
+          misc: trade.misc,
+          ...trade
+        });
       }
 
-      
+      console.log('[krakenApi] getTradesHistory returned', trades.length, 'trades');
       return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
     }
 
