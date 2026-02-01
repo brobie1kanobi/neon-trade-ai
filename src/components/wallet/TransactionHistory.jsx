@@ -84,33 +84,24 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
   // CRITICAL: Filter trades based on current mode (trades affect cash)
   const filteredTrades = (trades || []).filter(t => t.is_simulation === isSimMode);
   
-  // In LIVE mode, also include Kraken trades
-  // CRITICAL: Use EXACT values from Kraken API
+  // In LIVE mode, use ONLY Kraken trades as the authoritative source
+  // CRITICAL: Kraken values are the TRUTH - ignore local database values
   // Kraken trade object fields from /0/private/TradesHistory:
-  // - vol: actual volume/quantity traded (string)
-  // - price: actual price per unit (string)
-  // - cost: actual total USD cost/proceeds (string) - this is the CASH IMPACT
-  // - fee: exchange fee (string)
+  // - vol: actual volume/quantity traded (string) - EXACT
+  // - price: actual price per unit (string) - EXACT
+  // - cost: actual total USD cost/proceeds (string) - EXACT CASH IMPACT
+  // - fee: exchange fee (string) - EXACT
   const krakenFormattedTrades = !isSimMode && Array.isArray(krakenTrades) ? krakenTrades.map(kt => {
     const symbol = normalizeKrakenSymbol(kt.pair || kt.symbol || '');
-    // CRITICAL: Use EXACT values from Kraken API - these are strings, parse them
+    // CRITICAL: Use EXACT values from Kraken API - these are the TRUE transaction values
     const quantity = parseFloat(kt.vol || kt.quantity) || 0;
     const price = parseFloat(kt.price) || 0;
+    const cost = parseFloat(kt.cost) || 0;  // This is the ACTUAL cash impact from Kraken
     const fee = parseFloat(kt.fee) || 0;
-    // ALWAYS calculate total from qty * price for accuracy
-    // This ensures the displayed value matches what the user actually traded
-    const calculatedTotal = quantity * price;
     
-    console.log('[TransactionHistory] Kraken trade:', {
-      symbol,
-      type: kt.type,
-      vol: kt.vol,
-      price: kt.price,
-      parsedQty: quantity,
-      parsedPrice: price,
-      calculatedTotal: calculatedTotal,
-      fee: fee
-    });
+    // Use Kraken's cost field as the total value (this is the TRUE cash amount)
+    // Only fallback to calculation if cost is somehow missing
+    const totalValue = cost > 0 ? cost : (quantity * price);
     
     return {
       id: kt.trade_id || kt.txid || `kraken-${kt.time}`,
@@ -118,15 +109,16 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
       type: kt.type || 'unknown',
       quantity: quantity,           // EXACT from Kraken vol field
       price: price,                 // EXACT from Kraken price field
-      total_value: calculatedTotal, // CALCULATED: qty * price = accurate cash impact
-      fee: fee,                     // Fee from Kraken
+      total_value: totalValue,      // EXACT from Kraken cost field (TRUE cash impact)
+      fee: fee,                     // EXACT fee from Kraken
       // CRITICAL: Kraken 'time' is Unix seconds - convert to ISO string
       created_date: kt.time ? new Date(kt.time * 1000).toISOString() : (kt.created_date || new Date().toISOString()),
       is_simulation: false,
       is_auto_trade: false,
       asset_type: 'crypto',
       status: 'executed',
-      itemType: 'trade'
+      itemType: 'trade',
+      krakenTradeId: kt.trade_id || kt.txid  // Keep reference to Kraken
     };
   }) : [];
 
