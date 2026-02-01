@@ -217,11 +217,11 @@ export default function RecentTrades({ trades, onTradeSelect }) {
             </div>
             <div className="text-right">
               <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                ${trade.total_value.toFixed(2)}
+                ${trade.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <div className="flex items-center gap-1">
                 <Badge variant="outline" className="text-xs">
-                  {trade.quantity} @ ${trade.price.toFixed(2)}
+                  {trade.quantity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} @ ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
                 </Badge>
               </div>
             </div>
