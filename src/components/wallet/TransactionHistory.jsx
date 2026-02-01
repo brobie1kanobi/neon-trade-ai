@@ -123,21 +123,17 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
   }) : [];
 
   // Combine transactions and trades into one timeline
-  // CRITICAL: Avoid duplicates when merging Kraken trades with local trades
-  const mergedTrades = [...filteredTrades.map(t => ({ ...t, itemType: 'trade' }))];
+  // CRITICAL: In LIVE mode, use ONLY Kraken trades - they are the authoritative source
+  // Local database trades may have incorrect values
+  let mergedTrades = [];
   
   if (!isSimMode && krakenFormattedTrades.length > 0) {
-    krakenFormattedTrades.forEach(kt => {
-      // Check for duplicates by comparing symbol, quantity, and time within 60s
-      const isDupe = mergedTrades.some(lt => 
-        lt.symbol === kt.symbol && 
-        Math.abs(lt.quantity - kt.quantity) < 0.0001 &&
-        Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
-      );
-      if (!isDupe) {
-        mergedTrades.push(kt);
-      }
-    });
+    // LIVE mode: Use ONLY Kraken trades - they have the EXACT correct values
+    mergedTrades = krakenFormattedTrades;
+    console.log('[TransactionHistory] Using', krakenFormattedTrades.length, 'Kraken trades as authoritative source');
+  } else if (isSimMode) {
+    // SIM mode: Use local trades
+    mergedTrades = filteredTrades.map(t => ({ ...t, itemType: 'trade' }));
   }
   
   const allItems = [
