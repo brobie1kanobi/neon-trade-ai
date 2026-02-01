@@ -90,28 +90,26 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
   // - vol: actual volume/quantity traded (string)
   // - price: actual price per unit (string)
   // - cost: actual total USD cost/proceeds (string) - this is the CASH IMPACT
-  // NOTE: cost = vol * price (approximately, may have tiny rounding diffs)
+  // - fee: exchange fee (string)
   const krakenFormattedTrades = !isSimMode && Array.isArray(krakenTrades) ? krakenTrades.map(kt => {
     const symbol = normalizeKrakenSymbol(kt.pair || kt.symbol || '');
     // CRITICAL: Use EXACT values from Kraken API - these are strings, parse them
     const quantity = parseFloat(kt.vol || kt.quantity) || 0;
     const price = parseFloat(kt.price) || 0;
-    // CRITICAL: Use 'cost' field if available (the actual USD cash impact)
-    // Fallback to calculated value only if cost is missing
-    const krakenCost = parseFloat(kt.cost) || 0;
-    const totalValue = krakenCost > 0 ? krakenCost : (quantity * price);
     const fee = parseFloat(kt.fee) || 0;
+    // ALWAYS calculate total from qty * price for accuracy
+    // This ensures the displayed value matches what the user actually traded
+    const calculatedTotal = quantity * price;
     
     console.log('[TransactionHistory] Kraken trade:', {
       symbol,
       type: kt.type,
       vol: kt.vol,
       price: kt.price,
-      cost: kt.cost,
       parsedQty: quantity,
       parsedPrice: price,
-      parsedCost: krakenCost,
-      finalTotal: totalValue
+      calculatedTotal: calculatedTotal,
+      fee: fee
     });
     
     return {
@@ -120,7 +118,7 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
       type: kt.type || 'unknown',
       quantity: quantity,           // EXACT from Kraken vol field
       price: price,                 // EXACT from Kraken price field
-      total_value: totalValue,      // EXACT from Kraken cost field (or calculated)
+      total_value: calculatedTotal, // CALCULATED: qty * price = accurate cash impact
       fee: fee,                     // Fee from Kraken
       // CRITICAL: Kraken 'time' is Unix seconds - convert to ISO string
       created_date: kt.time ? new Date(kt.time * 1000).toISOString() : (kt.created_date || new Date().toISOString()),
