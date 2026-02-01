@@ -159,9 +159,23 @@ export default function WalletPage() {
         is_simulation: currentSettings.sim_trading_mode !== false 
       }, '-created_date', 100);
       
-      // CRITICAL: In LIVE mode, fetch Kraken trade history for accurate transaction data
+      // CRITICAL: In LIVE mode, sync local trades with Kraken's authoritative data
+      // This ensures ALL past and future trades show EXACT values from Kraken
       if (currentSettings.sim_trading_mode === false) {
         try {
+          // First, sync local trades with Kraken (updates incorrect values)
+          console.log('[Wallet] 🔄 Syncing local trades with Kraken...');
+          const syncResponse = await base44.functions.invoke('syncTradesWithKraken', {});
+          const syncData = syncResponse?.data || syncResponse;
+          if (syncData?.success) {
+            console.log('[Wallet] ✅ Trade sync complete:', {
+              updated: syncData.updated,
+              created: syncData.created,
+              matched: syncData.matched
+            });
+          }
+          
+          // Then fetch fresh Kraken trades for display
           const response = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
           const data = response?.data || response;
           if (data?.trades && Array.isArray(data.trades)) {
@@ -170,7 +184,7 @@ export default function WalletPage() {
             console.log('[Wallet] Loaded', data.trades.length, 'Kraken trades');
           }
         } catch (err) {
-          console.warn('[Wallet] Failed to fetch Kraken trades:', err);
+          console.warn('[Wallet] Failed to sync/fetch Kraken trades:', err);
         }
       }
       
