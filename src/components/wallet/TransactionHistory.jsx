@@ -85,24 +85,42 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
   const filteredTrades = (trades || []).filter(t => t.is_simulation === isSimMode);
   
   // In LIVE mode, also include Kraken trades
-  // CRITICAL: Calculate total_value as quantity * price (the ACTUAL trade value)
+  // CRITICAL: Use EXACT values from Kraken API
+  // Kraken trade object fields from /0/private/TradesHistory:
+  // - vol: actual volume/quantity traded (string)
+  // - price: actual price per unit (string)
+  // - cost: actual total USD cost/proceeds (string) - this is the CASH IMPACT
+  // NOTE: cost = vol * price (approximately, may have tiny rounding diffs)
   const krakenFormattedTrades = !isSimMode && Array.isArray(krakenTrades) ? krakenTrades.map(kt => {
     const symbol = normalizeKrakenSymbol(kt.pair || kt.symbol || '');
-    // CRITICAL: Use EXACT values from Kraken API
+    // CRITICAL: Use EXACT values from Kraken API - these are strings, parse them
     const quantity = parseFloat(kt.vol || kt.quantity) || 0;
     const price = parseFloat(kt.price) || 0;
-    // CRITICAL FIX: Calculate total from quantity * price (the ACTUAL cash amount)
-    // Kraken's 'cost' field can be unreliable for partial fills
-    const calculatedTotal = quantity * price;
+    // CRITICAL: Use 'cost' field if available (the actual USD cash impact)
+    // Fallback to calculated value only if cost is missing
+    const krakenCost = parseFloat(kt.cost) || 0;
+    const totalValue = krakenCost > 0 ? krakenCost : (quantity * price);
     const fee = parseFloat(kt.fee) || 0;
+    
+    console.log('[TransactionHistory] Kraken trade:', {
+      symbol,
+      type: kt.type,
+      vol: kt.vol,
+      price: kt.price,
+      cost: kt.cost,
+      parsedQty: quantity,
+      parsedPrice: price,
+      parsedCost: krakenCost,
+      finalTotal: totalValue
+    });
     
     return {
       id: kt.trade_id || kt.txid || `kraken-${kt.time}`,
       symbol: symbol,
       type: kt.type || 'unknown',
-      quantity: quantity,           // EXACT from Kraken
-      price: price,                 // EXACT from Kraken
-      total_value: calculatedTotal, // CALCULATED: quantity * price = actual cash
+      quantity: quantity,           // EXACT from Kraken vol field
+      price: price,                 // EXACT from Kraken price field
+      total_value: totalValue,      // EXACT from Kraken cost field (or calculated)
       fee: fee,                     // Fee from Kraken
       // CRITICAL: Kraken 'time' is Unix seconds - convert to ISO string
       created_date: kt.time ? new Date(kt.time * 1000).toISOString() : (kt.created_date || new Date().toISOString()),
