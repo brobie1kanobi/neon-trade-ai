@@ -303,22 +303,58 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
         let recordedPrice = tradeData.price;
         let recordedTotal = roundToCents(recordedQty * recordedPrice);
 
-        // Try to resolve exact fills for precise price and cost
+        // CRITICAL: Try to resolve exact fills from Kraken for precise price, quantity, and cost
+        // Kraken may return different values due to partial fills, price slippage, or minimums
         try {
+          // Small delay to allow Kraken to process the trade
+          await new Promise(res => setTimeout(res, 1000));
+          
           const histRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
           const histData = histRes?.data || histRes;
           const tradesArr = histData?.trades || [];
-          const match = tradesArr.find(t => t.ordertxid === krakenOrderId) || tradesArr.find(t => t.order_id === krakenOrderId);
+          
+          console.log('[TradingInterface] Looking for trade with ordertxid:', krakenOrderId);
+          
+          // Find the matching trade - Kraken links trades to orders via ordertxid
+          const match = tradesArr.find(t => t.ordertxid === krakenOrderId) || 
+                        tradesArr.find(t => t.order_id === krakenOrderId);
+          
           if (match) {
-            const q = parseFloat(match.vol) || recordedQty;
-            const p = parseFloat(match.price) || recordedPrice;
-            const c = parseFloat(match.cost) || (q * p);
-            recordedQty = q;
-            recordedPrice = p;
-            recordedTotal = roundToCents(c);
+            // CRITICAL: Use EXACT values from Kraken - these are the ACTUAL executed values
+            // - vol: actual quantity executed (may differ from requested due to minimums/partials)
+            // - price: actual execution price (may differ due to slippage)
+            // - cost: actual USD value (vol * price, this is the real cash impact)
+            const exactQty = parseFloat(match.vol);
+            const exactPrice = parseFloat(match.price);
+            const exactCost = parseFloat(match.cost);
+            
+            console.log('[TradingInterface] Kraken fill found:', {
+              requested: { qty: recordedQty, price: recordedPrice, total: recordedTotal },
+              actual: { qty: exactQty, price: exactPrice, cost: exactCost }
+            });
+            
+            // Use EXACT Kraken values - these are what actually happened
+            if (exactQty > 0) recordedQty = exactQty;
+            if (exactPrice > 0) recordedPrice = exactPrice;
+            if (exactCost > 0) {
+              recordedTotal = roundToCents(exactCost);
+            } else {
+              // Fallback: calculate from qty * price if cost is missing
+              recordedTotal = roundToCents(recordedQty * recordedPrice);
+            }
+            
+            console.log('[TradingInterface] Using Kraken exact values:', {
+              qty: recordedQty, price: recordedPrice, total: recordedTotal
+            });
+          } else {
+            console.warn('[TradingInterface] No matching trade found in Kraken history for order:', krakenOrderId);
+            // Fallback: calculate total from qty * price
+            recordedTotal = roundToCents(recordedQty * recordedPrice);
           }
         } catch (e) {
           console.warn('[TradingInterface] Could not resolve fill details:', e?.message || e);
+          // Fallback: ensure total is calculated
+          recordedTotal = roundToCents(recordedQty * recordedPrice);
         }
 
         // Inform user if exchange adjusted the quantity
