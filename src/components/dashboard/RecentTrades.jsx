@@ -217,7 +217,8 @@ export default function RecentTrades({ trades, onTradeSelect }) {
             </div>
             <div className="text-right">
               <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                ${trade.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {/* CRITICAL: Calculate actual value from qty * price for accuracy */}
+                ${(trade.quantity * trade.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <div className="flex items-center gap-1">
                 <Badge variant="outline" className="text-xs">

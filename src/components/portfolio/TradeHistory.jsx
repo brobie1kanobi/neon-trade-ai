@@ -129,7 +129,8 @@ export default function TradeHistory({ trades }) {
               
               <div className="text-right">
                 <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {trade.type === 'buy' ? '-' : '+'}${trade.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {/* CRITICAL: Calculate actual cash impact from qty * price for accuracy */}
+                  {trade.type === 'buy' ? '-' : '+'}${(trade.quantity * trade.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                   {formatDisplayQuantity(trade.quantity)} @ ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
