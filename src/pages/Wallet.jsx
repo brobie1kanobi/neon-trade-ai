@@ -476,7 +476,12 @@ export default function WalletPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
       >
-        <TransactionHistory transactions={transactions} trades={trades} isSimMode={isSimMode} />
+        <TransactionHistory 
+          transactions={transactions} 
+          trades={trades} 
+          isSimMode={isSimMode}
+          krakenTrades={krakenTrades}
+        />
       </motion.div>
     </div>
   );
