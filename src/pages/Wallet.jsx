@@ -159,6 +159,21 @@ export default function WalletPage() {
         is_simulation: currentSettings.sim_trading_mode !== false 
       }, '-created_date', 100);
       
+      // CRITICAL: In LIVE mode, fetch Kraken trade history for accurate transaction data
+      if (currentSettings.sim_trading_mode === false) {
+        try {
+          const response = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+          const data = response?.data || response;
+          if (data?.trades && Array.isArray(data.trades)) {
+            // CRITICAL: Store raw Kraken trades - they have EXACT values
+            setKrakenTrades(data.trades);
+            console.log('[Wallet] Loaded', data.trades.length, 'Kraken trades');
+          }
+        } catch (err) {
+          console.warn('[Wallet] Failed to fetch Kraken trades:', err);
+        }
+      }
+      
       setWallet(userWallet[0] || { 
         cash_balance: 0, 
         total_deposits: 0, 
