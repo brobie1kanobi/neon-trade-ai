@@ -2,14 +2,56 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { History, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown } from "lucide-react";
-import { format } from "date-fns";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
+// Format date in user's timezone - CRITICAL: Handle timestamps correctly
+const formatInTimezone = (date, timezone, is24h) => {
+  try {
+    const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
+    
+    // CRITICAL: Parse the date correctly
+    // - Unix timestamps (numbers) are already in UTC milliseconds
+    // - ISO strings with 'Z' or offset are already UTC-aware
+    // - ISO strings WITHOUT 'Z' from Base44 database are stored as UTC
+    let dateObj;
+    if (typeof date === 'number') {
+      dateObj = new Date(date);
+    } else if (typeof date === 'string') {
+      // If the string has 'Z' or a timezone offset, parse directly
+      if (date.endsWith('Z') || date.match(/[+-]\d{2}:?\d{2}$/)) {
+        dateObj = new Date(date);
+      } else if (date.includes('T')) {
+        // Base44 stores dates as UTC but without 'Z' suffix - add it
+        dateObj = new Date(date + 'Z');
+      } else {
+        dateObj = new Date(date);
+      }
+    } else {
+      dateObj = new Date(date);
+    }
+
+    const options = {
+      timeZone: tz,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: is24h ? '2-digit' : 'numeric',
+      minute: '2-digit',
+      hour12: !is24h
+    };
+    return dateObj.toLocaleString('en-US', options);
+  } catch (e) {
+    console.error('[TransactionHistory] formatInTimezone error:', e);
+    return new Date(date).toLocaleString();
+  }
+};
+
 export default function TransactionHistory({ transactions, trades, isSimMode = true }) {
-  const { settings } = useSettings();
+  const { settings, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
-  const dateFmt = is24h ? "MMM d, yyyy • HH:mm" : "MMM d, yyyy • h:mm a";
+  // CRITICAL: Only use timezone after settings load to avoid showing wrong times initially
+  const timezone = (!settingsLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
   const [selectedItem, setSelectedItem] = useState(null);
 
   // CRITICAL: Filter transactions based on current mode
