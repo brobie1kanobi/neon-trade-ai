@@ -47,7 +47,25 @@ const formatInTimezone = (date, timezone, is24h) => {
   }
 };
 
-export default function TransactionHistory({ transactions, trades, isSimMode = true }) {
+// Normalize Kraken symbol - remove X/Z prefixes and suffixes
+const normalizeKrakenSymbol = (symbol) => {
+  if (!symbol) return 'UNKNOWN';
+  let s = symbol.toUpperCase();
+  s = s.replace(/USD$/, '').replace(/ZUSD$/, '').replace(/\/USD$/, '');
+  s = s.replace(/^XXBT$/, 'BTC').replace(/^XBT$/, 'BTC').replace(/^XBTC$/, 'BTC');
+  s = s.replace(/^XXRP$/, 'XRP').replace(/^XRPZ$/, 'XRP');
+  s = s.replace(/^XETH$/, 'ETH').replace(/^XXDG$/, 'DOGE').replace(/^XLTC$/, 'LTC');
+  s = s.replace(/^XXLM$/, 'XLM').replace(/^XLMZ$/, 'XLM');
+  if (s.length > 3 && s.startsWith('X') && /^X[A-Z]/.test(s)) {
+    s = s.substring(1);
+  }
+  if (s.length > 3 && s.endsWith('Z')) {
+    s = s.slice(0, -1);
+  }
+  return s;
+};
+
+export default function TransactionHistory({ transactions, trades, isSimMode = true, krakenTrades = [] }) {
   const { settings, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   // CRITICAL: Only use timezone after settings load to avoid showing wrong times initially
