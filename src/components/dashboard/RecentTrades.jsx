@@ -78,15 +78,26 @@ export default function RecentTrades({ trades, onTradeSelect }) {
       
       if (data?.trades && Array.isArray(data.trades)) {
         // Convert Kraken trades to our format
+        // CRITICAL: Use EXACT values from Kraken API - no recalculation
         const formattedTrades = data.trades.map(kt => {
           const symbol = normalizeKrakenSymbol(kt.pair || '');
+          // CRITICAL: Kraken returns:
+          // - vol: the quantity of the asset traded (EXACT)
+          // - price: the price per unit (EXACT)
+          // - cost: the total USD cost/proceeds (EXACT - this is the cash impact)
+          // - time: Unix timestamp in SECONDS
+          const quantity = parseFloat(kt.vol) || 0;
+          const price = parseFloat(kt.price) || 0;
+          const cost = parseFloat(kt.cost) || 0;
+          
           return {
             id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
             symbol: symbol,
             type: kt.type || 'unknown',
-            quantity: parseFloat(kt.vol) || 0,
-            price: parseFloat(kt.price) || 0,
-            total_value: parseFloat(kt.cost) || 0,
+            quantity: quantity,       // EXACT from Kraken
+            price: price,             // EXACT from Kraken
+            total_value: cost,        // EXACT from Kraken (this is the actual cash amount)
+            // CRITICAL: Kraken returns Unix timestamp in SECONDS, convert to ISO string
             created_date: kt.time ? new Date(kt.time * 1000).toISOString() : new Date().toISOString(),
             is_simulation: false,
             is_auto_trade: false,
