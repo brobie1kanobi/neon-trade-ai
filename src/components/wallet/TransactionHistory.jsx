@@ -157,7 +157,7 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
                         )}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {format(new Date(item.created_date), dateFmt)}
+                        {formatInTimezone(item.created_date, timezone, is24h)}
                       </p>
                     </div>
                   </div>
