@@ -18,6 +18,7 @@ export default function WalletPage() {
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [krakenTrades, setKrakenTrades] = useState([]);
   const [settings, setSettings] = useState(null);
   const [user, setUser] = useState(null);
   const [activeAction, setActiveAction] = useState(null);
