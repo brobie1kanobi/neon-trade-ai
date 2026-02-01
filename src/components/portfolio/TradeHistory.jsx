@@ -129,10 +129,10 @@ export default function TradeHistory({ trades }) {
               
               <div className="text-right">
                 <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {trade.type === 'buy' ? '-' : '+'}${trade.total_value.toFixed(2)}
+                  {trade.type === 'buy' ? '-' : '+'}${trade.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {formatDisplayQuantity(trade.quantity)} @ ${trade.price.toFixed(2)}
+                  {formatDisplayQuantity(trade.quantity)} @ ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
                 </p>
               </div>
             </button>
