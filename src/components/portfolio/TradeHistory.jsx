@@ -122,7 +122,7 @@ export default function TradeHistory({ trades }) {
                     )}
                   </div>
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(trade.created_date), dateFmt)}
+                    {formatInTimezone(trade.created_date, timezone, is24h)}
                   </p>
                 </div>
               </div>
