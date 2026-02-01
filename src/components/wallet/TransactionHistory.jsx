@@ -358,7 +358,7 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
 
                     <div className="flex justify-between pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
                       <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        Cash Impact
+                        Total Value
                       </span>
                       <span className="font-bold text-lg" style={{ 
                         color: selectedItem.type === 'buy' ? 'rgb(239, 68, 68)' : 'rgb(34, 197, 94)' 
@@ -366,6 +366,15 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
                         {selectedItem.type === 'buy' ? '-' : '+'}${selectedItem.total_value.toFixed(2)}
                       </span>
                     </div>
+
+                    {selectedItem.fee > 0 && (
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-secondary)' }}>Fee</span>
+                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                          ${selectedItem.fee.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
 
                     <div className="flex justify-between">
                       <span style={{ color: 'var(--text-secondary)' }}>Status</span>
