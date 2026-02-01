@@ -85,28 +85,31 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
   const filteredTrades = (trades || []).filter(t => t.is_simulation === isSimMode);
   
   // In LIVE mode, also include Kraken trades
-  // CRITICAL: Kraken trades have EXACT values - use them directly
+  // CRITICAL: Calculate total_value as quantity * price (the ACTUAL trade value)
   const krakenFormattedTrades = !isSimMode && Array.isArray(krakenTrades) ? krakenTrades.map(kt => {
     const symbol = normalizeKrakenSymbol(kt.pair || kt.symbol || '');
     // CRITICAL: Use EXACT values from Kraken API
     const quantity = parseFloat(kt.vol || kt.quantity) || 0;
     const price = parseFloat(kt.price) || 0;
-    const cost = parseFloat(kt.cost || kt.total_value) || 0;
+    // CRITICAL FIX: Calculate total from quantity * price (the ACTUAL cash amount)
+    // Kraken's 'cost' field can be unreliable for partial fills
+    const calculatedTotal = quantity * price;
+    const fee = parseFloat(kt.fee) || 0;
     
     return {
       id: kt.trade_id || kt.txid || `kraken-${kt.time}`,
       symbol: symbol,
       type: kt.type || 'unknown',
-      quantity: quantity,       // EXACT from Kraken
-      price: price,             // EXACT from Kraken
-      total_value: cost,        // EXACT from Kraken (cash impact)
+      quantity: quantity,           // EXACT from Kraken
+      price: price,                 // EXACT from Kraken
+      total_value: calculatedTotal, // CALCULATED: quantity * price = actual cash
+      fee: fee,                     // Fee from Kraken
       // CRITICAL: Kraken 'time' is Unix seconds - convert to ISO string
       created_date: kt.time ? new Date(kt.time * 1000).toISOString() : (kt.created_date || new Date().toISOString()),
       is_simulation: false,
       is_auto_trade: false,
       asset_type: 'crypto',
       status: 'executed',
-      fee: parseFloat(kt.fee) || 0,
       itemType: 'trade'
     };
   }) : [];
