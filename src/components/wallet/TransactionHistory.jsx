@@ -287,7 +287,7 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
                     <div className="flex justify-between">
                       <span style={{ color: 'var(--text-secondary)' }}>Price per Unit</span>
                       <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                        ${selectedItem.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${selectedItem.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
                       </span>
                     </div>
 
