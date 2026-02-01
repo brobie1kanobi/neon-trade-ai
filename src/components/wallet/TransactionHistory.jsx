@@ -347,7 +347,7 @@ export default function TransactionHistory({ transactions, trades, isSimMode = t
                     <div className="flex justify-between">
                       <span style={{ color: 'var(--text-secondary)' }}>Date</span>
                       <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {format(new Date(selectedItem.created_date), dateFmt)}
+                        {formatInTimezone(selectedItem.created_date, timezone, is24h)}
                       </span>
                     </div>
 
