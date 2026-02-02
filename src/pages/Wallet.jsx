@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { getMarketData } from "@/functions/getMarketData";
-import { useKrakenData, invalidateKrakenCache } from "@/components/hooks/useKrakenData";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
