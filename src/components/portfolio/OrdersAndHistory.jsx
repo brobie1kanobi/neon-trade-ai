@@ -490,16 +490,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     loadOrders();
   }, [loadOrders]);
 
-  // CRITICAL: Auto-refresh every 5 minutes in LIVE mode to reconcile with REST
-  useEffect(() => {
-    if (!isSimMode) {
-      const interval = setInterval(() => {
-        console.log('[OrdersAndHistory] Auto-refresh triggered (5m interval)');
-        loadOrders();
-      }, 300000); // 5 minutes
-      return () => clearInterval(interval);
-    }
-  }, [isSimMode, loadOrders]);
+  // CRITICAL: Auto-refresh removed - provider handles periodic refresh
+  // This prevents duplicate API calls and rate limit issues
 
   // CRITICAL: Update orders from WebSocket without REST calls to avoid rate limits
   useEffect(() => {
