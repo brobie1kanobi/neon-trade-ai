@@ -493,11 +493,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // CRITICAL: Auto-refresh removed - provider handles periodic refresh
   // This prevents duplicate API calls and rate limit issues
 
-  // CRITICAL: Update orders from WebSocket without REST calls to avoid rate limits
+  // CRITICAL: Update orders from provider data (centralized) - no direct API calls
   useEffect(() => {
-    if (!isSimMode && wsConnected && krakenOrders) {
-      console.log('[OrdersAndHistory] WebSocket orders updated, syncing state from WS (no REST):', Object.keys(krakenOrders).length);
-      const list = Object.values(krakenOrders)
+    if (!isSimMode && providerKrakenOrders && providerKrakenOrders.length > 0) {
+      console.log('[OrdersAndHistory] Provider orders updated:', providerKrakenOrders.length);
+      
+      const list = providerKrakenOrders
         .map(ko => {
           const descr = ko.descr || {};
           const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
@@ -544,7 +545,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       setOpenOrders(prev => mergeLists(prev, openList));
       setLastRefreshAt(Date.now());
     }
-  }, [krakenOrders, wsConnected, isSimMode]);
+  }, [providerKrakenOrders, isSimMode]);
 
   // CRITICAL: Force refresh when tab becomes visible (tab switching)
   useEffect(() => {
