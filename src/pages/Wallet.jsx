@@ -27,29 +27,27 @@ export default function WalletPage() {
 
   const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
-  // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth
-  // This prevents rate limits by ensuring all components share the same data
+  // CRITICAL: Use global WebSocket connection
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
-    totalPortfolioValue: wsTotalValue,
-    // Use centralized REST data from provider
-    krakenBalance: providerKrakenBalance,
-    fetchKrakenData: fetchFromProvider,
-    restDataLoading,
-    lastRestFetchTime
+    totalPortfolioValue: wsTotalValue
   } = useKrakenWebSocket();
 
-  // CRITICAL: Use provider data instead of separate hook to prevent duplicate API calls
-  const krakenData = providerKrakenBalance;
-  const krakenConnected = !!providerKrakenBalance?.connected;
-  const refreshKraken = useCallback(() => {
-    console.log('[Wallet] Triggering centralized Kraken refresh');
-    fetchFromProvider(true);
-  }, [fetchFromProvider]);
+  // CRITICAL: Fetch real Kraken data in LIVE mode (autoFetch ALWAYS enabled for non-sim)
+  const { krakenData, connected: krakenConnected, refresh: refreshKraken } = useKrakenData(isSimMode, !isSimMode);
 
-  // No longer need aggressive refresh - provider handles this centrally
+  // AGGRESSIVE: Force Kraken refresh on page mount in LIVE mode
+  useEffect(() => {
+    if (!isSimMode) {
+      console.log('[Wallet] 🚀 FORCING initial Kraken data refresh');
+      invalidateKrakenCache();
+      setTimeout(() => {
+        refreshKraken();
+      }, 500); // Small delay to allow settings to load
+    }
+  }, [isSimMode, refreshKraken]);
 
   // Get prices for Kraken holdings
   const krakenSymbols = React.useMemo(() => {
