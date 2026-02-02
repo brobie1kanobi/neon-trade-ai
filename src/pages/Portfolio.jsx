@@ -317,53 +317,27 @@ export default function Portfolio() {
     }
   }, [effectiveHoldings, priceData, trades, isSimMode, krakenData]);
 
-  // CRITICAL: For LIVE mode, fetch REAL PnL from Kraken via getKrakenPnL endpoint
-  const [krakenPnL, setKrakenPnL] = React.useState(null);
-  
+  // CRITICAL: Use centralized PnL from provider - no direct API calls needed
   React.useEffect(() => {
-    if (isSimMode) {
-      setKrakenPnL(null);
-      return;
-    }
+    if (isSimMode || !krakenPnL?.success) return;
     
-    const fetchKrakenPnL = async () => {
-      try {
-        const response = await base44.functions.invoke('getKrakenPnL', {});
-        const data = response?.data || response;
-        
-        if (data?.success) {
-          setKrakenPnL(data);
-          
-          // Update 24h and Lifetime changes from REAL Kraken data
-          const pnl24h = data.pnl_24h || 0;
-          const lifetimePnL = data.pnl_lifetime || 0;
-          
-          // Calculate percentages based on current portfolio value
-          const currentValue = wsCryptoValue > 0 ? wsCryptoValue : 
-            (krakenData?.total_crypto_value || effectiveHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
-          const costBasis = currentValue - lifetimePnL;
-          const lifetimePct = costBasis > 0 ? (lifetimePnL / costBasis) * 100 : 0;
-          
-          setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-          setPortfolio24hrChange({ value: pnl24h, percentage: costBasis > 0 ? (pnl24h / costBasis) * 100 : 0 });
-          
-          console.log('[Portfolio] Kraken PnL updated:', {
-            pnl_24h: pnl24h.toFixed(2),
-            lifetime: lifetimePnL.toFixed(2),
-            lifetimePct: lifetimePct.toFixed(2)
-          });
-        }
-      } catch (err) {
-        console.error('[Portfolio] Kraken PnL fetch failed:', err);
-      }
-    };
+    const pnl24h = krakenPnL.pnl_24h || 0;
+    const lifetimePnL = krakenPnL.pnl_lifetime || 0;
     
-    fetchKrakenPnL();
+    // Calculate percentages based on current portfolio value
+    const currentValue = wsCryptoValue > 0 ? wsCryptoValue : 
+      (krakenData?.total_crypto_value || effectiveHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
+    const costBasis = currentValue - lifetimePnL;
+    const lifetimePct = costBasis > 0 ? (lifetimePnL / costBasis) * 100 : 0;
     
-    // Refresh every 60 seconds
-    const interval = setInterval(fetchKrakenPnL, 60000);
-    return () => clearInterval(interval);
-  }, [isSimMode, wsCryptoValue, krakenData, effectiveHoldings]);
+    setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
+    setPortfolio24hrChange({ value: pnl24h, percentage: costBasis > 0 ? (pnl24h / costBasis) * 100 : 0 });
+    
+    console.log('[Portfolio] Kraken PnL from provider:', {
+      pnl_24h: pnl24h.toFixed(2),
+      lifetime: lifetimePnL.toFixed(2)
+    });
+  }, [isSimMode, krakenPnL, wsCryptoValue, krakenData, effectiveHoldings]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;
