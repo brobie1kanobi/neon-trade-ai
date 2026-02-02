@@ -206,10 +206,142 @@ export function KrakenWebSocketProvider({ children }) {
     };
   }, []); // Empty deps - refresh is stable
 
+  // CRITICAL: Centralized REST API fetcher - ALL components should use this instead of direct calls
+  const fetchRestData = useCallback(async (force = false) => {
+    if (isSimMode) return;
+    
+    const now = Date.now();
+    const timeSinceLastFetch = now - restData.lastFetchTime;
+    
+    // CRITICAL: Enforce minimum interval between REST calls to prevent rate limits
+    if (!force && timeSinceLastFetch < MIN_REST_INTERVAL) {
+      console.log('[KrakenWebSocketProvider] Skipping REST fetch - too soon (', Math.round(timeSinceLastFetch / 1000), 's ago)');
+      return restData;
+    }
+    
+    // Prevent concurrent fetches
+    if (restData.isLoading) {
+      console.log('[KrakenWebSocketProvider] REST fetch already in progress, skipping');
+      return restData;
+    }
+    
+    console.log('[KrakenWebSocketProvider] Fetching centralized REST data...');
+    setRestData(prev => ({ ...prev, isLoading: true, error: null }));
+    lastRestCallRef.current = now;
+    
+    try {
+      // Fetch balance and orders in parallel (but NOT PnL - too expensive)
+      const [balanceRes, ordersRes] = await Promise.all([
+        base44.functions.invoke('getKrakenBalance', {}).catch(e => ({ error: e.message })),
+        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }).catch(e => ({ error: e.message }))
+      ]);
+      
+      const balanceData = balanceRes?.data || balanceRes;
+      const ordersData = ordersRes?.data || ordersRes;
+      
+      const newRestData = {
+        krakenBalance: balanceData?.success ? balanceData : null,
+        krakenOrders: ordersData?.orders || [],
+        krakenTrades: restData.krakenTrades, // Keep existing trades
+        krakenPnL: restData.krakenPnL, // Keep existing PnL
+        lastFetchTime: Date.now(),
+        isLoading: false,
+        error: balanceData?.error || ordersData?.error || null
+      };
+      
+      setRestData(newRestData);
+      console.log('[KrakenWebSocketProvider] REST data updated - Balance:', !!newRestData.krakenBalance, 'Orders:', newRestData.krakenOrders.length);
+      
+      return newRestData;
+    } catch (err) {
+      console.error('[KrakenWebSocketProvider] REST fetch error:', err);
+      setRestData(prev => ({ ...prev, isLoading: false, error: err.message }));
+      return restData;
+    }
+  }, [isSimMode, restData]);
+
+  // CRITICAL: Fetch PnL separately and less frequently (every 60s)
+  const fetchPnL = useCallback(async () => {
+    if (isSimMode) return;
+    
+    try {
+      const response = await base44.functions.invoke('getKrakenPnL', {});
+      const data = response?.data || response;
+      
+      if (data?.success) {
+        setRestData(prev => ({
+          ...prev,
+          krakenPnL: data
+        }));
+        console.log('[KrakenWebSocketProvider] PnL updated:', data.pnl_lifetime?.toFixed(2));
+      }
+    } catch (err) {
+      console.error('[KrakenWebSocketProvider] PnL fetch error:', err);
+    }
+  }, [isSimMode]);
+
+  // CRITICAL: Initial fetch on mount (only once)
+  useEffect(() => {
+    if (shouldConnect && restData.lastFetchTime === 0) {
+      console.log('[KrakenWebSocketProvider] Initial REST data fetch');
+      fetchRestData(true);
+      // Fetch PnL after a delay to spread out API calls
+      setTimeout(() => fetchPnL(), 3000);
+    }
+  }, [shouldConnect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // CRITICAL: Periodic refresh - every 30 seconds for balance, 60 seconds for PnL
+  useEffect(() => {
+    if (!shouldConnect) return;
+    
+    const balanceInterval = setInterval(() => {
+      fetchRestData(false);
+    }, 30000); // 30 seconds
+    
+    const pnlInterval = setInterval(() => {
+      fetchPnL();
+    }, 60000); // 60 seconds
+    
+    return () => {
+      clearInterval(balanceInterval);
+      clearInterval(pnlInterval);
+    };
+  }, [shouldConnect, fetchRestData, fetchPnL]);
+
+  // CRITICAL: Listen for trade events and refresh data (with throttling)
+  useEffect(() => {
+    const handleTradeEvent = () => {
+      console.log('[KrakenWebSocketProvider] Trade event - scheduling REST refresh');
+      // Wait 2 seconds for Kraken to process the trade
+      setTimeout(() => {
+        fetchRestData(true);
+      }, 2000);
+    };
+    
+    window.addEventListener('trade:completed', handleTradeEvent);
+    window.addEventListener('kraken:synced', handleTradeEvent);
+    
+    return () => {
+      window.removeEventListener('trade:completed', handleTradeEvent);
+      window.removeEventListener('kraken:synced', handleTradeEvent);
+    };
+  }, [fetchRestData]);
+
   const value = {
     ...state,
     refresh,
-    wsManager
+    wsManager,
+    // CRITICAL: Expose centralized REST data for all components
+    krakenBalance: restData.krakenBalance,
+    krakenPnL: restData.krakenPnL,
+    krakenOrders: restData.krakenOrders,
+    krakenTrades: restData.krakenTrades,
+    restDataLoading: restData.isLoading,
+    restDataError: restData.error,
+    lastRestFetchTime: restData.lastFetchTime,
+    // Expose the fetch function for manual refresh (but it enforces rate limits)
+    fetchKrakenData: fetchRestData,
+    fetchPnL
   };
 
   return (
