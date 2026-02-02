@@ -27,29 +27,17 @@ export default function WalletPage() {
 
   const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
-  // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth
-  // This prevents rate limits by ensuring all components share the same data
+  // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
-    // Use centralized REST data from provider
-    krakenBalance: providerKrakenBalance,
-    fetchKrakenData: fetchFromProvider,
-    restDataLoading,
-    lastRestFetchTime
+    // CRITICAL: Use centralized REST data instead of direct API calls
+    krakenBalance: krakenData,
+    fetchKrakenData,
+    restDataLoading
   } = useKrakenWebSocket();
-
-  // CRITICAL: Use provider data instead of separate hook to prevent duplicate API calls
-  const krakenData = providerKrakenBalance;
-  const krakenConnected = !!providerKrakenBalance?.connected;
-  const refreshKraken = useCallback(() => {
-    console.log('[Wallet] Triggering centralized Kraken refresh');
-    fetchFromProvider(true);
-  }, [fetchFromProvider]);
-
-  // No longer need aggressive refresh - provider handles this centrally
 
   // Get prices for Kraken holdings
   const krakenSymbols = React.useMemo(() => {
@@ -292,15 +280,14 @@ export default function WalletPage() {
     }
   }, [loadData]);
 
-  // CRITICAL: Listen for Kraken sync events - provider handles the actual refresh
+  // CRITICAL: Listen for Kraken sync events
   useEffect(() => {
     const handleKrakenSync = () => {
-      console.log('[Wallet] Kraken sync event detected');
-      // Provider will handle the refresh automatically
-      // Just reload local data after a delay
+      console.log('[Wallet] Kraken sync event detected, refreshing...');
       setTimeout(() => {
+        fetchKrakenData(true);
         loadData();
-      }, 2000);
+      }, 500);
     };
 
     window.addEventListener('kraken:synced', handleKrakenSync);
@@ -308,7 +295,7 @@ export default function WalletPage() {
     return () => {
       window.removeEventListener('kraken:synced', handleKrakenSync);
     };
-  }, [loadData]);
+  }, [fetchKrakenData, loadData]);
 
   const executeTransaction = async (transactionData) => {
     const currentIsSimMode = settings?.sim_trading_mode !== false;
@@ -447,10 +434,11 @@ export default function WalletPage() {
           cashBalance={displayCashBalance}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
-            refreshKraken();
+            invalidateKrakenCache();
             setTimeout(() => {
+              refreshKraken();
               loadData();
-            }, 2000);
+            }, 500);
           }}
         />
       </motion.div>
