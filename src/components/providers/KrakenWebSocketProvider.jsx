@@ -341,7 +341,9 @@ export function KrakenWebSocketProvider({ children }) {
     lastRestFetchTime: restData.lastFetchTime,
     // Expose the fetch function for manual refresh (but it enforces rate limits)
     fetchKrakenData: fetchRestData,
-    fetchPnL
+    fetchPnL,
+    // Alias for backward compatibility
+    connected: state.isConnected
   };
 
   return (
