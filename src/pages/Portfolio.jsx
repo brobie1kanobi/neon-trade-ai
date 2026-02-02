@@ -431,7 +431,7 @@ export default function Portfolio() {
     setShowDataSync(false);
     loadData(true); // Force fresh load
     if (!isSimMode) {
-      fetchKrakenLive();
+      fetchKrakenData(true);
     }
   };
 
