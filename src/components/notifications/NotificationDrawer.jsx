@@ -117,7 +117,7 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
               }
             </SheetTitle>
             {notifications.length > 0 &&
-            <Button variant="ghost" size="sm" onClick={handleClearAll} className="text-xs text-gray-500 hover:text-red-500">
+            <Button variant="ghost" size="sm" onClick={handleClearAll} className="text-gray-500 mx-auto px-3 text-xs font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 hover:bg-accent h-8 hover:text-red-500">
                 Clear all
               </Button>
             }
@@ -189,61 +189,61 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
             {selectedNotification?.details_json &&
             <div className="bg-gray-50 dark:bg-slate-900 p-3 rounded-md border border-gray-100 dark:border-gray-800 space-y-2">
                 {(() => {
-                  try {
-                    const details = JSON.parse(selectedNotification.details_json);
-                    // Format details in a user-friendly way
-                    return (
-                      <div className="space-y-1.5">
-                        {details.symbol && (
-                          <div className="flex justify-between text-sm">
+                try {
+                  const details = JSON.parse(selectedNotification.details_json);
+                  // Format details in a user-friendly way
+                  return (
+                    <div className="space-y-1.5">
+                        {details.symbol &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Asset:</span>
                             <span className="font-medium text-gray-300">{details.symbol}</span>
                           </div>
-                        )}
-                        {details.orderType && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.orderType &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Order Type:</span>
                             <span className={`font-medium ${details.orderType === 'take-profit' ? 'text-green-400' : 'text-red-400'}`}>
                               {details.orderType === 'take-profit' ? 'Take Profit' : 'Stop Loss'}
                             </span>
                           </div>
-                        )}
-                        {details.quantity && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.quantity &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Quantity:</span>
                             <span className="font-medium text-gray-300">{details.quantity}</span>
                           </div>
-                        )}
-                        {details.purchasePrice && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.purchasePrice &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Purchase Price:</span>
                             <span className="font-medium text-gray-300">${details.purchasePrice}</span>
                           </div>
-                        )}
-                        {details.fillPrice && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.fillPrice &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Fill Price:</span>
                             <span className="font-medium text-gray-300">${details.fillPrice}</span>
                           </div>
-                        )}
-                        {details.pnl && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.pnl &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Profit/Loss:</span>
                             <span className={`font-medium ${parseFloat(details.pnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {parseFloat(details.pnl) >= 0 ? '+' : ''}${details.pnl}
                             </span>
                           </div>
-                        )}
-                        {details.pnlPct && (
-                          <div className="flex justify-between text-sm">
+                      }
+                        {details.pnlPct &&
+                      <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Change:</span>
                             <span className={`font-medium ${parseFloat(details.pnlPct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {parseFloat(details.pnlPct) >= 0 ? '+' : ''}{details.pnlPct}%
                             </span>
                           </div>
-                        )}
-                        {details.trade && !details.symbol && (
-                          <div className="space-y-1">
+                      }
+                        {details.trade && !details.symbol &&
+                      <div className="space-y-1">
                             <div className="flex justify-between text-sm">
                               <span className="text-gray-500">Asset:</span>
                               <span className="font-medium text-gray-300">{details.trade.symbol}</span>
@@ -267,22 +267,22 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                               <span className="font-medium text-gray-300">${details.trade.total_value?.toFixed(2)}</span>
                             </div>
                           </div>
-                        )}
-                        {details.error && (
-                          <div className="pt-2 border-t border-gray-700">
+                      }
+                        {details.error &&
+                      <div className="pt-2 border-t border-gray-700">
                             <p className="text-xs text-red-400">{details.error}</p>
                           </div>
-                        )}
-                      </div>
-                    );
-                  } catch (e) {
-                    return (
-                      <pre className="text-xs overflow-auto whitespace-pre-wrap text-gray-600 dark:text-gray-400 max-h-[200px]">
+                      }
+                      </div>);
+
+                } catch (e) {
+                  return (
+                    <pre className="text-xs overflow-auto whitespace-pre-wrap text-gray-600 dark:text-gray-400 max-h-[200px]">
                         {selectedNotification.details_json}
-                      </pre>
-                    );
-                  }
-                })()}
+                      </pre>);
+
+                }
+              })()}
               </div>
             }
             
