@@ -105,9 +105,9 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
   return (
     <>
       <Sheet open={isOpen} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-[85vw] sm:w-[400px] p-0 flex flex-col bg-white dark:bg-slate-950 border-l border-gray-200 dark:border-gray-800">
-          <SheetHeader className="p-4 border-b border-gray-100 dark:border-gray-800 flex flex-row items-center justify-between space-y-0">
-            <SheetTitle className="text-lg font-semibold flex items-center gap-2">
+        <SheetContent side="right" className="bg-slate-950 text-slate-100 p-0 fixed z-50 gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out inset-y-0 right-0 h-full data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm w-[85vw] sm:w-[400px] flex flex-col dark:bg-slate-950 border-l border-gray-200 dark:border-gray-800">
+          <SheetHeader className="bg-slate-500 p-4 text-center sm:text-left border-b border-gray-100 dark:border-gray-800 flex flex-row items-center justify-between space-y-0">
+            <SheetTitle className="text-slate-100 text-lg font-semibold flex items-center gap-2">
               <Bell className="w-5 h-5" />
               Notifications
               {unreadCount > 0 &&
