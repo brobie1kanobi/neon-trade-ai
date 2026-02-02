@@ -292,32 +292,23 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     };
   }, [isSimMode, autoFetch, fetchData]);
 
-  // Listen for external sync events
+  // CRITICAL: Events are now handled by the centralized provider
+  // This hook should NOT make its own API calls on events to prevent rate limits
+  // Just listen for cache updates from the provider
   useEffect(() => {
     const handleSync = () => {
-      console.log('[useKrakenData] 🔄 Sync event detected');
-      if (!isSimMode) {
-        invalidateKrakenCache();
-        fetchData(true);
-      }
-    };
-
-    const handleTradeCompleted = () => {
-      console.log('[useKrakenData] 🔄 Trade completed');
-      if (!isSimMode) {
-        invalidateKrakenCache();
-        fetchData(true);
-      }
+      console.log('[useKrakenData] Sync event - provider will handle refresh');
+      // Don't fetch here - provider handles this
     };
 
     window.addEventListener('kraken:synced', handleSync);
-    window.addEventListener('trade:completed', handleTradeCompleted);
+    window.addEventListener('trade:completed', handleSync);
 
     return () => {
       window.removeEventListener('kraken:synced', handleSync);
-      window.removeEventListener('trade:completed', handleTradeCompleted);
+      window.removeEventListener('trade:completed', handleSync);
     };
-  }, [isSimMode, fetchData]);
+  }, []);
 
   const refresh = useCallback(() => {
     console.log('[useKrakenData] 🔄 Manual refresh requested');
