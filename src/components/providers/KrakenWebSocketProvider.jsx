@@ -208,25 +208,35 @@ export function KrakenWebSocketProvider({ children }) {
 
   // CRITICAL: Centralized REST API fetcher - ALL components should use this instead of direct calls
   const fetchRestData = useCallback(async (force = false) => {
-    if (isSimMode) return;
+    if (isSimMode) return null;
     
     const now = Date.now();
-    const timeSinceLastFetch = now - restData.lastFetchTime;
+    
+    // Use ref to check timing without triggering re-renders
+    const timeSinceLastFetch = now - lastRestCallRef.current;
     
     // CRITICAL: Enforce minimum interval between REST calls to prevent rate limits
     if (!force && timeSinceLastFetch < MIN_REST_INTERVAL) {
       console.log('[KrakenWebSocketProvider] Skipping REST fetch - too soon (', Math.round(timeSinceLastFetch / 1000), 's ago)');
-      return restData;
+      return null;
     }
     
-    // Prevent concurrent fetches
-    if (restData.isLoading) {
+    // Check if already loading using functional update pattern
+    let shouldSkip = false;
+    setRestData(prev => {
+      if (prev.isLoading) {
+        shouldSkip = true;
+        return prev;
+      }
+      return { ...prev, isLoading: true, error: null };
+    });
+    
+    if (shouldSkip) {
       console.log('[KrakenWebSocketProvider] REST fetch already in progress, skipping');
-      return restData;
+      return null;
     }
     
     console.log('[KrakenWebSocketProvider] Fetching centralized REST data...');
-    setRestData(prev => ({ ...prev, isLoading: true, error: null }));
     lastRestCallRef.current = now;
     
     try {
@@ -239,26 +249,25 @@ export function KrakenWebSocketProvider({ children }) {
       const balanceData = balanceRes?.data || balanceRes;
       const ordersData = ordersRes?.data || ordersRes;
       
-      const newRestData = {
+      setRestData(prev => ({
         krakenBalance: balanceData?.success ? balanceData : null,
         krakenOrders: ordersData?.orders || [],
-        krakenTrades: restData.krakenTrades, // Keep existing trades
-        krakenPnL: restData.krakenPnL, // Keep existing PnL
+        krakenTrades: prev.krakenTrades, // Keep existing trades
+        krakenPnL: prev.krakenPnL, // Keep existing PnL
         lastFetchTime: Date.now(),
         isLoading: false,
         error: balanceData?.error || ordersData?.error || null
-      };
+      }));
       
-      setRestData(newRestData);
-      console.log('[KrakenWebSocketProvider] REST data updated - Balance:', !!newRestData.krakenBalance, 'Orders:', newRestData.krakenOrders.length);
+      console.log('[KrakenWebSocketProvider] REST data updated - Balance:', !!balanceData?.success, 'Orders:', (ordersData?.orders || []).length);
       
-      return newRestData;
+      return { krakenBalance: balanceData, krakenOrders: ordersData?.orders || [] };
     } catch (err) {
       console.error('[KrakenWebSocketProvider] REST fetch error:', err);
       setRestData(prev => ({ ...prev, isLoading: false, error: err.message }));
-      return restData;
+      return null;
     }
-  }, [isSimMode, restData]);
+  }, [isSimMode]);
 
   // CRITICAL: Fetch PnL separately and less frequently (every 60s)
   const fetchPnL = useCallback(async () => {
@@ -341,9 +350,7 @@ export function KrakenWebSocketProvider({ children }) {
     lastRestFetchTime: restData.lastFetchTime,
     // Expose the fetch function for manual refresh (but it enforces rate limits)
     fetchKrakenData: fetchRestData,
-    fetchPnL,
-    // Alias for backward compatibility
-    connected: state.isConnected
+    fetchPnL
   };
 
   return (
