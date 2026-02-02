@@ -39,76 +39,24 @@ export default function Portfolio() {
   // CRITICAL: Determine sim mode FIRST
   const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
-  // CRITICAL: Use global WebSocket connection
+  // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
+  // This prevents rate limits by ensuring all components share the same data
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     balances: wsBalances,
-    prices: wsPrices
+    prices: wsPrices,
+    // CRITICAL: Use centralized REST data instead of making direct API calls
+    krakenBalance,
+    krakenPnL,
+    krakenOrders,
+    restDataLoading: krakenLoading,
+    fetchKrakenData
   } = useKrakenWebSocket();
 
-  // LIVE mode: fetch Kraken balance directly (no client cache)
-  const [krakenData, setKrakenData] = useState(null);
-  const [krakenLoading, setKrakenLoading] = useState(false);
-  const lastLiveFetchRef = React.useRef(0);
-  const fetchKrakenLive = useCallback(async () => {
-    if (isSimMode) return;
-    const now = Date.now();
-    if (now - lastLiveFetchRef.current < 4000) return; // throttle to avoid rate limits
-    lastLiveFetchRef.current = now;
-    setKrakenLoading(true);
-    try {
-      const res = await base44.functions.invoke('getKrakenBalance', {});
-      const data = res?.data || res;
-      setKrakenData(data?.success ? data : null);
-    } finally {
-      setKrakenLoading(false);
-    }
-  }, [isSimMode]);
-
-  useEffect(() => {
-    if (!isSimMode) fetchKrakenLive();
-  }, [isSimMode, fetchKrakenLive]);
-
-  useEffect(() => {
-    const handler = () => fetchKrakenLive();
-    window.addEventListener('trade:completed', handler);
-    window.addEventListener('kraken:synced', handler);
-    return () => {
-      window.removeEventListener('trade:completed', handler);
-      window.removeEventListener('kraken:synced', handler);
-    };
-  }, [fetchKrakenLive]);
-
-  // Live: auto-refresh from WS changes, focus/visibility, and periodic interval
-  useEffect(() => {
-    if (!isSimMode) {
-      // debounce WS-triggered refresh slightly to coalesce bursts
-      const t = setTimeout(() => fetchKrakenLive(), 400);
-      return () => clearTimeout(t);
-    }
-  }, [wsConnected, wsBalances, isSimMode, fetchKrakenLive]);
-
-  useEffect(() => {
-    if (isSimMode) return;
-    const id = setInterval(() => {
-      fetchKrakenLive();
-    }, 20000); // gentler polling to reduce rate-limit pressure
-    return () => clearInterval(id);
-  }, [isSimMode, fetchKrakenLive]);
-
-  useEffect(() => {
-    if (isSimMode) return;
-    const onVis = () => { if (document.visibilityState === 'visible') fetchKrakenLive(); };
-    const onFocus = () => fetchKrakenLive();
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [isSimMode, fetchKrakenLive]);
+  // CRITICAL: krakenData now comes from the provider, not direct API calls
+  const krakenData = krakenBalance;
 
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
