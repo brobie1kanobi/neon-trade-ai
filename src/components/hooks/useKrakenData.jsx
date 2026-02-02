@@ -262,26 +262,14 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: ALWAYS auto-fetch on mount in LIVE mode
+  // CRITICAL: Use cached data - provider handles the actual fetching
+  // This hook should NOT initiate fetches to prevent duplicate API calls
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (!isSimMode && !hasFetchedRef.current) {
-      console.log('[useKrakenData] 🚀 Initial fetch on mount (LIVE mode)');
-      hasFetchedRef.current = true;
-      
-      // If we have cache, use it immediately, then fetch in background
-      if (GLOBAL_CACHE.data) {
-        console.log('[useKrakenData] Using cached data while fetching fresh');
-        setKrakenData(GLOBAL_CACHE.data);
-        setConnected(true);
-        setLoading(true); // Show loading while fetching fresh
-      }
-      
-      // ALWAYS fetch fresh data on mount
-      fetchData(true);
-    } else if (autoFetch && !isSimMode && GLOBAL_CACHE.data) {
-      // If not first mount but autoFetch is true, use cache immediately
+    if (!isSimMode && GLOBAL_CACHE.data) {
+      // Use cached data immediately - provider will refresh it
+      console.log('[useKrakenData] Using cached data from provider');
       setKrakenData(GLOBAL_CACHE.data);
       setConnected(true);
       setLoading(false);
@@ -290,7 +278,7 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     return () => {
       isMountedRef.current = false;
     };
-  }, [isSimMode, autoFetch, fetchData]);
+  }, [isSimMode]);
 
   // CRITICAL: Events are now handled by the centralized provider
   // This hook should NOT make its own API calls on events to prevent rate limits
