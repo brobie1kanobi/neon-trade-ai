@@ -299,10 +299,12 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
   }, []);
 
   const refresh = useCallback(() => {
-    console.log('[useKrakenData] 🔄 Manual refresh requested');
+    console.log('[useKrakenData] 🔄 Manual refresh requested - invalidating cache');
     invalidateKrakenCache();
-    return fetchData(true);
-  }, [fetchData]);
+    // Don't fetch here - components should use the provider's fetchKrakenData
+    // Just return null, the provider will handle the actual fetch
+    return Promise.resolve(GLOBAL_CACHE.data);
+  }, []);
 
   return {
     krakenData,
