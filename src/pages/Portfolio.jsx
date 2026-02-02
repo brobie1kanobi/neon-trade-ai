@@ -418,7 +418,7 @@ export default function Portfolio() {
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'trade', source: 'portfolio' } }));
       
       if (!tradeIsSimMode) {
-        fetchKrakenLive();
+        fetchKrakenData(true);
       }
     } catch (err) {
       console.error("Error executing trade:", err);
