@@ -545,14 +545,15 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       setOpenOrders(prev => mergeLists(prev, openList));
       setLastRefreshAt(Date.now());
     }
-  }, [providerKrakenOrders, isSimMode]);
+  }, [providerKrakenOrders, isSimMode, mergeLists]);
 
-  // Tab change - just log, don't force refresh (provider handles data)
+  // CRITICAL: Force refresh when tab becomes visible (tab switching)
   useEffect(() => {
     if (activeTab === 'open' || activeTab === 'conditional') {
-      console.log('[OrdersAndHistory] Active tab:', activeTab);
+      console.log('[OrdersAndHistory] Active tab changed to', activeTab, '- refreshing orders');
+      loadOrders();
     }
-  }, [activeTab]);
+  }, [activeTab, loadOrders]);
 
   // Listen for trade events (failed or completed) to refresh list immediately
   useEffect(() => {
