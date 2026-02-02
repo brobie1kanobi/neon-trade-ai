@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useKrakenWebSocketManager } from '@/components/hooks/useKrakenWebSocketManager';
 import { useSettings } from '@/components/utils/SettingsContext';
+import { base44 } from '@/api/base44Client';
 
 const KrakenWebSocketContext = createContext(null);
 
@@ -13,8 +14,9 @@ export const useKrakenWebSocket = () => {
 };
 
 /**
- * Global WebSocket Provider - maintains a single persistent connection
+ * Global WebSocket Provider - SINGLE SOURCE OF TRUTH for ALL Kraken data
  * This ensures WebSocket stays active across all pages and components
+ * CRITICAL: All Kraken API calls should go through this provider to prevent rate limits
  */
 export function KrakenWebSocketProvider({ children }) {
   const { settings, user } = useSettings();
@@ -22,10 +24,6 @@ export function KrakenWebSocketProvider({ children }) {
   
   // Only connect in LIVE mode with authenticated user
   const shouldConnect = !isSimMode && !!user?.email; // live mode only
-  // Force balances subscription even if prices not requested
-  const subscribeToPrices = shouldConnect;
-  const subscribeToBalances = shouldConnect;
-  const subscribeToExecutions = shouldConnect;
 
   // Initialize WebSocket manager with ALL subscriptions
   const wsManager = useKrakenWebSocketManager({
@@ -35,6 +33,12 @@ export function KrakenWebSocketProvider({ children }) {
     subscribeToOrders: false,
     subscribeToExecutions: shouldConnect
   });
+
+  // CRITICAL: Global rate limiter - prevents ALL Kraken REST API calls from exceeding limits
+  const lastRestCallRef = useRef(0);
+  const restCallQueueRef = useRef([]);
+  const isProcessingQueueRef = useRef(false);
+  const MIN_REST_INTERVAL = 5000; // Minimum 5 seconds between REST API calls
 
   const [state, setState] = useState({
     isConnected: false,
@@ -46,6 +50,17 @@ export function KrakenWebSocketProvider({ children }) {
     cryptoHoldingsValue: 0,
     totalPortfolioValue: 0,
     totalAssets: 0
+  });
+
+  // CRITICAL: Centralized REST API data - fetched once and shared across all components
+  const [restData, setRestData] = useState({
+    krakenBalance: null,
+    krakenPnL: null,
+    krakenOrders: [],
+    krakenTrades: [],
+    lastFetchTime: 0,
+    isLoading: false,
+    error: null
   });
 
   // Update state when WebSocket data changes
