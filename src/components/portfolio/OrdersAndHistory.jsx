@@ -547,13 +547,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     }
   }, [providerKrakenOrders, isSimMode]);
 
-  // CRITICAL: Force refresh when tab becomes visible (tab switching)
+  // Tab change - just log, don't force refresh (provider handles data)
   useEffect(() => {
     if (activeTab === 'open' || activeTab === 'conditional') {
-      console.log('[OrdersAndHistory] Active tab changed to', activeTab, '- refreshing orders');
-      loadOrders();
+      console.log('[OrdersAndHistory] Active tab:', activeTab);
     }
-  }, [activeTab, loadOrders]);
+  }, [activeTab]);
 
   // Listen for trade events (failed or completed) to refresh list immediately
   useEffect(() => {
