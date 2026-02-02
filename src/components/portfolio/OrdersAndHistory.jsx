@@ -157,58 +157,68 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   
   console.log('[OrdersAndHistory] Settings loaded:', !settingsLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
 
-  // CRITICAL: Use global WebSocket connection
+  // CRITICAL: Use CENTRALIZED WebSocket provider - prevents rate limits
   const { 
-    orders: krakenOrders, 
-    isConnected: wsConnected 
+    orders: wsKrakenOrders, 
+    isConnected: wsConnected,
+    // Use centralized REST data instead of direct API calls
+    krakenOrders: providerKrakenOrders,
+    fetchKrakenData: fetchFromProvider,
+    restDataLoading,
+    lastRestFetchTime
   } = useKrakenWebSocket();
 
-  // State for Kraken trades history
+  // State for Kraken trades history (still fetched separately as it's less frequent)
   const [krakenTradesHistory, setKrakenTradesHistory] = useState([]);
   const [lastRefreshAt, setLastRefreshAt] = useState(0);
+  const [lastTradesFetch, setLastTradesFetch] = useState(0);
 
-  // Fetch fresh data from Kraken API (not just WebSocket)
+  // Use provider orders as the source of truth
+  const krakenOrders = wsKrakenOrders || {};
+
+  // Fetch trades history separately (less frequent, not part of main data loop)
+  const fetchTradesHistory = useCallback(async () => {
+    if (isSimMode) return [];
+    
+    const now = Date.now();
+    // Only fetch trades every 30 seconds to avoid rate limits
+    if (now - lastTradesFetch < 30000) {
+      console.log('[OrdersAndHistory] Skipping trades fetch - too soon');
+      return krakenTradesHistory;
+    }
+    
+    try {
+      console.log('[OrdersAndHistory] Fetching trades history...');
+      const tradesResponse = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+      const tradesData = tradesResponse?.data || tradesResponse;
+      
+      if (tradesData?.trades) {
+        setKrakenTradesHistory(tradesData.trades);
+        setLastTradesFetch(now);
+        return tradesData.trades;
+      }
+      return [];
+    } catch (err) {
+      console.error('[OrdersAndHistory] Trades fetch error:', err.message);
+      return [];
+    }
+  }, [isSimMode, lastTradesFetch, krakenTradesHistory]);
+
+  // CRITICAL: Use provider data instead of making direct API calls
   const fetchKrakenData = useCallback(async () => {
     if (isSimMode) return { orders: [], trades: [] };
     
-    try {
-      console.log('[OrdersAndHistory] Fetching fresh Kraken data...');
-      // If last fetch failed due to permissions, try again – backend updated to allow all authenticated users
-      
-      // Fetch both open orders and trades history in parallel with 20s timeout
-      const [ordersResponse, tradesResponse] = await Promise.race([
-        Promise.all([
-          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-          base44.functions.invoke('krakenApi', { action: 'getTradesHistory' })
-        ]),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken API timeout')), 20000))
-      ]);
-      
-      const ordersData = ordersResponse?.data || ordersResponse;
-      const tradesData = tradesResponse?.data || tradesResponse;
-      
-      console.log('[OrdersAndHistory] Kraken API response - Orders:', ordersData?.orders?.length || 0, 'Trades:', tradesData?.trades?.length || 0);
-      
-      // If API returned error, log it
-      if (!ordersData?.success && ordersData?.error) {
-        console.error('[OrdersAndHistory] Kraken orders API error:', ordersData.error);
-      }
-      if (!tradesData?.success && tradesData?.error) {
-        console.error('[OrdersAndHistory] Kraken trades API error:', tradesData.error);
-      }
-      
-      return {
-        orders: ordersData?.orders || [],
-        trades: tradesData?.trades || []
-      };
-    } catch (err) {
-      console.error('[OrdersAndHistory] Kraken fetch error:', err.message || err);
-      notify.warning('Kraken orders temporarily unavailable', {
-        description: 'Retrying... Check your Kraken connection in Settings.'
-      });
-      return { orders: [], trades: [] };
-    }
-  }, [isSimMode]);
+    // Trigger centralized fetch (provider enforces rate limits)
+    await fetchFromProvider(false);
+    
+    // Fetch trades separately
+    const trades = await fetchTradesHistory();
+    
+    return {
+      orders: providerKrakenOrders || [],
+      trades: trades
+    };
+  }, [isSimMode, fetchFromProvider, fetchTradesHistory, providerKrakenOrders]);
 
   // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
