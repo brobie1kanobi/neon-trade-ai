@@ -508,7 +508,7 @@ export default function Portfolio() {
           lifetimeChange={lifetimeChange}
           onSyncClick={() => {
             if (!isSimMode) {
-              fetchKrakenLive();
+              fetchKrakenData(true);
             } else {
               setShowDataSync(true);
             }
