@@ -552,17 +552,23 @@ Deno.serve(async (req) => {
           throw new Error('Failed to get WebSocket token from Kraken');
         }
 
-        // Cache token ONLY for TRADE key and bind it to the key fingerprint
-        if (keyType !== 'balance') {
-          try {
-            await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
-              ws_token: token,
-              ws_token_expires_at: new Date(now + expires * 1000).toISOString(),
-              ws_token_fingerprint: fingerprint
-            });
-          } catch (cacheErr) {
-            console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
-          }
+        // CRITICAL: Cache tokens for BOTH trade and balance keys
+        try {
+          const updateData = keyType === 'balance' 
+            ? {
+                balance_ws_token: token,
+                balance_ws_token_expires_at: new Date(now + expires * 1000).toISOString(),
+                balance_ws_token_fingerprint: fingerprint
+              }
+            : {
+                ws_token: token,
+                ws_token_expires_at: new Date(now + expires * 1000).toISOString(),
+                ws_token_fingerprint: fingerprint
+              };
+          await base44.asServiceRole.entities.KrakenConnection.update(connection.id, updateData);
+          console.log(`[krakenApi] Cached ${keyType} WS token (expires in ${expires}s)`);
+        } catch (cacheErr) {
+          console.warn('[krakenApi] Failed to cache WS token:', cacheErr?.message || cacheErr);
         }
 
         console.log('[krakenApi] ✅ WebSocket token retrieved for', keyType.toUpperCase(), 'expires in', expires, 'seconds');
