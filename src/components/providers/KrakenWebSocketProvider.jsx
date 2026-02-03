@@ -300,17 +300,18 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // CRITICAL: Periodic refresh - every 30 seconds for balance, 60 seconds for PnL
+  // CRITICAL: Periodic refresh - every 60 seconds for balance, 2 minutes for PnL
+  // Reduced frequency to prevent rate limits - WebSocket provides real-time updates anyway
   useEffect(() => {
     if (!shouldConnect) return;
     
     const balanceInterval = setInterval(() => {
       fetchRestData(false);
-    }, 30000); // 30 seconds
+    }, 60000); // 60 seconds (was 30s)
     
     const pnlInterval = setInterval(() => {
       fetchPnL();
-    }, 60000); // 60 seconds
+    }, 120000); // 2 minutes (was 60s)
     
     return () => {
       clearInterval(balanceInterval);
