@@ -481,15 +481,21 @@ Deno.serve(async (req) => {
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketToken');
         const fingerprint = `${keyType}:${String(apiKeyToUse || '').trim().slice(0,6)}...${String(apiKeyToUse || '').trim().slice(-4)}`;
 
-        // CRITICAL: Aggressively reuse cached token to prevent API spam
-        // Token is valid for 15 minutes, we can safely reuse for 14 minutes
-        const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
+        // CRITICAL: Aggressively cache tokens for BOTH balance AND trade keys
+        // Each key gets its own cached token stored with a fingerprint
+        const cacheKey = keyType === 'balance' ? 'balance_ws_token' : 'ws_token';
+        const cacheExpiresKey = keyType === 'balance' ? 'balance_ws_token_expires_at' : 'ws_token_expires_at';
+        const cacheFingerprintKey = keyType === 'balance' ? 'balance_ws_token_fingerprint' : 'ws_token_fingerprint';
+        
+        const cachedToken = connection?.[cacheKey];
+        const expiresAt = connection?.[cacheExpiresKey] ? new Date(connection[cacheExpiresKey]).getTime() : 0;
+        const cachedFingerprint = connection?.[cacheFingerprintKey];
+        
         const safeToReuse = (
-          keyType === 'trade' &&
           !payload?.forceRefresh &&
-          connection?.ws_token &&
-          connection?.ws_token_fingerprint === fingerprint &&
-          (expiresAt - now) > 60000  // Only 1 minute buffer
+          cachedToken &&
+          cachedFingerprint === fingerprint &&
+          (expiresAt - now) > 60000  // 1 minute buffer
         );
 
         if (safeToReuse) {
@@ -500,7 +506,7 @@ Deno.serve(async (req) => {
             connected: true,
             wsUrl: 'wss://ws-auth.kraken.com/v2',
             publicWsUrl: 'wss://ws.kraken.com/v2',
-            token: connection.ws_token,
+            token: cachedToken,
             expires_in: remainingSeconds,
             used_key_type: keyType,
             fingerprint,
