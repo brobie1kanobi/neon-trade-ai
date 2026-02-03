@@ -699,21 +699,25 @@ export function useKrakenWebSocketManager(options = {}) {
   // Tokens are now only refreshed when they actually expire (14+ minute lifetime)
   // This prevents the constant "Can't get token" errors from rate limiting
 
+  // Watchdog: reconnect if disconnected (but less frequently to reduce overhead)
   useEffect(() => {
     const interval = setInterval(() => {
       // If disconnected, try reconnecting automatically
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
         connectPublicWebSocket(priceSymbols);
       }
       if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting private balances WS...');
         GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateBalancesWebSocket();
       }
       if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting private orders WS...');
         GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateOrdersWebSocket();
       }
-    }, 15000);
+    }, 30000); // CRITICAL: Increased from 15s to 30s to reduce overhead
     return () => clearInterval(interval);
   }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 
