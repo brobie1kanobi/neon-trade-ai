@@ -68,19 +68,25 @@ function emitEvent(eventName, data) {
 
 /**
  * Get or refresh WebSocket token
+ * CRITICAL: Aggressively cache tokens to prevent API spam
  */
 async function getWebSocketToken(keyType = 'trade') {
   const now = Date.now();
   
-  // Return cached token if still valid
+  // Return cached token if still valid (with larger buffer for safety)
   const isTrade = keyType === 'trade';
   const cachedToken = isTrade ? GLOBAL_WS_STATE.tokenTrade : GLOBAL_WS_STATE.tokenBalance;
   const cachedExpiry = isTrade ? GLOBAL_WS_STATE.tokenTradeExpiry : GLOBAL_WS_STATE.tokenBalanceExpiry;
-  if (cachedToken && now < (cachedExpiry || 0) - TOKEN_REFRESH_BUFFER) {
+  
+  // CRITICAL: Use much longer cache window - only refresh if truly expired
+  // Kraken tokens last 15 minutes by default, we can safely use them for 14 minutes
+  if (cachedToken && now < (cachedExpiry || 0) - 60000) { // Only 1 minute buffer instead of TOKEN_REFRESH_BUFFER
+    console.log(`[KrakenWS] Using cached ${keyType} token (expires in ${Math.round(((cachedExpiry || 0) - now) / 1000)}s)`);
     return cachedToken;
   }
 
   try {
+    console.log(`[KrakenWS] Fetching fresh ${keyType} token from API...`);
     const response = await base44.functions.invoke('krakenApi', { 
       action: 'getWebSocketUrl',
       payload: { keyType }
@@ -89,12 +95,15 @@ async function getWebSocketToken(keyType = 'trade') {
     const data = response?.data || response;
     
     if (data?.success && data?.token) {
+      const expiresIn = data.expires_in || 900;
       if (keyType === 'trade') {
         GLOBAL_WS_STATE.tokenTrade = data.token;
-        GLOBAL_WS_STATE.tokenTradeExpiry = now + (data.expires_in || 900) * 1000;
+        GLOBAL_WS_STATE.tokenTradeExpiry = now + expiresIn * 1000;
+        console.log(`[KrakenWS] Cached TRADE token (expires in ${expiresIn}s)`);
       } else {
         GLOBAL_WS_STATE.tokenBalance = data.token;
-        GLOBAL_WS_STATE.tokenBalanceExpiry = now + (data.expires_in || 900) * 1000;
+        GLOBAL_WS_STATE.tokenBalanceExpiry = now + expiresIn * 1000;
+        console.log(`[KrakenWS] Cached BALANCE token (expires in ${expiresIn}s)`);
       }
       return data.token;
     }
@@ -105,6 +114,7 @@ async function getWebSocketToken(keyType = 'trade') {
     
     throw new Error(data?.error || 'Failed to get WebSocket token');
   } catch (error) {
+    console.error(`[KrakenWS] Failed to get ${keyType} token:`, error.message);
     throw error;
   }
 }
@@ -685,23 +695,9 @@ export function useKrakenWebSocketManager(options = {}) {
     };
   }, [subscribeToExecutions]);
 
-  // Proactive token refresh + watchdog reconnect
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        // Refresh tokens and re-subscribe if private connections are alive
-        if (GLOBAL_WS_STATE.isPrivateBalancesConnected && GLOBAL_WS_STATE.privateWsBalances?.readyState === WebSocket.OPEN) {
-          const balToken = await getWebSocketToken('balance');
-          subscribeToBalances(GLOBAL_WS_STATE.privateWsBalances, balToken);
-        }
-        if (GLOBAL_WS_STATE.isPrivateOrdersConnected && GLOBAL_WS_STATE.privateWsOrders?.readyState === WebSocket.OPEN) {
-          const tradeToken = await getWebSocketToken('trade');
-          subscribeToExecutions(GLOBAL_WS_STATE.privateWsOrders, tradeToken);
-        }
-      } catch {}
-    }, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  // REMOVED: Proactive token refresh that was causing API spam
+  // Tokens are now only refreshed when they actually expire (14+ minute lifetime)
+  // This prevents the constant "Can't get token" errors from rate limiting
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -726,12 +722,14 @@ export function useKrakenWebSocketManager(options = {}) {
       if (!GLOBAL_WS_STATE.privateWsBalances || GLOBAL_WS_STATE.privateWsBalances.readyState !== WebSocket.OPEN) {
         await connectPrivateBalancesWebSocket();
       }
-      let token;
-      try { token = await getWebSocketToken('balance'); } catch (_e) { token = await getWebSocketToken('trade'); }
+      // CRITICAL: Only use balance key for balance refreshes
+      const token = await getWebSocketToken('balance');
       if (GLOBAL_WS_STATE.privateWsBalances && token) {
         subscribeToBalances(GLOBAL_WS_STATE.privateWsBalances, token);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('[KrakenWS] Failed to refresh balances:', err.message);
+    }
   }, []);
 
   const refreshOrders = useCallback(async () => {
@@ -739,11 +737,14 @@ export function useKrakenWebSocketManager(options = {}) {
       if (!GLOBAL_WS_STATE.privateWsOrders || GLOBAL_WS_STATE.privateWsOrders.readyState !== WebSocket.OPEN) {
         await connectPrivateOrdersWebSocket();
       }
+      // CRITICAL: Only use trade key for order/execution refreshes
       const token = await getWebSocketToken('trade');
       if (GLOBAL_WS_STATE.privateWsOrders && token) {
         subscribeToExecutions(GLOBAL_WS_STATE.privateWsOrders, token);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('[KrakenWS] Failed to refresh orders:', err.message);
+    }
   }, []);
 
   return {
