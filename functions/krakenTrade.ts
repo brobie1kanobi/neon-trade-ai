@@ -853,15 +853,16 @@ Deno.serve(async (req) => {
     // Proceed without early trade key presence check; WebSocket token request will validate permissions
 
     // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
+    // CRITICAL: forceRefresh=false to use cached token and prevent rate limit spam
     let wsToken = body?.wsToken || body?.token;
     let tokenData;
     if (!wsToken) {
-      console.log('[krakenTrade] Getting WebSocket token...');
+      console.log('[krakenTrade] Getting WebSocket token (using cache if available)...');
       // Rate-limit token and order placement calls per user to avoid EAPI:Rate limit exceeded
-      await tradeRateGate(user.email, 2);
+      await tradeRateGate(user.email, 1); // Reduced cost since we're using cache
       const tokenResponse = await Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)) // Increased timeout to 15 seconds
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: false } }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;
