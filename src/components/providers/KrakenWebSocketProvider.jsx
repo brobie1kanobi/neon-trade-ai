@@ -38,7 +38,7 @@ export function KrakenWebSocketProvider({ children }) {
   const lastRestCallRef = useRef(0);
   const restCallQueueRef = useRef([]);
   const isProcessingQueueRef = useRef(false);
-  const MIN_REST_INTERVAL = 5000; // Minimum 5 seconds between REST API calls
+  const MIN_REST_INTERVAL = 10000; // Minimum 10 seconds between REST API calls (increased from 5s)
 
   const [state, setState] = useState({
     isConnected: false,
