@@ -480,31 +480,34 @@ Deno.serve(async (req) => {
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketToken');
         const fingerprint = `${keyType}:${String(apiKeyToUse || '').trim().slice(0,6)}...${String(apiKeyToUse || '').trim().slice(-4)}`;
 
-        // Reuse cached token ONLY if:
-        // - it's for TRADE key
-        // - fingerprint matches the stored one (prevents using a BALANCE token for trading)
-        // - not expiring within 60s
+        // CRITICAL: Aggressively reuse cached token to prevent API spam
+        // Token is valid for 15 minutes, we can safely reuse for 14 minutes
         const expiresAt = connection?.ws_token_expires_at ? new Date(connection.ws_token_expires_at).getTime() : 0;
         const safeToReuse = (
           keyType === 'trade' &&
           !payload?.forceRefresh &&
           connection?.ws_token &&
           connection?.ws_token_fingerprint === fingerprint &&
-          (expiresAt - now) > 60000
+          (expiresAt - now) > 60000  // Only 1 minute buffer
         );
 
         if (safeToReuse) {
+          const remainingSeconds = Math.floor((expiresAt - now) / 1000);
+          console.log(`[krakenApi] ✅ Reusing cached WS token for ${keyType} (expires in ${remainingSeconds}s)`);
           return Response.json({
             success: true,
             connected: true,
             wsUrl: 'wss://ws-auth.kraken.com/v2',
             publicWsUrl: 'wss://ws.kraken.com/v2',
             token: connection.ws_token,
-            expires_in: Math.floor((expiresAt - now) / 1000),
+            expires_in: remainingSeconds,
             used_key_type: keyType,
-            fingerprint
+            fingerprint,
+            cached: true
           }, { status: 200 });
         }
+        
+        console.log(`[krakenApi] Fetching fresh WS token for ${keyType} (cached expired or forceRefresh=${payload?.forceRefresh})`)
 
         // Request a fresh token from Kraken for the chosen key
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
