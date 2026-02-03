@@ -64,10 +64,11 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   // Update state when WebSocket data changes
+  // CRITICAL: Reduced frequency from 2s to 5s to prevent excessive updates
   useEffect(() => {
     if (!shouldConnect) return;
 
-    const updateState = async () => {
+    const updateState = () => {
       try {
         const isConnected = !!wsManager.isConnected;
         const prices = wsManager.getAllPrices?.() || {};
@@ -124,8 +125,8 @@ export function KrakenWebSocketProvider({ children }) {
     // Update immediately
     updateState();
 
-    // Update every 2 seconds
-    const interval = setInterval(updateState, 2000);
+    // CRITICAL: Reduced from 2s to 5s to prevent excessive state updates and re-renders
+    const interval = setInterval(updateState, 5000);
 
     return () => clearInterval(interval);
   }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
