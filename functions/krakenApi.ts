@@ -56,8 +56,9 @@ function getLimiter(bucketKey, type = 'balance') {
 }
 function endpointCost(endpoint) {
   // Higher costs = more tokens consumed = longer waits between calls
-  if (endpoint.includes('GetWebSocketsToken')) return 6; // Increased - most rate-limit sensitive
-  if (endpoint.includes('OpenOrders')) return 3;
+  // CRITICAL: Reduced costs since we're now caching tokens properly
+  if (endpoint.includes('GetWebSocketsToken')) return 4; // Reduced - caching helps
+  if (endpoint.includes('OpenOrders')) return 2;
   if (endpoint.includes('TradesHistory')) return 2;
   if (endpoint.includes('BalanceEx')) return 2;
   return 1;
