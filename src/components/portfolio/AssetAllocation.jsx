@@ -199,6 +199,11 @@ export default function AssetAllocation({ allocations, isLoading }) {
               </Badge>
             )}
           </CardTitle>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+            {!isSimMode && wsConnected 
+              ? 'Prices update in real-time via WebSocket connection' 
+              : 'Prices refresh every 60 seconds'}
+          </p>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Only show skeleton if loading AND no cached data */}
