@@ -77,13 +77,27 @@ export default function AutoBuyPreferences() {
 
           const sim = (settings[0]?.sim_trading_mode !== false);
           
+          console.log('[AutoBuyPreferences] Loading preferences for is_simulation:', sim);
+          
+          // CRITICAL: In LIVE mode, fetch preferences where is_simulation is NOT true
+          // This handles cases where is_simulation might be undefined, false, or explicitly false
           const list = await Promise.race([
-            AutoBuyPreference.filter({ created_by: me.email, is_simulation: sim }),
+            AutoBuyPreference.filter({ created_by: me.email }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Preferences timeout')), 2000))
           ]);
+          
+          // Filter client-side to handle various is_simulation values
+          const filteredList = list.filter(p => {
+            const pIsSimulation = p.is_simulation === true;
+            const matches = sim === pIsSimulation;
+            console.log(`[AutoBuyPreferences] ${p.symbol}: is_simulation=${p.is_simulation}(${typeof p.is_simulation}), mode=${sim}, matches=${matches}`);
+            return matches;
+          });
+          
+          console.log('[AutoBuyPreferences] Filtered from', list.length, 'to', filteredList.length, 'preferences');
 
           const result = {
-            prefs: list,
+            prefs: filteredList,
             isSimMode: sim
           };
 
