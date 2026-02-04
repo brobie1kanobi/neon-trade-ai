@@ -23,18 +23,37 @@ Deno.serve(async (req) => {
 
     console.log('[syncTradesWithKraken] Starting sync for user:', user.email);
 
-    // Step 1: Fetch ALL trades from Kraken
-    const krakenResponse = await base44.functions.invoke('krakenApi', { 
-      action: 'getTradesHistory' 
-    });
+    // Step 1: Fetch ALL trades from Kraken (with retry for rate limits)
+    let krakenData = null;
+    let attempts = 0;
+    const maxAttempts = 3;
     
-    const krakenData = krakenResponse?.data || krakenResponse;
+    while (attempts < maxAttempts && !krakenData?.success) {
+      if (attempts > 0) {
+        const delay = 5000 * attempts; // 5s, 10s delay
+        console.log(`[syncTradesWithKraken] Retry ${attempts}/${maxAttempts} after ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+      
+      try {
+        const krakenResponse = await base44.functions.invoke('krakenApi', { 
+          action: 'getTradesHistory' 
+        });
+        krakenData = krakenResponse?.data || krakenResponse;
+      } catch (err) {
+        console.error('[syncTradesWithKraken] Fetch error:', err.message);
+        krakenData = { error: err.message };
+      }
+      
+      attempts++;
+    }
     
     if (!krakenData?.success || !krakenData?.trades) {
-      console.error('[syncTradesWithKraken] Failed to fetch Kraken trades:', krakenData?.error);
+      console.error('[syncTradesWithKraken] Failed to fetch Kraken trades after', attempts, 'attempts:', krakenData?.error);
       return Response.json({ 
         error: krakenData?.error || 'Failed to fetch Kraken trades',
-        success: false 
+        success: false,
+        attempts: attempts
       }, { status: 200 });
     }
 
@@ -135,19 +154,27 @@ Deno.serve(async (req) => {
         if (krakenTrade) {
           matched++;
           
-          // CRITICAL: Use Kraken's EXACT values
+          // CRITICAL: Use Kraken's EXACT values - these are the AUTHORITATIVE source
+          // Kraken API returns:
+          // - vol: exact quantity of asset traded
+          // - price: exact price per unit
+          // - cost: exact total USD cost/proceeds (this is what actually left/entered your account)
+          // - fee: exact fee charged
           const exactQuantity = parseFloat(krakenTrade.vol);
           const exactPrice = parseFloat(krakenTrade.price);
           const exactCost = parseFloat(krakenTrade.cost);
           const exactFee = parseFloat(krakenTrade.fee) || 0;
           
-          // Check if values differ significantly (more than 0.01% difference)
-          const qtyDiff = Math.abs(localTrade.quantity - exactQuantity) / exactQuantity;
-          const priceDiff = Math.abs(localTrade.price - exactPrice) / exactPrice;
-          const valueDiff = Math.abs(localTrade.total_value - exactCost) / exactCost;
+          // CRITICAL: Always update to ensure exact Kraken values, even if "close"
+          // For auditing purposes, we want EXACT values, not "close enough"
+          const needsUpdate = 
+            Math.abs(localTrade.quantity - exactQuantity) > 0.00000001 ||
+            Math.abs(localTrade.price - exactPrice) > 0.00000001 ||
+            Math.abs(localTrade.total_value - exactCost) > 0.00000001 ||
+            !localTrade.kraken_trade_id;
           
-          if (qtyDiff > 0.0001 || priceDiff > 0.0001 || valueDiff > 0.0001) {
-            console.log('[syncTradesWithKraken] Updating trade', localTrade.id, ':', {
+          if (needsUpdate) {
+            console.log('[syncTradesWithKraken] Correcting trade', localTrade.id, localTrade.symbol, ':', {
               old: { qty: localTrade.quantity, price: localTrade.price, total: localTrade.total_value },
               new: { qty: exactQuantity, price: exactPrice, total: exactCost, fee: exactFee }
             });
@@ -157,7 +184,8 @@ Deno.serve(async (req) => {
               price: exactPrice,
               total_value: exactCost,
               fee: exactFee,
-              kraken_trade_id: krakenTrade.trade_id || krakenTrade.txid
+              kraken_trade_id: krakenTrade.trade_id || krakenTrade.txid,
+              kraken_order_id: krakenTrade.ordertxid
             });
             
             updated++;
