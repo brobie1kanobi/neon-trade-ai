@@ -45,7 +45,11 @@ export default function AutoTraderHealth() {
   const effectiveBalance = (krakenData?.total_portfolio_value_usd ?? krakenData?.total_portfolio_value) ?? ((krakenData?.usd_balance || 0) + (krakenData?.total_crypto_value_usd || krakenData?.total_crypto_value || 0));
   const effectiveCash = krakenData?.usd_balance ?? 0;
   const effectiveAssets = krakenData?.total_crypto_value_usd ?? krakenData?.total_crypto_value ?? 0;
-  const isKrakenConnected = krakenConnected || (krakenData?.connected === true);
+  
+  // CRITICAL: Consider Kraken connected if we have ANY data flowing
+  // This prevents false "not connected" warnings when WebSocket is working fine
+  const hasKrakenData = effectiveBalance > 0 || krakenData?.balances_count > 0;
+  const isKrakenConnected = krakenConnected || (krakenData?.connected === true) || hasKrakenData;
 
   // CRITICAL: Fetch order counts using same logic as OrdersAndHistory
   const fetchOrderCounts = useCallback(async () => {
