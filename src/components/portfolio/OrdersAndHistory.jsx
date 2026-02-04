@@ -181,8 +181,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     if (isSimMode) return [];
     
     const now = Date.now();
-    // Only fetch trades every 60 seconds to avoid rate limits (increased from 30s)
-    if (now - lastTradesFetch < 60000) {
+    // CRITICAL: Only fetch trades every 90 seconds to avoid rate limits
+    if (now - lastTradesFetch < 90000) {
       console.log('[OrdersAndHistory] Skipping trades fetch - too soon');
       return krakenTradesHistory;
     }
@@ -547,13 +547,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     }
   }, [providerKrakenOrders, isSimMode, mergeLists]);
 
-  // CRITICAL: Force refresh when tab becomes visible (tab switching)
-  useEffect(() => {
-    if (activeTab === 'open' || activeTab === 'conditional') {
-      console.log('[OrdersAndHistory] Active tab changed to', activeTab, '- refreshing orders');
-      loadOrders();
-    }
-  }, [activeTab, loadOrders]);
+  // CRITICAL: Removed auto-refresh on tab switch to prevent rate limits
+  // Provider already keeps data updated, no need to spam refresh
 
   // Listen for trade events (failed or completed) to refresh list immediately
   useEffect(() => {
