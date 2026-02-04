@@ -191,6 +191,8 @@ Deno.serve(async (req) => {
     // Security note: RLS on KrakenConnection ensures only the creator's records are accessed
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
     const isCreator = !!user?.is_creator;
+    
+    console.log('[krakenApi] User authenticated:', user.email, 'isAdmin:', isAdmin, 'isCreator:', isCreator);
 
     let body = {};
     try {
