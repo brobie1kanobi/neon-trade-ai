@@ -60,8 +60,8 @@ Deno.serve(async (req) => {
     const krakenTrades = krakenData.trades;
     console.log('[syncTradesWithKraken] Fetched', krakenTrades.length, 'trades from Kraken');
 
-    // Step 2: Fetch ALL local LIVE trades
-    const localTrades = await base44.entities.Trade.filter({ 
+    // Step 2: Fetch ALL local LIVE trades using SERVICE ROLE (to bypass RLS for admin operations)
+    const localTrades = await base44.asServiceRole.entities.Trade.filter({ 
       is_simulation: false,
       created_by: user.email 
     });
@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
               new: { qty: exactQuantity, price: exactPrice, total: exactCost, fee: exactFee }
             });
             
-            await base44.entities.Trade.update(localTrade.id, {
+            await base44.asServiceRole.entities.Trade.update(localTrade.id, {
               quantity: exactQuantity,
               price: exactPrice,
               total_value: exactCost,
@@ -242,7 +242,7 @@ Deno.serve(async (req) => {
           fee: kt.fee
         });
         
-        await base44.entities.Trade.create({
+        await base44.asServiceRole.entities.Trade.create({
           symbol: displaySymbol,
           type: kt.type,
           asset_type: 'crypto',
