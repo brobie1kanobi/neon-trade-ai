@@ -204,10 +204,18 @@ Deno.serve(async (req) => {
       if (alreadyExists) continue;
 
       try {
-        console.log('[syncTradesWithKraken] Creating missing trade from Kraken:', ktId, ktSymbol);
+        // CRITICAL: Normalize XBT -> BTC for display
+        const displaySymbol = ktSymbol === 'XBT' ? 'BTC' : ktSymbol;
+        
+        console.log('[syncTradesWithKraken] Creating missing trade from Kraken:', ktId, displaySymbol, {
+          vol: kt.vol,
+          price: kt.price,
+          cost: kt.cost,
+          fee: kt.fee
+        });
         
         await base44.entities.Trade.create({
-          symbol: ktSymbol,
+          symbol: displaySymbol,
           type: kt.type,
           asset_type: 'crypto',
           quantity: parseFloat(kt.vol),
