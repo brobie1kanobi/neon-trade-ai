@@ -36,10 +36,12 @@ Deno.serve(async (req) => {
       }
       
       try {
-        const krakenResponse = await base44.functions.invoke('krakenApi', { 
+        // CRITICAL: Use asServiceRole to call krakenApi (which requires elevated access)
+        const krakenResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
           action: 'getTradesHistory' 
         });
         krakenData = krakenResponse?.data || krakenResponse;
+        console.log('[syncTradesWithKraken] Kraken API response:', krakenData?.success, 'trades:', krakenData?.trades?.length);
       } catch (err) {
         console.error('[syncTradesWithKraken] Fetch error:', err.message);
         krakenData = { error: err.message };
