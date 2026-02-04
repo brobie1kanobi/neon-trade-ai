@@ -143,14 +143,20 @@ export default function AutoBuyPreferences() {
     
     try {
       const me = await User.me();
-      const created = await AutoBuyPreference.create({
+      
+      // CRITICAL: Explicitly set is_simulation boolean based on current mode
+      const prefData = {
         symbol: symbol.toUpperCase(),
         asset_type: assetType,
-        percentage: Math.max(10, Number(percentage) || 10),
+        percentage: Math.max(1, Number(percentage) || 10), // Allow minimum 1%
         enabled: true,
-        is_simulation: isSimMode,
+        is_simulation: isSimMode, // Explicitly set as boolean
         created_by: me.email
-      });
+      };
+      
+      console.log('[AutoBuyPreferences] Creating preference:', prefData);
+      
+      const created = await AutoBuyPreference.create(prefData);
       
       setPrefs((prev) => [created, ...prev]);
       
@@ -179,7 +185,7 @@ export default function AutoBuyPreferences() {
   };
 
   const updatePercentage = async (pref, pct) => {
-    const value = Math.max(10, Number(pct) || 10);
+    const value = Math.max(1, Number(pct) || 10); // Allow minimum 1%
     
     try {
       const updated = await AutoBuyPreference.update(pref.id, { percentage: value });
@@ -235,7 +241,7 @@ export default function AutoBuyPreferences() {
             </SelectContent>
           </Select>
           <div className="flex items-center gap-2">
-            <Input type="number" min={10} value={percentage} onChange={(e) => setPercentage(e.target.value)} className="w-20" />
+            <Input type="number" min={1} max={100} value={percentage} onChange={(e) => setPercentage(e.target.value)} className="w-20" />
             <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>% of cash</span>
           </div>
           <Button onClick={addPref} className="gap-2" disabled={!symbol || loading}>
@@ -266,7 +272,8 @@ export default function AutoBuyPreferences() {
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
-                      min={10}
+                      min={1}
+                      max={100}
                       className="w-20 sm:w-24"
                       value={p.percentage}
                       onChange={(e) => updatePercentage(p, e.target.value)}
