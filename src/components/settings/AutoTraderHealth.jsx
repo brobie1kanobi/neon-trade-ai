@@ -243,11 +243,11 @@ export default function AutoTraderHealth() {
       fetchHealth();
       fetchOrderCounts();
       
-      // CRITICAL: Reduced refresh frequency to 60 seconds to prevent rate limits
+      // CRITICAL: Reduced refresh frequency to 120 seconds to prevent rate limits
       const interval = setInterval(() => {
         fetchHealth();
         fetchOrderCounts();
-      }, 60000); // Was 30 seconds, now 60
+      }, 120000); // Was 60 seconds, now 120 (2 minutes)
       
       return () => clearInterval(interval);
     }
@@ -261,19 +261,21 @@ export default function AutoTraderHealth() {
     }
   }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites, fetchOrderCounts]);
   
-  // CRITICAL: Refresh order counts when WebSocket orders update - but debounced
+  // CRITICAL: Only update order count from WebSocket, don't trigger fetches
   const wsOrdersCountRef = React.useRef(0);
   useEffect(() => {
     if (!isSimMode && wsConnected && krakenOrders) {
-      const newCount = Object.keys(krakenOrders).length;
-      // Only refresh if count actually changed to prevent spam
+      const newCount = Object.values(krakenOrders).filter(o => {
+        const volume = parseFloat(o.vol) || o.volume || 0;
+        return volume > 0.00001;
+      }).length;
+      // Only update UI state, don't trigger API calls
       if (newCount !== wsOrdersCountRef.current) {
         wsOrdersCountRef.current = newCount;
-        console.log('[AutoTraderHealth] WebSocket orders count changed, refreshing...');
-        fetchOrderCounts();
+        setActiveOrderCount(newCount);
       }
     }
-  }, [krakenOrders, wsConnected, isSimMode, fetchOrderCounts]);
+  }, [krakenOrders, wsConnected, isSimMode]);
 
   // Auto-update health when krakenData changes
   useEffect(() => {
