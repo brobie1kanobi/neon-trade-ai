@@ -290,7 +290,7 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial fetch on mount (only once) - with 3s delay to let page settle
+  // CRITICAL: Initial fetch on mount (only once) - with 5s delay to let page settle
   useEffect(() => {
     if (shouldConnect && restData.lastFetchTime === 0) {
       // CRITICAL: Delay initial fetch to prevent rate limits on page load
@@ -298,25 +298,25 @@ export function KrakenWebSocketProvider({ children }) {
         console.log('[KrakenWebSocketProvider] Initial REST data fetch (delayed)');
         fetchRestData(true);
         // Fetch PnL after additional delay to spread out API calls
-        setTimeout(() => fetchPnL(), 5000);
-      }, 3000); // 3 second delay before first API call
+        setTimeout(() => fetchPnL(), 10000);
+      }, 5000); // 5 second delay before first API call (was 3s)
       
       return () => clearTimeout(timer);
     }
-  }, [shouldConnect]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
-  // CRITICAL: Periodic refresh - every 60 seconds for balance, 2 minutes for PnL
+  // CRITICAL: Periodic refresh - every 90 seconds for balance, 3 minutes for PnL
   // Reduced frequency to prevent rate limits - WebSocket provides real-time updates anyway
   useEffect(() => {
     if (!shouldConnect) return;
     
     const balanceInterval = setInterval(() => {
       fetchRestData(false);
-    }, 60000); // 60 seconds (was 30s)
+    }, 90000); // 90 seconds (was 60s)
     
     const pnlInterval = setInterval(() => {
       fetchPnL();
-    }, 120000); // 2 minutes (was 60s)
+    }, 180000); // 3 minutes (was 2 min)
     
     return () => {
       clearInterval(balanceInterval);
