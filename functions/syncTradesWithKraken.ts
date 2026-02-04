@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest, createClient } from 'npm:@base44/sdk@0.8.6';
 
 /**
  * Sync ALL local Trade records with Kraken's authoritative data
@@ -9,6 +9,70 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  * 2. Updates ALL local Trade records to match Kraken's EXACT values
  * 3. Creates any missing trades that exist on Kraken but not locally
  */
+
+const KRAKEN_API_URL = 'https://api.kraken.com';
+const API_TIMEOUT = 15000;
+
+// Local nonce counter
+let lastNonce = 0;
+
+function generateNonce() {
+  const now = Date.now() * 1000;
+  if (now <= lastNonce) {
+    lastNonce++;
+  } else {
+    lastNonce = now;
+  }
+  return lastNonce.toString();
+}
+
+async function callKraken(apiKey, apiSecret, endpoint, data = {}) {
+  const cleanKey = typeof apiKey === 'string' ? apiKey.trim().replace(/\s+/g, '') : apiKey;
+  const cleanSecret = typeof apiSecret === 'string' ? apiSecret.trim().replace(/\s+/g, '') : apiSecret;
+  const nonce = generateNonce();
+  const postData = new URLSearchParams({ nonce, ...data }).toString();
+  
+  const message = nonce + postData;
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+  const hmacKey = await crypto.subtle.importKey(
+    'raw',
+    Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)),
+    { name: 'HMAC', hash: 'SHA-512' },
+    false,
+    ['sign']
+  );
+  
+  const pathBytes = new TextEncoder().encode(endpoint);
+  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(hash), pathBytes.length);
+  
+  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
+  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+  
+  try {
+    const response = await fetch(`${KRAKEN_API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'API-Key': cleanKey,
+        'API-Sign': apiSign,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'NeonTrade-AI/1.0'
+      },
+      body: postData,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    return await response.json();
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+    throw fetchError;
+  }
+}
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
@@ -23,26 +87,41 @@ Deno.serve(async (req) => {
 
     console.log('[syncTradesWithKraken] Starting sync for user:', user.email);
 
-    // Step 1: Fetch ALL trades from Kraken (with retry for rate limits)
-    // CRITICAL: Use user-scoped client to invoke krakenApi (not service role - which can't invoke functions)
+    // Get Kraken connection to call API directly
+    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+    if (!connections || connections.length === 0) {
+      return Response.json({ error: 'Kraken not connected', success: false }, { status: 200 });
+    }
+    
+    const connection = connections[0];
+    const normalize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
+    const apiKey = normalize(connection.balance_api_key || connection.api_key);
+    const apiSecret = normalize(connection.balance_api_secret_encrypted || connection.api_secret_encrypted);
+    
+    if (!apiKey || !apiSecret) {
+      return Response.json({ error: 'Missing Kraken API credentials', success: false }, { status: 200 });
+    }
+
+    // Step 1: Fetch ALL trades from Kraken directly
     let krakenData = null;
     let attempts = 0;
     const maxAttempts = 3;
     
-    while (attempts < maxAttempts && !krakenData?.success) {
+    while (attempts < maxAttempts && !krakenData?.result?.trades) {
       if (attempts > 0) {
-        const delay = 5000 * attempts; // 5s, 10s delay
+        const delay = 5000 * attempts;
         console.log(`[syncTradesWithKraken] Retry ${attempts}/${maxAttempts} after ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
       }
       
       try {
-        // Use user-scoped client (base44.functions.invoke preserves the user context for RLS)
-        const krakenResponse = await base44.functions.invoke('krakenApi', { 
-          action: 'getTradesHistory' 
-        });
-        krakenData = krakenResponse?.data || krakenResponse;
-        console.log('[syncTradesWithKraken] Kraken API response:', krakenData?.success, 'trades:', krakenData?.trades?.length);
+        krakenData = await callKraken(apiKey, apiSecret, '/0/private/TradesHistory', { type: 'all' });
+        console.log('[syncTradesWithKraken] Kraken API response:', !!krakenData?.result, 'trades:', Object.keys(krakenData?.result?.trades || {}).length);
+        
+        if (krakenData.error?.length > 0) {
+          console.error('[syncTradesWithKraken] Kraken error:', krakenData.error);
+          krakenData = { error: krakenData.error.join(', ') };
+        }
       } catch (err) {
         console.error('[syncTradesWithKraken] Fetch error:', err.message);
         krakenData = { error: err.message };
@@ -51,7 +130,7 @@ Deno.serve(async (req) => {
       attempts++;
     }
     
-    if (!krakenData?.success || !krakenData?.trades) {
+    if (!krakenData?.result?.trades) {
       console.error('[syncTradesWithKraken] Failed to fetch Kraken trades after', attempts, 'attempts:', krakenData?.error);
       return Response.json({ 
         error: krakenData?.error || 'Failed to fetch Kraken trades',
@@ -59,9 +138,17 @@ Deno.serve(async (req) => {
         attempts: attempts
       }, { status: 200 });
     }
-
-    const krakenTrades = krakenData.trades;
+    
+    // Convert to array format
+    const krakenTrades = Object.entries(krakenData.result.trades).map(([txid, trade]) => ({
+      trade_id: trade.trade_id || txid,
+      txid,
+      ...trade
+    }));
+    
     console.log('[syncTradesWithKraken] Fetched', krakenTrades.length, 'trades from Kraken');
+
+
 
     // Step 2: Fetch ALL local LIVE trades using SERVICE ROLE (to bypass RLS for admin operations)
     const localTrades = await base44.asServiceRole.entities.Trade.filter({ 
