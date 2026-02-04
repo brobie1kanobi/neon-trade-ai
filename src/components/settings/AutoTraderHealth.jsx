@@ -276,26 +276,33 @@ export default function AutoTraderHealth() {
 
   useEffect(() => {
     if (user?.email) {
-      fetchHealth();
-      fetchOrderCounts();
+      // CRITICAL: Delay initial fetch by 3 seconds to let provider fetch first
+      const initTimer = setTimeout(() => {
+        fetchHealth();
+        fetchOrderCounts();
+      }, 3000);
       
-      // CRITICAL: Reduced refresh frequency to 120 seconds to prevent rate limits
+      // CRITICAL: Refresh every 180 seconds (3 minutes) to prevent rate limits
       const interval = setInterval(() => {
         fetchHealth();
         fetchOrderCounts();
-      }, 120000); // Was 60 seconds, now 120 (2 minutes)
+      }, 180000); // Was 120 seconds, now 180 (3 minutes)
       
-      return () => clearInterval(interval);
+      return () => {
+        clearTimeout(initTimer);
+        clearInterval(interval);
+      };
     }
   }, [user?.email, settings?.auto_trading_enabled, fetchOrderCounts]);
 
-  // Re-check prerequisites and order counts when Kraken connection changes
+  // Re-check prerequisites when Kraken connection changes (but NOT order counts to avoid API spam)
   useEffect(() => {
     if (user?.email) {
+      // CRITICAL: Only check prerequisites, don't fetch order counts on every change
+      // Order counts are updated via WebSocket and periodic refresh
       checkPrerequisites();
-      fetchOrderCounts();
     }
-  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites, fetchOrderCounts]);
+  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites]);
   
   // CRITICAL: Only update order count from WebSocket, don't trigger fetches
   const wsOrdersCountRef = React.useRef(0);

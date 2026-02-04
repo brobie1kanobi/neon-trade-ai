@@ -181,9 +181,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     if (isSimMode) return [];
     
     const now = Date.now();
-    // CRITICAL: Only fetch trades every 90 seconds to avoid rate limits
-    if (now - lastTradesFetch < 90000) {
-      console.log('[OrdersAndHistory] Skipping trades fetch - too soon');
+    // CRITICAL: Only fetch trades every 120 seconds to avoid rate limits (was 90s)
+    if (now - lastTradesFetch < 120000) {
+      console.log('[OrdersAndHistory] Skipping trades fetch - too soon (', Math.round((now - lastTradesFetch) / 1000), 's ago)');
       return krakenTradesHistory;
     }
     
@@ -200,7 +200,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       return [];
     } catch (err) {
       console.error('[OrdersAndHistory] Trades fetch error:', err.message);
-      return [];
+      // On rate limit, don't try again immediately
+      if (err.message?.toLowerCase().includes('rate limit')) {
+        setLastTradesFetch(now); // Prevent immediate retry
+      }
+      return krakenTradesHistory; // Return cached data
     }
   }, [isSimMode, lastTradesFetch, krakenTradesHistory]);
 
@@ -208,17 +212,18 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const fetchKrakenData = useCallback(async () => {
     if (isSimMode) return { orders: [], trades: [] };
     
-    // Trigger centralized fetch (provider enforces rate limits)
-    await fetchFromProvider(false);
+    // CRITICAL: Don't trigger provider fetch here - it handles its own timing
+    // Just return whatever data the provider has cached
+    // This prevents components from overwhelming the rate limit
     
-    // Fetch trades separately
+    // Only fetch trades if enough time has passed (fetchTradesHistory has its own throttle)
     const trades = await fetchTradesHistory();
     
     return {
       orders: providerKrakenOrders || [],
       trades: trades
     };
-  }, [isSimMode, fetchFromProvider, fetchTradesHistory, providerKrakenOrders]);
+  }, [isSimMode, fetchTradesHistory, providerKrakenOrders]);
 
   // Load conditional orders - CRITICAL: Filter by simulation mode and merge with Kraken data
   const loadOrders = useCallback(async () => {
