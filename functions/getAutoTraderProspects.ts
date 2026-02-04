@@ -297,15 +297,23 @@ Deno.serve(async (req) => {
       }
       
       // Scale down if already holding (reduce risk of over-concentration)
+      // CRITICAL: Only scale down by 40% if holding, not 60%
       if (holding) {
-        total = total * 0.6;
-        console.log('[Prospects]', symbol, '- Scaled down for existing position to', total.toFixed(2));
+        const scaleFactor = 0.7; // 30% reduction for existing positions (was 60%)
+        total = total * scaleFactor;
+        console.log('[Prospects]', symbol, '- Scaled down for existing position to', total.toFixed(2), '(factor:', scaleFactor, ')');
       }
       
-      // Minimum $5 order (Kraken minimum)
-      if (total < 5 && cashAvailable >= 5) {
-        total = 5;
-        console.log('[Prospects]', symbol, '- Bumped to minimum $5');
+      // Minimum order validation (Kraken requires ~$5 minimum for most pairs)
+      // But if user has less than $5 total, let them trade with what they have
+      const krakenMinimum = 5;
+      if (total < krakenMinimum && total > 0 && cashAvailable >= krakenMinimum) {
+        total = krakenMinimum;
+        console.log('[Prospects]', symbol, '- Bumped to Kraken minimum $', krakenMinimum);
+      } else if (total < 1) {
+        // Skip if less than $1 - too small to be meaningful
+        console.log('[Prospects]', symbol, '- Skipping, order value too small ($', total.toFixed(2), ')');
+        continue;
       }
       
       // FINAL HARD CAP: Never exceed cash
