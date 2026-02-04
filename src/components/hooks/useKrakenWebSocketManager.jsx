@@ -48,8 +48,8 @@ const GLOBAL_WS_STATE = {
 
 const PUBLIC_WS_URL = 'wss://ws.kraken.com/v2';
 const PRIVATE_WS_URL = 'wss://ws-auth.kraken.com/v2';
-const MAX_RECONNECT_ATTEMPTS = 10;
-const RECONNECT_DELAY = 3000;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY = 10000; // 10 seconds between retries
 const TOKEN_REFRESH_BUFFER = 60000; // Refresh token 1 minute before expiry
 
 /**
@@ -699,25 +699,29 @@ export function useKrakenWebSocketManager(options = {}) {
   // Tokens are now only refreshed when they actually expire (14+ minute lifetime)
   // This prevents the constant "Can't get token" errors from rate limiting
 
-  // Watchdog: reconnect if disconnected (but less frequently to reduce overhead)
+  // Watchdog: reconnect if disconnected - VERY conservative to prevent rate limits
   useEffect(() => {
     const interval = setInterval(() => {
-      // If disconnected, try reconnecting automatically
+      // CRITICAL: Only reconnect if we have very few attempts AND been disconnected for a while
+      // This prevents spam reconnects that cause rate limit errors
+      if (GLOBAL_WS_STATE.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        // Already hit max retries, don't spam
+        return;
+      }
+      
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
         connectPublicWebSocket(priceSymbols);
       }
       if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting private balances WS...');
-        GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateBalancesWebSocket();
       }
       if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting private orders WS...');
-        GLOBAL_WS_STATE.reconnectAttempts = 0;
         connectPrivateOrdersWebSocket();
       }
-    }, 30000); // CRITICAL: Increased from 15s to 30s to reduce overhead
+    }, 60000); // CRITICAL: 60 seconds between watchdog checks
     return () => clearInterval(interval);
   }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 

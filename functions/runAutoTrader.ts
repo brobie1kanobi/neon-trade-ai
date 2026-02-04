@@ -162,6 +162,11 @@ Deno.serve(async (req) => {
         prospects = prospectsData.prospects;
         cashAvailable = prospectsData.cash_available || 0;
         console.log(`[runAutoTrader] Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
+        
+        // CRITICAL: Log each prospect's allocation to verify user settings are being used
+        prospects.forEach(p => {
+          console.log(`[runAutoTrader] Prospect ${p.symbol}: user_allocation=${p.user_allocation_pct}%, actual=${p.allocation_percent}%, qty=${p.quantity}, value=$${p.total_value?.toFixed(2)}`);
+        });
       } else {
         console.log('[runAutoTrader] No prospects available');
         return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
@@ -272,12 +277,16 @@ Deno.serve(async (req) => {
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
       const price = prospect.current_price || 0;
+      // CRITICAL: Use the quantity and total_value from prospects - these are calculated using user's allocation %
       const qty = prospect.quantity || 0;
       const total_value = prospect.total_value || 0;
       const confidence = prospect.confidence_score || 0;
+      const userAllocationPct = prospect.user_allocation_pct || 10;
+      
+      console.log(`[runAutoTrader] Processing ${sym}: price=$${price}, qty=${qty}, value=$${total_value.toFixed(2)}, user_alloc=${userAllocationPct}%`);
       
       if (price <= 0 || qty <= 0 || total_value <= 0) {
-        console.log(`[runAutoTrader] Skipping ${sym} - invalid values`);
+        console.log(`[runAutoTrader] Skipping ${sym} - invalid values (price=${price}, qty=${qty}, value=${total_value})`);
         continue;
       }
       
@@ -325,14 +334,20 @@ Deno.serve(async (req) => {
           const buyOrderId = buyData.order_id;
           console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
           
-          // Record LIVE trade immediately
+          // CRITICAL: Record LIVE trade with ACTUAL executed quantity from Kraken response
+          // The Kraken order response tells us exactly how much was actually bought
+          const executedQty = buyData.executed_qty || buyData.quantity || qty;
+          const executedValue = executedQty * price;
+          
+          console.log(`[runAutoTrader] Recording trade: requested qty=${qty}, executed qty=${executedQty}, value=$${executedValue.toFixed(2)}`);
+          
           await base44.entities.Trade.create({
             symbol: sym,
             type: 'buy',
             asset_type: typ,
-            quantity: qty,
+            quantity: executedQty,  // Use ACTUAL executed quantity
             price: price,
-            total_value,
+            total_value: executedValue,  // Use ACTUAL executed value
             status: 'executed',
             is_auto_trade: true,
             is_simulation: false,
