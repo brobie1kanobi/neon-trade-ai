@@ -86,25 +86,30 @@ Deno.serve(async (req) => {
     // For LIVE prospects, we need is_simulation: false preferences
     console.log('[Prospects] Looking for preferences with is_simulation:', isSimMode);
     
-    // Fetch user's preferences using service role
-    // Use user-scoped client to get user's own preferences
+    // Fetch user's preferences using user-scoped client (RLS enforces created_by)
     let allPrefs = await base44.entities.AutoBuyPreference.filter({}, "-created_date", 50);
 
     console.log('[Prospects] Found', allPrefs.length, 'total AutoBuyPreferences for user');
     
-    // Debug: log all preferences
+    // Debug: log all preferences to verify filtering
     allPrefs.forEach(p => {
-      console.log('[Prospects] All pref:', p.symbol, 'is_simulation:', p.is_simulation, typeof p.is_simulation, 'enabled:', p.enabled);
+      console.log('[Prospects] All pref:', p.symbol, 'is_simulation:', p.is_simulation, typeof p.is_simulation, 'enabled:', p.enabled, 'percentage:', p.percentage);
     });
     
-    // Filter to matching simulation mode and enabled
-    // isSimMode is false for LIVE prospects, so we want is_simulation: false
+    // CRITICAL: Filter to matching simulation mode and enabled
+    // For LIVE prospects (isSimMode=false), we want preferences with is_simulation=false
+    // Handle the fact that is_simulation might be undefined (default to false/live) or explicitly set
     let prefs = allPrefs.filter(p => {
-      // Handle boolean or string values
-      const pIsSimulation = p.is_simulation === true;
+      // Handle boolean, string, or undefined values
+      // CRITICAL: Default to is_simulation=false (LIVE mode) if not explicitly set to true
+      const pIsSimulation = p.is_simulation === true || p.is_simulation === 'true';
       const pEnabled = p.enabled !== false; // Default to enabled if not explicitly false
-      // For LIVE mode (isSimMode=false), we want preferences with is_simulation=false
+      
+      // For LIVE mode (isSimMode=false), we want preferences where is_simulation is NOT true
       const matchesSim = isSimMode === pIsSimulation;
+      
+      console.log(`[Prospects] Filtering ${p.symbol}: is_simulation=${p.is_simulation}(${typeof p.is_simulation}), isSimMode=${isSimMode}, matchesSim=${matchesSim}, enabled=${pEnabled}`);
+      
       return matchesSim && pEnabled;
     });
 
