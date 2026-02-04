@@ -274,8 +274,8 @@ Deno.serve(async (req) => {
               price: exactPrice,
               total_value: exactCost,
               fee: exactFee,
-              kraken_trade_id: krakenTrade.trade_id || krakenTrade.txid,
-              kraken_order_id: krakenTrade.ordertxid
+              kraken_trade_id: String(krakenTrade.trade_id || krakenTrade.txid),
+              kraken_order_id: krakenTrade.ordertxid ? String(krakenTrade.ordertxid) : null
             });
             
             updated++;
@@ -343,8 +343,8 @@ Deno.serve(async (req) => {
           status: 'executed',
           is_auto_trade: false,
           is_simulation: false,
-          kraken_trade_id: ktId,
-          kraken_order_id: kt.ordertxid,
+          kraken_trade_id: String(ktId),  // CRITICAL: Convert to string
+          kraken_order_id: kt.ordertxid ? String(kt.ordertxid) : null,
           created_date: new Date(kt.time * 1000).toISOString(),
           created_by: user.email
         });
