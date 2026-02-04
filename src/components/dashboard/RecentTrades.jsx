@@ -217,8 +217,8 @@ export default function RecentTrades({ trades, onTradeSelect }) {
             </div>
             <div className="text-right">
               <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {/* CRITICAL: Calculate actual value from qty * price for accuracy */}
-                ${(trade.quantity * trade.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {/* CRITICAL: Use total_value from Kraken (cost field) which is the EXACT cash amount */}
+                ${(trade.total_value || (trade.quantity * trade.price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <div className="flex items-center gap-1">
                 <Badge variant="outline" className="text-xs">
