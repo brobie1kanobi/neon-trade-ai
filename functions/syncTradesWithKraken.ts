@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
     console.log('[syncTradesWithKraken] Starting sync for user:', user.email);
 
     // Step 1: Fetch ALL trades from Kraken (with retry for rate limits)
+    // CRITICAL: Use user-scoped client to invoke krakenApi (not service role - which can't invoke functions)
     let krakenData = null;
     let attempts = 0;
     const maxAttempts = 3;
@@ -36,8 +37,8 @@ Deno.serve(async (req) => {
       }
       
       try {
-        // CRITICAL: Use asServiceRole to call krakenApi (which requires elevated access)
-        const krakenResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
+        // Use user-scoped client (base44.functions.invoke preserves the user context for RLS)
+        const krakenResponse = await base44.functions.invoke('krakenApi', { 
           action: 'getTradesHistory' 
         });
         krakenData = krakenResponse?.data || krakenResponse;
