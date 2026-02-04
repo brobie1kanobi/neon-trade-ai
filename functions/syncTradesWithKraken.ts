@@ -49,21 +49,36 @@ Deno.serve(async (req) => {
     
     console.log('[syncTradesWithKraken] Found', localTrades.length, 'local LIVE trades');
 
-    // Normalize Kraken symbol
+    // Normalize Kraken symbol - CRITICAL: Convert ALL Kraken formats to standard symbols
     const normalizeSymbol = (pair) => {
       if (!pair) return 'UNKNOWN';
       let s = pair.toUpperCase();
+      
+      // Remove USD suffix variations
       s = s.replace(/USD$/, '').replace(/ZUSD$/, '').replace(/\/USD$/, '');
+      
+      // CRITICAL: Handle XBT -> BTC (Kraken uses XBT for Bitcoin)
       s = s.replace(/^XXBT$/, 'BTC').replace(/^XBT$/, 'BTC').replace(/^XBTC$/, 'BTC');
+      // Also handle XBT appearing after pair strip
+      if (s === 'XBT') s = 'BTC';
+      
+      // Handle other Kraken-specific symbols
       s = s.replace(/^XXRP$/, 'XRP').replace(/^XRPZ$/, 'XRP');
       s = s.replace(/^XETH$/, 'ETH').replace(/^XXDG$/, 'DOGE').replace(/^XLTC$/, 'LTC');
       s = s.replace(/^XXLM$/, 'XLM').replace(/^XXLMZ$/, 'XLM');
+      
+      // Remove leading X from Kraken's format (e.g., XETH -> ETH)
       if (s.length > 3 && s.startsWith('X') && /^X[A-Z]/.test(s)) {
         s = s.substring(1);
       }
+      // Remove trailing Z from Kraken's format
       if (s.length > 3 && s.endsWith('Z')) {
         s = s.slice(0, -1);
       }
+      
+      // Final XBT check after all transformations
+      if (s === 'XBT') s = 'BTC';
+      
       return s;
     };
 
