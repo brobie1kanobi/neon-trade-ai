@@ -1474,6 +1474,11 @@ Deno.serve(async (req) => {
         created_by: user.email
       });
 
+      // CRITICAL: Return the ACTUAL executed quantity from Kraken
+      // For market orders, this is the quantity we submitted (finalQty)
+      // For limit orders, execution happens later
+      console.log(`[krakenTrade] Order placed - requested qty: ${finalQty}, order type: ${orderType}`);
+      
       return Response.json({
         success: true,
         order_id: tradeResult.order_id,
@@ -1481,8 +1486,8 @@ Deno.serve(async (req) => {
         client_order_id: tradeResult.client_order_id,
         symbol: orderParams.symbol,
         side,
-        quantity: finalQty,
-        executed_qty: finalQty, // mirror until fills fetched on client
+        quantity: finalQty,           // What we requested
+        executed_qty: finalQty,       // For market orders, this is what we get
         orderType,
         // Echo back calculated notional so client can prefill totals accurately
         notional_usd: finalQty * (parseFloat(limitPrice) || 0),

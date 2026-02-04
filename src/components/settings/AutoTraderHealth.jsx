@@ -243,11 +243,11 @@ export default function AutoTraderHealth() {
       fetchHealth();
       fetchOrderCounts();
       
-      // Refresh every 30 seconds
+      // CRITICAL: Reduced refresh frequency to 60 seconds to prevent rate limits
       const interval = setInterval(() => {
         fetchHealth();
         fetchOrderCounts();
-      }, 30000);
+      }, 60000); // Was 30 seconds, now 60
       
       return () => clearInterval(interval);
     }
@@ -261,11 +261,17 @@ export default function AutoTraderHealth() {
     }
   }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites, fetchOrderCounts]);
   
-  // CRITICAL: Refresh order counts when WebSocket orders update
+  // CRITICAL: Refresh order counts when WebSocket orders update - but debounced
+  const wsOrdersCountRef = React.useRef(0);
   useEffect(() => {
     if (!isSimMode && wsConnected && krakenOrders) {
-      console.log('[AutoTraderHealth] WebSocket orders updated, refreshing counts...');
-      fetchOrderCounts();
+      const newCount = Object.keys(krakenOrders).length;
+      // Only refresh if count actually changed to prevent spam
+      if (newCount !== wsOrdersCountRef.current) {
+        wsOrdersCountRef.current = newCount;
+        console.log('[AutoTraderHealth] WebSocket orders count changed, refreshing...');
+        fetchOrderCounts();
+      }
     }
   }, [krakenOrders, wsConnected, isSimMode, fetchOrderCounts]);
 
