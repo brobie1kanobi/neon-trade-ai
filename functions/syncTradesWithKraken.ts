@@ -139,10 +139,11 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
     
-    // Convert to array format
+    // Convert to array format - CRITICAL: Ensure all IDs are strings
     const krakenTrades = Object.entries(krakenData.result.trades).map(([txid, trade]) => ({
-      trade_id: trade.trade_id || txid,
-      txid,
+      trade_id: String(trade.trade_id || txid),
+      txid: String(txid),
+      ordertxid: trade.ordertxid ? String(trade.ordertxid) : null,
       ...trade
     }));
     
@@ -297,10 +298,10 @@ Deno.serve(async (req) => {
     }
 
     for (const kt of krakenTrades) {
-      const ktId = kt.trade_id || kt.txid;
+      const ktId = String(kt.trade_id || kt.txid);
       
       // Skip if we already have this trade
-      if (localTradeIds.has(ktId) || localTradeIds.has(kt.ordertxid)) {
+      if (localTradeIds.has(ktId) || localTradeIds.has(String(kt.ordertxid || ''))) {
         continue;
       }
       
