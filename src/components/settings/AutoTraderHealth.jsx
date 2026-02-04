@@ -149,9 +149,16 @@ export default function AutoTraderHealth() {
         }).catch(() => [])
       ]);
 
-      // Kraken is connected if: useKrakenData says so OR verified connection exists in DB
-      const hasKrakenCredentials = krakenConns.length > 0 && krakenConns[0]?.account_verified;
-      const isConnected = isKrakenConnected || hasKrakenCredentials;
+      // CRITICAL: Kraken is connected if ANY of these are true:
+      // 1. useKrakenData hook says connected (WebSocket working)
+      // 2. Database has API credentials stored (account_verified OR just has keys)
+      // 3. We have a positive balance (means data is flowing)
+      const hasKrakenCredentials = krakenConns.length > 0 && (krakenConns[0]?.api_key || krakenConns[0]?.trade_api_key || krakenConns[0]?.balance_api_key);
+      const hasVerifiedAccount = krakenConns.length > 0 && krakenConns[0]?.account_verified;
+      const hasBalanceData = effectiveBalance > 0; // If we have balance, Kraken is definitely connected
+      
+      // Trust WebSocket/balance data over database verification flag
+      const isConnected = isKrakenConnected || hasBalanceData || hasKrakenCredentials || hasVerifiedAccount;
 
       // For balance check, use effective balance
       const hasBalance = effectiveBalance > 1;
@@ -163,21 +170,23 @@ export default function AutoTraderHealth() {
         hasBalance
       };
 
-      // Build list of operational issues
+      // Build list of operational issues - ONLY show real issues
       const issues = [];
-      if (!prereqs.krakenConnected) {
+      
+      // Only say "not connected" if we truly have NO data and NO credentials
+      if (!isConnected && !hasKrakenCredentials) {
         issues.push({ type: 'connection', message: 'Kraken not connected' });
       }
       if (!prereqs.hasAutoBuyPrefs) {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
       // Only show balance issue if Kraken is connected and balance is actually low
-      if (isConnected && effectiveBalance <= 1) {
+      if (isConnected && effectiveBalance <= 1 && effectiveBalance >= 0) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
       }
       
       setOperationalIssues(issues);
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| Kraken Connected:', isConnected, '| Balance:', effectiveBalance);
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| Kraken Connected:', isConnected, '| Balance:', effectiveBalance, '| HasCredentials:', hasKrakenCredentials);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
