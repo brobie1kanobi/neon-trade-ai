@@ -181,8 +181,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     if (isSimMode) return [];
     
     const now = Date.now();
-    // Only fetch trades every 30 seconds to avoid rate limits
-    if (now - lastTradesFetch < 30000) {
+    // Only fetch trades every 60 seconds to avoid rate limits (increased from 30s)
+    if (now - lastTradesFetch < 60000) {
       console.log('[OrdersAndHistory] Skipping trades fetch - too soon');
       return krakenTradesHistory;
     }

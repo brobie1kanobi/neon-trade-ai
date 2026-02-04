@@ -38,7 +38,7 @@ export function KrakenWebSocketProvider({ children }) {
   const lastRestCallRef = useRef(0);
   const restCallQueueRef = useRef([]);
   const isProcessingQueueRef = useRef(false);
-  const MIN_REST_INTERVAL = 10000; // Minimum 10 seconds between REST API calls (increased from 5s)
+  const MIN_REST_INTERVAL = 30000; // Minimum 30 seconds between REST API calls to avoid rate limits
 
   const [state, setState] = useState({
     isConnected: false,
@@ -290,13 +290,18 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial fetch on mount (only once)
+  // CRITICAL: Initial fetch on mount (only once) - with 3s delay to let page settle
   useEffect(() => {
     if (shouldConnect && restData.lastFetchTime === 0) {
-      console.log('[KrakenWebSocketProvider] Initial REST data fetch');
-      fetchRestData(true);
-      // Fetch PnL after a delay to spread out API calls
-      setTimeout(() => fetchPnL(), 3000);
+      // CRITICAL: Delay initial fetch to prevent rate limits on page load
+      const timer = setTimeout(() => {
+        console.log('[KrakenWebSocketProvider] Initial REST data fetch (delayed)');
+        fetchRestData(true);
+        // Fetch PnL after additional delay to spread out API calls
+        setTimeout(() => fetchPnL(), 5000);
+      }, 3000); // 3 second delay before first API call
+      
+      return () => clearTimeout(timer);
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks/exhaustive-deps
 
