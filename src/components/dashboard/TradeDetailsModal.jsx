@@ -55,9 +55,11 @@ export default function TradeDetailsModal({ trade, isOpen, onClose }) {
     return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
   };
 
-  // CRITICAL: Calculate actual cash impact (quantity * price)
-  // This is the TRUE amount of money spent (buy) or received (sell)
-  const actualCashImpact = trade.quantity * trade.price;
+  // CRITICAL: Use trade.total_value if available (comes from Kraken's 'cost' field)
+  // This is the EXACT cash impact - don't recalculate
+  // For Kraken trades, trade.total_value = exact USD spent/received
+  // For local trades, trade.total_value = quantity * price
+  const actualCashImpact = trade.total_value || (trade.quantity * trade.price);
   
   // Fee from Kraken if available
   const fee = trade.fee || 0;
