@@ -48,19 +48,25 @@ const extBalCache = new Map();
 function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
-    // More generous defaults to avoid rate limits - trade key needs breathing room for WS token
-    const cfg = type === 'trade' ? { capacity: 10, refillPerSec: 0.5 } : { capacity: 12, refillPerSec: 0.8 };
+    // CRITICAL: Kraken allows ~15 calls per 3 seconds (5/sec) for private endpoints
+    // Using 4/sec capacity with 3/sec refill gives breathing room while preventing rate limits
+    // Trade key is more conservative since WS token requests are rate-sensitive
+    const cfg = type === 'trade' 
+      ? { capacity: 8, refillPerSec: 2 }    // Trade: ~2 calls/sec sustained
+      : { capacity: 15, refillPerSec: 3 };  // Balance: ~3 calls/sec sustained
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);
 }
 function endpointCost(endpoint) {
   // Higher costs = more tokens consumed = longer waits between calls
-  // CRITICAL: Reduced costs since we're now caching tokens properly
-  if (endpoint.includes('GetWebSocketsToken')) return 1; // Very low - tokens are aggressively cached
-  if (endpoint.includes('OpenOrders')) return 2;
-  if (endpoint.includes('TradesHistory')) return 2;
-  if (endpoint.includes('BalanceEx')) return 2;
+  // CRITICAL: Costs aligned with Kraken's actual rate limit tiers
+  // Most private endpoints cost 1 token, heavier ones cost 2
+  if (endpoint.includes('GetWebSocketsToken')) return 1;
+  if (endpoint.includes('OpenOrders')) return 1;      // Reduced from 2
+  if (endpoint.includes('TradesHistory')) return 2;   // Keep at 2 (heavier endpoint)
+  if (endpoint.includes('BalanceEx')) return 1;       // Reduced from 2
+  if (endpoint.includes('Balance')) return 1;
   return 1;
 }
 

@@ -35,10 +35,11 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   // CRITICAL: Global rate limiter - prevents ALL Kraken REST API calls from exceeding limits
+  // Backend now has more generous limits (15 capacity, 3/sec refill) so we can fetch more often
   const lastRestCallRef = useRef(0);
   const restCallQueueRef = useRef([]);
   const isProcessingQueueRef = useRef(false);
-  const MIN_REST_INTERVAL = 45000; // Minimum 45 seconds between REST API calls to avoid rate limits
+  const MIN_REST_INTERVAL = 15000; // Minimum 15 seconds between REST API calls (backend handles actual rate limiting)
 
   const [state, setState] = useState({
     isConnected: false,
@@ -290,33 +291,33 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial fetch on mount (only once) - with 5s delay to let page settle
+  // CRITICAL: Initial fetch on mount (only once) - with 2s delay to let page settle
   useEffect(() => {
     if (shouldConnect && restData.lastFetchTime === 0) {
-      // CRITICAL: Delay initial fetch to prevent rate limits on page load
+      // Delay initial fetch slightly to let page render first
       const timer = setTimeout(() => {
         console.log('[KrakenWebSocketProvider] Initial REST data fetch (delayed)');
         fetchRestData(true);
         // Fetch PnL after additional delay to spread out API calls
-        setTimeout(() => fetchPnL(), 10000);
-      }, 5000); // 5 second delay before first API call (was 3s)
+        setTimeout(() => fetchPnL(), 5000);
+      }, 2000); // 2 second delay before first API call
       
       return () => clearTimeout(timer);
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
-  // CRITICAL: Periodic refresh - every 90 seconds for balance, 3 minutes for PnL
-  // Reduced frequency to prevent rate limits - WebSocket provides real-time updates anyway
+  // CRITICAL: Periodic refresh - every 45 seconds for balance, 2 minutes for PnL
+  // Backend rate limiter now handles throttling, so we can refresh more frequently
   useEffect(() => {
     if (!shouldConnect) return;
     
     const balanceInterval = setInterval(() => {
       fetchRestData(false);
-    }, 90000); // 90 seconds (was 60s)
+    }, 45000); // 45 seconds - backend handles rate limiting
     
     const pnlInterval = setInterval(() => {
       fetchPnL();
-    }, 180000); // 3 minutes (was 2 min)
+    }, 120000); // 2 minutes
     
     return () => {
       clearInterval(balanceInterval);
