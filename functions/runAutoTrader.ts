@@ -339,8 +339,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // CRITICAL: Auto-execution threshold - 70% confidence (use integer comparison to avoid float issues)
-    const AUTO_EXECUTE_THRESHOLD = 70;
+    // CRITICAL: Auto-execution threshold - 75% confidence (raised from 70% to be more selective)
+    // Only execute trades with HIGH confidence to avoid buying into downtrends
+    const AUTO_EXECUTE_THRESHOLD = 75;
     
     // Filter prospects that qualify for auto-execution:
     // 1. Confidence >= 70%
