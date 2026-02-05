@@ -269,12 +269,25 @@ Deno.serve(async (req) => {
       console.log('[Prospects] Processing', symbol, 'at $', price);
 
       const rec = analysisMap[symbol] || { 
-        confidence: 0.6, 
-        action: "buy",
+        confidence: 40, // Default to low confidence (40%) not 60%
+        action: "hold", // Default to hold, not buy
         reasoning: "Awaiting AI analysis" 
       };
 
-      if (rec.action !== "buy") continue;
+      // CRITICAL: Only proceed if action is explicitly "buy" or "strong_buy"
+      // This prevents auto-buying during downtrends
+      const isBuyAction = rec.action === "buy" || rec.action === "strong_buy";
+      if (!isBuyAction) {
+        console.log('[Prospects] Skipping', symbol, '- action is', rec.action, '(not buy)');
+        continue;
+      }
+      
+      // CRITICAL: Skip if 24h change is significantly negative (price falling)
+      const change24h = quote?.changePct || quote?.change_24h_percent || 0;
+      if (change24h < -3) {
+        console.log('[Prospects] Skipping', symbol, '- price down', change24h.toFixed(1), '% in 24h');
+        continue;
+      }
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       
