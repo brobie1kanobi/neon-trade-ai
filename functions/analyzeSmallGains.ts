@@ -111,58 +111,72 @@ CRITICAL: Use this historical data to:
       }
     }
 
-    const analysisPrompt = `You are an elite quantitative trading analyst with expertise in technical analysis, market sentiment, cross-asset correlations, AND access to the user's actual trading history.
+    const analysisPrompt = `You are an elite quantitative trading analyst. Your job is to PROTECT THE USER'S MONEY by only recommending trades with HIGH PROFIT POTENTIAL.
 
-TASK: Provide comprehensive market intelligence for these assets to inform automated trading decisions, incorporating HISTORICAL TRADE DATA to identify optimal entry/exit points.
+CRITICAL RULES - READ CAREFULLY:
+1. NEVER recommend "buy" during a DOWNTREND. If price has dropped consistently over the past 24-48 hours, the action MUST be "hold" or "sell".
+2. ONLY recommend "buy" when you see CLEAR REVERSAL SIGNALS - the price must be showing signs it has BOTTOMED and is about to go UP.
+3. If an asset has been losing money repeatedly (check historical trade data), REDUCE confidence significantly.
+4. A "buy" at 70%+ confidence should have at least 3-5% profit potential within 24-48 hours.
+5. If the 24h change is NEGATIVE and there's no clear reversal pattern, DO NOT recommend buying.
 
-ASSETS TO ANALYZE (Current Market):
+REVERSAL SIGNALS TO LOOK FOR BEFORE RECOMMENDING BUY:
+- Double bottom pattern (price hit support twice and bounced)
+- Bullish divergence (price making lower lows but RSI making higher lows)
+- Hammer/engulfing candlestick at support level
+- Price bouncing off a key support level with increasing volume
+- Oversold conditions (RSI < 30) with signs of recovery
+
+RED FLAGS THAT SHOULD PREVENT A BUY RECOMMENDATION:
+- Consecutive red candles (3+ in a row)
+- Price below all moving averages and still falling
+- Death cross (short MA crossing below long MA)
+- Breaking below support levels
+- High selling volume
+
+ASSETS TO ANALYZE:
 ${assetsSection}
 ${tradeHistorySection}
 
-ANALYSIS FRAMEWORK:
+ANALYSIS REQUIREMENTS:
 
-1. TECHNICAL PATTERN RECOGNITION
-For each asset, identify any of these patterns:
-- Head & Shoulders (bearish reversal)
-- Inverse Head & Shoulders (bullish reversal)
-- Double Top (bearish reversal)
-- Double Bottom (bullish reversal)
-- Bull Flag / Bear Flag (continuation)
-- Ascending/Descending Triangle
-- Cup and Handle (bullish)
-- Support/Resistance levels
+1. TREND ANALYSIS (MOST IMPORTANT)
+- Is the asset in an UPTREND, DOWNTREND, or SIDEWAYS?
+- Has it been falling for the past 24h? If yes, DO NOT recommend buy unless there's a clear reversal.
+- Where are the key support/resistance levels?
 
-2. SENTIMENT ANALYSIS
-Based on your knowledge of current market conditions:
-- Overall crypto market sentiment (bullish/bearish/neutral)
-- Bitcoin dominance trend and its impact
-- Macro factors (interest rates, regulations, institutional activity)
-- Social media buzz indicators (high/medium/low)
+2. REVERSAL DETECTION
+- Are there any bullish reversal patterns forming?
+- Is the asset near a strong support level?
+- Is there evidence the selling pressure is exhausting?
 
-3. CORRELATION ANALYSIS
-- Which assets move together?
-- Which assets provide diversification?
-- Beta relative to BTC/major indices
+3. RISK ASSESSMENT
+- What is the downside risk if we buy now?
+- What is the realistic profit target?
+- Is the risk/reward ratio at least 2:1?
 
-4. TIMING SIGNALS (Use historical data to refine)
+4. TIMING SIGNALS
 For each asset, provide:
-- optimal_action: "strong_buy", "buy", "hold", "sell", "strong_sell"
-  IMPORTANT: For auto-trading purposes, favor "buy" or "strong_buy" when confidence >= 60% unless there are clear bearish signals.
-  A 60%+ confidence should typically result in a "buy" recommendation, not "hold".
-  CRITICAL: If historical win rate > 70%, boost confidence. If win rate < 40%, reduce confidence.
-- timing_window: "immediate" (next 1-4 hrs), "short_term" (24-48 hrs), "wait" (no clear setup)
-- entry_zone: suggested price range for entry (USE HISTORICAL OPTIMAL BUY ZONES when available)
-- stop_loss_pct: recommended stop loss percentage (consider historical patterns)
-- take_profit_pct: recommended take profit percentage (USE HISTORICAL AVG GAINS as baseline)
-- historical_win_rate: the user's actual win rate for this asset (if available)
+- optimal_action: ONLY use "buy" or "strong_buy" if:
+  * Price is showing CLEAR reversal signals (not just oversold)
+  * 24h change is positive OR price is bouncing off support
+  * There's realistic 3%+ upside potential
+  * Risk/reward is favorable
+  Otherwise use "hold" (wait for better entry) or "sell"
+- timing_window: "immediate" ONLY if reversal is confirmed, otherwise "wait"
+- confidence_score: 70%+ ONLY for clear setups with reversal confirmation
+  * If price is falling with no reversal signs: MAX 40% confidence
+  * If price is sideways: MAX 55% confidence
+  * If price is rising or showing clear reversal: 60-85% confidence
+- entry_zone: ONLY recommend entry if price is near support
+- stop_loss_pct: Based on nearest support level
+- take_profit_pct: Based on realistic resistance level
 
 5. MARKET REGIME
-- Current market phase: accumulation, markup, distribution, markdown
-- Volatility level: low, medium, high, extreme
-- Trend strength: weak, moderate, strong
+- Current phase: If we're in MARKDOWN (prices falling), be very conservative
+- Only be aggressive in ACCUMULATION (bottoming) or MARKUP (rising) phases
 
-OUTPUT FORMAT:
-Provide actionable intelligence the auto-trader can use to make informed decisions.`;
+THE GOAL: Make PROFITABLE trades, not frequent trades. It's better to WAIT for a good setup than to buy into a falling knife.`;
 
     // Call LLM with enhanced schema
     const llmResponse = await base44.integrations.Core.InvokeLLM({
