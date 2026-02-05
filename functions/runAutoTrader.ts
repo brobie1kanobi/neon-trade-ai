@@ -386,12 +386,13 @@ Deno.serve(async (req) => {
       // Debug: log why each prospect was skipped
       console.log('[runAutoTrader] No eligible prospects. Summary:');
       prospects.forEach(p => {
-        console.log(`  - ${p.symbol}: ${p.confidence_score}% conf, action=${p.optimal_action}, blocked=${p.is_blocked}, would_execute=${p.would_execute_now}`);
+        const change24h = Number(p.market_trend || p.current_24h_change || 0);
+        console.log(`  - ${p.symbol}: ${p.confidence_score}% conf, action=${p.optimal_action}, 24h=${change24h.toFixed(1)}%, blocked=${p.is_blocked}, would_execute=${p.would_execute_now}`);
       });
       
       return Response.json({ 
         success: true, 
-        message: 'No prospects meet 70% confidence threshold', 
+        message: `No prospects meet ${AUTO_EXECUTE_THRESHOLD}% confidence threshold or are in downtrend`, 
         trades_count: 0,
         mode: isSimMode ? 'sim' : 'live',
         total_prospects: prospects.length,
@@ -400,6 +401,7 @@ Deno.serve(async (req) => {
           symbol: p.symbol,
           confidence: p.confidence_score,
           action: p.optimal_action,
+          change_24h: Number(p.market_trend || p.current_24h_change || 0),
           blocked: p.is_blocked,
           would_execute: p.would_execute_now
         }))
