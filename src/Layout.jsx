@@ -11,7 +11,7 @@ import NotificationDrawer from "./components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
-import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
+import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider.js";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 import { base44 } from "@/api/base44Client";
 
