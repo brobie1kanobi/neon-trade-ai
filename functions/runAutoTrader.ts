@@ -380,7 +380,7 @@ Deno.serve(async (req) => {
       return eligible;
     });
 
-    console.log(`[runAutoTrader] ${eligibleProspects.length} prospects eligible for auto-execution (70%+ confidence)`);
+    console.log(`[runAutoTrader] ${eligibleProspects.length} prospects eligible for auto-execution (${AUTO_EXECUTE_THRESHOLD}%+ confidence, not falling)`);
 
     if (eligibleProspects.length === 0) {
       // Debug: log why each prospect was skipped
