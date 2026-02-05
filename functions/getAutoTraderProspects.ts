@@ -274,18 +274,20 @@ Deno.serve(async (req) => {
         reasoning: "Awaiting AI analysis" 
       };
 
-      // CRITICAL: Only proceed if action is explicitly "buy" or "strong_buy"
-      // This prevents auto-buying during downtrends
-      const isBuyAction = rec.action === "buy" || rec.action === "strong_buy";
-      if (!isBuyAction) {
-        console.log('[Prospects] Skipping', symbol, '- action is', rec.action, '(not buy)');
+      // CRITICAL: Only proceed if action is explicitly "strong_buy"
+      // Regular "buy" is NOT enough - we need HIGH conviction signals only
+      // This prevents auto-buying during downtrends or weak signals
+      const isStrongBuy = rec.action === "strong_buy";
+      if (!isStrongBuy) {
+        console.log('[Prospects] Skipping', symbol, '- action is', rec.action, '(need strong_buy, not just buy)');
         continue;
       }
       
-      // CRITICAL: Skip if 24h change is significantly negative (price falling)
+      // CRITICAL: Price must be going UP - require POSITIVE momentum
+      // Don't buy anything that's falling or flat - wait for confirmed uptrend
       const change24h = quote?.changePct || quote?.change_24h_percent || 0;
-      if (change24h < -3) {
-        console.log('[Prospects] Skipping', symbol, '- price down', change24h.toFixed(1), '% in 24h');
+      if (change24h < 2) {
+        console.log('[Prospects] Skipping', symbol, '- price change', change24h.toFixed(1), '% (need +2% minimum uptrend)');
         continue;
       }
 

@@ -339,39 +339,42 @@ Deno.serve(async (req) => {
       });
     }
 
-    // CRITICAL: Auto-execution threshold - 75% confidence (raised from 70% to be more selective)
-    // Only execute trades with HIGH confidence to avoid buying into downtrends
-    const AUTO_EXECUTE_THRESHOLD = 75;
+    // CRITICAL: Auto-execution threshold - 85% confidence (raised from 75% to be MUCH more selective)
+    // Only execute trades with VERY HIGH confidence to avoid buying into downtrends
+    const AUTO_EXECUTE_THRESHOLD = 85;
     
     // Filter prospects that qualify for auto-execution:
-    // 1. Confidence >= 75% (raised threshold)
-    // 2. Action is "buy" or "strong_buy" (explicit buy signal)
+    // 1. Confidence >= 85% (VERY high threshold)
+    // 2. Action MUST be "strong_buy" (regular "buy" is NOT enough)
     // 3. Not blocked
     // 4. Would execute (has sufficient funds)
-    // 5. NEW: 24h price change is not significantly negative (not buying into downtrend)
+    // 5. Price must be UP at least 2% in 24h (confirmed uptrend, not falling)
     const eligibleProspects = prospects.filter(p => {
       const confidenceScore = Number(p.confidence_score || 0);
-      const action = (p.optimal_action || 'hold').toLowerCase(); // Default to hold, not buy
-      const isBuy = action === 'buy' || action === 'strong_buy';
+      const action = (p.optimal_action || 'hold').toLowerCase();
+      
+      // CRITICAL: ONLY "strong_buy" qualifies - regular "buy" is NOT enough
+      const isStrongBuy = action === 'strong_buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // CRITICAL: Check 24h price trend - don't buy into falling knives
+      // CRITICAL: Require POSITIVE momentum - price must be going UP
+      // Don't buy flat or falling assets - wait for confirmed uptrend
       const change24h = Number(p.market_trend || p.current_24h_change || 0);
-      const notFalling = change24h > -3; // Allow small dips but not major drops
+      const hasUpwardMomentum = change24h >= 2; // Must be up at least 2%
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
-      const eligible = meetsConfidence && isBuy && notBlocked && wouldExecute && notFalling;
+      const eligible = meetsConfidence && isStrongBuy && notBlocked && wouldExecute && hasUpwardMomentum;
       
       console.log(`[runAutoTrader] ${p.symbol}: confidence=${confidenceScore}%, action=${action}, 24h=${change24h.toFixed(1)}%, blocked=${p.is_blocked}, wouldExecute=${wouldExecute}`);
       
       if (eligible) {
-        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE for auto-execution`);
+        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE for auto-execution (STRONG_BUY + uptrend)`);
       } else {
         const reasons = [];
         if (!meetsConfidence) reasons.push(`confidence ${confidenceScore}% < ${AUTO_EXECUTE_THRESHOLD}%`);
-        if (!isBuy) reasons.push(`action is "${action}" (need buy/strong_buy)`);
-        if (!notFalling) reasons.push(`price falling ${change24h.toFixed(1)}% - avoiding downtrend`);
+        if (!isStrongBuy) reasons.push(`action is "${action}" (MUST be strong_buy)`);
+        if (!hasUpwardMomentum) reasons.push(`24h change ${change24h.toFixed(1)}% (need +2% uptrend)`);
         if (p.is_blocked) reasons.push(`blocked: ${p.block_reason}`);
         if (!wouldExecute) reasons.push('would_execute_now=false');
         console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${reasons.join(', ')}`);
