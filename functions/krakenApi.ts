@@ -9,7 +9,6 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  * 3. Microsecond nonce generation with counter (prevents duplicates)
  * 4. Automatic retry on nonce errors (3 attempts with delay)
  * 5. Detailed logging for debugging
- * 6. Enhanced key type logging for WebSocket token requests
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
@@ -270,8 +269,7 @@ Deno.serve(async (req) => {
         } catch (e) {
           return Response.json({
             success: false,
-            error: `Trade key test failed: ${e.message}. Ensure permissions: Access WebSockets API, Create & Modify Orders.`,
-            code: 'trade_key_permissions_missing'
+            error: `Trade key test failed: ${e.message}. Ensure permissions: Access WebSockets API, Create & Modify Orders.`
           }, { status: 200 });
         }
       }
@@ -320,35 +318,22 @@ Deno.serve(async (req) => {
     const getCreds = (purpose) => {
       const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
-      
-      let apiKeyToUse, apiSecretToUse;
-
       if (useTrade) {
         // STRICT: Trading actions must use the dedicated Trade key only (no legacy fallback)
         if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
-          console.error(`[krakenApi] Missing trade API key/secret for purpose: ${purpose}`);
           throw new Error('Missing trade API key/secret. Add a Trade key with: Access WebSockets API, Create & Modify Orders, Query Open/Closed Orders.');
         }
-        apiKeyToUse = normalize(connection.trade_api_key);
-        apiSecretToUse = normalize(connection.trade_api_secret_encrypted);
-        console.log(`[krakenApi] Using TRADE key (purpose: ${purpose}). Key: ${apiKeyToUse.slice(0, 4)}...${apiKeyToUse.slice(-4)}, Secret length: ${apiSecretToUse.length}`);
-      } else {
-        // For reads prefer dedicated balance key; fallback to legacy api_key as last resort
-        if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
-          apiKeyToUse = normalize(connection.balance_api_key);
-          apiSecretToUse = normalize(connection.balance_api_secret_encrypted);
-          console.log(`[krakenApi] Using BALANCE key (purpose: ${purpose}). Key: ${apiKeyToUse.slice(0, 4)}...${apiKeyToUse.slice(-4)}, Secret length: ${apiSecretToUse.length}`);
-        } else if (connection.api_key && connection.api_secret_encrypted) {
-          console.warn('[krakenApi] Using LEGACY api_key for balance reads (fallback). Please update to split keys.');
-          apiKeyToUse = normalize(connection.api_key);
-          apiSecretToUse = normalize(connection.api_secret_encrypted);
-          console.log(`[krakenApi] Using LEGACY key (purpose: ${purpose}). Key: ${apiKeyToUse.slice(0, 4)}...${apiKeyToUse.slice(-4)}, Secret length: ${apiSecretToUse.length}`);
-        } else {
-          console.error(`[krakenApi] Missing balance API key/secret for purpose: ${purpose}`);
-          throw new Error('Missing balance API key/secret. Add a Read-only key with: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
-        }
+        return { apiKeyToUse: normalize(connection.trade_api_key), apiSecretToUse: normalize(connection.trade_api_secret_encrypted) };
       }
-      return { apiKeyToUse, apiSecretToUse };
+      // For reads prefer dedicated balance key; fallback to legacy api_key as last resort
+      if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
+        return { apiKeyToUse: normalize(connection.balance_api_key), apiSecretToUse: normalize(connection.balance_api_secret_encrypted) };
+      }
+      if (connection.api_key && connection.api_secret_encrypted) {
+        console.warn('[krakenApi] Using legacy api_key for balance reads (fallback). Please update to split keys.');
+        return { apiKeyToUse: normalize(connection.api_key), apiSecretToUse: normalize(connection.api_secret_encrypted) };
+      }
+      throw new Error('Missing balance API key/secret. Add a Read-only key with: Query Funds, Query Ledger Entries, Query Open/Closed Orders, Query Trades.');
     };
     
     if (action === 'getBalance') {
@@ -358,7 +343,7 @@ Deno.serve(async (req) => {
       if (result.error?.length > 0) {
         const msg = result.error.join(', ');
         if (/Permission denied/i.test(msg)) {
-          return Response.json({ success: false, error: 'Permission denied fetching Balance. Ensure the BALANCE key has Query Funds and Query Ledger Entries.', code: 'balance_key_permissions_missing' }, { status: 200 });
+          throw new Error('Permission denied fetching Balance. Ensure the BALANCE key has Query Funds and Query Ledger Entries.');
         }
         throw new Error(msg);
       }
@@ -403,7 +388,7 @@ Deno.serve(async (req) => {
       if (result.error?.length > 0) {
         const msg = result.error.join(', ');
         if (/Permission denied/i.test(msg)) {
-          return Response.json({ success: false, error: 'Permission denied fetching BalanceEx. Ensure the BALANCE key has Query Funds and Query Ledger Entries.', code: 'balance_key_permissions_missing' }, { status: 200 });
+          throw new Error('Permission denied fetching BalanceEx. Ensure the BALANCE key has Query Funds and Query Ledger Entries.');
         }
         throw new Error(msg);
       }
@@ -443,9 +428,9 @@ Deno.serve(async (req) => {
       };
       extBalCache.set(__cacheKey, { ts: Date.now(), data: __response });
       return Response.json(__response, { status: 200 });
-    }
+      }
 
-    if (action === 'getTradesHistory') {
+      if (action === 'getTradesHistory') {
       const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory'); // uses BALANCE key
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
@@ -504,8 +489,6 @@ Deno.serve(async (req) => {
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketToken');
         const fingerprint = `${keyType}:${String(apiKeyToUse || '').trim().slice(0,6)}...${String(apiKeyToUse || '').trim().slice(-4)}`;
 
-        console.log(`[krakenApi] getWebSocketToken - Requested keyType: ${keyType}, Fingerprint: ${fingerprint}`);
-
         // CRITICAL: Aggressively cache tokens for BOTH balance AND trade keys
         // Each key gets its own cached token stored with a fingerprint
         const cacheKey = keyType === 'balance' ? 'balance_ws_token' : 'ws_token';
@@ -539,34 +522,32 @@ Deno.serve(async (req) => {
           }, { status: 200 });
         }
         
-        console.log(`[krakenApi] Fetching fresh WS token for ${keyType} (cached expired or forceRefresh=${payload?.forceRefresh})`);
+        console.log(`[krakenApi] Fetching fresh WS token for ${keyType} (cached expired or forceRefresh=${payload?.forceRefresh})`)
 
         // Request a fresh token from Kraken for the chosen key
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
         const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/GetWebSocketsToken', {});
         if (result.error?.length > 0) {
           const msg = result.error.join(', ');
-          console.error(`[krakenApi] GetWebSocketsToken error for keyType=${keyType}: ${msg}`);
           if (/permission denied/i.test(msg)) {
             return Response.json({
               success: false,
               connected: false,
-              error: 'Permission denied: API key lacks required permissions. Enable Access WebSockets API.' + (keyType === 'trade' ? ' Also enable Create & Modify Orders and Query open/closed orders.' : ''),
-              code: keyType === 'trade' ? 'trade_key_permissions_missing' : 'balance_key_permissions_missing'
+              error: 'Permission denied: API key lacks required permissions. Enable Access WebSockets API.' + (keyType === 'trade' ? ' Also enable Create & Modify Orders and Query open/closed orders.' : '')
             }, { status: 200 });
           }
           if (/unknown|invalid key/i.test(msg)) {
             try {
-              // Clear the token for this specific key type
-              const clearData = keyType === 'balance'
-                ? { balance_ws_token: null, balance_ws_token_expires_at: null, balance_ws_token_fingerprint: null }
-                : { ws_token: null, ws_token_expires_at: null, ws_token_fingerprint: null };
-              await base44.asServiceRole.entities.KrakenConnection.update(connection.id, clearData);
+              await base44.asServiceRole.entities.KrakenConnection.update(connection.id, {
+                ws_token: null,
+                ws_token_expires_at: null,
+                ws_token_fingerprint: null
+              });
             } catch (_) {}
             return Response.json({
               success: false,
               connected: false,
-              error: `Unknown/invalid API key for ${keyType.toUpperCase()} operations. Please re-enter and save your ${keyType === 'trade' ? 'Trade' : 'Balance'} key in Settings.`,
+              error: 'Unknown/invalid API key: please re-enter and save your Trade key in Settings.',
               code: 'unknown_key'
             }, { status: 200 });
           }
@@ -610,7 +591,6 @@ Deno.serve(async (req) => {
           fingerprint
         }, { status: 200 });
       } catch (e) {
-        console.error(`[krakenApi] getWebSocketToken exception: ${e.message}`);
         return Response.json({
           success: false,
           connected: false,
@@ -633,22 +613,20 @@ Deno.serve(async (req) => {
         );
         if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
-        const openOrders = [];
-        for (const [orderId, order] of Object.entries(result.result?.open || {})) {
-          openOrders.push({
-            order_id: orderId,
-            ...order
-          });
-        }
-
-        return Response.json({ 
-          success: true, 
-          orders: openOrders,
-          count: openOrders.length 
-        }, { status: 200 });
-      } catch (e) {
-        return Response.json({ success: false, error: e.message }, { status: 200 });
+      const openOrders = [];
+      for (const [orderId, order] of Object.entries(result.result?.open || {})) {
+        openOrders.push({
+          order_id: orderId,
+          ...order
+        });
       }
+
+      
+      return Response.json({ 
+        success: true, 
+        orders: openOrders,
+        count: openOrders.length 
+      }, { status: 200 });
     }
 
     // ACTION: Get asset pairs (for trading info)
@@ -668,6 +646,7 @@ Deno.serve(async (req) => {
 
         if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
+        
         return Response.json({ 
           success: true, 
           pairs: result.result || {} 
