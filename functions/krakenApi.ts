@@ -9,6 +9,10 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
  * 3. Microsecond nonce generation with counter (prevents duplicates)
  * 4. Automatic retry on nonce errors (3 attempts with delay)
  * 5. Detailed logging for debugging
+ * 
+ * KEY USAGE:
+ * - BALANCE key: getBalance, getExtendedBalance, getTradesHistory, getOpenOrders (read-only)
+ * - TRADE key: getWebSocketUrl/getWebSocketToken (for placing orders via WS)
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
@@ -314,10 +318,16 @@ Deno.serve(async (req) => {
     const connection = connections[0];
     
     // Helper to select correct API key pair per action (split keys)
+    // CRITICAL KEY USAGE:
+    // - BALANCE key: All read-only operations (getBalance, getExtendedBalance, getTradesHistory, getOpenOrders)
+    // - TRADE key: ONLY for WebSocket token requests (needed for placing/canceling orders via WS)
     const normalize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
     const getCreds = (purpose) => {
+      // CRITICAL: Only WebSocket token requests use the TRADE key
+      // All other read operations use the BALANCE key
       const tradeActions = new Set(['getWebSocketUrl', 'getWebSocketToken']);
       const useTrade = tradeActions.has(purpose);
+      
       if (useTrade) {
         // STRICT: Trading actions must use the dedicated Trade key only (no legacy fallback)
         if (!connection.trade_api_key || !connection.trade_api_secret_encrypted) {
@@ -325,7 +335,8 @@ Deno.serve(async (req) => {
         }
         return { apiKeyToUse: normalize(connection.trade_api_key), apiSecretToUse: normalize(connection.trade_api_secret_encrypted) };
       }
-      // For reads prefer dedicated balance key; fallback to legacy api_key as last resort
+      
+      // For ALL read operations (balance, trades history, open orders) - use BALANCE key
       if (connection.balance_api_key && connection.balance_api_secret_encrypted) {
         return { apiKeyToUse: normalize(connection.balance_api_key), apiSecretToUse: normalize(connection.balance_api_secret_encrypted) };
       }
@@ -428,10 +439,11 @@ Deno.serve(async (req) => {
       };
       extBalCache.set(__cacheKey, { ts: Date.now(), data: __response });
       return Response.json(__response, { status: 200 });
-      }
+    }
 
-      if (action === 'getTradesHistory') {
-      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory'); // uses BALANCE key
+    if (action === 'getTradesHistory') {
+      // CRITICAL: Uses BALANCE key (read-only operation)
+      const { apiKeyToUse, apiSecretToUse } = getCreds('getTradesHistory');
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
       const result = await callKraken(apiKeyToUse, apiSecretToUse, '/0/private/TradesHistory', { type: 'all' });
       if (result.error?.length > 0) {
@@ -486,6 +498,7 @@ Deno.serve(async (req) => {
         const now = Date.now();
 
         // Select credentials up-front so we can fingerprint the key actually used
+        // CRITICAL: getWebSocketToken MUST use TRADE key for order placement
         const { apiKeyToUse, apiSecretToUse } = keyType === 'balance' ? getCreds('getBalance') : getCreds('getWebSocketToken');
         const fingerprint = `${keyType}:${String(apiKeyToUse || '').trim().slice(0,6)}...${String(apiKeyToUse || '').trim().slice(-4)}`;
 
@@ -600,11 +613,12 @@ Deno.serve(async (req) => {
     }
 
     // ACTION: Get open orders
+    // CRITICAL: Uses BALANCE key (read-only operation) - NOT trade key
     if (action === 'getOpenOrders') {
-      // CRITICAL: Include trades=true to get detailed info (reads via BALANCE key)
       try {
+        // CRITICAL: getOpenOrders is a READ operation - uses BALANCE key
         const { apiKeyToUse, apiSecretToUse } = getCreds('getOpenOrders');
-        await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/OpenOrders')); // balance bucket
+        await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/OpenOrders'));
         const result = await callKraken(
           apiKeyToUse,
           apiSecretToUse,
@@ -613,20 +627,27 @@ Deno.serve(async (req) => {
         );
         if (result.error?.length > 0) throw new Error(result.error.join(', '));
 
-      const openOrders = [];
-      for (const [orderId, order] of Object.entries(result.result?.open || {})) {
-        openOrders.push({
-          order_id: orderId,
-          ...order
-        });
-      }
+        const openOrders = [];
+        for (const [orderId, order] of Object.entries(result.result?.open || {})) {
+          openOrders.push({
+            order_id: orderId,
+            ...order
+          });
+        }
 
-      
-      return Response.json({ 
-        success: true, 
-        orders: openOrders,
-        count: openOrders.length 
-      }, { status: 200 });
+        return Response.json({ 
+          success: true, 
+          orders: openOrders,
+          count: openOrders.length 
+        }, { status: 200 });
+      } catch (e) {
+        return Response.json({
+          success: false,
+          error: e.message,
+          orders: [],
+          count: 0
+        }, { status: 200 });
+      }
     }
 
     // ACTION: Get asset pairs (for trading info)
