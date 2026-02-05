@@ -11,7 +11,7 @@ import NotificationDrawer from "./components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
-import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider.js";
+import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 import { base44 } from "@/api/base44Client";
 
@@ -28,6 +28,9 @@ function LayoutContent({ children, currentPageName }) {
 
   // This state controls the one-time splash screen for the session
   const [showInitialSplash, setShowInitialSplash] = useState(() => !sessionStorage.getItem('appInitialized'));
+  
+  // Enforce SIM globally on app load (admin = all users, non-admin = self)
+  // REMOVED: const [simNormalized, setSimNormalized] = useState(false);
 
   useEffect(() => {
     if (showInitialSplash) {
@@ -63,13 +66,26 @@ function LayoutContent({ children, currentPageName }) {
     }
 
     window.addEventListener('notification:created', handleNewNotification);
-    window.addEventListener('notification:read', fetchUnreadCount);
+    window.addEventListener('notification:read', fetchUnreadCount); // In case we add this later
 
     return () => {
       window.removeEventListener('notification:created', handleNewNotification);
       window.removeEventListener('notification:read', fetchUnreadCount);
     };
   }, [user, isNotificationsOpen]);
+
+  // REMOVED: useEffect for disableLiveMode
+  // useEffect(() => {
+  //   (async () => {
+  //     if (simNormalized) return;
+  //     try {
+  //       await base44.functions.invoke('disableLiveMode', {});
+  //     } catch (_e) {
+  //       console.error("Failed to disable live mode:", _e);
+  //     }
+  //     setSimNormalized(true);
+  //   })();
+  // }, [simNormalized]);
 
   useEffect(() => {
     const checkForBiometricsPrompt = async () => {
@@ -113,6 +129,7 @@ function LayoutContent({ children, currentPageName }) {
   const handleWelcomeComplete = async () => {
     await updateSetting('has_seen_welcome', true);
     setShowWelcome(false);
+    // After welcome, we'll check for biometrics in the next useEffect cycle
   };
 
   const handleBiometricsComplete = async () => {
@@ -232,6 +249,8 @@ function LayoutContent({ children, currentPageName }) {
           }
         `}
       </style>
+
+      {/* Removed Deno-dependent injection; PushManager now fetches public key from backend */}
 
       <Toaster position="top-center" richColors />
       <AssistantModal isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />
