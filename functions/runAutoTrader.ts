@@ -860,7 +860,7 @@ Deno.serve(async (req) => {
       trades: tradesPlaced,
       emerging_trades_detail: emergingTradesPlaced,
       advanced_orders: advancedOrderSummary,
-      auto_execute_threshold: 70,
+      auto_execute_threshold: AUTO_EXECUTE_THRESHOLD,
       total_prospects_analyzed: prospects.length,
       emerging_opportunities_found: emergingOpportunities.length,
       order_settings: {
