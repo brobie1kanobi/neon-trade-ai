@@ -269,26 +269,63 @@ THE GOAL: Make PROFITABLE trades, not frequent trades. It's better to WAIT for a
     console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
     
     // Enrich recommendations with trade history data
+    // CRITICAL: Apply strict filtering to prevent buying into downtrends
     const enhancedRecommendations = recommendations
       .filter(r => r.confidence_score >= 50)
       .map(r => {
         // Get historical data for this asset
         const histData = tradeHistoryData?.asset_analytics?.[r.symbol?.toUpperCase()];
         
-        // Adjust confidence based on historical performance
+        // Get current market data for this asset
+        const currentData = marketData.find(m => m.symbol?.toUpperCase() === r.symbol?.toUpperCase());
+        const change24h = currentData?.change_24h_percent || currentData?.price_change_percentage_24h || 0;
+        
+        // CRITICAL: Adjust confidence based on actual market conditions
         let adjustedConfidence = r.confidence_score;
+        let adjustedAction = r.optimal_action || r.action || 'hold';
+        
+        // RULE 1: If price is falling significantly (>2% down in 24h) and no reversal, reduce confidence
+        if (change24h < -2 && adjustedAction === 'buy') {
+          console.log(`[MarketIntelligence] ${r.symbol}: Price down ${change24h.toFixed(1)}%, reducing confidence`);
+          adjustedConfidence = Math.min(adjustedConfidence, 45); // Cap at 45% for falling assets
+          adjustedAction = 'hold'; // Change to hold - wait for reversal
+        }
+        
+        // RULE 2: If historical win rate is poor, reduce confidence further
         if (histData) {
-          if (histData.win_rate > 70) adjustedConfidence = Math.min(95, adjustedConfidence + 10);
-          else if (histData.win_rate < 40 && histData.total_trades > 5) adjustedConfidence = Math.max(40, adjustedConfidence - 15);
+          if (histData.win_rate > 70) {
+            adjustedConfidence = Math.min(95, adjustedConfidence + 5); // Smaller boost
+          } else if (histData.win_rate < 50 && histData.total_trades > 3) {
+            // Poor historical performance - be more conservative
+            adjustedConfidence = Math.max(30, adjustedConfidence - 20);
+            console.log(`[MarketIntelligence] ${r.symbol}: Poor win rate (${histData.win_rate.toFixed(1)}%), reducing confidence to ${adjustedConfidence}`);
+          }
+        }
+        
+        // RULE 3: Calculate recent trade performance (were recent trades profitable?)
+        if (histData?.recent_trades) {
+          const recentLosses = histData.recent_trades.filter(t => t.pnl < 0).length;
+          const recentTotal = histData.recent_trades.length;
+          if (recentTotal >= 3 && recentLosses >= 2) {
+            // 2+ losses in recent trades - asset is not performing well
+            adjustedConfidence = Math.max(35, adjustedConfidence - 15);
+            adjustedAction = 'hold';
+            console.log(`[MarketIntelligence] ${r.symbol}: Recent losses (${recentLosses}/${recentTotal}), setting to hold`);
+          }
+        }
+        
+        // RULE 4: Only allow "buy" if confidence is genuinely high after adjustments
+        if (adjustedConfidence < 65 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
+          adjustedAction = 'hold';
         }
         
         return {
           ...r,
           confidence_score: adjustedConfidence,
+          optimal_action: adjustedAction,
           // Ensure all fields have defaults
           technical_pattern: r.technical_pattern || 'No clear pattern',
           pattern_reliability: r.pattern_reliability || 'moderate',
-          optimal_action: r.optimal_action || r.action || 'buy',
           timing_window: r.timing_window || 'short_term',
           stop_loss_pct: r.stop_loss_pct || 1,
           take_profit_pct: histData?.avg_successful_gain_pct || r.take_profit_pct || 3,
@@ -298,7 +335,10 @@ THE GOAL: Make PROFITABLE trades, not frequent trades. It's better to WAIT for a
           historical_win_rate: histData?.win_rate || r.historical_win_rate || null,
           historical_avg_gain: histData?.avg_successful_gain_pct || r.historical_avg_gain || null,
           historical_buy_zone: histData?.optimal_buy_zone || null,
-          is_top_performer: r.is_top_performer || (histData?.win_rate > 65)
+          is_top_performer: r.is_top_performer || (histData?.win_rate > 65),
+          // Add market context
+          current_24h_change: change24h,
+          action_reason: change24h < -2 ? 'Price falling - waiting for reversal' : r.reasoning
         };
       })
       .sort((a, b) => {
