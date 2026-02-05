@@ -344,29 +344,34 @@ Deno.serve(async (req) => {
     const AUTO_EXECUTE_THRESHOLD = 75;
     
     // Filter prospects that qualify for auto-execution:
-    // 1. Confidence >= 70%
-    // 2. Action is "buy" 
+    // 1. Confidence >= 75% (raised threshold)
+    // 2. Action is "buy" or "strong_buy" (explicit buy signal)
     // 3. Not blocked
     // 4. Would execute (has sufficient funds)
+    // 5. NEW: 24h price change is not significantly negative (not buying into downtrend)
     const eligibleProspects = prospects.filter(p => {
-      const confidenceScore = Number(p.confidence_score || 0); // Keep as integer (e.g., 70)
-      const action = (p.optimal_action || 'buy').toLowerCase();
+      const confidenceScore = Number(p.confidence_score || 0);
+      const action = (p.optimal_action || 'hold').toLowerCase(); // Default to hold, not buy
       const isBuy = action === 'buy' || action === 'strong_buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // FIXED: Use integer comparison (70 >= 70) instead of float (0.70 >= 0.70)
-      const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
-      const eligible = meetsConfidence && isBuy && notBlocked && wouldExecute;
+      // CRITICAL: Check 24h price trend - don't buy into falling knives
+      const change24h = Number(p.market_trend || p.current_24h_change || 0);
+      const notFalling = change24h > -3; // Allow small dips but not major drops
       
-      console.log(`[runAutoTrader] ${p.symbol}: confidence=${confidenceScore}%, action=${action}, blocked=${p.is_blocked}, wouldExecute=${wouldExecute}`);
+      const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
+      const eligible = meetsConfidence && isBuy && notBlocked && wouldExecute && notFalling;
+      
+      console.log(`[runAutoTrader] ${p.symbol}: confidence=${confidenceScore}%, action=${action}, 24h=${change24h.toFixed(1)}%, blocked=${p.is_blocked}, wouldExecute=${wouldExecute}`);
       
       if (eligible) {
         console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE for auto-execution`);
       } else {
         const reasons = [];
         if (!meetsConfidence) reasons.push(`confidence ${confidenceScore}% < ${AUTO_EXECUTE_THRESHOLD}%`);
-        if (!isBuy) reasons.push(`action is ${action}`);
+        if (!isBuy) reasons.push(`action is "${action}" (need buy/strong_buy)`);
+        if (!notFalling) reasons.push(`price falling ${change24h.toFixed(1)}% - avoiding downtrend`);
         if (p.is_blocked) reasons.push(`blocked: ${p.block_reason}`);
         if (!wouldExecute) reasons.push('would_execute_now=false');
         console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${reasons.join(', ')}`);
