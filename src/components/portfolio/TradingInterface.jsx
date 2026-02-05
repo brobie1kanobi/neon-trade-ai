@@ -222,6 +222,52 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
     const userSettingsList = await UserSettings.filter({ created_by: currentUser.email });
     const userSettings = userSettingsList[0] || {};
 
+    // OPTIMISTIC UI: Store previous state for potential rollback
+    const previousState = {
+      selectedAsset: selectedAsset ? { ...selectedAsset } : null,
+      searchTerm,
+      quantity,
+      currencyAmount,
+      isSellAll
+    };
+
+    // OPTIMISTIC UI: Immediately update UI before API call completes
+    // This makes the app feel more responsive on mobile
+    const optimisticCashChange = tradeData.type === 'buy' ? -tradeData.total_value : tradeData.total_value;
+    
+    // Dispatch optimistic update event for wallet/holdings displays
+    window.dispatchEvent(new CustomEvent('trade:optimistic', {
+      detail: {
+        type: tradeData.type,
+        symbol: tradeData.symbol,
+        quantity: tradeData.quantity,
+        total_value: tradeData.total_value,
+        cashChange: optimisticCashChange,
+        timestamp: Date.now()
+      }
+    }));
+
+    // Clear form immediately for better UX
+    setSelectedAsset(null);
+    setSearchTerm("");
+    setQuantity("");
+    setCurrencyAmount("");
+    setIsSellAll(false);
+
+    // Rollback function in case of error
+    const rollbackOptimistic = () => {
+      setSelectedAsset(previousState.selectedAsset);
+      setSearchTerm(previousState.searchTerm);
+      setQuantity(previousState.quantity);
+      setCurrencyAmount(previousState.currencyAmount);
+      setIsSellAll(previousState.isSellAll);
+      
+      // Dispatch rollback event
+      window.dispatchEvent(new CustomEvent('trade:rollback', {
+        detail: { timestamp: Date.now() }
+      }));
+    };
+
     // CRITICAL: For LIVE mode, send order directly to Kraken first
     if (!isSimMode) {
       try {
@@ -483,6 +529,10 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
 
       } catch (krakenError) {
         console.error('[TradingInterface] Kraken order failed:', krakenError);
+        
+        // ROLLBACK optimistic update on error
+        rollbackOptimistic();
+        
         notify.error("🔴 LIVE Order Failed", {
           description: krakenError.message || 'Failed to execute order on Kraken',
           duration: 10000,
@@ -515,35 +565,46 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
       }
     } else {
       // SIM MODE: Execute locally only
-      await onTrade(tradeData);
+      try {
+        await onTrade(tradeData);
 
-      if (tradeData.type === 'buy' && setConditional) {
-        try {
-          await ConditionalOrder.create({
-            symbol: tradeData.symbol,
-            asset_type: tradeData.asset_type || 'crypto',
-            quantity: tradeData.quantity,
-            purchase_price: tradeData.price,
-            gain_margin: parseFloat(gainMargin),
-            loss_margin: parseFloat(lossMargin),
-            trailing_enabled: true,
-            trailing_margin: parseFloat(lossMargin),
-            highest_price: tradeData.price,
-            status: 'active',
-            is_simulation: true,
-            created_by: currentUser.email
-          });
+        if (tradeData.type === 'buy' && setConditional) {
+          try {
+            await ConditionalOrder.create({
+              symbol: tradeData.symbol,
+              asset_type: tradeData.asset_type || 'crypto',
+              quantity: tradeData.quantity,
+              purchase_price: tradeData.price,
+              gain_margin: parseFloat(gainMargin),
+              loss_margin: parseFloat(lossMargin),
+              trailing_enabled: true,
+              trailing_margin: parseFloat(lossMargin),
+              highest_price: tradeData.price,
+              status: 'active',
+              is_simulation: true,
+              created_by: currentUser.email
+            });
 
-          if (!autoTradingEnabled) {
-            if (settings?.id) {
-              await UserSettings.update(settings.id, { auto_trading_enabled: true });
-            } else {
-              await UserSettings.create({ auto_trading_enabled: true, created_by: currentUser.email });
+            if (!autoTradingEnabled) {
+              if (settings?.id) {
+                await UserSettings.update(settings.id, { auto_trading_enabled: true });
+              } else {
+                await UserSettings.create({ auto_trading_enabled: true, created_by: currentUser.email });
+              }
             }
+          } catch (e) {
+            console.error("Failed to create conditional order:", e);
           }
-        } catch (e) {
-          console.error("Failed to create conditional order:", e);
         }
+      } catch (simError) {
+        console.error('[TradingInterface] SIM trade failed:', simError);
+        // ROLLBACK optimistic update on error
+        rollbackOptimistic();
+        notify.error("Trade Failed", {
+          description: simError.message || 'Failed to execute simulation trade'
+        });
+        setIsExecuting(false);
+        return;
       }
     }
 
@@ -567,12 +628,13 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
     }
 
     setTradeToConfirm(null);
-    setSelectedAsset(null);
-    setSearchTerm("");
-    setQuantity("");
-    setCurrencyAmount("");
-    setIsSellAll(false);
+    // Form already cleared optimistically at start
     setIsExecuting(false);
+    
+    // Dispatch final confirmation event
+    window.dispatchEvent(new CustomEvent('trade:confirmed', {
+      detail: { timestamp: Date.now(), trade: tradeData }
+    }));
   };
 
   const handleAdvancedOrder = () => {

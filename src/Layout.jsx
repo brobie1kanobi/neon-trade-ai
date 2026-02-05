@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import AssistantModal from "./components/ai/AssistantModal";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
 import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
@@ -229,12 +230,23 @@ function LayoutContent({ children, currentPageName }) {
             --text-secondary: ${darkMode ? '#a0a0a0' : '#6b7280'};
             --border-color: ${darkMode ? '#333333' : '#e5e7eb'};
             --card-bg: ${darkMode ? '#1a1a1a' : '#ffffff'};
+            --safe-area-top: env(safe-area-inset-top, 0px);
+            --safe-area-bottom: env(safe-area-inset-bottom, 0px);
           }
           
           .neon-glow { box-shadow: 0 0 10px rgba(var(--neon-green-rgb), 0.5); }
           .neon-text { color: var(--neon-green); text-shadow: 0 0 10px rgba(var(--neon-green-rgb), 0.8); }
           .glass-effect { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); }
-          body { background-color: var(--primary-bg); color: var(--text-primary); transition: background-color 0.3s ease; }
+          body { 
+            background-color: var(--primary-bg); 
+            color: var(--text-primary); 
+            transition: background-color 0.3s ease;
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: touch;
+          }
+          html {
+            overscroll-behavior: none;
+          }
         `}
       </style>
 
@@ -246,12 +258,13 @@ function LayoutContent({ children, currentPageName }) {
       <PushManager />
 
       <div className="flex flex-col min-h-screen" style={{ backgroundColor: 'var(--primary-bg)' }}>
-        {/* Header */}
+        {/* Header with safe area padding */}
         <header className="sticky top-0 z-50 px-4 py-3 border-b"
         style={{
           backgroundColor: 'rgba(var(--primary-bg-rgb), 0.8)',
           borderColor: 'var(--border-color)',
-          backdropFilter: 'blur(10px)'
+          backdropFilter: 'blur(10px)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)'
         }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -264,7 +277,7 @@ function LayoutContent({ children, currentPageName }) {
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                className="flex items-center gap-1 px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="flex items-center gap-1 px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors select-none"
                 style={{ color: 'var(--text-secondary)' }}>
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="text-xs hidden sm:inline">Refresh</span>
@@ -276,17 +289,28 @@ function LayoutContent({ children, currentPageName }) {
           </div>
         </header>
 
-        {/* Main Content */}
+        {/* Main Content with page transitions */}
         <main className="flex-1 overflow-auto pb-20">
-          {children}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
 
-        {/* Bottom Navigation */}
-        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t"
+        {/* Bottom Navigation with safe area padding */}
+        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t select-none"
         style={{
           backgroundColor: 'rgba(var(--primary-bg-rgb), 0.3)',
           borderColor: 'var(--border-color)',
-          backdropFilter: 'blur(20px)'
+          backdropFilter: 'blur(20px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
           <div className="flex items-center justify-center pt-2 pb-6 px-4">
             <div className="flex items-end justify-around w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[70px]">
@@ -307,7 +331,7 @@ function LayoutContent({ children, currentPageName }) {
                       className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center"
                     >
                       <button
-                        onClick={item.action} className="bg-slate-950 text-lime-400 mx-auto my-12 absolute left-1/2 transform -translate-x-1/2 neon-glow flex flex-col items-center justify-center -mt-6 from-green-400 to-green-500 w-16 h-16 rounded-full shadow-2xl z-10">
+                        onClick={item.action} className="bg-slate-950 text-lime-400 mx-auto my-12 absolute left-1/2 transform -translate-x-1/2 neon-glow flex flex-col items-center justify-center -mt-6 from-green-400 to-green-500 w-16 h-16 rounded-full shadow-2xl z-10 select-none">
                         <item.icon className="w-6 h-6" />
                       </button>
                     </LongPressTooltip>
@@ -322,7 +346,7 @@ function LayoutContent({ children, currentPageName }) {
                   <Component
                     key={item.title}
                     {...props}
-                    className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm ${
+                    className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
                       isNotification ? "w-10 h-10 p-1.5 ml-1" : "w-16 h-16 p-2 text-base"
                     }`}
                     style={{
