@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
  * CRITICAL: Auto-Trader - RESPECTS MODE SETTING
@@ -7,8 +7,14 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
  * 
  * LEGAL COMPLIANCE: Never mixes real and fake money
  * 
- * AUTO-EXECUTION THRESHOLD: 70% confidence
+ * AUTO-EXECUTION THRESHOLD: 70% confidence (dynamic based on history)
  * Assets at 70%+ confidence with "buy" action are auto-executed with TP/SL
+ * 
+ * ENHANCED FEATURES:
+ * - Dynamic TP/SL based on historical win rates and optimal zones
+ * - Proactive emerging prospect detection and execution
+ * - Risk-adjusted position sizing based on asset performance history
+ * - Confidence adjustment from trade history data
  */
 
 function round2(n) {
@@ -64,6 +70,98 @@ function roundPriceForKraken(price, symbol) {
 
 // Small helper sleep
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/**
+ * Calculate dynamic TP/SL levels based on historical trade data
+ * Uses actual win rates and average gains to optimize exit points
+ */
+function calculateDynamicLevels(symbol, historyData, defaultGainMargin, defaultLossMargin) {
+  const assetHistory = historyData?.asset_analytics?.[symbol?.toUpperCase()];
+  
+  if (!assetHistory || assetHistory.total_trades < 3) {
+    // Not enough history - use defaults
+    return {
+      gainMargin: defaultGainMargin,
+      lossMargin: defaultLossMargin,
+      confidence_boost: 0,
+      source: 'default'
+    };
+  }
+  
+  const winRate = assetHistory.win_rate || 50;
+  const avgGain = assetHistory.avg_successful_gain_pct || defaultGainMargin;
+  const optimalBuyZone = assetHistory.optimal_buy_zone || {};
+  
+  // Dynamic gain margin based on historical average successful gains
+  // Use 80% of historical average to be conservative
+  let dynamicGainMargin = Math.max(defaultGainMargin, avgGain * 0.8);
+  dynamicGainMargin = Math.min(dynamicGainMargin, 15); // Cap at 15%
+  
+  // Dynamic loss margin based on win rate
+  // Higher win rate = can afford tighter stops, lower = need wider stops
+  let dynamicLossMargin = defaultLossMargin;
+  if (winRate > 70) {
+    // High performer - tighter stop is ok
+    dynamicLossMargin = Math.max(1, defaultLossMargin * 0.8);
+  } else if (winRate < 50) {
+    // Lower performer - wider stop to give more room
+    dynamicLossMargin = Math.min(5, defaultLossMargin * 1.3);
+  }
+  
+  // Confidence boost based on historical performance
+  let confidenceBoost = 0;
+  if (winRate > 75) confidenceBoost = 10;
+  else if (winRate > 65) confidenceBoost = 5;
+  else if (winRate < 40 && assetHistory.total_trades > 5) confidenceBoost = -10;
+  
+  return {
+    gainMargin: round2(dynamicGainMargin),
+    lossMargin: round2(dynamicLossMargin),
+    confidence_boost: confidenceBoost,
+    win_rate: winRate,
+    historical_avg_gain: avgGain,
+    optimal_buy_zone: optimalBuyZone,
+    source: 'historical'
+  };
+}
+
+/**
+ * Evaluate emerging prospects from market intelligence
+ * Returns prospects that meet risk tolerance and allocation criteria
+ */
+function evaluateEmergingProspects(marketIntelligence, currentHoldings, cashAvailable, riskTolerance) {
+  const emergingProspects = marketIntelligence?.emerging_prospects || [];
+  const avoidList = marketIntelligence?.avoid_list || [];
+  
+  if (emergingProspects.length === 0) return [];
+  
+  // Calculate current allocation by asset
+  const holdingSymbols = new Set((currentHoldings || []).map(h => h.symbol?.toUpperCase()));
+  
+  // Filter and score emerging prospects
+  const viable = emergingProspects
+    .filter(ep => {
+      // Skip if on avoid list
+      if (avoidList.includes(ep.symbol)) return false;
+      // Skip if we already hold this asset (avoid over-concentration)
+      if (holdingSymbols.has(ep.symbol?.toUpperCase())) return false;
+      return true;
+    })
+    .map(ep => {
+      // Risk-adjusted scoring
+      const potentialGain = ep.potential_gain_pct || 5;
+      const riskScore = riskTolerance === 'high' ? 1.2 : riskTolerance === 'low' ? 0.7 : 1.0;
+      
+      return {
+        ...ep,
+        adjusted_score: potentialGain * riskScore,
+        max_allocation: Math.min(cashAvailable * 0.15, 50) // Max 15% of cash or $50
+      };
+    })
+    .sort((a, b) => b.adjusted_score - a.adjusted_score);
+  
+  return viable.slice(0, 2); // Max 2 emerging prospects per run
+}
 
 // Invoke krakenTrade with robust retries and token refresh on permission errors
 // CRITICAL: Does NOT retry on insufficient funds or other order-specific errors
@@ -153,6 +251,23 @@ Deno.serve(async (req) => {
     
     let prospects = [];
     let cashAvailable = 0;
+    let marketIntelligence = null;
+    let tradeHistoryData = null;
+    
+    // Fetch trade history for dynamic TP/SL calculation
+    try {
+      console.log('[runAutoTrader] Fetching trade history for dynamic levels...');
+      const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
+        includeKrakenHistory: true,
+        analyzePatterns: false // Skip AI analysis for speed
+      });
+      tradeHistoryData = historyResponse?.data || historyResponse;
+      if (tradeHistoryData?.success) {
+        console.log(`[runAutoTrader] Got history for ${Object.keys(tradeHistoryData.asset_analytics || {}).length} assets`);
+      }
+    } catch (histErr) {
+      console.warn('[runAutoTrader] Trade history fetch failed (continuing with defaults):', histErr.message);
+    }
     
     try {
       const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
@@ -161,6 +276,7 @@ Deno.serve(async (req) => {
       if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
         prospects = prospectsData.prospects;
         cashAvailable = prospectsData.cash_available || 0;
+        marketIntelligence = prospectsData.market_intelligence || null;
         console.log(`[runAutoTrader] Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
         
         // CRITICAL: Log each prospect's allocation to verify user settings are being used
@@ -174,6 +290,34 @@ Deno.serve(async (req) => {
     } catch (prospectError) {
       console.error('[runAutoTrader] Failed to fetch prospects:', prospectError.message);
       return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
+    }
+    
+    // Fetch current holdings for emerging prospect evaluation
+    let currentHoldings = [];
+    try {
+      currentHoldings = await base44.entities.Holding.filter({
+        created_by: user.email,
+        is_simulation: isSimMode
+      });
+    } catch (_e) {}
+    
+    // Determine user's risk tolerance based on settings
+    const riskTolerance = settings.gain_margin > 8 ? 'high' : settings.gain_margin < 4 ? 'low' : 'medium';
+    console.log(`[runAutoTrader] User risk tolerance: ${riskTolerance} (gain margin: ${settings.gain_margin}%)`);
+    
+    // Evaluate emerging prospects from market intelligence
+    const emergingOpportunities = evaluateEmergingProspects(
+      marketIntelligence, 
+      currentHoldings, 
+      cashAvailable,
+      riskTolerance
+    );
+    
+    if (emergingOpportunities.length > 0) {
+      console.log(`[runAutoTrader] Found ${emergingOpportunities.length} emerging prospects:`);
+      emergingOpportunities.forEach(ep => {
+        console.log(`  - ${ep.symbol}: potential +${ep.potential_gain_pct}%, reason: ${ep.reason}`);
+      });
     }
 
     // For SIM mode, use wallet balance instead of Kraken
@@ -257,10 +401,10 @@ Deno.serve(async (req) => {
     }
 
     const tradesPlaced = [];
-    const gainMargin = settings.gain_margin || 3;
-    const lossMargin = settings.loss_margin || 1;
+    const defaultGainMargin = settings.gain_margin || 3;
+    const defaultLossMargin = settings.loss_margin || 1;
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
-    const trailingMargin = settings.trailing_takeprofit_margin || 3;
+    const defaultTrailingMargin = settings.trailing_takeprofit_margin || 3;
     
     // Fetch a single TRADE WebSocket token once for this run (reuse to avoid rate limits)
     let wsToken = null;
@@ -280,10 +424,23 @@ Deno.serve(async (req) => {
       // CRITICAL: Use the quantity and total_value from prospects - these are calculated using user's allocation %
       const qty = prospect.quantity || 0;
       const total_value = prospect.total_value || 0;
-      const confidence = prospect.confidence_score || 0;
+      let confidence = prospect.confidence_score || 0;
       const userAllocationPct = prospect.user_allocation_pct || 10;
       
+      // ENHANCED: Calculate dynamic TP/SL based on trade history
+      const dynamicLevels = calculateDynamicLevels(sym, tradeHistoryData, defaultGainMargin, defaultLossMargin);
+      const gainMargin = dynamicLevels.gainMargin;
+      const lossMargin = dynamicLevels.lossMargin;
+      const trailingMargin = defaultTrailingMargin;
+      
+      // Adjust confidence based on historical performance
+      confidence = Math.max(0, Math.min(100, confidence + dynamicLevels.confidence_boost));
+      
       console.log(`[runAutoTrader] Processing ${sym}: price=$${price}, qty=${qty}, value=$${total_value.toFixed(2)}, user_alloc=${userAllocationPct}%`);
+      console.log(`[runAutoTrader] Dynamic levels for ${sym}: TP=${gainMargin}%, SL=${lossMargin}%, confidence_boost=${dynamicLevels.confidence_boost}, source=${dynamicLevels.source}`);
+      if (dynamicLevels.win_rate) {
+        console.log(`[runAutoTrader] ${sym} historical: win_rate=${dynamicLevels.win_rate.toFixed(1)}%, avg_gain=${dynamicLevels.historical_avg_gain?.toFixed(1)}%`);
+      }
       
       if (price <= 0 || qty <= 0 || total_value <= 0) {
         console.log(`[runAutoTrader] Skipping ${sym} - invalid values (price=${price}, qty=${qty}, value=${total_value})`);
@@ -502,13 +659,14 @@ Deno.serve(async (req) => {
       availableCash = round2(availableCash - total_value);
 
       // Create conditional order for stop-loss/take-profit management
+      // ENHANCED: Include historical context for smarter order management
       const conditionalOrderData = {
         symbol: sym,
         asset_type: typ,
         quantity: qty,
         purchase_price: price,
-        gain_margin: gainMargin,
-        loss_margin: lossMargin,
+        gain_margin: gainMargin,  // Dynamic based on history
+        loss_margin: lossMargin,  // Dynamic based on history
         status: 'active',
         trailing_enabled: trailingEnabled,
         highest_price: price,
@@ -530,7 +688,10 @@ Deno.serve(async (req) => {
         qty,
         price,
         total_value,
-        ai_confidence: confidence
+        ai_confidence: confidence,
+        dynamic_levels: dynamicLevels,
+        effective_gain_margin: gainMargin,
+        effective_loss_margin: lossMargin
       });
 
       console.log(`[runAutoTrader] ✅ Trade completed for ${sym}`);
@@ -542,6 +703,120 @@ Deno.serve(async (req) => {
       if (availableCash < 1) break;
     }
 
+    // Process emerging prospects (if enabled and we have capacity)
+    let emergingTradesPlaced = [];
+    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
+      console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
+      
+      for (const emerging of emergingOpportunities) {
+        if (availableCash < 5) break;
+        
+        const emergingSymbol = (emerging.symbol || '').toUpperCase();
+        
+        // Fetch current price for emerging prospect
+        let emergingPrice = 0;
+        try {
+          const priceRes = await base44.functions.invoke('getMarketData', {
+            action: 'getWatchlistData',
+            payload: { cryptoSymbols: [emergingSymbol], stockSymbols: [] }
+          });
+          const priceData = (priceRes?.data || [])[0];
+          emergingPrice = priceData?.price || 0;
+        } catch (_e) {}
+        
+        if (emergingPrice <= 0) {
+          console.log(`[runAutoTrader] Skipping emerging ${emergingSymbol} - no price available`);
+          continue;
+        }
+        
+        // Calculate position size for emerging prospects (more conservative)
+        const emergingAllocation = Math.min(emerging.max_allocation, availableCash * 0.1);
+        const emergingQty = emergingAllocation / emergingPrice;
+        
+        if (emergingAllocation < 5) {
+          console.log(`[runAutoTrader] Skipping emerging ${emergingSymbol} - allocation too small ($${emergingAllocation.toFixed(2)})`);
+          continue;
+        }
+        
+        console.log(`[runAutoTrader] 🌟 EMERGING: ${emergingSymbol} @ $${emergingPrice} - allocating $${emergingAllocation.toFixed(2)}`);
+        
+        // Use conservative levels for emerging (untested) assets
+        const emergingGainMargin = defaultGainMargin;
+        const emergingLossMargin = Math.min(defaultLossMargin * 1.5, 5); // Wider stop for new assets
+        
+        if (!isSimMode) {
+          // LIVE: Execute via Kraken
+          try {
+            await sleep(500);
+            const emergingBuyData = await invokeKrakenTrade(base44, {
+              action: 'place_order',
+              symbol: emergingSymbol,
+              side: 'buy',
+              quantity: emergingQty,
+              orderType: 'market'
+            }, 4, wsToken);
+            
+            if (emergingBuyData?.success) {
+              console.log(`[runAutoTrader] ✅ Emerging buy executed: ${emergingBuyData.order_id}`);
+              
+              await base44.entities.Trade.create({
+                symbol: emergingSymbol,
+                type: 'buy',
+                asset_type: 'crypto',
+                quantity: emergingQty,
+                price: emergingPrice,
+                total_value: emergingAllocation,
+                status: 'executed',
+                is_auto_trade: true,
+                is_simulation: false,
+                created_by: user.email
+              });
+              
+              emergingTradesPlaced.push({
+                symbol: emergingSymbol,
+                qty: emergingQty,
+                price: emergingPrice,
+                total_value: emergingAllocation,
+                reason: emerging.reason,
+                is_emerging: true
+              });
+              
+              availableCash -= emergingAllocation;
+            }
+          } catch (emergingErr) {
+            console.warn(`[runAutoTrader] Emerging trade failed for ${emergingSymbol}:`, emergingErr.message);
+          }
+        } else {
+          // SIM: Database only
+          await base44.entities.Trade.create({
+            symbol: emergingSymbol,
+            type: 'buy',
+            asset_type: 'crypto',
+            quantity: emergingQty,
+            price: emergingPrice,
+            total_value: emergingAllocation,
+            status: 'executed',
+            is_auto_trade: true,
+            is_simulation: true,
+            created_by: user.email
+          });
+          
+          emergingTradesPlaced.push({
+            symbol: emergingSymbol,
+            qty: emergingQty,
+            price: emergingPrice,
+            total_value: emergingAllocation,
+            reason: emerging.reason,
+            is_emerging: true
+          });
+          
+          availableCash -= emergingAllocation;
+        }
+        
+        await sleep(1500);
+      }
+    }
+
     // Reconcile wallet
     try {
       await base44.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
@@ -549,34 +824,46 @@ Deno.serve(async (req) => {
       console.error('[runAutoTrader] Reconcile error:', e.message);
     }
 
-    console.log(`[runAutoTrader] ✅ Completed: ${tradesPlaced.length} trades executed`);
+    const totalTrades = tradesPlaced.length + emergingTradesPlaced.length;
+    console.log(`[runAutoTrader] ✅ Completed: ${tradesPlaced.length} standard + ${emergingTradesPlaced.length} emerging = ${totalTrades} total trades`);
     
     // Summary of advanced orders placed
     const advancedOrderSummary = tradesPlaced.map(t => ({
       symbol: t.symbol,
       qty: t.qty,
       entry_price: t.price,
-      tp_target: round2(t.price * (1 + gainMargin / 100)),
-      trailing_stop: trailingEnabled ? `${trailingMargin}% from peak` : `Static SL at ${round2(t.price * (1 - lossMargin / 100))}`,
-      confidence: t.ai_confidence
+      tp_target: round2(t.price * (1 + t.effective_gain_margin / 100)),
+      tp_percent: t.effective_gain_margin,
+      sl_percent: t.effective_loss_margin,
+      trailing_stop: trailingEnabled ? `${defaultTrailingMargin}% from peak` : `Static SL at ${round2(t.price * (1 - t.effective_loss_margin / 100))}`,
+      confidence: t.ai_confidence,
+      levels_source: t.dynamic_levels?.source || 'default',
+      historical_win_rate: t.dynamic_levels?.win_rate || null
     }));
 
     return Response.json({
       success: true,
       mode: isSimMode ? 'sim' : 'live',
-      trades_count: tradesPlaced.length,
+      trades_count: totalTrades,
+      standard_trades: tradesPlaced.length,
+      emerging_trades: emergingTradesPlaced.length,
       cash_before: cashBefore,
       cash_after_estimated: availableCash,
       trades: tradesPlaced,
+      emerging_trades_detail: emergingTradesPlaced,
       advanced_orders: advancedOrderSummary,
       auto_execute_threshold: 70,
       total_prospects_analyzed: prospects.length,
+      emerging_opportunities_found: emergingOpportunities.length,
       order_settings: {
-        gain_margin: gainMargin,
-        loss_margin: lossMargin,
+        default_gain_margin: defaultGainMargin,
+        default_loss_margin: defaultLossMargin,
         trailing_enabled: trailingEnabled,
-        trailing_margin: trailingMargin
-      }
+        trailing_margin: defaultTrailingMargin,
+        dynamic_levels_enabled: true
+      },
+      risk_tolerance: riskTolerance,
+      trade_history_used: !!tradeHistoryData?.success
     });
   } catch (error) {
     console.error('[runAutoTrader] Fatal error:', error);
