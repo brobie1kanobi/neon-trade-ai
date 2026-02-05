@@ -58,10 +58,10 @@ export default function AccountSettings({ user }) {
 
         <div className="p-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20">
           <p className="text-sm font-medium text-blue-800 dark:text-blue-400 mb-2">
-            🚀 Future Ready
+            🚀 Accounts Cannot Be Recovered!
           </p>
           <p className="text-xs text-blue-700 dark:text-blue-300">
-            This app is designed to integrate with real trading APIs when you're ready to go live.
+            This app is designed to integrate with any trading APIs, but has been created using the Kraken Websocket and REST API. Integrate your own exchanges API at your own risk.
           </p>
         </div>
       </CardContent>
