@@ -49,7 +49,7 @@ export default function AccountSettings({ user }) {
           <Button
             variant="destructive"
             className="w-full"
-            onClick={() => alert('Account deactivation feature coming soon')}
+            onClick={() => alert('Account deactivation is irreversible')}
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Deactivate Account
