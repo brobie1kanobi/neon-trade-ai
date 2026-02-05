@@ -61,17 +61,24 @@ Deno.serve(async (req) => {
     // AutoTraderProspects is ALWAYS for LIVE trading - never use sim wallet
     // This page shows what would be traded on Kraken, so always use Kraken balance (AVAILABLE cash)
     let cashAvailable = 0;
+    let cashOnHold = 0;
     try {
       const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
       if (krakenData?.success && krakenData?.connected) {
-        // Prefer AVAILABLE USD (excludes amounts on hold); fallback to total if needed
-        cashAvailable = (
-          (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
-          (krakenData.balances?.USD?.balance ?? krakenData.balances?.ZUSD?.balance) ??
-          (typeof krakenData.total_usd_balance === 'number' ? krakenData.total_usd_balance : 0)
-        );
-        console.log('[Prospects] Using Kraken available USD balance:', cashAvailable);
+        // CRITICAL: Use extended balance to get TRULY available funds (excluding holds)
+        // The 'available_usd_balance' should already exclude holds, but let's be explicit
+        const totalUsd = krakenData.balances?.USD?.total ?? krakenData.balances?.ZUSD?.total ?? 0;
+        const holdUsd = krakenData.balances?.USD?.hold_trade ?? krakenData.balances?.ZUSD?.hold_trade ?? 0;
+        const availableUsd = krakenData.available_usd_balance ?? (totalUsd - holdUsd);
+        
+        // CRITICAL: Apply 5% safety buffer to account for fees, slippage, and timing
+        // This prevents "insufficient funds" errors from minor discrepancies
+        const SAFETY_BUFFER = 0.05; // 5% buffer
+        cashAvailable = Math.max(0, availableUsd * (1 - SAFETY_BUFFER));
+        cashOnHold = holdUsd;
+        
+        console.log('[Prospects] Kraken USD - Total:', totalUsd.toFixed(2), 'Hold:', holdUsd.toFixed(2), 'Available:', availableUsd.toFixed(2), 'After 5% buffer:', cashAvailable.toFixed(2));
       } else {
         console.log('[Prospects] Kraken not connected or no balance');
       }
@@ -331,8 +338,17 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // FINAL HARD CAP: Never exceed cash
-      total = Math.min(total, cashAvailable);
+      // FINAL HARD CAP: Never exceed available cash (already has 5% buffer applied)
+      if (total > cashAvailable) {
+        console.log('[Prospects]', symbol, '- Capped from', total.toFixed(2), 'to available cash', cashAvailable.toFixed(2));
+        total = cashAvailable;
+      }
+      
+      // CRITICAL: Skip if we can't afford even the minimum after buffer
+      if (total < 1 || cashAvailable < 1) {
+        console.log('[Prospects]', symbol, '- Insufficient funds after buffer (cash:', cashAvailable.toFixed(2), ')');
+        continue;
+      }
       
       const cappedQuantity = total / price;
       

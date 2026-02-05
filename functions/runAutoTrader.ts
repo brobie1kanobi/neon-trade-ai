@@ -458,10 +458,19 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // CRITICAL: Add buffer for slippage/fees (2% or $1 minimum)
-      const requiredCash = total_value + Math.max(1.0, total_value * 0.02);
+      // CRITICAL: Strict balance check with 10% buffer to prevent "insufficient funds" errors
+      // The 10% buffer accounts for: fees (~0.26%), slippage, price movement, and rounding
+      const EXECUTION_BUFFER = 0.10; // 10% buffer for execution safety
+      const requiredCash = total_value * (1 + EXECUTION_BUFFER);
+      
       if (requiredCash > availableCash) {
-        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${requiredCash.toFixed(2)} needed > $${availableCash.toFixed(2)} available)`);
+        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${total_value.toFixed(2)} + 10% buffer = $${requiredCash.toFixed(2)} needed > $${availableCash.toFixed(2)} available)`);
+        continue;
+      }
+      
+      // CRITICAL: Double-check we have at least the base amount
+      if (total_value > availableCash) {
+        console.log(`[runAutoTrader] Skipping ${sym} - base value $${total_value.toFixed(2)} exceeds cash $${availableCash.toFixed(2)}`);
         continue;
       }
 
@@ -667,7 +676,10 @@ Deno.serve(async (req) => {
         });
       }
 
-      availableCash = round2(availableCash - total_value);
+      // CRITICAL: Deduct the FULL required amount (with buffer) from available cash
+      // This prevents subsequent orders from being placed with stale balance info
+      availableCash = round2(availableCash - requiredCash);
+      console.log(`[runAutoTrader] Cash after ${sym}: $${availableCash.toFixed(2)} (deducted $${requiredCash.toFixed(2)} including buffer)`);
 
       // Create conditional order for stop-loss/take-profit management
       // ENHANCED: Include historical context for smarter order management
