@@ -65,7 +65,7 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   // Update state when WebSocket data changes
-  // CRITICAL: Update frequently for responsive UI
+  // CRITICAL: Reduced frequency from 2s to 5s to prevent excessive updates
   useEffect(() => {
     if (!shouldConnect) return;
 
@@ -77,28 +77,22 @@ export function KrakenWebSocketProvider({ children }) {
         const orders = wsManager.getAllOrders?.() || {};
         const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
-        // Calculate portfolio metrics - PRIORITIZE REST API data over WebSocket
+        // Calculate portfolio metrics
         let usdBalance = 0;
         let cryptoHoldingsValue = 0;
-        let totalPortfolioValue = 0;
         let totalAssets = 0;
 
-        // First check REST API data (more accurate, includes locked funds)
-        const restBalance = restData.krakenBalance;
-        if (restBalance?.success && restBalance?.usd_balance > 0) {
-          usdBalance = restBalance.usd_balance;
-          cryptoHoldingsValue = restBalance.total_crypto_value_usd || 0;
-          totalPortfolioValue = restBalance.total_portfolio_value_usd || (usdBalance + cryptoHoldingsValue);
-          totalAssets = (restBalance.holdings || []).filter(h => h.quantity > 0.00001).length;
-        } 
-        // Fallback to WebSocket data if REST not available
-        else if (balances && Object.keys(balances).length > 0) {
-          usdBalance = balances['USD']?.available || balances['USD']?.balance || 
-                       balances['ZUSD']?.available || balances['ZUSD']?.balance || 0;
+        if (balances && Object.keys(balances).length > 0) {
+          // USD balance - WebSocket only returns available, not locked
+          usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
           
+          // Calculate crypto holdings value
+          // NOTE: WebSocket balance.balance is AVAILABLE only (NOT including locked in orders)
+          // This will be LESS than REST API total when assets are in pending sell orders
           Object.entries(balances).forEach(([asset, balance]) => {
             if (asset === 'USD' || asset === 'ZUSD') return;
             
+            // Use available balance from WebSocket
             const quantity = balance.available || balance.balance || 0;
             if (quantity <= 0.00001) return;
             
@@ -109,8 +103,9 @@ export function KrakenWebSocketProvider({ children }) {
             cryptoHoldingsValue += quantity * price;
             totalAssets++;
           });
-          totalPortfolioValue = usdBalance + cryptoHoldingsValue;
         }
+
+        const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
         setState({
           isConnected,
@@ -131,8 +126,8 @@ export function KrakenWebSocketProvider({ children }) {
     // Update immediately
     updateState();
 
-    // Update every 2 seconds for responsive balance display
-    const interval = setInterval(updateState, 2000);
+    // CRITICAL: Reduced from 2s to 5s to prevent excessive state updates and re-renders
+    const interval = setInterval(updateState, 5000);
 
     return () => clearInterval(interval);
   }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
@@ -151,19 +146,12 @@ export function KrakenWebSocketProvider({ children }) {
       const orders = wsManager.getAllOrders?.() || {};
       const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
-      // Recalculate portfolio metrics - PRIORITIZE REST API data
+      // Recalculate portfolio metrics
       let usdBalance = 0;
       let cryptoHoldingsValue = 0;
-      let totalPortfolioValue = 0;
       let totalAssets = 0;
 
-      const restBalance = restData.krakenBalance;
-      if (restBalance?.success && restBalance?.usd_balance > 0) {
-        usdBalance = restBalance.usd_balance;
-        cryptoHoldingsValue = restBalance.total_crypto_value_usd || 0;
-        totalPortfolioValue = restBalance.total_portfolio_value_usd || (usdBalance + cryptoHoldingsValue);
-        totalAssets = (restBalance.holdings || []).filter(h => h.quantity > 0.00001).length;
-      } else if (balances && Object.keys(balances).length > 0) {
+      if (balances && Object.keys(balances).length > 0) {
         usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
         
         Object.entries(balances).forEach(([asset, balance]) => {
@@ -179,8 +167,9 @@ export function KrakenWebSocketProvider({ children }) {
           cryptoHoldingsValue += quantity * price;
           totalAssets++;
         });
-        totalPortfolioValue = usdBalance + cryptoHoldingsValue;
       }
+
+      const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
       setState({
         isConnected,
@@ -302,44 +291,37 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial REST fetch on mount for PnL data only (balances come from WebSocket)
+  // CRITICAL: Initial fetch on mount (only once) - with 2s delay to let page settle
   useEffect(() => {
     if (shouldConnect && restData.lastFetchTime === 0) {
-      // Delay PnL fetch to let WebSocket connect first (PnL needs REST API)
+      // Delay initial fetch slightly to let page render first
       const timer = setTimeout(() => {
-        console.log('[KrakenWebSocketProvider] Initial PnL fetch (delayed)');
-        fetchPnL();
-      }, 3000);
+        console.log('[KrakenWebSocketProvider] Initial REST data fetch (delayed)');
+        fetchRestData(true);
+        // Fetch PnL after additional delay to spread out API calls
+        setTimeout(() => fetchPnL(), 5000);
+      }, 2000); // 2 second delay before first API call
       
       return () => clearTimeout(timer);
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
-  // CRITICAL: Fetch REST balance data immediately on connect for fallback
-  // Then refresh periodically for PnL only (WebSocket handles balances)
+  // CRITICAL: Periodic refresh - every 45 seconds for balance, 2 minutes for PnL
+  // Backend rate limiter now handles throttling, so we can refresh more frequently
   useEffect(() => {
     if (!shouldConnect) return;
     
-    // Fetch REST data immediately as fallback (in case WebSocket is slow)
-    const immediateTimer = setTimeout(() => {
-      console.log('[KrakenWebSocketProvider] Fetching initial REST balance data as fallback...');
-      fetchRestData(true);
-    }, 500); // Quick initial fetch
-    
-    // Refresh PnL every 2 minutes (REST API only for PnL)
-    const pnlInterval = setInterval(() => {
-      fetchPnL();
-    }, 120000);
-    
-    // Refresh balance every 60 seconds as backup to WebSocket
     const balanceInterval = setInterval(() => {
       fetchRestData(false);
-    }, 60000);
+    }, 45000); // 45 seconds - backend handles rate limiting
+    
+    const pnlInterval = setInterval(() => {
+      fetchPnL();
+    }, 120000); // 2 minutes
     
     return () => {
-      clearTimeout(immediateTimer);
-      clearInterval(pnlInterval);
       clearInterval(balanceInterval);
+      clearInterval(pnlInterval);
     };
   }, [shouldConnect, fetchRestData, fetchPnL]);
 
