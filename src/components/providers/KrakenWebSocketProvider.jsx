@@ -303,22 +303,31 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
-  // CRITICAL: Periodic refresh - every 45 seconds for balance, 2 minutes for PnL
-  // Backend rate limiter now handles throttling, so we can refresh more frequently
+  // CRITICAL: Fetch REST balance data immediately on connect for fallback
+  // Then refresh periodically for PnL only (WebSocket handles balances)
   useEffect(() => {
     if (!shouldConnect) return;
     
-    const balanceInterval = setInterval(() => {
-      fetchRestData(false);
-    }, 45000); // 45 seconds - backend handles rate limiting
+    // Fetch REST data immediately as fallback (in case WebSocket is slow)
+    const immediateTimer = setTimeout(() => {
+      console.log('[KrakenWebSocketProvider] Fetching initial REST balance data as fallback...');
+      fetchRestData(true);
+    }, 500); // Quick initial fetch
     
+    // Refresh PnL every 2 minutes (REST API only for PnL)
     const pnlInterval = setInterval(() => {
       fetchPnL();
-    }, 120000); // 2 minutes
+    }, 120000);
+    
+    // Refresh balance every 60 seconds as backup to WebSocket
+    const balanceInterval = setInterval(() => {
+      fetchRestData(false);
+    }, 60000);
     
     return () => {
-      clearInterval(balanceInterval);
+      clearTimeout(immediateTimer);
       clearInterval(pnlInterval);
+      clearInterval(balanceInterval);
     };
   }, [shouldConnect, fetchRestData, fetchPnL]);
 
