@@ -117,7 +117,8 @@ Deno.serve(async (req) => {
     }
     const limiter = rateLimiters.get(userKey);
 
-    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
+    // Use user's auth context to check connection (RLS will filter by created_by)
+    const connections = await base44.entities.KrakenConnection.filter({ created_by: user.email });
 
     if (!connections || connections.length === 0) {
       clearTimeout(globalTimeoutId);
@@ -137,7 +138,8 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Fetch BOTH balance AND extended balance (includes locked amounts)
     // CRITICAL: Balance endpoints must use BALANCE key (separate from trade)
-    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' }); // uses balance key internally
+    // Use regular functions.invoke (not asServiceRole) to pass user auth context
+    const extendedBalanceResponse = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
 
     let extendedData = extendedBalanceResponse?.data || extendedBalanceResponse;
     if (extendedData?.data) extendedData = extendedData.data;
@@ -326,7 +328,8 @@ Deno.serve(async (req) => {
         await limiter.waitForCapacity(2);
         limiter.recordCall(2);
         
-        const tradesResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+        // Use regular functions.invoke to pass user auth context
+        const tradesResponse = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
 
         const tradesData = tradesResponse?.data || tradesResponse;
         
