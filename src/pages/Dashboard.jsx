@@ -1119,19 +1119,95 @@ export default function Dashboard() {
     const fetchKrakenBalance = async () => {
       try {
         console.log('[Dashboard] Fetching Kraken balance from REST API...');
-        const response = await base44.functions.invoke('getKrakenBalance', {});
+        
+        // Call krakenApi directly with getExtendedBalance action
+        const response = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
         const data = response?.data || response;
         
         console.log('[Dashboard] Kraken REST response:', JSON.stringify(data));
         
-        if (data?.success && data?.connected) {
+        if (data?.success && data?.balance) {
+          // Parse extended balance response
+          const balances = data.balance || {};
+          
+          // Extract USD balance
+          const usdInfo = balances.USD || balances.ZUSD || {};
+          const usdBalance = Number(usdInfo.total || usdInfo.balance || 0);
+          
+          // Calculate crypto holdings value
+          let cryptoValue = 0;
+          const holdings = [];
+          
+          // We need to fetch prices for non-USD assets
+          const cryptoAssets = Object.entries(balances)
+            .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+            .filter(([_, info]) => (Number(info.total || info.balance || 0)) > 0.00001);
+          
+          if (cryptoAssets.length > 0) {
+            // Fetch prices from public API
+            const symbols = cryptoAssets.map(([asset]) => asset);
+            const pairMap = {
+              'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'XRP': 'XXRPZUSD',
+              'LTC': 'XLTCZUSD', 'SOL': 'SOLUSD', 'ADA': 'ADAUSD',
+              'DOT': 'DOTUSD', 'DOGE': 'XDGUSD', 'LINK': 'LINKUSD',
+              'UNI': 'UNIUSD', 'MATIC': 'MATICUSD', 'ATOM': 'ATOMUSD',
+              'AVAX': 'AVAXUSD', 'BCH': 'BCHUSD', 'TRX': 'TRXUSD',
+              'PEPE': 'PEPEUSD', 'XLM': 'XXLMZUSD'
+            };
+            
+            const validPairs = symbols
+              .filter(sym => pairMap[sym])
+              .map(sym => pairMap[sym]);
+            
+            let prices = {};
+            if (validPairs.length > 0) {
+              try {
+                const priceResponse = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${validPairs.join(',')}`);
+                const priceData = await priceResponse.json();
+                
+                if (priceData?.result) {
+                  for (const [pair, ticker] of Object.entries(priceData.result)) {
+                    let symbol = pair.replace(/ZUSD$/, '').replace(/USD$/, '');
+                    if (symbol.startsWith('X') && symbol.length === 4) symbol = symbol.substring(1);
+                    if (symbol === 'XBT') symbol = 'BTC';
+                    if (symbol === 'XDG') symbol = 'DOGE';
+                    prices[symbol] = parseFloat(ticker.c?.[0]) || 0;
+                  }
+                }
+              } catch (priceErr) {
+                console.warn('[Dashboard] Price fetch failed:', priceErr.message);
+              }
+            }
+            
+            // Build holdings with values
+            for (const [asset, info] of cryptoAssets) {
+              const qty = Number(info.total || info.balance || 0);
+              const price = prices[asset] || 0;
+              const value = qty * price;
+              cryptoValue += value;
+              
+              holdings.push({
+                symbol: asset,
+                quantity: qty,
+                current_price: price,
+                current_price_usd: price,
+                total_value_usd: value,
+                price_available: price > 0,
+                asset_type: 'crypto',
+                is_simulation: false
+              });
+            }
+          }
+          
+          const totalValue = usdBalance + cryptoValue;
+          
           const newBalances = {
-            usdBalance: Number(data.usd_balance) || 0,
-            cryptoValue: Number(data.total_crypto_value_usd) || 0,
-            totalValue: Number(data.total_portfolio_value_usd) || 0,
-            holdings: data.holdings || [],
-            costBasis: Number(data.total_cost_basis_usd) || 0,
-            unrealizedPnL: Number(data.total_unrealized_pnl_usd) || 0,
+            usdBalance: usdBalance,
+            cryptoValue: cryptoValue,
+            totalValue: totalValue,
+            holdings: holdings,
+            costBasis: 0,
+            unrealizedPnL: 0,
             loaded: true
           };
           
@@ -1145,13 +1221,13 @@ export default function Dashboard() {
             total: newBalances.totalValue
           };
         } else {
-          console.warn('[Dashboard] Kraken not connected:', data?.error);
-          // Mark as loaded but with zero values if not connected
+          console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
+          // Mark as loaded but keep previous values
           setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
         }
       } catch (err) {
         console.error('[Dashboard] Kraken balance fetch failed:', err);
-        // Mark as loaded to stop showing stale data
+        // Mark as loaded to prevent endless loading state
         setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
       }
     };
