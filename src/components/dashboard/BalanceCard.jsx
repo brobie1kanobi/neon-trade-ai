@@ -16,7 +16,8 @@ export default function BalanceCard({
   isPrimary = false,
   isSimMode = true,
   changeLabel,
-  linkTo
+  linkTo,
+  isLoading = false
 }) {
   // Use actual change data if provided, otherwise default to positive zero
   const displayChange = change || { value: 0, percentage: 0 };
@@ -75,9 +76,16 @@ export default function BalanceCard({
         </div>
         
         <div className="space-y-1">
-          {isVisible ? (
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded animate-pulse" />
+              <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                Loading Kraken...
+              </span>
+            </div>
+          ) : isVisible ? (
             <NumberDisplay
-              value={amount || 0}
+              value={amount ?? 0}
               prefix="$"
               decimals={2}
               className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
@@ -91,7 +99,7 @@ export default function BalanceCard({
             </p>
           )}
           
-          {isVisible &&
+          {isVisible && !isLoading &&
             <div className="flex items-center gap-1 flex-wrap">
               {isPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />

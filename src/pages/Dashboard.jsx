@@ -1080,7 +1080,8 @@ export default function Dashboard() {
     total: null
   });
   
-  // CRITICAL: Fetch Kraken balances via REST API as fallback for LIVE mode
+  // CRITICAL: Fetch Kraken balances via REST API - this is the PRIMARY data source for LIVE mode
+  // Start with loaded: false so we show loading state until we have real Kraken data
   const [krakenApiBalances, setKrakenApiBalances] = React.useState({
     usdBalance: 0,
     cryptoValue: 0,
@@ -1088,16 +1089,27 @@ export default function Dashboard() {
     holdings: [],
     costBasis: 0,
     unrealizedPnL: 0,
-    loaded: false
+    loaded: false,
+    loading: true, // Start loading immediately
+    error: null
   });
   
   // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
   // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
+  // This MUST complete before showing any balance in LIVE mode
   React.useEffect(() => {
-    if (isSimMode) return;
+    if (isSimMode) {
+      // In SIM mode, mark as loaded immediately (we don't need Kraken data)
+      setKrakenApiBalances(prev => ({ ...prev, loaded: true, loading: false }));
+      return;
+    }
     
-    const fetchKrakenBalance = async () => {
+    const fetchKrakenBalance = async (isInitial = false) => {
       try {
+        if (isInitial) {
+          setKrakenApiBalances(prev => ({ ...prev, loading: true, error: null }));
+        }
+        
         console.log('[Dashboard] Fetching Kraken balance from REST API...');
         const response = await base44.functions.invoke('getKrakenBalance', {});
         const data = response?.data || response;
@@ -1112,7 +1124,9 @@ export default function Dashboard() {
             holdings: data.holdings || [],
             costBasis: data.total_cost_basis_usd || 0,
             unrealizedPnL: data.total_unrealized_pnl_usd || 0,
-            loaded: true
+            loaded: true,
+            loading: false,
+            error: null
           };
           
           console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
@@ -1126,17 +1140,29 @@ export default function Dashboard() {
           };
         } else {
           console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
+          setKrakenApiBalances(prev => ({ 
+            ...prev, 
+            loaded: true, 
+            loading: false, 
+            error: data?.error || 'Failed to connect to Kraken' 
+          }));
         }
       } catch (err) {
         console.error('[Dashboard] Kraken balance fetch failed:', err);
+        setKrakenApiBalances(prev => ({ 
+          ...prev, 
+          loaded: true, 
+          loading: false, 
+          error: err.message 
+        }));
       }
     };
     
-    // Fetch immediately
-    fetchKrakenBalance();
+    // Fetch immediately with initial flag
+    fetchKrakenBalance(true);
     
     // Refresh every 60 seconds to avoid rate limiting (429 errors)
-    const interval = setInterval(fetchKrakenBalance, 60000);
+    const interval = setInterval(() => fetchKrakenBalance(false), 60000);
     return () => clearInterval(interval);
   }, [isSimMode]);
 
@@ -1739,13 +1765,17 @@ export default function Dashboard() {
   // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
   // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
   
+  // CRITICAL: In LIVE mode, NEVER show wallet DB values - they could be from SIM mode
+  // Only show Kraken data once loaded, or show loading state
+  const isLiveBalanceLoading = !isSimMode && krakenApiBalances.loading;
+  
   // Cash Wallet = USD balance from Kraken
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenApiBalances.loaded
+        krakenApiBalances.loaded && !krakenApiBalances.loading
           ? (krakenApiBalances.usdBalance ?? 0)
-          : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
+          : null // Return null to indicate loading state
       );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
@@ -1753,9 +1783,9 @@ export default function Dashboard() {
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenApiBalances.loaded
+        krakenApiBalances.loaded && !krakenApiBalances.loading
           ? (krakenApiBalances.cryptoValue ?? 0)
-          : (lastKnownBalancesRef.current.portfolio ?? portfolioMarketValue)
+          : null // Return null to indicate loading state
       );
     
   // Update cache when we have valid data
@@ -1769,17 +1799,21 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, krakenApiBalances.usdBalance, krakenApiBalances.cryptoValue]);
   
-  // Use cached values if current values are zero but we had data before
-  const currentCashBalance = rawCashBalance > 0 
-    ? rawCashBalance 
-    : (lastKnownBalancesRef.current.cash ?? 0);
+  // CRITICAL: In LIVE mode, if we're still loading, show null (loading state)
+  // Don't use cached values during initial load - only use them for subsequent refreshes
+  const currentCashBalance = rawCashBalance === null 
+    ? null  // Still loading
+    : (rawCashBalance > 0 ? rawCashBalance : (lastKnownBalancesRef.current.cash ?? 0));
     
-  const currentPortfolioValue = rawPortfolioValue > 0 
-    ? rawPortfolioValue 
-    : (lastKnownBalancesRef.current.portfolio ?? 0);
+  const currentPortfolioValue = rawPortfolioValue === null 
+    ? null  // Still loading
+    : (rawPortfolioValue > 0 ? rawPortfolioValue : (lastKnownBalancesRef.current.portfolio ?? 0));
     
   // Total Balance = Cash + Portfolio (crypto)
-  const totalBalance = currentCashBalance + currentPortfolioValue;
+  // If either is null (loading), total is also null
+  const totalBalance = (currentCashBalance === null || currentPortfolioValue === null)
+    ? null
+    : (currentCashBalance + currentPortfolioValue);
 
   const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
   const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
@@ -1845,6 +1879,7 @@ export default function Dashboard() {
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
+            isLoading={isLiveBalanceLoading}
           />
         </motion.div>
 
@@ -1858,6 +1893,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
+              isLoading={isLiveBalanceLoading}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1870,6 +1906,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
+              isLoading={isLiveBalanceLoading}
             />
           </motion.div>
         </div>
