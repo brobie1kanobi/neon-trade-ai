@@ -1141,11 +1141,14 @@ export default function Dashboard() {
   }, [isSimMode]);
 
   // CRITICAL: Build effective holdings - prioritize REST API in LIVE mode
+  // NEVER use local DB holdings in LIVE mode - those could be SIM data!
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
-      return holdings;
+      // SIM MODE: Use local DB holdings filtered for simulation
+      return (holdings || []).filter(h => h.is_simulation === true);
     } else {
-      // LIVE MODE: Prioritize Kraken REST API holdings (most accurate)
+      // LIVE MODE: ONLY use Kraken data sources, NEVER local DB
+      // Priority: REST API > WebSocket > Empty array (never local DB)
       if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
         return krakenApiBalances.holdings.map(h => ({
           ...h,
@@ -1171,9 +1174,9 @@ export default function Dashboard() {
               is_simulation: false
             };
           });
-      } else {
-        return holdings;
       }
+      // CRITICAL: Return empty array, NOT local holdings - those are SIM data!
+      return [];
     }
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
 
@@ -1737,25 +1740,32 @@ export default function Dashboard() {
 
   // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
   // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
-  // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
+  // Priority: REST API (if loaded) > WebSocket (if connected with data) > Cache > 0
+  // NEVER fall back to local wallet DB in LIVE mode - that's SIM data!
   
-  // Cash Wallet = USD balance from Kraken
+  // Cash Wallet = USD balance from Kraken (LIVE) or local wallet (SIM)
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.usdBalance ?? 0)
-          : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
+        // LIVE MODE: ONLY use Kraken data sources, NEVER local wallet
+        krakenApiBalances.loaded && krakenApiBalances.usdBalance >= 0
+          ? krakenApiBalances.usdBalance
+          : (wsConnected && wsUsdBalance >= 0)
+            ? wsUsdBalance
+            : (lastKnownBalancesRef.current.cash ?? 0)
       );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
-  // CRITICAL: REST API is authoritative for balance data
+  // CRITICAL: REST API is authoritative for balance data in LIVE mode
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.cryptoValue ?? 0)
-          : (lastKnownBalancesRef.current.portfolio ?? portfolioMarketValue)
+        // LIVE MODE: ONLY use Kraken data sources
+        krakenApiBalances.loaded && krakenApiBalances.cryptoValue >= 0
+          ? krakenApiBalances.cryptoValue
+          : (wsConnected && wsCryptoValue >= 0)
+            ? wsCryptoValue
+            : (lastKnownBalancesRef.current.portfolio ?? 0)
       );
     
   // Update cache when we have valid data
@@ -1781,10 +1791,11 @@ export default function Dashboard() {
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
-  const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
+  // CRITICAL: Determine if we have real Kraken data (NOT local DB)
+  const hasKrakenCash = (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) || (wsConnected && wsUsdBalance > 0);
+  const hasKrakenHoldings = (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) || (wsConnected && wsTotalAssets > 0);
   const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
-  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
+  const showZerosInLive = !isSimMode && !hasKrakenCash && !hasKrakenHoldings && !hasRealTrades && !krakenApiBalances.loaded;
 
   if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
