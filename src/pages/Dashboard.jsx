@@ -1736,32 +1736,36 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use REST API as PRIMARY source in LIVE mode
-  // Priority: REST API (if connected) > WebSocket > Cache
-  // IMPORTANT: Only use REST API if it's BOTH loaded AND connected (success=true)
-  
-  const krakenRestConnected = krakenApiBalances.loaded && krakenApiBalances.usdBalance !== undefined;
+  // CRITICAL: In LIVE mode, prioritize WEBSOCKET data (always real-time) over REST API (rate limited)
+  // Priority: WebSocket (if connected and has data) > REST API > Cache
+  // This prevents $0 showing when REST API is rate-limited but WebSocket is working
   
   // Cash Wallet = USD balance from Kraken in LIVE mode
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenRestConnected && krakenApiBalances.usdBalance > 0
-          ? krakenApiBalances.usdBalance
-          : (wsConnected && wsUsdBalance > 0 
-              ? wsUsdBalance 
-              : (lastKnownBalancesRef.current.cash ?? krakenApiBalances.usdBalance ?? 0))
+        // 1st priority: WebSocket real-time data
+        (wsConnected && wsUsdBalance > 0)
+          ? wsUsdBalance
+          // 2nd priority: REST API data (if loaded successfully)
+          : (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0)
+            ? krakenApiBalances.usdBalance
+            // 3rd priority: Cached data
+            : (lastKnownBalancesRef.current.cash ?? 0)
       );
   
   // Portfolio = crypto holdings value from Kraken in LIVE mode
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenRestConnected && krakenApiBalances.cryptoValue > 0
-          ? krakenApiBalances.cryptoValue
-          : (wsConnected && wsCryptoValue > 0 
-              ? wsCryptoValue 
-              : (lastKnownBalancesRef.current.portfolio ?? krakenApiBalances.cryptoValue ?? 0))
+        // 1st priority: WebSocket real-time data
+        (wsConnected && wsCryptoValue > 0)
+          ? wsCryptoValue
+          // 2nd priority: REST API data (if loaded successfully)
+          : (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0)
+            ? krakenApiBalances.cryptoValue
+            // 3rd priority: Cached data
+            : (lastKnownBalancesRef.current.portfolio ?? 0)
       );
     
   // Update cache when we have valid data
