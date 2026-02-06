@@ -1081,40 +1081,21 @@ export default function Dashboard() {
   });
   
   // CRITICAL: Fetch Kraken balances via REST API - PRIMARY source for LIVE mode
-  // Initialize with null values to distinguish "not loaded yet" from "loaded with 0"
   const [krakenApiBalances, setKrakenApiBalances] = React.useState({
-    usdBalance: null,
-    cryptoValue: null,
-    totalValue: null,
+    usdBalance: 0,
+    cryptoValue: 0,
+    totalValue: 0,
     holdings: [],
     costBasis: 0,
     unrealizedPnL: 0,
-    loaded: false,
-    loading: false
+    loaded: false
   });
   
-  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
-  // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
+  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source for LIVE mode
   React.useEffect(() => {
-    if (isSimMode) {
-      // Reset Kraken balances when switching to SIM mode
-      setKrakenApiBalances({
-        usdBalance: null,
-        cryptoValue: null,
-        totalValue: null,
-        holdings: [],
-        costBasis: 0,
-        unrealizedPnL: 0,
-        loaded: false,
-        loading: false
-      });
-      return;
-    }
+    if (isSimMode) return;
     
     const fetchKrakenBalance = async () => {
-      // Mark as loading to prevent showing stale sim data
-      setKrakenApiBalances(prev => ({ ...prev, loading: true }));
-      
       try {
         console.log('[Dashboard] Fetching Kraken balance from REST API...');
         const response = await base44.functions.invoke('getKrakenBalance', {});
@@ -1130,14 +1111,13 @@ export default function Dashboard() {
             holdings: data.holdings || [],
             costBasis: data.total_cost_basis_usd || 0,
             unrealizedPnL: data.total_unrealized_pnl_usd || 0,
-            loaded: true,
-            loading: false
+            loaded: true
           };
           
           console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
           setKrakenApiBalances(newBalances);
           
-          // Always update cache with fresh data (even if 0 - that's valid)
+          // Update cache with fresh data
           lastKnownBalancesRef.current = {
             cash: newBalances.usdBalance,
             portfolio: newBalances.cryptoValue,
@@ -1145,19 +1125,18 @@ export default function Dashboard() {
           };
         } else {
           console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
-          // Still mark as loaded to prevent infinite loading state
-          setKrakenApiBalances(prev => ({ ...prev, loaded: true, loading: false }));
+          setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
         }
       } catch (err) {
         console.error('[Dashboard] Kraken balance fetch failed:', err);
-        setKrakenApiBalances(prev => ({ ...prev, loaded: true, loading: false }));
+        setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
       }
     };
     
     // Fetch immediately
     fetchKrakenBalance();
     
-    // Refresh every 60 seconds to avoid rate limiting (429 errors)
+    // Refresh every 60 seconds
     const interval = setInterval(fetchKrakenBalance, 60000);
     return () => clearInterval(interval);
   }, [isSimMode]);
@@ -1757,28 +1736,25 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
-  // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
-  // Priority: REST API (if loaded) > WebSocket (if has data) > Cache > 0 (never show sim data in live mode)
+  // CRITICAL: Use REST API as PRIMARY source in LIVE mode
+  // Priority: REST API (if loaded) > WebSocket > Cache
   
-  // CRITICAL: In LIVE mode, NEVER fall back to wallet DB sim data
-  // Cash Wallet = USD balance from Kraken ONLY
+  // Cash Wallet = USD balance from Kraken in LIVE mode
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenApiBalances.loaded && krakenApiBalances.usdBalance !== null
+        krakenApiBalances.loaded
           ? krakenApiBalances.usdBalance
-          : (lastKnownBalancesRef.current.cash ?? 0)  // Never use wallet?.real_cash_balance as fallback
+          : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (lastKnownBalancesRef.current.cash ?? 0))
       );
   
-  // Portfolio = ONLY crypto holdings from Kraken (NOT including cash)
-  // CRITICAL: In LIVE mode, NEVER fall back to local portfolioMarketValue (could be sim data)
+  // Portfolio = crypto holdings value from Kraken in LIVE mode
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenApiBalances.loaded && krakenApiBalances.cryptoValue !== null
+        krakenApiBalances.loaded
           ? krakenApiBalances.cryptoValue
-          : (lastKnownBalancesRef.current.portfolio ?? 0)  // Never use portfolioMarketValue as fallback
+          : (wsConnected && wsCryptoValue > 0 ? wsCryptoValue : (lastKnownBalancesRef.current.portfolio ?? 0))
       );
     
   // Update cache when we have valid data
@@ -1809,21 +1785,12 @@ export default function Dashboard() {
   const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
   const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
 
-  // CRITICAL: Show loading state in LIVE mode until Kraken data is loaded
-  // This prevents showing sim data while waiting for live data
-  const isKrakenLoading = !isSimMode && !krakenApiBalances.loaded && krakenApiBalances.loading;
-  
-  if ((isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) || isKrakenLoading) {
+  if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
       <div className="p-4 space-y-4">
         <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
         <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
         <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        {!isSimMode && (
-          <p className="text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Loading live Kraken data...
-          </p>
-        )}
       </div>
     );
   }
