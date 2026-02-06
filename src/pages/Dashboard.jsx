@@ -1049,7 +1049,7 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Use global WebSocket connection
+  // CRITICAL: Use global WebSocket/REST connection from provider
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -1058,7 +1058,10 @@ export default function Dashboard() {
     totalAssets: wsTotalAssets,
     balances: wsBalances,
     prices: wsPrices,
-    wsManager
+    wsManager,
+    // REST API fallback data from provider
+    krakenBalance,
+    fetchKrakenData
   } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1518,7 +1521,7 @@ export default function Dashboard() {
 
     const cash = isSimMode
       ? (wallet?.cash_balance || 0)
-      : (wsUsdBalance || 0);
+      : (wsUsdBalance > 0 ? wsUsdBalance : restUsdBalance);
     const totalDelta = currentHoldingsValue - prevHoldingsValue;
     const prevTotal = (cash || 0) + prevHoldingsValue;
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
@@ -1660,29 +1663,34 @@ export default function Dashboard() {
   }, [compute24hChange]);
 
   // CRITICAL: Use WebSocket data from KrakenWebSocketProvider in LIVE mode
-  // This is fast and real-time - no slow REST API calls needed
+  // Falls back to REST API data if WebSocket hasn't connected yet
   
-  // Cash Wallet = USD balance from Kraken WebSocket
+  // Get REST API fallback values
+  const restUsdBalance = krakenBalance?.usd_balance || 0;
+  const restCryptoValue = krakenBalance?.total_crypto_value_usd || 0;
+  const restTotalValue = krakenBalance?.total_portfolio_value_usd || 0;
+  
+  // Cash Wallet = USD balance from Kraken (WebSocket or REST)
   const currentCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : (wsUsdBalance || 0);
+    : (wsUsdBalance > 0 ? wsUsdBalance : restUsdBalance);
   
-  // Portfolio = crypto holdings value from WebSocket
+  // Portfolio = crypto holdings value (WebSocket or REST)
   const currentPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : (wsCryptoValue || 0);
+    : (wsCryptoValue > 0 ? wsCryptoValue : restCryptoValue);
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = isSimMode
     ? (currentCashBalance + currentPortfolioValue)
-    : (wsTotalValue || 0);
+    : (wsTotalValue > 0 ? wsTotalValue : restTotalValue);
 
-  // LIVE mode: Check if we have real Kraken data from WebSocket
-  const hasRealCash = wsUsdBalance > 0;
-  const hasRealHoldings = wsTotalAssets > 0;
+  // LIVE mode: Check if we have real Kraken data from WebSocket or REST
+  const hasRealCash = (wsUsdBalance > 0) || (restUsdBalance > 0);
+  const hasRealHoldings = (wsTotalAssets > 0) || (restCryptoValue > 0);
   const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
-  // Only show zeros if WebSocket is connected but returned no data
-  const showZerosInLive = !isSimMode && wsConnected && !hasRealCash && !hasRealHoldings && !hasRealTrades;
+  // Only show zeros if we've checked and found no data
+  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
 
   if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
     return (
