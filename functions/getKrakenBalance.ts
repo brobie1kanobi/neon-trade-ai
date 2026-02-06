@@ -121,7 +121,6 @@ Deno.serve(async (req) => {
     const connections = await base44.entities.KrakenConnection.filter({ created_by: user.email });
 
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeoutId);
       return Response.json({
         error: 'Not connected',
         connected: false,
