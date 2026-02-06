@@ -65,7 +65,7 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   // Update state when WebSocket data changes
-  // CRITICAL: Reduced frequency from 2s to 5s to prevent excessive updates
+  // CRITICAL: Update frequently for responsive UI
   useEffect(() => {
     if (!shouldConnect) return;
 
@@ -84,11 +84,10 @@ export function KrakenWebSocketProvider({ children }) {
 
         if (balances && Object.keys(balances).length > 0) {
           // USD balance - WebSocket only returns available, not locked
-          usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
+          usdBalance = balances['USD']?.available || balances['USD']?.balance || 
+                       balances['ZUSD']?.available || balances['ZUSD']?.balance || 0;
           
           // Calculate crypto holdings value
-          // NOTE: WebSocket balance.balance is AVAILABLE only (NOT including locked in orders)
-          // This will be LESS than REST API total when assets are in pending sell orders
           Object.entries(balances).forEach(([asset, balance]) => {
             if (asset === 'USD' || asset === 'ZUSD') return;
             
@@ -126,8 +125,8 @@ export function KrakenWebSocketProvider({ children }) {
     // Update immediately
     updateState();
 
-    // CRITICAL: Reduced from 2s to 5s to prevent excessive state updates and re-renders
-    const interval = setInterval(updateState, 5000);
+    // Update every 2 seconds for responsive balance display
+    const interval = setInterval(updateState, 2000);
 
     return () => clearInterval(interval);
   }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
@@ -291,16 +290,14 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial fetch on mount (only once) - with 2s delay to let page settle
+  // CRITICAL: Initial REST fetch on mount for PnL data only (balances come from WebSocket)
   useEffect(() => {
     if (shouldConnect && restData.lastFetchTime === 0) {
-      // Delay initial fetch slightly to let page render first
+      // Delay PnL fetch to let WebSocket connect first (PnL needs REST API)
       const timer = setTimeout(() => {
-        console.log('[KrakenWebSocketProvider] Initial REST data fetch (delayed)');
-        fetchRestData(true);
-        // Fetch PnL after additional delay to spread out API calls
-        setTimeout(() => fetchPnL(), 5000);
-      }, 2000); // 2 second delay before first API call
+        console.log('[KrakenWebSocketProvider] Initial PnL fetch (delayed)');
+        fetchPnL();
+      }, 3000);
       
       return () => clearTimeout(timer);
     }
