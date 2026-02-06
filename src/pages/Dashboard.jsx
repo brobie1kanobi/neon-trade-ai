@@ -1737,24 +1737,31 @@ export default function Dashboard() {
   }, [compute24hChange]);
 
   // CRITICAL: Use REST API as PRIMARY source in LIVE mode
-  // Priority: REST API (if loaded) > WebSocket > Cache
+  // Priority: REST API (if connected) > WebSocket > Cache
+  // IMPORTANT: Only use REST API if it's BOTH loaded AND connected (success=true)
+  
+  const krakenRestConnected = krakenApiBalances.loaded && krakenApiBalances.usdBalance !== undefined;
   
   // Cash Wallet = USD balance from Kraken in LIVE mode
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        krakenApiBalances.loaded
+        krakenRestConnected && krakenApiBalances.usdBalance > 0
           ? krakenApiBalances.usdBalance
-          : (wsConnected && wsUsdBalance > 0 ? wsUsdBalance : (lastKnownBalancesRef.current.cash ?? 0))
+          : (wsConnected && wsUsdBalance > 0 
+              ? wsUsdBalance 
+              : (lastKnownBalancesRef.current.cash ?? krakenApiBalances.usdBalance ?? 0))
       );
   
   // Portfolio = crypto holdings value from Kraken in LIVE mode
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        krakenApiBalances.loaded
+        krakenRestConnected && krakenApiBalances.cryptoValue > 0
           ? krakenApiBalances.cryptoValue
-          : (wsConnected && wsCryptoValue > 0 ? wsCryptoValue : (lastKnownBalancesRef.current.portfolio ?? 0))
+          : (wsConnected && wsCryptoValue > 0 
+              ? wsCryptoValue 
+              : (lastKnownBalancesRef.current.portfolio ?? krakenApiBalances.cryptoValue ?? 0))
       );
     
   // Update cache when we have valid data
