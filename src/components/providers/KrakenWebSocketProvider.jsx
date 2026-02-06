@@ -77,21 +77,28 @@ export function KrakenWebSocketProvider({ children }) {
         const orders = wsManager.getAllOrders?.() || {};
         const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
-        // Calculate portfolio metrics
+        // Calculate portfolio metrics - PRIORITIZE REST API data over WebSocket
         let usdBalance = 0;
         let cryptoHoldingsValue = 0;
+        let totalPortfolioValue = 0;
         let totalAssets = 0;
 
-        if (balances && Object.keys(balances).length > 0) {
-          // USD balance - WebSocket only returns available, not locked
+        // First check REST API data (more accurate, includes locked funds)
+        const restBalance = restData.krakenBalance;
+        if (restBalance?.success && restBalance?.usd_balance > 0) {
+          usdBalance = restBalance.usd_balance;
+          cryptoHoldingsValue = restBalance.total_crypto_value_usd || 0;
+          totalPortfolioValue = restBalance.total_portfolio_value_usd || (usdBalance + cryptoHoldingsValue);
+          totalAssets = (restBalance.holdings || []).filter(h => h.quantity > 0.00001).length;
+        } 
+        // Fallback to WebSocket data if REST not available
+        else if (balances && Object.keys(balances).length > 0) {
           usdBalance = balances['USD']?.available || balances['USD']?.balance || 
                        balances['ZUSD']?.available || balances['ZUSD']?.balance || 0;
           
-          // Calculate crypto holdings value
           Object.entries(balances).forEach(([asset, balance]) => {
             if (asset === 'USD' || asset === 'ZUSD') return;
             
-            // Use available balance from WebSocket
             const quantity = balance.available || balance.balance || 0;
             if (quantity <= 0.00001) return;
             
@@ -102,9 +109,8 @@ export function KrakenWebSocketProvider({ children }) {
             cryptoHoldingsValue += quantity * price;
             totalAssets++;
           });
+          totalPortfolioValue = usdBalance + cryptoHoldingsValue;
         }
-
-        const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
         setState({
           isConnected,
@@ -145,12 +151,19 @@ export function KrakenWebSocketProvider({ children }) {
       const orders = wsManager.getAllOrders?.() || {};
       const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
 
-      // Recalculate portfolio metrics
+      // Recalculate portfolio metrics - PRIORITIZE REST API data
       let usdBalance = 0;
       let cryptoHoldingsValue = 0;
+      let totalPortfolioValue = 0;
       let totalAssets = 0;
 
-      if (balances && Object.keys(balances).length > 0) {
+      const restBalance = restData.krakenBalance;
+      if (restBalance?.success && restBalance?.usd_balance > 0) {
+        usdBalance = restBalance.usd_balance;
+        cryptoHoldingsValue = restBalance.total_crypto_value_usd || 0;
+        totalPortfolioValue = restBalance.total_portfolio_value_usd || (usdBalance + cryptoHoldingsValue);
+        totalAssets = (restBalance.holdings || []).filter(h => h.quantity > 0.00001).length;
+      } else if (balances && Object.keys(balances).length > 0) {
         usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
         
         Object.entries(balances).forEach(([asset, balance]) => {
@@ -166,9 +179,8 @@ export function KrakenWebSocketProvider({ children }) {
           cryptoHoldingsValue += quantity * price;
           totalAssets++;
         });
+        totalPortfolioValue = usdBalance + cryptoHoldingsValue;
       }
-
-      const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
 
       setState({
         isConnected,
