@@ -1080,7 +1080,7 @@ export default function Dashboard() {
     total: null
   });
   
-  // CRITICAL: Fetch Kraken balances via REST API - PRIMARY source for LIVE mode
+  // CRITICAL: Fetch Kraken balances via REST API as fallback for LIVE mode
   const [krakenApiBalances, setKrakenApiBalances] = React.useState({
     usdBalance: 0,
     cryptoValue: 0,
@@ -1091,7 +1091,8 @@ export default function Dashboard() {
     loaded: false
   });
   
-  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source for LIVE mode
+  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
+  // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
   React.useEffect(() => {
     if (isSimMode) return;
     
@@ -1105,9 +1106,9 @@ export default function Dashboard() {
         
         if (data?.success && data?.connected) {
           const newBalances = {
-            usdBalance: data.usd_balance ?? 0,
-            cryptoValue: data.total_crypto_value_usd ?? 0,
-            totalValue: data.total_portfolio_value_usd ?? 0,
+            usdBalance: data.usd_balance || 0,
+            cryptoValue: data.total_crypto_value_usd || 0,
+            totalValue: data.total_portfolio_value_usd || 0,
             holdings: data.holdings || [],
             costBasis: data.total_cost_basis_usd || 0,
             unrealizedPnL: data.total_unrealized_pnl_usd || 0,
@@ -1117,7 +1118,7 @@ export default function Dashboard() {
           console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
           setKrakenApiBalances(newBalances);
           
-          // Update cache with fresh data
+          // Always update cache with fresh data (even if 0 - that's valid)
           lastKnownBalancesRef.current = {
             cash: newBalances.usdBalance,
             portfolio: newBalances.cryptoValue,
@@ -1125,18 +1126,16 @@ export default function Dashboard() {
           };
         } else {
           console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
-          setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
         }
       } catch (err) {
         console.error('[Dashboard] Kraken balance fetch failed:', err);
-        setKrakenApiBalances(prev => ({ ...prev, loaded: true }));
       }
     };
     
     // Fetch immediately
     fetchKrakenBalance();
     
-    // Refresh every 60 seconds
+    // Refresh every 60 seconds to avoid rate limiting (429 errors)
     const interval = setInterval(fetchKrakenBalance, 60000);
     return () => clearInterval(interval);
   }, [isSimMode]);
@@ -1736,36 +1735,27 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: In LIVE mode, prioritize WEBSOCKET data (always real-time) over REST API (rate limited)
-  // Priority: WebSocket (if connected and has data) > REST API > Cache
-  // This prevents $0 showing when REST API is rate-limited but WebSocket is working
+  // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
+  // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
+  // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
   
-  // Cash Wallet = USD balance from Kraken in LIVE mode
+  // Cash Wallet = USD balance from Kraken
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        // 1st priority: WebSocket real-time data
-        (wsConnected && wsUsdBalance > 0)
-          ? wsUsdBalance
-          // 2nd priority: REST API data (if loaded successfully)
-          : (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0)
-            ? krakenApiBalances.usdBalance
-            // 3rd priority: Cached data
-            : (lastKnownBalancesRef.current.cash ?? 0)
+        krakenApiBalances.loaded
+          ? (krakenApiBalances.usdBalance ?? 0)
+          : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
       );
   
-  // Portfolio = crypto holdings value from Kraken in LIVE mode
+  // Portfolio = ONLY crypto holdings (NOT including cash)
+  // CRITICAL: REST API is authoritative for balance data
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
     : (
-        // 1st priority: WebSocket real-time data
-        (wsConnected && wsCryptoValue > 0)
-          ? wsCryptoValue
-          // 2nd priority: REST API data (if loaded successfully)
-          : (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0)
-            ? krakenApiBalances.cryptoValue
-            // 3rd priority: Cached data
-            : (lastKnownBalancesRef.current.portfolio ?? 0)
+        krakenApiBalances.loaded
+          ? (krakenApiBalances.cryptoValue ?? 0)
+          : (lastKnownBalancesRef.current.portfolio ?? portfolioMarketValue)
       );
     
   // Update cache when we have valid data
