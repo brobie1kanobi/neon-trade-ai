@@ -136,8 +136,11 @@ Deno.serve(async (req) => {
     limiter.recordCall(1);
 
     // CRITICAL: Fetch extended balance (includes locked amounts)
-    // Use service role to call krakenApi which handles its own auth
-    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+    // Pass user email so krakenApi can look up their connection
+    const extendedBalanceResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
+      action: 'getExtendedBalance',
+      userEmail: user.email 
+    });
 
     let extendedData = extendedBalanceResponse?.data || extendedBalanceResponse;
     if (extendedData?.data) extendedData = extendedData.data;
@@ -326,8 +329,11 @@ Deno.serve(async (req) => {
         await limiter.waitForCapacity(2);
         limiter.recordCall(2);
         
-        // Use service role to call krakenApi
-        const tradesResponse = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+        // Use service role to call krakenApi with user context
+        const tradesResponse = await base44.asServiceRole.functions.invoke('krakenApi', { 
+          action: 'getTradesHistory',
+          userEmail: user.email 
+        });
 
         const tradesData = tradesResponse?.data || tradesResponse;
         
