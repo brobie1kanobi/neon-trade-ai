@@ -16,7 +16,8 @@ export default function BalanceCard({
   isPrimary = false,
   isSimMode = true,
   changeLabel,
-  linkTo
+  linkTo,
+  isLoading = false
 }) {
   // Use actual change data if provided, otherwise default to positive zero
   const displayChange = change || { value: 0, percentage: 0 };
@@ -75,15 +76,21 @@ export default function BalanceCard({
         </div>
         
         <div className="space-y-1">
-          {isVisible ? (
-            <NumberDisplay
-              value={amount || 0}
-              prefix="$"
-              decimals={2}
-              className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
-              maxFontSize={isPrimary ? 40 : 28}
-              minFontSize={16}
-            />
+          {isLoading ? (
+            <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+          ) : isVisible ? (
+            amount !== null ? (
+              <NumberDisplay
+                value={amount || 0}
+                prefix="$"
+                decimals={2}
+                className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
+                maxFontSize={isPrimary ? 40 : 28}
+                minFontSize={16}
+              />
+            ) : (
+              <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            )
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}
               style={{ color: isPrimary ? 'var(--neon-green)' : 'var(--text-primary)' }}>
@@ -91,7 +98,7 @@ export default function BalanceCard({
             </p>
           )}
           
-          {isVisible &&
+          {isVisible && !isLoading && amount !== null &&
             <div className="flex items-center gap-1 flex-wrap">
               {isPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
