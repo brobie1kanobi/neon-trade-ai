@@ -61,17 +61,46 @@ Deno.serve(async (req) => {
     // AutoTraderProspects is ALWAYS for LIVE trading - never use sim wallet
     // This page shows what would be traded on Kraken, so always use Kraken balance (AVAILABLE cash)
     let cashAvailable = 0;
+    let totalOpenOrdersValue = 0;
     try {
       const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
       if (krakenData?.success && krakenData?.connected) {
         // Prefer AVAILABLE USD (excludes amounts on hold); fallback to total if needed
-        cashAvailable = (
+        const rawAvailable = (
           (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
           (krakenData.balances?.USD?.balance ?? krakenData.balances?.ZUSD?.balance) ??
           (typeof krakenData.total_usd_balance === 'number' ? krakenData.total_usd_balance : 0)
         );
-        console.log('[Prospects] Using Kraken available USD balance:', cashAvailable);
+        
+        // CRITICAL: Also check for funds reserved by open orders that might not be reflected
+        // in "available" balance yet (Kraken can have a delay)
+        try {
+          const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
+            action: 'getOpenOrders', 
+            payload: {} 
+          });
+          const ordersData = ordersRes?.data || ordersRes;
+          if (ordersData?.success && Array.isArray(ordersData?.orders)) {
+            // Sum up the value of all BUY orders that would lock USD
+            totalOpenOrdersValue = ordersData.orders
+              .filter(o => (o.descr?.type || o.side || '').toLowerCase() === 'buy')
+              .reduce((sum, o) => {
+                const orderCost = Number(o.vol || 0) * Number(o.descr?.price || o.price || 0);
+                return sum + orderCost;
+              }, 0);
+            console.log('[Prospects] Open buy orders reserving ~$', totalOpenOrdersValue.toFixed(2));
+          }
+        } catch (ordersErr) {
+          console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
+        }
+        
+        // CRITICAL: Apply a 5% safety buffer AND subtract open orders
+        // This prevents "insufficient funds" errors from slippage, fees, or timing
+        const safetyBuffer = rawAvailable * 0.05;
+        cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
+        
+        console.log('[Prospects] Kraken raw available:', rawAvailable, '- open orders:', totalOpenOrdersValue, '- buffer:', safetyBuffer.toFixed(2), '= effective:', cashAvailable.toFixed(2));
       } else {
         console.log('[Prospects] Kraken not connected or no balance');
       }

@@ -458,10 +458,36 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // CRITICAL: Add buffer for slippage/fees (2% or $1 minimum)
-      const requiredCash = total_value + Math.max(1.0, total_value * 0.02);
+      // CRITICAL: Re-fetch current Kraken balance before each trade to ensure accuracy
+      // This prevents "insufficient funds" errors when multiple trades are queued
+      if (!isSimMode) {
+        try {
+          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+          const freshData = freshBalanceRes?.data || freshBalanceRes;
+          if (freshData?.success && freshData?.connected) {
+            const freshAvailable = freshData.available_usd_balance || freshData.usd_balance || 0;
+            // Apply 5% safety buffer
+            availableCash = Math.max(0, freshAvailable * 0.95);
+            console.log(`[runAutoTrader] Fresh Kraken balance: $${freshAvailable.toFixed(2)}, effective: $${availableCash.toFixed(2)}`);
+          }
+        } catch (balErr) {
+          console.warn(`[runAutoTrader] Could not refresh balance:`, balErr.message);
+        }
+      }
+      
+      // CRITICAL: Add 5% buffer for slippage/fees + $2 minimum buffer
+      // This ensures we never try to spend more than actually available
+      const feeBuffer = Math.max(2.0, total_value * 0.05);
+      const requiredCash = total_value + feeBuffer;
+      
       if (requiredCash > availableCash) {
-        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${requiredCash.toFixed(2)} needed > $${availableCash.toFixed(2)} available)`);
+        console.log(`[runAutoTrader] Skipping ${sym} - exceeds available cash ($${requiredCash.toFixed(2)} needed > $${availableCash.toFixed(2)} available, buffer=$${feeBuffer.toFixed(2)})`);
+        continue;
+      }
+      
+      // Double-check: ensure total_value doesn't exceed 95% of available (leave room for fees)
+      if (total_value > availableCash * 0.95) {
+        console.log(`[runAutoTrader] Skipping ${sym} - would use ${((total_value/availableCash)*100).toFixed(1)}% of cash (max 95%)`);
         continue;
       }
 
