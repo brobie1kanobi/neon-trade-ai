@@ -282,33 +282,43 @@ export default function AutoTraderHealth() {
 
   useEffect(() => {
     if (user?.email) {
-      // CRITICAL: Delay initial fetch by 3 seconds to let provider fetch first
+      // CRITICAL: Delay initial fetch by 5 seconds to let provider fetch first
       const initTimer = setTimeout(() => {
         fetchHealth();
         fetchOrderCounts();
-      }, 3000);
+      }, 5000);
       
-      // CRITICAL: Refresh every 180 seconds (3 minutes) to prevent rate limits
+      // CRITICAL: Refresh every 5 minutes to prevent rate limits
       const interval = setInterval(() => {
         fetchHealth();
         fetchOrderCounts();
-      }, 180000); // Was 120 seconds, now 180 (3 minutes)
+      }, 300000); // 5 minutes
       
       return () => {
         clearTimeout(initTimer);
         clearInterval(interval);
       };
     }
-  }, [user?.email, settings?.auto_trading_enabled, fetchOrderCounts]);
+  }, [user?.email]);
 
-  // Re-check prerequisites when Kraken connection changes (but NOT order counts to avoid API spam)
+  // Re-check prerequisites only on mount and when auto-trading setting changes
+  // CRITICAL: Don't re-check on every balance/connection change to avoid rate limits
+  const prereqsCheckedRef = React.useRef(false);
   useEffect(() => {
-    if (user?.email) {
-      // CRITICAL: Only check prerequisites, don't fetch order counts on every change
-      // Order counts are updated via WebSocket and periodic refresh
+    if (user?.email && !prereqsCheckedRef.current) {
+      prereqsCheckedRef.current = true;
+      // Delay to let other data load first
+      const timer = setTimeout(() => checkPrerequisites(), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.email]);
+  
+  // Only re-check when auto-trading toggle changes
+  useEffect(() => {
+    if (user?.email && prereqsCheckedRef.current) {
       checkPrerequisites();
     }
-  }, [isKrakenConnected, user?.email, settings?.auto_trading_enabled, effectiveBalance, checkPrerequisites]);
+  }, [settings?.auto_trading_enabled]);
   
   // CRITICAL: Only update order count from WebSocket, don't trigger fetches
   const wsOrdersCountRef = React.useRef(0);
