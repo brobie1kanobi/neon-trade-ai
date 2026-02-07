@@ -145,6 +145,10 @@ export default function AutoTraderHealth() {
     if (!user?.email) return;
     
     try {
+      // CRITICAL: First check if we already have proof Kraken is connected
+      // If WebSocket is connected OR we have balance data, Kraken IS connected - no need to check DB
+      const alreadyProvenConnected = isKrakenConnected || wsConnected || effectiveBalance > 0;
+      
       // Check BOTH WebSocket AND database for Kraken connection
       // CRITICAL: Use Promise.allSettled to handle rate limit errors gracefully
       const results = await Promise.allSettled([
@@ -169,17 +173,18 @@ export default function AutoTraderHealth() {
       }
 
       // CRITICAL: Kraken is connected if ANY of these are true:
-      // 1. useKrakenData hook says connected (WebSocket working)
-      // 2. Database has API credentials stored
+      // 1. WebSocket says connected (wsConnected)
+      // 2. useKrakenData hook says connected (krakenConnected from REST)
       // 3. We have a positive balance (means data is flowing)
-      // 4. Previous state said connected AND we got rate limited
+      // 4. Database has API credentials stored
+      // 5. Previous state said connected AND we got rate limited
       const hasKrakenCredentials = krakenConns && krakenConns.length > 0 && (krakenConns[0]?.api_key || krakenConns[0]?.trade_api_key || krakenConns[0]?.balance_api_key);
       const hasVerifiedAccount = krakenConns && krakenConns.length > 0 && krakenConns[0]?.account_verified;
       const hasBalanceData = effectiveBalance > 0; // If we have balance, Kraken is definitely connected
       
-      // Trust WebSocket/balance data over database verification flag
-      // CRITICAL: If fetch failed, keep previous connected state (don't flip to false on rate limit)
-      const isConnected = isKrakenConnected || hasBalanceData || hasKrakenCredentials || hasVerifiedAccount || (krakenFetchFailed && prerequisites.krakenConnected);
+      // CRITICAL: Trust real-time data (WebSocket/balance) over database queries
+      // If we have ANY proof of connection, Kraken IS connected
+      const isConnected = alreadyProvenConnected || hasKrakenCredentials || hasVerifiedAccount || (krakenFetchFailed && prerequisites.krakenConnected);
 
       // For balance check, use effective balance
       const hasBalance = effectiveBalance > 1;
@@ -197,22 +202,23 @@ export default function AutoTraderHealth() {
       // Build list of operational issues - ONLY show real issues, NOT rate limit false negatives
       const issues = [];
       
-      // Only say "not connected" if we truly have NO data and NO credentials AND didn't get rate limited
-      if (!isConnected && !hasKrakenCredentials && !krakenFetchFailed && !hasBalanceData) {
+      // CRITICAL: NEVER say "not connected" if we have WebSocket/balance data
+      // Only say "not connected" if we truly have NO data, NO credentials, AND didn't get rate limited
+      if (!isConnected && !alreadyProvenConnected && !hasKrakenCredentials && !krakenFetchFailed && !hasBalanceData) {
         issues.push({ type: 'connection', message: 'Kraken not connected' });
       }
       // Only say "no auto-buy" if we confirmed 0 AND didn't get rate limited
       if (!prereqs.hasAutoBuyPrefs && !autoBuyFetchFailed) {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
-      // Only show balance issue if Kraken is connected and balance is actually low
-      if (isConnected && effectiveBalance <= 1 && effectiveBalance >= 0) {
+      // Only show balance issue if Kraken is connected and balance is actually low (< $1)
+      if (isConnected && effectiveBalance < 1 && effectiveBalance >= 0) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
       }
       
       setOperationalIssues(issues);
       setPrerequisitesLoaded(true);
-      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| Kraken Connected:', isConnected, '| Balance:', effectiveBalance, '| HasCredentials:', hasKrakenCredentials, '| FetchFailed:', { kraken: krakenFetchFailed, autoBuy: autoBuyFetchFailed });
+      console.log('[AutoTraderHealth] Prerequisites:', prereqs, '| Kraken Connected:', isConnected, '| alreadyProvenConnected:', alreadyProvenConnected, '| Balance:', effectiveBalance, '| HasCredentials:', hasKrakenCredentials);
       setPrerequisites(prereqs);
       return prereqs;
     } catch (err) {
@@ -220,7 +226,7 @@ export default function AutoTraderHealth() {
       // CRITICAL: On error, keep previous state - don't flip to false
       return prerequisites;
     }
-  }, [user?.email, isKrakenConnected, settings?.auto_trading_enabled, effectiveBalance, prerequisites.krakenConnected, prerequisites.hasAutoBuyPrefs]);
+  }, [user?.email, isKrakenConnected, wsConnected, settings?.auto_trading_enabled, effectiveBalance, prerequisites.krakenConnected, prerequisites.hasAutoBuyPrefs]);
 
   const fetchHealth = useCallback(async () => {
     try {
