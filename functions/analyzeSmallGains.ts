@@ -214,31 +214,37 @@ For each asset:
         type: "object",
         properties: {
           recommendations: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                symbol: { type: "string" },
-                confidence_score: { type: "number" },
-                predicted_gain_percent: { type: "number" },
-                reasoning: { type: "string" },
-                action: { type: "string" },
-                risk_level: { type: "string" },
-                technical_pattern: { type: "string" },
-                pattern_reliability: { type: "string" },
-                optimal_action: { type: "string" },
-                timing_window: { type: "string" },
-                entry_zone_low: { type: "number" },
-                entry_zone_high: { type: "number" },
-                stop_loss_pct: { type: "number" },
-                take_profit_pct: { type: "number" },
-                sentiment_score: { type: "number" },
-                correlation_group: { type: "string" },
-                historical_win_rate: { type: "number" },
-                historical_avg_gain: { type: "number" },
-                is_top_performer: { type: "boolean" }
-              }
-            }
+          type: "array",
+          items: {
+          type: "object",
+          properties: {
+            symbol: { type: "string" },
+            confidence_score: { type: "number" },
+            predicted_gain_percent: { type: "number" },
+            predicted_direction: { type: "string" },
+            predicted_move_pct: { type: "number" },
+            reasoning: { type: "string" },
+            action: { type: "string" },
+            risk_level: { type: "string" },
+            technical_pattern: { type: "string" },
+            pattern_reliability: { type: "string" },
+            optimal_action: { type: "string" },
+            timing_window: { type: "string" },
+            entry_zone_low: { type: "number" },
+            entry_zone_high: { type: "number" },
+            stop_loss_pct: { type: "number" },
+            take_profit_pct: { type: "number" },
+            sentiment_score: { type: "number" },
+            momentum_strength: { type: "string" },
+            volume_profile: { type: "string" },
+            correlation_group: { type: "string" },
+            historical_win_rate: { type: "number" },
+            historical_avg_gain: { type: "number" },
+            is_top_performer: { type: "boolean" },
+            short_term_signal: { type: "boolean" },
+            auto_tradeable: { type: "boolean" }
+          }
+          }
           },
           market_intelligence: {
             type: "object",
