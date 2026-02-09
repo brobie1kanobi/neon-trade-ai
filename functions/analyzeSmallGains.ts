@@ -245,11 +245,14 @@ For each asset:
             properties: {
               overall_sentiment: { type: "string" },
               sentiment_score: { type: "number" },
+              market_sentiment_score: { type: "number" },
               market_regime: { type: "string" },
               volatility_level: { type: "string" },
               trend_strength: { type: "string" },
               btc_dominance_trend: { type: "string" },
               macro_outlook: { type: "string" },
+              short_term_outlook: { type: "string" },
+              momentum_direction: { type: "string" },
               key_levels: {
                 type: "object",
                 properties: {
@@ -278,9 +281,25 @@ For each asset:
                   properties: {
                     symbol: { type: "string" },
                     reason: { type: "string" },
-                    potential_gain_pct: { type: "number" }
+                    potential_gain_pct: { type: "number" },
+                    timing_window: { type: "string" },
+                    confidence: { type: "number" }
                   }
                 } 
+              },
+              hot_signals: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    symbol: { type: "string" },
+                    signal_type: { type: "string" },
+                    predicted_move_pct: { type: "number" },
+                    timing: { type: "string" },
+                    confidence: { type: "number" },
+                    reasoning: { type: "string" }
+                  }
+                }
               }
             }
           },
