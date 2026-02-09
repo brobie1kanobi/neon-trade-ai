@@ -1,14 +1,16 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 
 /**
- * Enhanced Market Intelligence Analyzer
+ * Enhanced Market Intelligence Analyzer v2.0
  * 
- * Analyzes user's assets with advanced capabilities:
- * - Technical chart pattern recognition (head & shoulders, double tops/bottoms, etc.)
- * - Market sentiment analysis from news and social trends
+ * ENHANCED CAPABILITIES:
+ * - Short-term price movement predictions (1-6 hours)
+ * - "strong_buy" and "strong_sell" signals for auto-trader
+ * - Market sentiment scoring from news and social media
+ * - Technical pattern recognition with confidence scoring
  * - Cross-asset correlation analysis
- * - Optimal buy/sell timing recommendations
- * - HISTORICAL TRADE DATA integration for optimal entry/exit points
+ * - Historical trade data integration for optimal entry/exit
+ * - Momentum detection with real-time trend analysis
  */
 
 Deno.serve(async (req) => {
