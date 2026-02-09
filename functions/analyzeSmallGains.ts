@@ -113,72 +113,98 @@ CRITICAL: Use this historical data to:
       }
     }
 
-    const analysisPrompt = `You are an elite quantitative trading analyst. Your job is to PROTECT THE USER'S MONEY by only recommending trades with HIGH PROFIT POTENTIAL.
+    const analysisPrompt = `You are an elite quantitative trading analyst specializing in SHORT-TERM price predictions (1-6 hours).
+Your job is to identify HIGH-PROBABILITY rapid price movements and provide "strong_buy" or "strong_sell" signals ONLY when confidence is very high.
 
-CRITICAL RULES - READ CAREFULLY:
-1. NEVER recommend "buy" during a DOWNTREND. If price has dropped consistently over the past 24-48 hours, the action MUST be "hold" or "sell".
-2. ONLY recommend "buy" when you see CLEAR REVERSAL SIGNALS - the price must be showing signs it has BOTTOMED and is about to go UP.
-3. If an asset has been losing money repeatedly (check historical trade data), REDUCE confidence significantly.
-4. A "buy" at 70%+ confidence should have at least 3-5% profit potential within 24-48 hours.
-5. If the 24h change is NEGATIVE and there's no clear reversal pattern, DO NOT recommend buying.
+=== CRITICAL SIGNAL RULES ===
 
-REVERSAL SIGNALS TO LOOK FOR BEFORE RECOMMENDING BUY:
-- Double bottom pattern (price hit support twice and bounced)
-- Bullish divergence (price making lower lows but RSI making higher lows)
-- Hammer/engulfing candlestick at support level
-- Price bouncing off a key support level with increasing volume
-- Oversold conditions (RSI < 30) with signs of recovery
+"strong_buy" signals (70%+ confidence required):
+- MUST have positive momentum (price rising in last 4-6 hours)
+- MUST show at least 2% gain in last 24h
+- MUST have bullish technical pattern OR strong support bounce
+- Expected rapid price increase of 3%+ within 1-6 hours
+- Volume must be above average (accumulation phase)
 
-RED FLAGS THAT SHOULD PREVENT A BUY RECOMMENDATION:
-- Consecutive red candles (3+ in a row)
-- Price below all moving averages and still falling
-- Death cross (short MA crossing below long MA)
-- Breaking below support levels
-- High selling volume
+"strong_sell" signals (70%+ confidence required):
+- Asset showing clear distribution pattern (selling pressure)
+- Breaking below key support level
+- Bearish divergence on RSI
+- Expected rapid price decrease within 1-6 hours
 
-ASSETS TO ANALYZE:
+"buy" signals (60-69% confidence):
+- Positive momentum but less certain timing
+- Good entry point but may take 12-24h to play out
+
+"hold" signals:
+- Sideways movement, unclear direction
+- Waiting for better entry/exit point
+
+"sell" signals:
+- Minor weakness, gradual exit recommended
+
+=== MARKET SENTIMENT ANALYSIS ===
+Analyze overall market sentiment from:
+- News headlines and social media trends
+- Bitcoin dominance and market cap movements
+- Fear & Greed indicators
+- Institutional flow data if available
+
+Provide a market_sentiment_score (0-100):
+- 0-30: Extreme Fear (potential bottom)
+- 31-50: Fear (cautious)
+- 51-70: Neutral to Greed (normal)
+- 71-90: Greed (caution, potential top)
+- 91-100: Extreme Greed (high risk of correction)
+
+=== SHORT-TERM PREDICTION FOCUS ===
+For each asset, predict:
+1. Price direction in next 1-6 hours
+2. Probability of 2%+ move (up or down)
+3. Key price levels to watch (support/resistance)
+4. Recommended entry price zone
+5. Tight stop-loss for quick trades
+
+=== ASSETS TO ANALYZE ===
 ${assetsSection}
 ${tradeHistorySection}
 
-ANALYSIS REQUIREMENTS:
+=== ANALYSIS REQUIREMENTS ===
 
-1. TREND ANALYSIS (MOST IMPORTANT)
-- Is the asset in an UPTREND, DOWNTREND, or SIDEWAYS?
-- Has it been falling for the past 24h? If yes, DO NOT recommend buy unless there's a clear reversal.
-- Where are the key support/resistance levels?
+1. MOMENTUM ANALYSIS (PRIMARY)
+- Current momentum direction (bullish/bearish/neutral)
+- Momentum strength (strong/moderate/weak)
+- Time since last significant move
+- Volume profile (accumulation/distribution/neutral)
 
-2. REVERSAL DETECTION
-- Are there any bullish reversal patterns forming?
-- Is the asset near a strong support level?
-- Is there evidence the selling pressure is exhausting?
+2. SHORT-TERM PATTERN RECOGNITION
+- Breakout patterns forming (flags, wedges, triangles)
+- Support/resistance tests
+- Moving average crossovers (short-term: 5/15/30 minute)
+- RSI divergences
 
-3. RISK ASSESSMENT
-- What is the downside risk if we buy now?
-- What is the realistic profit target?
-- Is the risk/reward ratio at least 2:1?
+3. SENTIMENT INDICATORS
+- Social media buzz level (high/medium/low)
+- News impact assessment (positive/negative/neutral)
+- Market correlation (moving with or against BTC)
 
-4. TIMING SIGNALS
-For each asset, provide:
-- optimal_action: ONLY use "buy" or "strong_buy" if:
-  * Price is showing CLEAR reversal signals (not just oversold)
-  * 24h change is positive OR price is bouncing off support
-  * There's realistic 3%+ upside potential
-  * Risk/reward is favorable
-  Otherwise use "hold" (wait for better entry) or "sell"
-- timing_window: "immediate" ONLY if reversal is confirmed, otherwise "wait"
-- confidence_score: 70%+ ONLY for clear setups with reversal confirmation
-  * If price is falling with no reversal signs: MAX 40% confidence
-  * If price is sideways: MAX 55% confidence
-  * If price is rising or showing clear reversal: 60-85% confidence
-- entry_zone: ONLY recommend entry if price is near support
-- stop_loss_pct: Based on nearest support level
-- take_profit_pct: Based on realistic resistance level
+4. TIMING PREDICTION
+For each asset:
+- predicted_direction: "up", "down", or "sideways"
+- predicted_move_pct: Expected % move in 1-6 hours
+- timing_window: "1h", "2h", "4h", "6h"
+- optimal_action: "strong_buy", "buy", "hold", "sell", "strong_sell"
+- confidence_score: 0-100 (ONLY 70%+ for strong signals)
 
-5. MARKET REGIME
-- Current phase: If we're in MARKDOWN (prices falling), be very conservative
-- Only be aggressive in ACCUMULATION (bottoming) or MARKUP (rising) phases
+5. RISK PARAMETERS
+- stop_loss_pct: Tight stops for quick trades (1-3%)
+- take_profit_pct: Realistic targets (2-5%)
+- risk_reward_ratio: Must be at least 1.5:1
 
-THE GOAL: Make PROFITABLE trades, not frequent trades. It's better to WAIT for a good setup than to buy into a falling knife.`;
+=== OUTPUT REQUIREMENTS ===
+- Be CONSERVATIVE with "strong_buy" and "strong_sell" - these trigger auto-trades
+- If momentum is unclear, use "hold" not "buy"
+- Include market_sentiment_score in market_intelligence
+- Prioritize assets with clearest short-term signals`;
 
     // Call LLM with enhanced schema
     const llmResponse = await base44.integrations.Core.InvokeLLM({
