@@ -1,0 +1,558 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { 
+  TrendingUp, TrendingDown, Activity, RefreshCw, Zap, 
+  AlertCircle, CheckCircle, Clock, ArrowRight, Brain,
+  Flame, Target, Shield, BarChart3, Send
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { base44 } from "@/api/base44Client";
+import { useSettings } from "@/components/utils/SettingsContext";
+import { toast } from "sonner";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+
+function SignalCard({ signal, onSendToTrader, onManualTrade }) {
+  const isStrongBuy = signal.optimal_action === 'strong_buy';
+  const isStrongSell = signal.optimal_action === 'strong_sell';
+  const isBuy = signal.optimal_action === 'buy';
+  const isSell = signal.optimal_action === 'sell';
+  
+  const actionColors = {
+    strong_buy: 'bg-green-500 text-white',
+    buy: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    hold: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    sell: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    strong_sell: 'bg-red-500 text-white'
+  };
+
+  const confidenceColor = signal.confidence_score >= 70 
+    ? 'text-green-500' 
+    : signal.confidence_score >= 50 
+      ? 'text-yellow-500' 
+      : 'text-red-500';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-4 rounded-xl border"
+      style={{ 
+        backgroundColor: 'var(--card-bg)',
+        borderColor: (isStrongBuy || isStrongSell) ? 'var(--neon-green)' : 'var(--border-color)'
+      }}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+            {signal.symbol}
+          </span>
+          <Badge className={actionColors[signal.optimal_action] || actionColors.hold}>
+            {signal.optimal_action?.replace('_', ' ').toUpperCase()}
+          </Badge>
+          {signal.short_term_signal && (
+            <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400">
+              <Zap className="w-3 h-3 mr-1" />
+              Short-term
+            </Badge>
+          )}
+        </div>
+        <div className="text-right">
+          <p className={`text-xl font-bold ${confidenceColor}`}>
+            {signal.confidence_score?.toFixed(0)}%
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>confidence</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
+        <div>
+          <p style={{ color: 'var(--text-secondary)' }}>Current Price</p>
+          <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+            ${signal.current_price?.toFixed(4) || 'N/A'}
+          </p>
+        </div>
+        <div>
+          <p style={{ color: 'var(--text-secondary)' }}>24h Change</p>
+          <p className={`font-semibold ${(signal.current_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {(signal.current_24h_change || 0) >= 0 ? '+' : ''}{(signal.current_24h_change || 0).toFixed(2)}%
+          </p>
+        </div>
+        <div>
+          <p style={{ color: 'var(--text-secondary)' }}>Predicted Move</p>
+          <p className={`font-semibold ${(signal.predicted_move_pct || signal.predicted_gain_percent || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {(signal.predicted_move_pct || signal.predicted_gain_percent || 0) >= 0 ? '+' : ''}{(signal.predicted_move_pct || signal.predicted_gain_percent || 0).toFixed(1)}%
+          </p>
+        </div>
+        <div>
+          <p style={{ color: 'var(--text-secondary)' }}>Timing</p>
+          <p className="font-semibold flex items-center gap-1" style={{ color: 'var(--text-primary)' }}>
+            <Clock className="w-3 h-3" />
+            {signal.timing_window || 'short_term'}
+          </p>
+        </div>
+      </div>
+
+      {signal.entry_zone_low && signal.entry_zone_high && (
+        <div className="p-2 rounded-lg mb-3" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+          <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Entry Zone</p>
+          <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+            ${signal.entry_zone_low?.toFixed(4)} - ${signal.entry_zone_high?.toFixed(4)}
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-3 text-xs">
+        {signal.stop_loss_pct && (
+          <Badge variant="outline" className="text-red-500 border-red-500">
+            <Shield className="w-3 h-3 mr-1" />
+            SL: {signal.stop_loss_pct}%
+          </Badge>
+        )}
+        {signal.take_profit_pct && (
+          <Badge variant="outline" className="text-green-500 border-green-500">
+            <Target className="w-3 h-3 mr-1" />
+            TP: {signal.take_profit_pct}%
+          </Badge>
+        )}
+        {signal.momentum_strength && (
+          <Badge variant="outline">
+            <Activity className="w-3 h-3 mr-1" />
+            {signal.momentum_strength}
+          </Badge>
+        )}
+      </div>
+
+      <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+        {signal.reasoning || signal.action_reason || 'AI analysis in progress...'}
+      </p>
+
+      <div className="flex gap-2">
+        {(isStrongBuy || isBuy) && signal.confidence_score >= 70 && (
+          <Button 
+            onClick={() => onSendToTrader(signal)}
+            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+            size="sm"
+          >
+            <Send className="w-4 h-4 mr-2" />
+            Send to Auto-Trader
+          </Button>
+        )}
+        <Button 
+          onClick={() => onManualTrade(signal)}
+          variant="outline"
+          className="flex-1"
+          size="sm"
+        >
+          <ArrowRight className="w-4 h-4 mr-2" />
+          Manual Trade
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+function MarketSentimentCard({ intelligence }) {
+  if (!intelligence) return null;
+
+  const sentimentScore = intelligence.market_sentiment_score || intelligence.sentiment_score || 50;
+  const sentimentLabel = sentimentScore <= 30 ? 'Extreme Fear' 
+    : sentimentScore <= 50 ? 'Fear' 
+    : sentimentScore <= 70 ? 'Neutral' 
+    : sentimentScore <= 90 ? 'Greed' 
+    : 'Extreme Greed';
+
+  const sentimentColor = sentimentScore <= 30 ? 'text-red-500' 
+    : sentimentScore <= 50 ? 'text-orange-500' 
+    : sentimentScore <= 70 ? 'text-yellow-500' 
+    : 'text-green-500';
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Brain className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+          Market Intelligence
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Market Sentiment</p>
+            <p className={`text-2xl font-bold ${sentimentColor}`}>{sentimentScore}</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{sentimentLabel}</p>
+          </div>
+          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Market Regime</p>
+            <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+              {intelligence.market_regime || 'Unknown'}
+            </p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {intelligence.momentum_direction || intelligence.trend_strength || 'Analyzing...'}
+            </p>
+          </div>
+        </div>
+
+        {intelligence.short_term_outlook && (
+          <div className="p-3 rounded-lg border" style={{ borderColor: 'var(--neon-green)', backgroundColor: 'rgba(57, 255, 20, 0.05)' }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--neon-green)' }}>Short-Term Outlook (1-6h)</p>
+            <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+              {intelligence.short_term_outlook}
+            </p>
+          </div>
+        )}
+
+        {intelligence.trading_recommendation && (
+          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+            <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>AI Recommendation</p>
+            <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+              {intelligence.trading_recommendation}
+            </p>
+          </div>
+        )}
+
+        {intelligence.hot_signals && intelligence.hot_signals.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Flame className="w-4 h-4 text-orange-500" />
+              Hot Signals
+            </p>
+            <div className="space-y-2">
+              {intelligence.hot_signals.map((hs, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{hs.symbol}</span>
+                    <Badge className={hs.signal_type === 'strong_buy' ? 'bg-green-500 text-white' : hs.signal_type === 'strong_sell' ? 'bg-red-500 text-white' : ''}>
+                      {hs.signal_type?.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-semibold ${(hs.predicted_move_pct || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {(hs.predicted_move_pct || 0) >= 0 ? '+' : ''}{hs.predicted_move_pct?.toFixed(1)}%
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{hs.timing}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          {intelligence.best_opportunities && intelligence.best_opportunities.length > 0 && (
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Best Opportunities</p>
+              <div className="flex flex-wrap gap-1">
+                {intelligence.best_opportunities.slice(0, 3).map((sym, idx) => (
+                  <Badge key={idx} className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    {sym}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {intelligence.avoid_list && intelligence.avoid_list.length > 0 && (
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Avoid</p>
+              <div className="flex flex-wrap gap-1">
+                {intelligence.avoid_list.slice(0, 3).map((sym, idx) => (
+                  <Badge key={idx} className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    {sym}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function MarketAnalysis() {
+  const { settings, user } = useSettings();
+  const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState('all'); // all, strong_signals, buy, sell
+  
+  const isSimMode = settings?.sim_trading_mode !== false;
+
+  const fetchAnalysis = useCallback(async () => {
+    if (!user?.email) return;
+    
+    setAnalyzing(true);
+    setError(null);
+    
+    try {
+      // Get user's watchlist symbols
+      const watchedCrypto = settings?.watched_crypto || ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
+      const watchedStocks = settings?.watched_stocks || [];
+      
+      // Also include auto-buy preferences
+      const autoBuyPrefs = await base44.entities.AutoBuyPreference.filter({
+        created_by: user.email,
+        enabled: true,
+        is_simulation: isSimMode
+      }).catch(() => []);
+      
+      const autoBuySymbols = autoBuyPrefs.map(p => p.symbol);
+      const allSymbols = [...new Set([...watchedCrypto, ...watchedStocks, ...autoBuySymbols])];
+      
+      console.log('[MarketAnalysis] Analyzing symbols:', allSymbols);
+      
+      const response = await base44.functions.invoke('analyzeSmallGains', {
+        symbols: allSymbols,
+        includeMarketIntelligence: true,
+        includeTradeHistory: true
+      });
+      
+      const data = response?.data || response;
+      console.log('[MarketAnalysis] Analysis response:', data);
+      
+      if (data?.success) {
+        setAnalysisData(data);
+      } else {
+        throw new Error(data?.error || 'Analysis failed');
+      }
+    } catch (err) {
+      console.error('[MarketAnalysis] Error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setAnalyzing(false);
+    }
+  }, [user?.email, settings?.watched_crypto, settings?.watched_stocks, isSimMode]);
+
+  useEffect(() => {
+    fetchAnalysis();
+  }, [fetchAnalysis]);
+
+  const handleSendToTrader = async (signal) => {
+    try {
+      // Add to auto-buy preferences if not already there
+      const existingPrefs = await base44.entities.AutoBuyPreference.filter({
+        created_by: user.email,
+        symbol: signal.symbol,
+        is_simulation: isSimMode
+      });
+      
+      if (existingPrefs.length === 0) {
+        await base44.entities.AutoBuyPreference.create({
+          symbol: signal.symbol,
+          asset_type: 'crypto',
+          percentage: 15,
+          enabled: true,
+          is_simulation: isSimMode,
+          created_by: user.email
+        });
+      }
+      
+      toast.success(`${signal.symbol} sent to Auto-Trader`, {
+        description: `Will auto-trade when conditions are optimal`
+      });
+    } catch (err) {
+      toast.error('Failed to send to auto-trader', { description: err.message });
+    }
+  };
+
+  const handleManualTrade = (signal) => {
+    // Navigate to Portfolio with pre-filled trade
+    const url = createPageUrl('Portfolio') + `?action=trade&symbol=${signal.symbol}&type=${signal.optimal_action?.includes('buy') ? 'buy' : 'sell'}`;
+    window.location.href = url;
+  };
+
+  const filteredRecommendations = (analysisData?.recommendations || []).filter(r => {
+    if (filter === 'all') return true;
+    if (filter === 'strong_signals') return r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell';
+    if (filter === 'buy') return r.optimal_action === 'buy' || r.optimal_action === 'strong_buy';
+    if (filter === 'sell') return r.optimal_action === 'sell' || r.optimal_action === 'strong_sell';
+    return true;
+  });
+
+  const strongSignals = (analysisData?.recommendations || []).filter(
+    r => (r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell') && r.confidence_score >= 70
+  );
+
+  if (loading && !analysisData) {
+    return (
+      <div className="p-4 space-y-4">
+        <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-4 pb-24" style={{ backgroundColor: 'var(--primary-bg)' }}>
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between"
+      >
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <BarChart3 className="w-6 h-6" style={{ color: 'var(--neon-green)' }} />
+            AI Market Analysis
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Short-term predictions (1-6 hours) with high-probability signals
+          </p>
+        </div>
+        <Button
+          onClick={fetchAnalysis}
+          disabled={analyzing}
+          variant="outline"
+          size="sm"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
+          {analyzing ? 'Analyzing...' : 'Refresh'}
+        </Button>
+      </motion.div>
+
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            {error}
+          </p>
+        </div>
+      )}
+
+      {/* Strong Signals Alert */}
+      {strongSignals.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-4 rounded-xl border-2"
+          style={{ 
+            borderColor: 'var(--neon-green)',
+            backgroundColor: 'rgba(57, 255, 20, 0.05)'
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+            <span className="font-bold" style={{ color: 'var(--neon-green)' }}>
+              {strongSignals.length} Strong Signal{strongSignals.length > 1 ? 's' : ''} Detected!
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {strongSignals.map((s, idx) => (
+              <Badge key={idx} className={s.optimal_action === 'strong_buy' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
+                {s.symbol}: {s.optimal_action?.replace('_', ' ')} ({s.confidence_score?.toFixed(0)}%)
+              </Badge>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Market Intelligence */}
+      <MarketSentimentCard intelligence={analysisData?.market_intelligence} />
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {[
+          { value: 'all', label: 'All Signals' },
+          { value: 'strong_signals', label: 'Strong Only', icon: Zap },
+          { value: 'buy', label: 'Buy Signals', icon: TrendingUp },
+          { value: 'sell', label: 'Sell Signals', icon: TrendingDown }
+        ].map((f) => (
+          <Button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            variant={filter === f.value ? 'default' : 'outline'}
+            size="sm"
+            className={filter === f.value ? 'bg-green-600 hover:bg-green-700' : ''}
+          >
+            {f.icon && <f.icon className="w-4 h-4 mr-1" />}
+            {f.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Recommendations */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {filter === 'all' ? 'All Analysis' : filter === 'strong_signals' ? 'Strong Signals Only' : filter === 'buy' ? 'Buy Opportunities' : 'Sell Signals'}
+          <span className="text-sm font-normal ml-2" style={{ color: 'var(--text-secondary)' }}>
+            ({filteredRecommendations.length} results)
+          </span>
+        </h2>
+
+        <AnimatePresence>
+          {filteredRecommendations.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-secondary)' }} />
+              <p style={{ color: 'var(--text-secondary)' }}>
+                No signals match this filter. Try expanding your watchlist or changing the filter.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {filteredRecommendations.map((signal, idx) => (
+                <SignalCard
+                  key={`${signal.symbol}-${idx}`}
+                  signal={signal}
+                  onSendToTrader={handleSendToTrader}
+                  onManualTrade={handleManualTrade}
+                />
+              ))}
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Market Summary */}
+      {analysisData?.market_summary && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Market Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p style={{ color: 'var(--text-primary)' }}>{analysisData.market_summary}</p>
+            
+            {analysisData.upcoming_catalysts && analysisData.upcoming_catalysts.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  Upcoming Catalysts
+                </p>
+                <ul className="list-disc list-inside text-sm" style={{ color: 'var(--text-primary)' }}>
+                  {analysisData.upcoming_catalysts.map((c, idx) => (
+                    <li key={idx}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Last Updated */}
+      <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+        Last analyzed: {analysisData?.timestamp ? new Date(analysisData.timestamp).toLocaleString() : 'N/A'}
+        {' • '}{analysisData?.analyzed_count || 0} assets analyzed
+      </p>
+
+      {/* Quick Links */}
+      <div className="flex gap-2 justify-center">
+        <Link to={createPageUrl('AutoTraderProspects')}>
+          <Button variant="outline" size="sm">
+            <Activity className="w-4 h-4 mr-2" />
+            Auto-Trader Prospects
+          </Button>
+        </Link>
+        <Link to={createPageUrl('Portfolio')}>
+          <Button variant="outline" size="sm">
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Portfolio
+          </Button>
+        </Link>
+      </div>
+    </div>
+  );
+}
