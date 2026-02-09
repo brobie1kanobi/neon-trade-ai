@@ -1,34 +1,34 @@
-
-import React, { useState } from "react";
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
-import { ArrowUpCircle, ArrowDownCircle, CreditCard, PieChart, TrendingUp } from "lucide-react";
-import MarketAnalystModal from "../ai/MarketAnalystModal";
+import { ArrowUpCircle, ArrowDownCircle, PieChart, BarChart3 } from "lucide-react";
 
 export default function QuickActions() {
-  const [isAnalystOpen, setIsAnalystOpen] = useState(false);
-
   const actions = [
   {
     title: "Deposit",
     url: createPageUrl("Wallet?action=deposit"),
-    color: "text-green-500"
+    color: "text-green-500",
+    icon: ArrowUpCircle
   },
   {
     title: "Withdraw",
-    url: createPageUrl("Wallet?action=withdrawal"), // Changed from 'withdraw' to 'withdrawal'
-    color: "text-blue-500"
+    url: createPageUrl("Wallet?action=withdrawal"),
+    color: "text-blue-500",
+    icon: ArrowDownCircle
   },
   {
     title: "Portfolio",
     url: createPageUrl("Portfolio"),
-    color: "text-purple-500"
+    color: "text-purple-500",
+    icon: PieChart
   },
   {
-    title: "Market Analysis",
-    action: () => setIsAnalystOpen(true),
-    color: "neon-text"
+    title: "AI Analysis",
+    url: createPageUrl("MarketAnalysis"),
+    color: "neon-text",
+    icon: BarChart3
   }];
 
 
