@@ -324,7 +324,7 @@ For each asset:
     // Enrich recommendations with trade history data
     // CRITICAL: Apply strict filtering to prevent buying into downtrends
     const enhancedRecommendations = recommendations
-      .filter(r => r.confidence_score >= 50)
+      .filter(r => r.confidence_score >= 40) // Lower filter to show more options
       .map(r => {
         // Get historical data for this asset
         const histData = tradeHistoryData?.asset_analytics?.[r.symbol?.toUpperCase()];
@@ -332,66 +332,95 @@ For each asset:
         // Get current market data for this asset
         const currentData = marketData.find(m => m.symbol?.toUpperCase() === r.symbol?.toUpperCase());
         const change24h = currentData?.change_24h_percent || currentData?.price_change_percentage_24h || 0;
+        const currentPrice = currentData?.price || currentData?.current_price || 0;
         
         // CRITICAL: Adjust confidence based on actual market conditions
         let adjustedConfidence = r.confidence_score;
         let adjustedAction = r.optimal_action || r.action || 'hold';
         
-        // RULE 1: If price is falling significantly (>2% down in 24h) and no reversal, reduce confidence
-        if (change24h < -2 && adjustedAction === 'buy') {
-          console.log(`[MarketIntelligence] ${r.symbol}: Price down ${change24h.toFixed(1)}%, reducing confidence`);
-          adjustedConfidence = Math.min(adjustedConfidence, 45); // Cap at 45% for falling assets
-          adjustedAction = 'hold'; // Change to hold - wait for reversal
-        }
-        
-        // RULE 2: If historical win rate is poor, reduce confidence further
-        if (histData) {
-          if (histData.win_rate > 70) {
-            adjustedConfidence = Math.min(95, adjustedConfidence + 5); // Smaller boost
-          } else if (histData.win_rate < 50 && histData.total_trades > 3) {
-            // Poor historical performance - be more conservative
-            adjustedConfidence = Math.max(30, adjustedConfidence - 20);
-            console.log(`[MarketIntelligence] ${r.symbol}: Poor win rate (${histData.win_rate.toFixed(1)}%), reducing confidence to ${adjustedConfidence}`);
+        // RULE 1: For "strong_buy" signals - MUST have positive momentum
+        if (adjustedAction === 'strong_buy') {
+          if (change24h < 2) {
+            // Downgrade strong_buy to buy if momentum isn't clearly positive
+            adjustedAction = 'buy';
+            adjustedConfidence = Math.min(adjustedConfidence, 65);
+            console.log(`[MarketIntelligence] ${r.symbol}: Downgraded strong_buy to buy - 24h change ${change24h.toFixed(1)}% (need +2%)`);
           }
         }
         
-        // RULE 3: Calculate recent trade performance (were recent trades profitable?)
+        // RULE 2: For "buy" signals - cap confidence if falling
+        if (change24h < -2 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
+          console.log(`[MarketIntelligence] ${r.symbol}: Price down ${change24h.toFixed(1)}%, reducing to hold`);
+          adjustedConfidence = Math.min(adjustedConfidence, 45);
+          adjustedAction = 'hold';
+        }
+        
+        // RULE 3: Boost confidence for assets with strong positive momentum
+        if (change24h >= 3 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
+          adjustedConfidence = Math.min(95, adjustedConfidence + 5);
+          console.log(`[MarketIntelligence] ${r.symbol}: Strong momentum +${change24h.toFixed(1)}%, boosting confidence`);
+        }
+        
+        // RULE 4: Historical performance adjustment
+        if (histData) {
+          if (histData.win_rate > 70 && histData.total_trades >= 3) {
+            adjustedConfidence = Math.min(95, adjustedConfidence + 5);
+          } else if (histData.win_rate < 45 && histData.total_trades > 5) {
+            adjustedConfidence = Math.max(30, adjustedConfidence - 15);
+            if (adjustedAction === 'strong_buy') adjustedAction = 'buy';
+            console.log(`[MarketIntelligence] ${r.symbol}: Poor win rate (${histData.win_rate.toFixed(1)}%), reducing`);
+          }
+        }
+        
+        // RULE 5: Recent trade performance check
         if (histData?.recent_trades) {
           const recentLosses = histData.recent_trades.filter(t => t.pnl < 0).length;
           const recentTotal = histData.recent_trades.length;
           if (recentTotal >= 3 && recentLosses >= 2) {
-            // 2+ losses in recent trades - asset is not performing well
-            adjustedConfidence = Math.max(35, adjustedConfidence - 15);
-            adjustedAction = 'hold';
-            console.log(`[MarketIntelligence] ${r.symbol}: Recent losses (${recentLosses}/${recentTotal}), setting to hold`);
+            adjustedConfidence = Math.max(35, adjustedConfidence - 10);
+            if (adjustedAction === 'strong_buy') adjustedAction = 'buy';
+            console.log(`[MarketIntelligence] ${r.symbol}: Recent losses (${recentLosses}/${recentTotal})`);
           }
         }
         
-        // RULE 4: Only allow "buy" if confidence is genuinely high after adjustments
-        if (adjustedConfidence < 65 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
-          adjustedAction = 'hold';
+        // RULE 6: Final validation for strong signals
+        // strong_buy requires: 70%+ confidence AND positive momentum
+        if (adjustedAction === 'strong_buy' && (adjustedConfidence < 70 || change24h < 2)) {
+          adjustedAction = 'buy';
         }
+        
+        // Determine if this is auto-tradeable (strong signal with high confidence)
+        const isAutoTradeable = (adjustedAction === 'strong_buy' || adjustedAction === 'strong_sell') && adjustedConfidence >= 70;
+        const isShortTermSignal = r.timing_window === '1h' || r.timing_window === '2h' || r.timing_window === '4h' || r.timing_window === 'immediate';
         
         return {
           ...r,
           confidence_score: adjustedConfidence,
           optimal_action: adjustedAction,
+          current_price: currentPrice,
           // Ensure all fields have defaults
           technical_pattern: r.technical_pattern || 'No clear pattern',
           pattern_reliability: r.pattern_reliability || 'moderate',
           timing_window: r.timing_window || 'short_term',
-          stop_loss_pct: r.stop_loss_pct || 1,
+          stop_loss_pct: r.stop_loss_pct || 2,
           take_profit_pct: histData?.avg_successful_gain_pct || r.take_profit_pct || 3,
           sentiment_score: r.sentiment_score || 50,
+          momentum_strength: r.momentum_strength || (change24h > 3 ? 'strong' : change24h > 0 ? 'moderate' : 'weak'),
+          volume_profile: r.volume_profile || 'neutral',
           correlation_group: r.correlation_group || 'uncorrelated',
           // Historical data enrichment
           historical_win_rate: histData?.win_rate || r.historical_win_rate || null,
           historical_avg_gain: histData?.avg_successful_gain_pct || r.historical_avg_gain || null,
           historical_buy_zone: histData?.optimal_buy_zone || null,
           is_top_performer: r.is_top_performer || (histData?.win_rate > 65),
-          // Add market context
+          // Market context
           current_24h_change: change24h,
-          action_reason: change24h < -2 ? 'Price falling - waiting for reversal' : r.reasoning
+          action_reason: change24h < -2 ? 'Price falling - waiting for reversal' : r.reasoning,
+          // New fields for auto-trader integration
+          short_term_signal: isShortTermSignal,
+          auto_tradeable: isAutoTradeable,
+          predicted_direction: r.predicted_direction || (change24h > 0 ? 'up' : change24h < 0 ? 'down' : 'sideways'),
+          predicted_move_pct: r.predicted_move_pct || r.predicted_gain_percent || 0
         };
       })
       .sort((a, b) => {
