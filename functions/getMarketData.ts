@@ -586,39 +586,33 @@ async function searchAssets(term, assetType) {
                 const isUsdPair = pairName.endsWith('USD') || pairName.endsWith('ZUSD');
                 if (!isUsdPair) return false;
                 
-                // Extract base asset from pair name
-                const base = pairInfo.base || '';
+                // wsname is the canonical trading symbol (e.g., "XRP/USD", "BTC/USD")
                 const wsname = pairInfo.wsname || '';
+                const wsnameBase = wsname.split('/')[0] || '';
                 const altname = pairInfo.altname || '';
                 
-                // Clean up base symbol (remove X prefix for some assets)
-                let cleanBase = base.replace(/^X/, '').replace(/^Z/, '');
-                
-                // Also check wsname format (e.g., "XRP/USD")
-                const wsnameBase = wsname.split('/')[0] || '';
-                
-                // Match against search term
-                return cleanBase.toUpperCase().includes(searchTerm) ||
-                       wsnameBase.toUpperCase().includes(searchTerm) ||
-                       altname.toUpperCase().includes(searchTerm) ||
-                       base.toUpperCase().includes(searchTerm);
+                // Match against search term - use wsname as primary (it's the actual trading symbol)
+                return wsnameBase.toUpperCase().includes(searchTerm) ||
+                       altname.toUpperCase().includes(searchTerm);
               })
               .slice(0, 10);
             
             for (const [pairName, pairInfo] of usdPairs) {
-              // Extract clean symbol
-              let symbol = pairInfo.wsname?.split('/')[0] || pairInfo.base || '';
-              symbol = symbol.replace(/^X/, '').replace(/^Z/, '').toUpperCase();
+              // Use wsname as the canonical symbol (e.g., "XRP/USD" -> "XRP")
+              // This is what Kraken actually uses for trading
+              const wsname = pairInfo.wsname || '';
+              let symbol = wsname.split('/')[0] || '';
               
-              // Special handling for XBT -> BTC
+              // Only normalize XBT->BTC, keep everything else as-is (including XRP)
               if (symbol === 'XBT') symbol = 'BTC';
-              if (symbol === 'XDG') symbol = 'DOGE';
+              
+              symbol = symbol.toUpperCase();
               
               if (symbol && !foundSymbols.has(symbol)) {
                 foundSymbols.add(symbol);
                 results.push({
                   symbol: symbol,
-                  name: symbol, // Kraken doesn't provide full names
+                  name: symbol,
                   icon_url: null,
                   source: 'kraken'
                 });
