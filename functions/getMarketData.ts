@@ -569,20 +569,106 @@ async function getTopMovers() {
 async function searchAssets(term, assetType) {
   try {
     const results = [];
+    const foundSymbols = new Set();
+    const searchTerm = term.toUpperCase().trim();
+    
     if (assetType === 'crypto') {
+      // PRIORITY 1: Search Kraken's tradeable pairs first (most accurate for trading)
+      try {
+        const krakenResp = await fetchWithTimeout('https://api.kraken.com/0/public/AssetPairs', 3000);
+        if (krakenResp && krakenResp.ok) {
+          const krakenData = await krakenResp.json();
+          if (krakenData && krakenData.result) {
+            // Filter USD pairs and match search term
+            const usdPairs = Object.entries(krakenData.result)
+              .filter(([pairName, pairInfo]) => {
+                // Only USD pairs (not USDT, not EUR, etc)
+                const isUsdPair = pairName.endsWith('USD') || pairName.endsWith('ZUSD');
+                if (!isUsdPair) return false;
+                
+                // Extract base asset from pair name
+                const base = pairInfo.base || '';
+                const wsname = pairInfo.wsname || '';
+                const altname = pairInfo.altname || '';
+                
+                // Clean up base symbol (remove X prefix for some assets)
+                let cleanBase = base.replace(/^X/, '').replace(/^Z/, '');
+                
+                // Also check wsname format (e.g., "XRP/USD")
+                const wsnameBase = wsname.split('/')[0] || '';
+                
+                // Match against search term
+                return cleanBase.toUpperCase().includes(searchTerm) ||
+                       wsnameBase.toUpperCase().includes(searchTerm) ||
+                       altname.toUpperCase().includes(searchTerm) ||
+                       base.toUpperCase().includes(searchTerm);
+              })
+              .slice(0, 10);
+            
+            for (const [pairName, pairInfo] of usdPairs) {
+              // Extract clean symbol
+              let symbol = pairInfo.wsname?.split('/')[0] || pairInfo.base || '';
+              symbol = symbol.replace(/^X/, '').replace(/^Z/, '').toUpperCase();
+              
+              // Special handling for XBT -> BTC
+              if (symbol === 'XBT') symbol = 'BTC';
+              if (symbol === 'XDG') symbol = 'DOGE';
+              
+              if (symbol && !foundSymbols.has(symbol)) {
+                foundSymbols.add(symbol);
+                results.push({
+                  symbol: symbol,
+                  name: symbol, // Kraken doesn't provide full names
+                  icon_url: null,
+                  source: 'kraken'
+                });
+              }
+            }
+            console.log(`[searchAssets] Found ${results.length} Kraken matches for "${term}"`);
+          }
+        }
+      } catch (e) {
+        console.warn('[searchAssets] Kraken search failed:', e.message);
+      }
+      
+      // PRIORITY 2: Supplement with CoinGecko for names and icons
       const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
       const url = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(term)}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
       const response = await fetchWithTimeout(url);
       if (response && response.ok) {
         const data = await response.json();
         if (data && Array.isArray(data.coins)) {
-          results.push(...data.coins.slice(0, 5).map(c => ({
-            symbol: c.symbol.toUpperCase(),
-            name: c.name,
-            icon_url: c.thumb
-          })));
+          for (const c of data.coins.slice(0, 10)) {
+            const symbol = c.symbol.toUpperCase();
+            // Update existing Kraken results with CoinGecko metadata
+            const existing = results.find(r => r.symbol === symbol);
+            if (existing) {
+              existing.name = c.name;
+              existing.icon_url = c.thumb;
+            } else if (!foundSymbols.has(symbol)) {
+              // Add new results from CoinGecko (may not be tradeable on Kraken)
+              foundSymbols.add(symbol);
+              results.push({
+                symbol: symbol,
+                name: c.name,
+                icon_url: c.thumb,
+                source: 'coingecko'
+              });
+            }
+          }
         }
       }
+      
+      // Sort: Kraken results first (tradeable), then others
+      results.sort((a, b) => {
+        if (a.source === 'kraken' && b.source !== 'kraken') return -1;
+        if (a.source !== 'kraken' && b.source === 'kraken') return 1;
+        // Exact match priority
+        if (a.symbol === searchTerm && b.symbol !== searchTerm) return -1;
+        if (a.symbol !== searchTerm && b.symbol === searchTerm) return 1;
+        return 0;
+      });
+      
     } else if (assetType === 'stocks') {
       const alphaKey = Deno.env.get('ALPHA_VANTAGE_API');
       const url = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(term)}&apikey=${alphaKey}`;
@@ -597,7 +683,8 @@ async function searchAssets(term, assetType) {
         }
       }
     }
-    return results;
+    
+    return results.slice(0, 10);
   } catch (error) {
     console.error('[searchAssets] Error:', error.message);
     return [];
