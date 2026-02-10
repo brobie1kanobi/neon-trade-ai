@@ -1049,7 +1049,7 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Use global WebSocket connection
+  // CRITICAL: Use global WebSocket connection (single source of truth for live data)
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -1058,7 +1058,10 @@ export default function Dashboard() {
     totalAssets: wsTotalAssets,
     balances: wsBalances,
     prices: wsPrices,
-    wsManager
+    wsManager,
+    // REST snapshot data from provider (initial load only)
+    krakenBalance: providerKrakenBalance,
+    restDataLoading: providerLoading
   } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1139,19 +1142,13 @@ export default function Dashboard() {
     }
   }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, wsManager]);
 
-  // CRITICAL: Build effective holdings - prioritize REST API in LIVE mode
+  // CRITICAL: Build effective holdings - WebSocket is PRIMARY in LIVE mode
+  // REST snapshot provides initial data, WebSocket provides real-time updates
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
       return holdings;
     } else {
-      // LIVE MODE: Prioritize Kraken REST API holdings (most accurate)
-      if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
-        return krakenApiBalances.holdings.map(h => ({
-          ...h,
-          is_simulation: false
-        }));
-      }
-      // Fallback to WebSocket balances
+      // LIVE MODE: WebSocket balances are PRIMARY (real-time)
       if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
         return Object.entries(wsBalances)
           .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
@@ -1170,9 +1167,15 @@ export default function Dashboard() {
               is_simulation: false
             };
           });
-      } else {
-        return holdings;
       }
+      // Fallback to REST snapshot (initial load or WS disconnected)
+      if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
+        return krakenApiBalances.holdings.map(h => ({
+          ...h,
+          is_simulation: false
+        }));
+      }
+      return holdings;
     }
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
 
