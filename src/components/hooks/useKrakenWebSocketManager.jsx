@@ -435,7 +435,9 @@ function handlePrivateMessage(message) {
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
       
       // Dispatch event for components listening
+      // Also store on window for AutoTrader access
       if (typeof window !== 'undefined') {
+        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
         window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
           detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
         }));
@@ -458,8 +460,9 @@ function handlePrivateMessage(message) {
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
       
-      // Dispatch event for components listening
+      // Store on window for AutoTrader access
       if (typeof window !== 'undefined') {
+        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
         window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
           detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
         }));
