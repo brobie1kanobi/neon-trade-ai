@@ -4,6 +4,10 @@ import { base44 } from '@/api/base44Client';
 /**
  * CENTRALIZED KRAKEN WEBSOCKET MANAGER - V2 API COMPLIANT
  * 
+ * ARCHITECTURE:
+ * WebSocket = PRIMARY source for ALL live data
+ * REST API = Initial snapshot + actions only
+ * 
  * Based on official Kraken docs:
  * - wss://ws.kraken.com/v2 (public - tickers)
  * - wss://ws-auth.kraken.com/v2 (private - balances, executions)
@@ -12,6 +16,9 @@ import { base44 } from '@/api/base44Client';
  * - ticker: Real-time price data
  * - balances: Account balance snapshots and updates
  * - executions: Order fills and status updates
+ * 
+ * This manager is the SINGLE SOURCE OF TRUTH for live Kraken data.
+ * Components should NEVER make direct REST calls for live data.
  */
 
 // GLOBAL STATE - shared across ALL hooks
@@ -343,6 +350,7 @@ function subscribeToExecutions(ws, token) {
 
 /**
  * Handle PUBLIC WebSocket messages
+ * CRITICAL: These are the PRIMARY source for live price data
  */
 function handlePublicMessage(message) {
   const { channel, type, data } = message;
@@ -350,20 +358,21 @@ function handlePublicMessage(message) {
   // Handle subscription acknowledgments
   if (message.method === 'subscribe') {
     if (message.success) {
-      // Subscription confirmed
+      console.log(`[KrakenWS] ✅ Subscribed to public ${message.result?.channel || 'channel'}`);
     } else if (message.error) {
+      console.error(`[KrakenWS] ❌ Public subscription error:`, message.error);
       emitEvent('error', { channel, error: message.error });
     }
     return;
   }
 
-  // Handle ticker updates
+  // Handle ticker updates - THIS IS THE PRIMARY SOURCE FOR LIVE PRICES
   if (channel === 'ticker') {
     if (type === 'update' && Array.isArray(data)) {
       data.forEach(ticker => {
         const { symbol, last, bid, ask, change, change_pct, volume } = ticker;
         
-        GLOBAL_WS_STATE.prices.set(symbol, {
+        const priceData = {
           symbol,
           price: parseFloat(last) || 0,
           bid: parseFloat(bid) || 0,
@@ -371,16 +380,26 @@ function handlePublicMessage(message) {
           change_24h: parseFloat(change_pct) || 0,
           volume_24h: parseFloat(volume) || 0,
           timestamp: Date.now()
-        });
+        };
+        
+        GLOBAL_WS_STATE.prices.set(symbol, priceData);
       });
       
       emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
+      
+      // Dispatch event for components listening
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kraken:price-update', { 
+          detail: Object.fromEntries(GLOBAL_WS_STATE.prices) 
+        }));
+      }
     }
   }
 }
 
 /**
  * Handle PRIVATE WebSocket messages
+ * CRITICAL: These are the PRIMARY source for live balance and order data
  */
 function handlePrivateMessage(message) {
   const { channel, type, data } = message;
@@ -388,40 +407,42 @@ function handlePrivateMessage(message) {
   // Handle subscription acknowledgments
   if (message.method === 'subscribe') {
     if (message.success) {
-      // Subscription confirmed
+      console.log(`[KrakenWS] ✅ Subscribed to ${message.result?.channel || 'channel'}`);
     } else if (message.error) {
+      console.error(`[KrakenWS] ❌ Subscription error:`, message.error);
       emitEvent('error', { channel, error: message.error });
     }
     return;
   }
 
-  // Handle balances
+  // Handle balances - THIS IS THE PRIMARY SOURCE FOR LIVE BALANCE DATA
   if (channel === 'balances') {
     if (type === 'snapshot' && Array.isArray(data)) {
-      // CRITICAL: Parse balance snapshot per Kraken v2 WebSocket format
-      // The WebSocket returns balance objects with asset, balance (available), and wallets
-      // NOTE: WebSocket "balance" field is AVAILABLE only, NOT total
-      // For total balance including locked, we must use REST API (BalanceEx)
+      console.log('[KrakenWS] 📊 Balance snapshot received:', data.length, 'assets');
+      
       data.forEach(balanceItem => {
         const { asset, balance: availableBalance, wallets } = balanceItem;
-        
-        // WebSocket balance = available only (NOT including locked in orders)
-        // This is DIFFERENT from REST API BalanceEx which has "total" field
         let available = parseFloat(availableBalance) || 0;
         
-        // For WebSocket, we only get available balance
-        // DO NOT use this as total - it will undercount assets in pending orders
         GLOBAL_WS_STATE.balances.set(asset, {
           asset,
-          balance: available,  // WebSocket only gives available
+          balance: available,
           available: available,
           timestamp: Date.now()
         });
       });
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+      
+      // Dispatch event for components listening
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
+          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
+        }));
+      }
     } else if (type === 'update' && Array.isArray(data)) {
-      // CRITICAL: Handle balance updates (trades, deposits, withdrawals)
+      console.log('[KrakenWS] 📊 Balance UPDATE received:', data.length, 'changes');
+      
       data.forEach(update => {
         const { asset, balance: newBalance } = update;
         
@@ -431,9 +452,18 @@ function handlePrivateMessage(message) {
           available: parseFloat(newBalance) || 0,
           timestamp: Date.now()
         });
+        
+        console.log(`[KrakenWS] Balance updated: ${asset} = ${newBalance}`);
       });
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+      
+      // Dispatch event for components listening
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
+          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
+        }));
+      }
     }
   }
 
