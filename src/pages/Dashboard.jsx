@@ -121,29 +121,46 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
       console.log('[AutoTrader] Starting trade cycle - isSimMode:', isSimMode);
       
       try {
-        // CRITICAL: For LIVE mode, fetch Kraken balances directly
+        // CRITICAL: For LIVE mode, use WebSocket data (real-time) or REST snapshot (fallback)
+        // NO direct REST polling - data comes from KrakenWebSocketProvider
         let krakenHoldings = [];
         let krakenCashBalance = 0;
         
         if (!isSimMode) {
-          try {
-            console.log('[AutoTrader] Fetching Kraken balances...');
-            const krakenResponse = await Promise.race([
-              base44.functions.invoke('getKrakenBalance', {}),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken balance timeout')), 15000))
-            ]);
+          // Try WebSocket data first (real-time)
+          if (window.__krakenWsBalances && Object.keys(window.__krakenWsBalances).length > 0) {
+            console.log('[AutoTrader] Using WebSocket balances (real-time)');
+            const wsBalances = window.__krakenWsBalances;
+            krakenCashBalance = wsBalances['USD']?.balance || wsBalances['ZUSD']?.balance || 0;
             
-            const krakenData = krakenResponse?.data || krakenResponse;
-            console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenData));
-            
-            if (krakenData?.success && krakenData?.connected) {
-              krakenCashBalance = krakenData.usd_balance || 0;
-              krakenHoldings = (krakenData.holdings || []).filter(h => h.quantity > 0.00001);
-              console.log('[AutoTrader] Kraken cash:', krakenCashBalance, 'holdings:', krakenHoldings.length);
+            krakenHoldings = Object.entries(wsBalances)
+              .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+              .filter(([_, bal]) => (bal.balance || 0) > 0.00001)
+              .map(([asset, bal]) => ({
+                symbol: asset,
+                quantity: bal.balance || 0,
+                asset_type: 'crypto'
+              }));
+          } else {
+            // Fallback to REST snapshot (provider already fetched this)
+            try {
+              console.log('[AutoTrader] Fetching from REST snapshot...');
+              const krakenResponse = await Promise.race([
+                base44.functions.invoke('getKrakenBalance', {}),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken balance timeout')), 15000))
+              ]);
+              
+              const krakenData = krakenResponse?.data || krakenResponse;
+              
+              if (krakenData?.success && krakenData?.connected) {
+                krakenCashBalance = krakenData.usd_balance || 0;
+                krakenHoldings = (krakenData.holdings || []).filter(h => h.quantity > 0.00001);
+              }
+            } catch (krakenError) {
+              console.error('[AutoTrader] Kraken fetch error:', krakenError.message);
             }
-          } catch (krakenError) {
-            console.error('[AutoTrader] Kraken fetch error:', krakenError.message);
           }
+          console.log('[AutoTrader] Kraken cash:', krakenCashBalance, 'holdings:', krakenHoldings.length);
         }
         
         const freshWallets = await base44.entities.Wallet.filter({ created_by: user.email }, "-updated_date", 1);
