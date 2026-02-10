@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useKrakenWebSocket } from './useKrakenWebSocket';
+import { useKrakenWebSocket } from '@/components/providers/KrakenWebSocketProvider';
 import { useSettings } from '../utils/SettingsContext';
 
 /**
- * Centralized price data hook - UNIFIED APPROACH
- * - Uses WebSocket for LIVE mode (real-time Kraken data)
- * - Uses REST API for SIM mode (market data)
- * - Prevents duplicate API calls with global cache
+ * Centralized price data hook - ARCHITECTURE COMPLIANT
+ * 
+ * LIVE MODE: WebSocket ONLY for real-time prices (no REST polling)
+ * SIM MODE: REST API with caching (no WebSocket)
+ * 
+ * This hook NEVER polls REST for live prices in LIVE mode.
  */
 
 // GLOBAL CACHE - shared across all component instances
@@ -161,17 +163,18 @@ export function usePriceData(symbols = []) {
       // SIM MODE: Use REST API with caching
       fetchPricesREST();
     } else {
-      // LIVE MODE: Use WebSocket (real-time)
-      console.log('[usePriceData] LIVE mode - using WebSocket for', symbols.length, 'symbols');
+      // LIVE MODE: WebSocket ONLY - NO REST POLLING
+      // Prices come from WebSocket updates, not fetches
+      console.log('[usePriceData] LIVE mode - WebSocket active, no REST polling');
       
-      // Convert WebSocket prices to REST format and update
+      // Use current WebSocket data if available
       const wsData = convertWSToREST();
       if (wsData.length > 0) {
         setPriceData(wsData);
-        console.log('[usePriceData] Updated from WebSocket:', wsData.length, 'prices');
       }
+      // If no WS data yet, wait for WebSocket to connect and push updates
     }
-  }, [symbols.join(','), isSimMode, fetchPricesREST, convertWSToREST, wsConnected]);
+  }, [symbols.join(','), isSimMode, fetchPricesREST, convertWSToREST]);
 
   // Update when WebSocket prices change (LIVE mode only)
   useEffect(() => {
