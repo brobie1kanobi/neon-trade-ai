@@ -2,13 +2,21 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 
 /**
- * useKrakenData Hook - ULTRA-RELIABLE VERSION
+ * useKrakenData Hook - SNAPSHOT ONLY (for initial load & recovery)
  * 
- * CRITICAL FIXES:
- * 1. Increased timeout from 6s to 12s (Kraken can be slow)
- * 2. Better retry logic with exponential backoff
- * 3. Returns partial data instead of failing completely
- * 4. Graceful degradation
+ * ARCHITECTURE:
+ * - This hook is for REST API snapshots ONLY
+ * - It should NOT be used for live data polling
+ * - WebSocket handles all real-time updates
+ * 
+ * Use this for:
+ * - Initial app load (one-time snapshot)
+ * - Recovery after WebSocket disconnect
+ * - Post-order verification
+ * 
+ * DO NOT use this for:
+ * - Live balance updates (use WebSocket)
+ * - Real-time prices (use WebSocket)
  */
 
 // GLOBAL CACHE - shared across ALL component instances
@@ -262,14 +270,14 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     }
   }, [isSimMode]);
 
-  // CRITICAL: Use cached data - provider handles the actual fetching
-  // This hook should NOT initiate fetches to prevent duplicate API calls
+  // CRITICAL: This hook is PASSIVE - it reads from cache, doesn't initiate fetches
+  // The KrakenWebSocketProvider handles all data fetching
   useEffect(() => {
     isMountedRef.current = true;
 
     if (!isSimMode && GLOBAL_CACHE.data) {
-      // Use cached data immediately - provider will refresh it
-      console.log('[useKrakenData] Using cached data from provider');
+      // Use cached data from provider - no fetch needed
+      console.log('[useKrakenData] Using cached snapshot data');
       setKrakenData(GLOBAL_CACHE.data);
       setConnected(true);
       setLoading(false);
@@ -280,21 +288,20 @@ export function useKrakenData(isSimMode = true, autoFetch = true) {
     };
   }, [isSimMode]);
 
-  // CRITICAL: Events are now handled by the centralized provider
-  // This hook should NOT make its own API calls on events to prevent rate limits
-  // Just listen for cache updates from the provider
+  // Listen for snapshot updates from provider (NOT trade events)
   useEffect(() => {
-    const handleSync = () => {
-      console.log('[useKrakenData] Sync event - provider will handle refresh');
-      // Don't fetch here - provider handles this
+    const handleSnapshotLoaded = (event) => {
+      console.log('[useKrakenData] Snapshot loaded event received');
+      if (GLOBAL_CACHE.data) {
+        setKrakenData(GLOBAL_CACHE.data);
+        setConnected(true);
+      }
     };
 
-    window.addEventListener('kraken:synced', handleSync);
-    window.addEventListener('trade:completed', handleSync);
+    window.addEventListener('kraken:snapshot-loaded', handleSnapshotLoaded);
 
     return () => {
-      window.removeEventListener('kraken:synced', handleSync);
-      window.removeEventListener('trade:completed', handleSync);
+      window.removeEventListener('kraken:snapshot-loaded', handleSnapshotLoaded);
     };
   }, []);
 
