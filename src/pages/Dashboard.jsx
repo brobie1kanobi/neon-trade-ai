@@ -1080,7 +1080,8 @@ export default function Dashboard() {
     total: null
   });
   
-  // CRITICAL: Fetch Kraken balances via REST API as fallback for LIVE mode
+  // CRITICAL: Kraken balances come from WebSocket Provider (single source of truth)
+  // REST is ONLY used for initial snapshot - WebSocket handles live updates
   const [krakenApiBalances, setKrakenApiBalances] = React.useState({
     usdBalance: 0,
     cryptoValue: 0,
@@ -1091,54 +1092,52 @@ export default function Dashboard() {
     loaded: false
   });
   
-  // CRITICAL: Fetch Kraken balance from REST API - this is the PRIMARY data source
-  // WebSocket can be unreliable, REST API from getKrakenBalance is authoritative
+  // CRITICAL: Use data from KrakenWebSocketProvider - NO direct REST polling
+  // The provider handles initial snapshot + WebSocket updates
   React.useEffect(() => {
     if (isSimMode) return;
     
-    const fetchKrakenBalance = async () => {
-      try {
-        console.log('[Dashboard] Fetching Kraken balance from REST API...');
-        const response = await base44.functions.invoke('getKrakenBalance', {});
-        const data = response?.data || response;
-        
-        console.log('[Dashboard] Kraken REST response:', JSON.stringify(data));
-        
-        if (data?.success && data?.connected) {
-          const newBalances = {
-            usdBalance: data.usd_balance || 0,
-            cryptoValue: data.total_crypto_value_usd || 0,
-            totalValue: data.total_portfolio_value_usd || 0,
-            holdings: data.holdings || [],
-            costBasis: data.total_cost_basis_usd || 0,
-            unrealizedPnL: data.total_unrealized_pnl_usd || 0,
-            loaded: true
-          };
-          
-          console.log('[Dashboard] Setting Kraken balances - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue, 'Total:', newBalances.totalValue);
-          setKrakenApiBalances(newBalances);
-          
-          // Always update cache with fresh data (even if 0 - that's valid)
-          lastKnownBalancesRef.current = {
-            cash: newBalances.usdBalance,
-            portfolio: newBalances.cryptoValue,
-            total: newBalances.totalValue
-          };
-        } else {
-          console.warn('[Dashboard] Kraken not connected or failed:', data?.error);
-        }
-      } catch (err) {
-        console.error('[Dashboard] Kraken balance fetch failed:', err);
-      }
-    };
+    // Get data from WebSocket provider's REST snapshot (already fetched)
+    const krakenBalance = wsManager?.krakenBalance;
     
-    // Fetch immediately
-    fetchKrakenBalance();
+    if (krakenBalance?.success && krakenBalance?.connected) {
+      const newBalances = {
+        usdBalance: krakenBalance.usd_balance || 0,
+        cryptoValue: krakenBalance.total_crypto_value_usd || 0,
+        totalValue: krakenBalance.total_portfolio_value_usd || 0,
+        holdings: krakenBalance.holdings || [],
+        costBasis: krakenBalance.total_cost_basis_usd || 0,
+        unrealizedPnL: krakenBalance.total_unrealized_pnl_usd || 0,
+        loaded: true
+      };
+      
+      console.log('[Dashboard] Updated from provider - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue);
+      setKrakenApiBalances(newBalances);
+      
+      lastKnownBalancesRef.current = {
+        cash: newBalances.usdBalance,
+        portfolio: newBalances.cryptoValue,
+        total: newBalances.totalValue
+      };
+    }
     
-    // Refresh every 60 seconds to avoid rate limiting (429 errors)
-    const interval = setInterval(fetchKrakenBalance, 60000);
-    return () => clearInterval(interval);
-  }, [isSimMode]);
+    // ALSO merge WebSocket real-time balance updates
+    if (wsConnected && wsUsdBalance > 0) {
+      setKrakenApiBalances(prev => ({
+        ...prev,
+        usdBalance: wsUsdBalance,
+        cryptoValue: wsCryptoValue,
+        totalValue: wsUsdBalance + wsCryptoValue,
+        loaded: true
+      }));
+      
+      lastKnownBalancesRef.current = {
+        cash: wsUsdBalance,
+        portfolio: wsCryptoValue,
+        total: wsUsdBalance + wsCryptoValue
+      };
+    }
+  }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, wsManager]);
 
   // CRITICAL: Build effective holdings - prioritize REST API in LIVE mode
   const effectiveHoldings = React.useMemo(() => {

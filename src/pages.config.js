@@ -51,6 +51,7 @@ import AutoTraderProspects from './pages/AutoTraderProspects';
 import CryptoDetails from './pages/CryptoDetails';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
+import MarketAnalysis from './pages/MarketAnalysis';
 import PaymentSuccess from './pages/PaymentSuccess';
 import Portfolio from './pages/Portfolio';
 import RefundManagement from './pages/RefundManagement';
@@ -61,7 +62,6 @@ import VoiceSettings from './pages/VoiceSettings';
 import Wallet from './pages/Wallet';
 import WatchlistSettings from './pages/WatchlistSettings';
 import wallet from './pages/wallet';
-import MarketAnalysis from './pages/MarketAnalysis';
 import __Layout from './Layout.jsx';
 
 
@@ -70,6 +70,7 @@ export const PAGES = {
     "CryptoDetails": CryptoDetails,
     "Dashboard": Dashboard,
     "Home": Home,
+    "MarketAnalysis": MarketAnalysis,
     "PaymentSuccess": PaymentSuccess,
     "Portfolio": Portfolio,
     "RefundManagement": RefundManagement,
@@ -80,7 +81,6 @@ export const PAGES = {
     "Wallet": Wallet,
     "WatchlistSettings": WatchlistSettings,
     "wallet": wallet,
-    "MarketAnalysis": MarketAnalysis,
 }
 
 export const pagesConfig = {
