@@ -323,13 +323,13 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
                   <TabsContent value="pct" className="mt-4">
                     <Label>Trailing Percentage (%)</Label>
                     <Input
-                      type="number"
-                      placeholder="e.g., 1.0 for 1%"
-                      value={trailingPercent}
-                      onChange={(e) => setTrailingPercent(e.target.value)}
-                      step="0.1"
-                      className="bg-slate-950"
-                    />
+                    type="number"
+                    placeholder="e.g., 1.0 for 1%"
+                    value={trailingPercent}
+                    onChange={(e) => setTrailingPercent(e.target.value)}
+                    step="0.1"
+                    className="bg-slate-950" />
+
                     <p className="text-xs text-gray-500 mt-1">
                       Triggers when price reverts by this % from peak
                     </p>
@@ -337,13 +337,13 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
                   <TabsContent value="quote" className="mt-4">
                     <Label>Trailing Amount (USD)</Label>
                     <Input
-                      type="number"
-                      placeholder="e.g., 500"
-                      value={trailingAmount}
-                      onChange={(e) => setTrailingAmount(e.target.value)}
-                      step="1"
-                      className="bg-slate-950"
-                    />
+                    type="number"
+                    placeholder="e.g., 500"
+                    value={trailingAmount}
+                    onChange={(e) => setTrailingAmount(e.target.value)}
+                    step="1"
+                    className="bg-slate-950" />
+
                     <p className="text-xs text-gray-500 mt-1">
                       Triggers when price drops by this USD amount from peak
                     </p>
@@ -351,18 +351,18 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
                 </Tabs>
 
                 {/* Limit Price Offset for trailing-stop-limit */}
-                {orderType === 'trailing-stop-limit' && (
-                  <div className="space-y-3 pt-3 border-t border-orange-200 dark:border-orange-700">
+                {orderType === 'trailing-stop-limit' &&
+              <div className="space-y-3 pt-3 border-t border-orange-200 dark:border-orange-700">
                     <Label>Limit Price Offset from Trigger</Label>
                     <div className="flex gap-2">
                       <Input
-                        type="number"
-                        placeholder="0"
-                        value={limitPriceOffset}
-                        onChange={(e) => setLimitPriceOffset(e.target.value)}
-                        step="0.1"
-                        className="bg-slate-950 flex-1"
-                      />
+                    type="number"
+                    placeholder="0"
+                    value={limitPriceOffset}
+                    onChange={(e) => setLimitPriceOffset(e.target.value)}
+                    step="0.1"
+                    className="bg-slate-950 flex-1" />
+
                       <Select value={limitPriceOffsetType} onValueChange={setLimitPriceOffsetType}>
                         <SelectTrigger className="bg-slate-950 w-24">
                           <SelectValue />
@@ -377,15 +377,15 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
                       Offset from trigger price. Use 0 for same as trigger, negative for below.
                     </p>
                   </div>
-                )}
+              }
 
                 {/* Trailing Stop Example */}
                 <div className="text-xs text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/40 p-2 rounded">
                   <strong>Example:</strong> If {trailingPriceType === 'pct' ? `${trailingPercent || 1}%` : `$${trailingAmount || 500}`} trailing, 
-                  and price peaks at $100,000, order triggers at {trailingPriceType === 'pct' 
-                    ? `$${(100000 * (1 - (parseFloat(trailingPercent) || 1) / 100)).toLocaleString()}`
-                    : `$${(100000 - (parseFloat(trailingAmount) || 500)).toLocaleString()}`
-                  }
+                  and price peaks at $100,000, order triggers at {trailingPriceType === 'pct' ?
+                `$${(100000 * (1 - (parseFloat(trailingPercent) || 1) / 100)).toLocaleString()}` :
+                `$${(100000 - (parseFloat(trailingAmount) || 500)).toLocaleString()}`
+                }
                 </div>
               </div>
             }
@@ -452,7 +452,7 @@ export default function AdvancedOrderModal({ isOpen, onClose, asset, side, quant
 
           {/* One-Triggers-Other (OTO) */}
           {side === 'buy' &&
-          <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="bg-slate-500 p-4 rounded-lg space-y-3 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
               <div className="flex items-center justify-between">
                 <h4 className="font-semibold text-sm flex items-center gap-2">
                   <Target className="w-4 h-4" />
