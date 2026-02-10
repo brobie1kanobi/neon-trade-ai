@@ -3,13 +3,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, CartesianGrid, ReferenceDot } from "recharts";
 import { TrendingUp, TrendingDown, BarChart3, Loader2 } from "lucide-react";
-import { useSettings } from "@/components/utils/SettingsContext"; // Import useSettings
-import { base44 } from "@/api/base44Client"; // Import base44 for fallback
+import { useSettings } from "@/components/utils/SettingsContext";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
+import { base44 } from "@/api/base44Client";
 
 export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
   // Pull user settings (watchlist) from context
   const { settings } = useSettings?.() || {};
   const hour12 = (settings?.time_format || "12h") !== "24h";
+  const isSimMode = settings?.sim_trading_mode !== false;
+  
+  // Get WebSocket prices for LIVE mode
+  const { prices: wsPrices, isConnected: wsConnected } = useKrakenWebSocket();
+  
   // Determine effective symbol: user's #1 watched crypto, else prop, else BTC
   const effectiveSymbol = (settings?.watched_crypto?.length ? settings.watched_crypto[0] : propSymbol) || "BTC";
 
@@ -264,21 +270,30 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
         setTimeout(() => reject(new Error('Request timeout')), 10000)
         );
 
-        // Fetch current price
-        const currentPricePromise = base44.functions.invoke('getMarketData', {
-          action: 'getWatchlistData',
-          payload: { cryptoSymbols: [effectiveSymbol], stockSymbols: [] }
-        });
-
-        const currentPriceResponse = await Promise.race([currentPricePromise, timeoutPromise]);
-
-        const currentAssetData = Array.isArray(currentPriceResponse?.data) ? currentPriceResponse.data[0] : null;
-
-        if (currentAssetData) {
-          setCurrentPrice(typeof currentAssetData.price === 'number' ? currentAssetData.price : currentAssetData.current_price ?? null);
-          // Don't set priceChange here - we'll calculate it from the chart data
+        // LIVE MODE: Get current price from WebSocket (real-time)
+        // SIM MODE: Fetch from REST API
+        if (!isSimMode && wsConnected) {
+          const pair = `${effectiveSymbol}/USD`;
+          const wsPrice = wsPrices?.[pair];
+          if (wsPrice?.price) {
+            setCurrentPrice(wsPrice.price);
+            console.log(`[CryptoPriceChart] Using WebSocket price for ${effectiveSymbol}:`, wsPrice.price);
+          }
         } else {
-          setCurrentPrice(null);
+          // SIM mode or WS not connected - use REST
+          const currentPricePromise = base44.functions.invoke('getMarketData', {
+            action: 'getWatchlistData',
+            payload: { cryptoSymbols: [effectiveSymbol], stockSymbols: [] }
+          });
+
+          const currentPriceResponse = await Promise.race([currentPricePromise, timeoutPromise]);
+          const currentAssetData = Array.isArray(currentPriceResponse?.data) ? currentPriceResponse.data[0] : null;
+
+          if (currentAssetData) {
+            setCurrentPrice(typeof currentAssetData.price === 'number' ? currentAssetData.price : currentAssetData.current_price ?? null);
+          } else {
+            setCurrentPrice(null);
+          }
         }
 
         // Fetch historical series
@@ -341,12 +356,24 @@ export default function CryptoPriceChart({ symbol: propSymbol = "BTC" }) {
     if (isVisible) {
       fetchChartData();
     }
-    // Update every 60s while visible; pause when hidden
-    const interval = isVisible ? setInterval(fetchChartData, 60000) : null;
+    // LIVE MODE: Update price from WebSocket more frequently (no REST polling)
+    // SIM MODE: Update every 60s via REST
+    const interval = isVisible ? setInterval(fetchChartData, isSimMode ? 60000 : 120000) : null;
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [effectiveSymbol, timeframe, isVisible, hour12]);
+  }, [effectiveSymbol, timeframe, isVisible, hour12, isSimMode]);
+  
+  // LIVE MODE: Update current price from WebSocket in real-time
+  useEffect(() => {
+    if (isSimMode || !wsConnected) return;
+    
+    const pair = `${effectiveSymbol}/USD`;
+    const wsPrice = wsPrices?.[pair];
+    if (wsPrice?.price && wsPrice.price !== currentPrice) {
+      setCurrentPrice(wsPrice.price);
+    }
+  }, [isSimMode, wsConnected, wsPrices, effectiveSymbol, currentPrice]);
 
   const isPositive = priceChange !== null && priceChange >= 0;
 
