@@ -40,14 +40,14 @@ export default function Portfolio() {
   const isSimMode = settings ? (settings.sim_trading_mode !== false) : false;
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
-  // This prevents rate limits by ensuring all components share the same data
+  // WebSocket = live data, REST snapshot = initial load only
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     balances: wsBalances,
     prices: wsPrices,
-    // CRITICAL: Use centralized REST data instead of making direct API calls
+    // REST snapshot data (initial load + recovery only)
     krakenBalance,
     krakenPnL,
     krakenOrders,
@@ -55,7 +55,8 @@ export default function Portfolio() {
     fetchKrakenData
   } = useKrakenWebSocket();
 
-  // CRITICAL: krakenData now comes from the provider, not direct API calls
+  // CRITICAL: krakenData from provider's REST snapshot (initial load)
+  // Live updates come from WebSocket (wsBalances, wsPrices)
   const krakenData = krakenBalance;
 
   // CRITICAL: Bracket order sync - auto-cancels paired orders when one is filled
@@ -187,15 +188,40 @@ export default function Portfolio() {
     }
   }, [loadData]);
 
-  // CRITICAL: Merge holdings from Kraken (if LIVE mode) with local holdings (if SIM mode)
+  // CRITICAL: Build holdings - WebSocket is PRIMARY in LIVE mode
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
-      // SIM MODE: Use local holdings
       return holdings;
     } else {
-      // LIVE MODE: Use Kraken holdings if available
+      // LIVE MODE: WebSocket balances are PRIMARY (real-time)
+      if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+        console.log('[Portfolio] Using WebSocket balances (real-time)');
+        return Object.entries(wsBalances)
+          .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+          .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
+          .map(([asset, balance]) => {
+            const pair = `${asset}/USD`;
+            const priceInfo = wsPrices?.[pair];
+            const price = priceInfo?.price || 0;
+            const qty = balance.balance || 0;
+            
+            return {
+              symbol: asset,
+              quantity: qty,
+              average_cost_price: price,
+              asset_type: 'crypto',
+              currentPrice: price,
+              costBasis: qty * price,
+              currentValue: qty * price,
+              gainLoss: 0,
+              gainLossPercent: 0,
+              is_simulation: false
+            };
+          });
+      }
+      // Fallback to REST snapshot (initial load or WS disconnected)
       if (krakenData?.holdings && krakenData.holdings.length > 0) {
-        console.log('[Portfolio] Using Kraken holdings in LIVE mode:', krakenData.holdings.length);
+        console.log('[Portfolio] Using REST snapshot holdings');
         return krakenData.holdings.map(kh => ({
           symbol: kh.symbol,
           quantity: kh.quantity,
@@ -208,12 +234,10 @@ export default function Portfolio() {
           gainLossPercent: kh.pnl_percent || 0,
           is_simulation: false
         }));
-      } else {
-        console.log('[Portfolio] No Kraken holdings, using local (empty)');
-        return holdings;
       }
+      return holdings;
     }
-  }, [isSimMode, holdings, krakenData]);
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
@@ -435,26 +459,30 @@ export default function Portfolio() {
     }
   };
 
-  // CRITICAL: Use REST API (krakenData) as PRIMARY source - it's most reliable
-  // WebSocket can return stale/zero data
-  // krakenData uses getKrakenBalance which now calls BalanceEx to get TOTAL (including locked orders)
+  // CRITICAL: WebSocket is PRIMARY for live balances
+  // REST snapshot is fallback for initial load / WS disconnect
   const currentCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
     : (
-        typeof krakenData?.usd_balance === 'number'
-          ? krakenData.usd_balance
-          : (wsConnected && typeof wsUsdBalance === 'number' ? wsUsdBalance : (wallet?.real_cash_balance || 0))
+        // WebSocket first (real-time)
+        wsConnected && typeof wsUsdBalance === 'number' && wsUsdBalance > 0
+          ? wsUsdBalance
+          // REST snapshot fallback
+          : (typeof krakenData?.usd_balance === 'number'
+              ? krakenData.usd_balance
+              : (wallet?.real_cash_balance || 0))
       );
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
     : (
-        typeof krakenData?.total_crypto_value_usd === 'number'
-          ? krakenData.total_crypto_value_usd
-          : (typeof krakenData?.total_crypto_value === 'number'
-              ? krakenData.total_crypto_value
-              : (wsConnected && typeof wsCryptoValue === 'number' ? wsCryptoValue
-                  : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)))
+        // WebSocket first (real-time)
+        wsConnected && typeof wsCryptoValue === 'number' && wsCryptoValue > 0
+          ? wsCryptoValue
+          // REST snapshot fallback
+          : (typeof krakenData?.total_crypto_value_usd === 'number'
+              ? krakenData.total_crypto_value_usd
+              : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0))
       );
 
   if (isLoading && !wallet && !user) {
