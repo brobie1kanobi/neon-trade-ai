@@ -13,6 +13,8 @@ import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
 
 import KrakenArchitectureSection from "../components/settings/KrakenArchitectureSection";
+import SystemHealthPanel from "../components/settings/SystemHealthPanel";
+import AIPerformancePanel from "../components/settings/AIPerformancePanel";
 import { useSettings } from "../components/utils/SettingsContext";
 
 export default function Settings() {
@@ -57,7 +59,19 @@ export default function Settings() {
 
 
 
-      {/* 2c) Kraken Architecture & Testing (LIVE mode only) */}
+      {/* 2b) System Health (LIVE mode only) */}
+      {settings && !settings.sim_trading_mode && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <SystemHealthPanel />
+        </motion.div>
+      )}
+
+      {/* 2c) AI Performance */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.055 }}>
+        <AIPerformancePanel />
+      </motion.div>
+
+      {/* 2d) Kraken Architecture & Testing (LIVE mode only) */}
       {settings && !settings.sim_trading_mode && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <KrakenArchitectureSection />
