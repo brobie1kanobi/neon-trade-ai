@@ -95,12 +95,32 @@ Deno.serve(async (req) => {
           console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
         }
         
-        // CRITICAL: Apply a 5% safety buffer AND subtract open orders
-        // This prevents "insufficient funds" errors from slippage, fees, or timing
-        const safetyBuffer = rawAvailable * 0.05;
+        // CRITICAL: Apply 15% safety buffer AND subtract open orders
+        // This is MORE conservative to prevent "insufficient funds" errors from slippage, fees, price movement
+        const safetyBuffer = rawAvailable * 0.15;
         cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
         
-        console.log('[Prospects] Kraken raw available:', rawAvailable, '- open orders:', totalOpenOrdersValue, '- buffer:', safetyBuffer.toFixed(2), '= effective:', cashAvailable.toFixed(2));
+        console.log('[Prospects] Kraken raw available:', rawAvailable, '- open orders:', totalOpenOrdersValue, '- 15% buffer:', safetyBuffer.toFixed(2), '= effective:', cashAvailable.toFixed(2));
+        
+        // CRITICAL: Early exit if almost no cash available (prevents processing prospects that can't execute)
+        if (cashAvailable < 5) {
+          console.log('[Prospects] Insufficient cash for any meaningful trades (< $5 after buffer)');
+          return Response.json({
+            success: true,
+            prospects: [],
+            cash_available: cashAvailable,
+            raw_kraken_balance: rawAvailable,
+            is_sim_mode: false,
+            auto_trading_enabled: settings?.auto_trading_enabled || false,
+            total_analyzed: 0,
+            market_intelligence: null,
+            user_settings: {
+              gain_margin: settings.gain_margin,
+              loss_margin: settings.loss_margin
+            },
+            message: `Insufficient cash available ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
+          });
+        }
       } else {
         console.log('[Prospects] Kraken not connected or no balance');
       }
@@ -360,10 +380,17 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // FINAL HARD CAP: Never exceed cash
-      total = Math.min(total, cashAvailable);
+      // CRITICAL: Apply additional 10% buffer per-order to prevent "insufficient funds"
+      // This accounts for price changes between calculation and execution
+      const orderSafetyBuffer = total * 0.10;
+      total = Math.min(total - orderSafetyBuffer, cashAvailable * 0.90); // Never use more than 90% of available
+      
+      // FINAL HARD CAP: Never exceed 85% of cash in any single order
+      total = Math.min(total, cashAvailable * 0.85);
       
       const cappedQuantity = total / price;
+      
+      console.log('[Prospects]', symbol, '- Final order value after all safety buffers:', total.toFixed(2));
       
       // Calculate actual allocation after all caps
       const actualAllocationPct = cashAvailable > 0 ? Math.round((total / cashAvailable) * 100) : 0;
