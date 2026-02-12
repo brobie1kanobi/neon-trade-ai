@@ -6,13 +6,28 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Zap, ArrowUpCircle, ArrowDownCircle, Search, Save, Loader2, Settings as SettingsIcon, Bot, ShoppingCart } from "lucide-react";
+import { Zap, ArrowUpCircle, ArrowDownCircle, Search, Save, Loader2, Settings as SettingsIcon, Bot, ShoppingCart, ShieldCheck } from "lucide-react";
 import { InvokeLLM } from "@/integrations/Core";
-import { UserSettings, User, ConditionalOrder } from "@/entities/all";
+import { UserSettings, User, ConditionalOrder, LedgerEntry } from "@/entities/all";
 import TradeConfirmationDialog from "./TradeConfirmationDialog";
 import AdvancedOrderModal from "./AdvancedOrderModal";
 import { base44 } from "@/api/base44Client";
 import { notify } from "@/components/utils/notifications";
+
+/**
+ * Generate idempotency key for trades
+ */
+function generateIdempotencyKey(userEmail, symbol, type) {
+  const timestamp = Date.now();
+  const key = `${userEmail}:${symbol}:${type}:${timestamp}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    const char = key.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `manual_${Math.abs(hash)}_${timestamp}`;
+}
 
 export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, holdings, isSimMode = true, currentCashBalance }) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -277,10 +292,52 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
       }));
     };
 
+    // Generate idempotency key to prevent duplicate trades
+    const idempotencyKey = generateIdempotencyKey(currentUser.email, tradeData.symbol, tradeData.type);
+    console.log('[TradingInterface] Generated idempotency key:', idempotencyKey);
+    
     // CRITICAL: For LIVE mode, send order directly to Kraken first
     if (!isSimMode) {
       try {
         console.log('[TradingInterface] LIVE mode - sending order to Kraken:', tradeData);
+        
+        // Run risk engine check before executing
+        try {
+          const riskResult = await base44.functions.invoke('riskEngine', {
+            action: 'evaluateTrade',
+            payload: {
+              proposedTrade: {
+                symbol: tradeData.symbol,
+                type: tradeData.type,
+                quantity: tradeData.quantity,
+                price: tradeData.price,
+                total_value: tradeData.total_value,
+                is_simulation: false
+              },
+              portfolioState: null // Will be fetched by risk engine
+            }
+          });
+          
+          const risk = riskResult?.data || riskResult;
+          
+          if (!risk?.approved) {
+            const rejection = risk?.rejections?.[0];
+            notify.error('Trade rejected by risk engine', {
+              description: rejection?.message || 'Risk limits exceeded'
+            });
+            rollbackOptimistic();
+            setIsExecuting(false);
+            return;
+          }
+          
+          if (risk?.warnings?.length > 0) {
+            risk.warnings.forEach(w => {
+              notify.warning(w.rule, { description: w.message });
+            });
+          }
+        } catch (riskErr) {
+          console.warn('[TradingInterface] Risk check failed, proceeding:', riskErr.message);
+        }
 
         // CRITICAL: Preflight funds check (LIVE BUY) - MUST pass before any order is sent
         // This is the FIRST LINE OF DEFENSE against "insufficient funds" errors
@@ -467,10 +524,32 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
           total_value: recordedTotal,
           is_auto_trade: false,
           is_simulation: false,
-          status: 'executed',
+          status: 'filled',
+          idempotency_key: idempotencyKey,
           kraken_order_id: krakenOrderId,
+          submitted_at: new Date().toISOString(),
+          filled_at: new Date().toISOString(),
           created_by: currentUser.email
         });
+        
+        // Create LedgerEntry for audit trail
+        try {
+          await LedgerEntry.create({
+            asset_symbol: tradeData.symbol,
+            entry_type: tradeData.type === 'buy' ? 'trade_buy' : 'trade_sell',
+            quantity_delta: tradeData.type === 'buy' ? recordedQty : -recordedQty,
+            cash_delta: tradeData.type === 'buy' ? -recordedTotal : recordedTotal,
+            unit_price: recordedPrice,
+            reference_type: 'trade',
+            reference_id: krakenOrderId,
+            idempotency_key: `${idempotencyKey}_ledger`,
+            kraken_txid: krakenOrderId,
+            is_simulation: false,
+            created_by: currentUser.email
+          });
+        } catch (ledgerErr) {
+          console.warn('[TradingInterface] Failed to create ledger entry:', ledgerErr.message);
+        }
 
         console.log('[TradingInterface] ✅ LIVE trade recorded in DB');
 
@@ -538,7 +617,10 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
               highest_price: tradeData.price,
               status: 'active',
               is_simulation: false,
-              kraken_order_id: stopLossOrderId || krakenOrderId, // Link to stop-loss or buy order
+              idempotency_key: `${idempotencyKey}_conditional`,
+              kraken_order_id: krakenOrderId,
+              kraken_sl_order_id: stopLossOrderId || null,
+              trade_id: krakenOrderId,
               created_by: currentUser.email
             });
 
