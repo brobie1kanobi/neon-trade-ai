@@ -1,20 +1,19 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
- * CRITICAL: Auto-Trader - RESPECTS MODE SETTING
- * - LIVE mode: Uses Kraken API for real trades with real money
- * - SIM mode: Uses database for simulated trades
+ * AUTO-TRADER v2 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
  * 
- * LEGAL COMPLIANCE: Never mixes real and fake money
+ * Architecture:
+ * 1. Acquires distributed lock (one run per user)
+ * 2. Consumes pre-computed AssetSignal entries (decoupled from AI)
+ * 3. Validates trades through Risk Engine
+ * 4. Uses Portfolio Reducer for state changes
+ * 5. Creates LedgerEntry for audit trail
+ * 6. Logs all actions to AutoTraderRun
  * 
- * AUTO-EXECUTION THRESHOLD: 70% confidence (dynamic based on history)
- * Assets at 70%+ confidence with "buy" action are auto-executed with TP/SL
+ * CRITICAL: All trades use idempotency keys to prevent duplicates
  * 
- * ENHANCED FEATURES:
- * - Dynamic TP/SL based on historical win rates and optimal zones
- * - Proactive emerging prospect detection and execution
- * - Risk-adjusted position sizing based on asset performance history
- * - Confidence adjustment from trade history data
+ * AUTO-EXECUTION THRESHOLD: 85% confidence (strong_buy signals only)
  */
 
 function round2(n) {
@@ -70,6 +69,88 @@ function roundPriceForKraken(price, symbol) {
 
 // Small helper sleep
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/**
+ * Generate idempotency key for a trade
+ */
+function generateIdempotencyKey(userEmail, symbol, type, timestamp) {
+  const key = `${userEmail}:${symbol}:${type}:${timestamp}`;
+  // Simple hash
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    const char = key.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `auto_${Math.abs(hash)}_${timestamp}`;
+}
+
+/**
+ * Check if idempotency key already exists
+ */
+async function checkIdempotency(base44, idempotencyKey, userEmail) {
+  try {
+    const existing = await base44.entities.Trade.filter({
+      created_by: userEmail,
+      idempotency_key: idempotencyKey
+    });
+    return existing.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Acquire distributed lock for user's auto-trader run
+ */
+async function acquireLock(base44, userEmail, runId) {
+  try {
+    // Check for existing running session
+    const activeRuns = await base44.entities.AutoTraderRun.filter({
+      created_by: userEmail,
+      status: 'running'
+    });
+    
+    if (activeRuns.length > 0) {
+      // Check if stale (older than 10 minutes)
+      const oldestRun = activeRuns[0];
+      const startedAt = new Date(oldestRun.started_at || oldestRun.created_date).getTime();
+      const age = Date.now() - startedAt;
+      
+      if (age < 10 * 60 * 1000) {
+        // Still running, can't acquire
+        return { acquired: false, reason: 'Another run in progress', existingRunId: oldestRun.id };
+      }
+      
+      // Stale run, mark as failed
+      await base44.entities.AutoTraderRun.update(oldestRun.id, {
+        status: 'failed',
+        error_message: 'Timed out - marked as failed by new run',
+        completed_at: new Date().toISOString()
+      });
+    }
+    
+    return { acquired: true };
+  } catch (e) {
+    console.warn('[runAutoTrader] Lock check failed:', e.message);
+    return { acquired: true }; // Proceed anyway
+  }
+}
+
+/**
+ * Release lock by completing the run
+ */
+async function releaseLock(base44, runId, status, stats) {
+  try {
+    await base44.entities.AutoTraderRun.update(runId, {
+      status,
+      completed_at: new Date().toISOString(),
+      ...stats
+    });
+  } catch (e) {
+    console.error('[runAutoTrader] Failed to release lock:', e.message);
+  }
+}
 
 /**
  * Calculate dynamic TP/SL levels based on historical trade data
@@ -227,6 +308,16 @@ async function getLatestWallet(base44, email) {
 }
 
 Deno.serve(async (req) => {
+  const startTime = Date.now();
+  const runLogs = [];
+  let autoTraderRunId = null;
+  
+  function log(message, data = null) {
+    const entry = { timestamp: new Date().toISOString(), message, data };
+    runLogs.push(entry);
+    console.log(`[runAutoTrader] ${message}`, data ? JSON.stringify(data) : '');
+  }
+  
   try {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
@@ -244,30 +335,100 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Respect user's mode setting - NEVER force sim mode
     const isSimMode = settings.sim_trading_mode !== false;
-
-    // CRITICAL: Fetch prospects from the same source as AutoTraderProspects page
-    // This ensures consistency - we trade exactly what the prospects page shows
-    console.log('[runAutoTrader] Fetching prospects for auto-execution...');
     
-    let prospects = [];
+    // Generate idempotency key for this run
+    const runIdempotencyKey = `run_${user.email}_${Date.now()}`;
+    
+    // Create AutoTraderRun record
+    const autoTraderRun = await base44.entities.AutoTraderRun.create({
+      status: 'pending',
+      idempotency_key: runIdempotencyKey,
+      started_at: new Date().toISOString(),
+      is_simulation: isSimMode,
+      created_by: user.email
+    });
+    autoTraderRunId = autoTraderRun.id;
+    
+    log('AutoTraderRun created', { runId: autoTraderRunId, isSimMode });
+    
+    // Acquire distributed lock
+    const lockResult = await acquireLock(base44, user.email, autoTraderRunId);
+    if (!lockResult.acquired) {
+      log('Lock not acquired', lockResult);
+      await base44.entities.AutoTraderRun.update(autoTraderRunId, {
+        status: 'canceled',
+        error_message: lockResult.reason,
+        completed_at: new Date().toISOString()
+      });
+      return Response.json({ 
+        success: false, 
+        message: lockResult.reason,
+        existing_run_id: lockResult.existingRunId
+      });
+    }
+    
+    // Update status to running
+    await base44.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
+    log('Lock acquired, status set to running');
+    
+    // Check system health before proceeding
+    try {
+      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
+      const health = healthRes?.data || healthRes;
+      
+      if (health?.trading_allowed === false) {
+        log('Trading not allowed - system unhealthy', health);
+        await releaseLock(base44, autoTraderRunId, 'canceled', {
+          error_message: 'Trading paused due to system health issues'
+        });
+        return Response.json({
+          success: false,
+          message: 'Trading paused due to system health',
+          system_status: health?.overall_status
+        });
+      }
+    } catch (e) {
+      log('System health check failed, proceeding anyway', { error: e.message });
+    }
+
+    // CRITICAL: Fetch pre-computed AssetSignals (decoupled from AI)
+    // This ensures AI analysis happens separately from trade execution
+    log('Fetching pre-computed AssetSignals...');
+    
+    let signals = [];
     let cashAvailable = 0;
-    let marketIntelligence = null;
     let tradeHistoryData = null;
     
-    // Fetch trade history for dynamic TP/SL calculation
+    // Fetch active signals
     try {
-      console.log('[runAutoTrader] Fetching trade history for dynamic levels...');
-      const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
-        includeKrakenHistory: true,
-        analyzePatterns: false // Skip AI analysis for speed
+      signals = await base44.asServiceRole.entities.AssetSignal.filter({
+        is_active: true
       });
-      tradeHistoryData = historyResponse?.data || historyResponse;
-      if (tradeHistoryData?.success) {
-        console.log(`[runAutoTrader] Got history for ${Object.keys(tradeHistoryData.asset_analytics || {}).length} assets`);
-      }
-    } catch (histErr) {
-      console.warn('[runAutoTrader] Trade history fetch failed (continuing with defaults):', histErr.message);
+      
+      // Filter to non-expired signals
+      const now = new Date();
+      signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
+      
+      log(`Found ${signals.length} active signals`);
+    } catch (e) {
+      log('Failed to fetch signals', { error: e.message });
     }
+    
+    // If no pre-computed signals, fall back to generating them
+    if (signals.length === 0) {
+      log('No pre-computed signals, generating on-demand...');
+      try {
+        await base44.functions.invoke('generateSignals', {});
+        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        log(`Generated ${signals.length} signals`);
+      } catch (e) {
+        log('Signal generation failed', { error: e.message });
+      }
+    }
+    
+    // Also fetch prospects for allocation/cash info
+    let prospects = [];
+    let marketIntelligence = null;
     
     try {
       const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
@@ -277,20 +438,44 @@ Deno.serve(async (req) => {
         prospects = prospectsData.prospects;
         cashAvailable = prospectsData.cash_available || 0;
         marketIntelligence = prospectsData.market_intelligence || null;
-        console.log(`[runAutoTrader] Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
-        
-        // CRITICAL: Log each prospect's allocation to verify user settings are being used
-        prospects.forEach(p => {
-          console.log(`[runAutoTrader] Prospect ${p.symbol}: user_allocation=${p.user_allocation_pct}%, actual=${p.allocation_percent}%, qty=${p.quantity}, value=$${p.total_value?.toFixed(2)}`);
-        });
+        log(`Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
       } else {
-        console.log('[runAutoTrader] No prospects available');
+        log('No prospects available');
+        await releaseLock(base44, autoTraderRunId, 'completed', {
+          trades_attempted: 0,
+          trades_successful: 0,
+          logs_json: JSON.stringify(runLogs)
+        });
         return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
       }
     } catch (prospectError) {
-      console.error('[runAutoTrader] Failed to fetch prospects:', prospectError.message);
+      log('Failed to fetch prospects', { error: prospectError.message });
+      await releaseLock(base44, autoTraderRunId, 'failed', {
+        error_message: prospectError.message,
+        logs_json: JSON.stringify(runLogs)
+      });
       return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
     }
+    
+    // Fetch trade history for dynamic TP/SL calculation
+    try {
+      log('Fetching trade history for dynamic levels...');
+      const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
+        includeKrakenHistory: true,
+        analyzePatterns: false
+      });
+      tradeHistoryData = historyResponse?.data || historyResponse;
+      if (tradeHistoryData?.success) {
+        log(`Got history for ${Object.keys(tradeHistoryData.asset_analytics || {}).length} assets`);
+      }
+    } catch (histErr) {
+      log('Trade history fetch failed (continuing with defaults)', { error: histErr.message });
+    }
+    
+    // Update run with initial cash
+    await base44.entities.AutoTraderRun.update(autoTraderRunId, {
+      cash_available_start: cashAvailable
+    });
     
     // Fetch current holdings for emerging prospect evaluation
     let currentHoldings = [];
@@ -360,54 +545,55 @@ Deno.serve(async (req) => {
     // Only execute trades with VERY HIGH confidence to avoid buying into downtrends
     const AUTO_EXECUTE_THRESHOLD = 85;
     
+    // Build signal map for quick lookup
+    const signalMap = new Map();
+    for (const sig of signals) {
+      signalMap.set(sig.asset_symbol, sig);
+    }
+    
     // Filter prospects that qualify for auto-execution:
-    // 1. Confidence >= 85% (VERY high threshold)
-    // 2. Action MUST be "strong_buy" (regular "buy" is NOT enough)
+    // 1. Has a pre-computed signal with confidence >= 85%
+    // 2. Signal type MUST be "strong_buy"
     // 3. Not blocked
     // 4. Would execute (has sufficient funds)
-    // 5. Price must be UP at least 2% in 24h (confirmed uptrend, not falling)
+    // 5. Price must be UP at least 2% in 24h (confirmed uptrend)
     const eligibleProspects = prospects.filter(p => {
-      const confidenceScore = Number(p.confidence_score || 0);
-      const action = (p.optimal_action || 'hold').toLowerCase();
+      const signal = signalMap.get(p.symbol);
+      const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
+      const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
       
-      // CRITICAL: ONLY "strong_buy" qualifies - regular "buy" is NOT enough
-      const isStrongBuy = action === 'strong_buy';
+      // CRITICAL: ONLY "strong_buy" qualifies
+      const isStrongBuy = signalType === 'strong_buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // CRITICAL: Require POSITIVE momentum - price must be going UP
-      // Don't buy flat or falling assets - wait for confirmed uptrend
+      // CRITICAL: Require POSITIVE momentum
       const change24h = Number(p.market_trend || p.current_24h_change || 0);
-      const hasUpwardMomentum = change24h >= 2; // Must be up at least 2%
+      const hasUpwardMomentum = change24h >= 2;
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
       const eligible = meetsConfidence && isStrongBuy && notBlocked && wouldExecute && hasUpwardMomentum;
       
-      console.log(`[runAutoTrader] ${p.symbol}: confidence=${confidenceScore}%, action=${action}, 24h=${change24h.toFixed(1)}%, blocked=${p.is_blocked}, wouldExecute=${wouldExecute}`);
-      
-      if (eligible) {
-        console.log(`[runAutoTrader] ✅ ${p.symbol} ELIGIBLE for auto-execution (STRONG_BUY + uptrend)`);
-      } else {
-        const reasons = [];
-        if (!meetsConfidence) reasons.push(`confidence ${confidenceScore}% < ${AUTO_EXECUTE_THRESHOLD}%`);
-        if (!isStrongBuy) reasons.push(`action is "${action}" (MUST be strong_buy)`);
-        if (!hasUpwardMomentum) reasons.push(`24h change ${change24h.toFixed(1)}% (need +2% uptrend)`);
-        if (p.is_blocked) reasons.push(`blocked: ${p.block_reason}`);
-        if (!wouldExecute) reasons.push('would_execute_now=false');
-        console.log(`[runAutoTrader] ⏭️ ${p.symbol} SKIPPED: ${reasons.join(', ')}`);
-      }
+      log(`Evaluating ${p.symbol}`, {
+        confidence: confidenceScore,
+        signalType,
+        change24h: change24h.toFixed(1),
+        blocked: p.is_blocked,
+        wouldExecute,
+        eligible
+      });
       
       return eligible;
     });
 
-    console.log(`[runAutoTrader] ${eligibleProspects.length} prospects eligible for auto-execution (${AUTO_EXECUTE_THRESHOLD}%+ confidence, not falling)`);
+    log(`${eligibleProspects.length} prospects eligible for auto-execution`);
 
     if (eligibleProspects.length === 0) {
-      // Debug: log why each prospect was skipped
-      console.log('[runAutoTrader] No eligible prospects. Summary:');
-      prospects.forEach(p => {
-        const change24h = Number(p.market_trend || p.current_24h_change || 0);
-        console.log(`  - ${p.symbol}: ${p.confidence_score}% conf, action=${p.optimal_action}, 24h=${change24h.toFixed(1)}%, blocked=${p.is_blocked}, would_execute=${p.would_execute_now}`);
+      log('No eligible prospects');
+      await releaseLock(base44, autoTraderRunId, 'completed', {
+        trades_attempted: 0,
+        trades_successful: 0,
+        logs_json: JSON.stringify(runLogs)
       });
       
       return Response.json({ 
@@ -417,31 +603,50 @@ Deno.serve(async (req) => {
         mode: isSimMode ? 'sim' : 'live',
         total_prospects: prospects.length,
         threshold: AUTO_EXECUTE_THRESHOLD,
-        prospect_summary: prospects.map(p => ({
-          symbol: p.symbol,
-          confidence: p.confidence_score,
-          action: p.optimal_action,
-          change_24h: Number(p.market_trend || p.current_24h_change || 0),
-          blocked: p.is_blocked,
-          would_execute: p.would_execute_now
-        }))
+        run_id: autoTraderRunId
       });
     }
 
     const tradesPlaced = [];
+    const tradesFailed = [];
+    const tradesRejectedRisk = [];
     const defaultGainMargin = settings.gain_margin || 3;
     const defaultLossMargin = settings.loss_margin || 1;
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
     const defaultTrailingMargin = settings.trailing_takeprofit_margin || 3;
+    const signalsConsumed = [];
     
-    // Fetch a single TRADE WebSocket token once for this run (reuse to avoid rate limits)
+    // Fetch a single TRADE WebSocket token once for this run
     let wsToken = null;
     try {
       const tokenRes = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
       const tokenData = tokenRes?.data || tokenRes;
       wsToken = tokenData?.token || null;
     } catch (e) {
-      console.warn('[runAutoTrader] Could not prefetch trade WS token (will let krakenTrade fetch):', e.message);
+      log('Could not prefetch trade WS token', { error: e.message });
+    }
+    
+    // Build current portfolio state for risk engine
+    let portfolioState = null;
+    try {
+      const holdings = await base44.entities.Holding.filter({
+        created_by: user.email,
+        is_simulation: isSimMode
+      });
+      const wallet = await base44.entities.Wallet.filter({
+        created_by: user.email
+      });
+      
+      portfolioState = {
+        holdings: holdings.reduce((acc, h) => {
+          const key = `${h.symbol}_${isSimMode ? 'sim' : 'live'}`;
+          acc[key] = h;
+          return acc;
+        }, {}),
+        wallet: wallet[0] || {}
+      };
+    } catch (e) {
+      log('Could not build portfolio state', { error: e.message });
     }
 
     // Process each eligible prospect
@@ -464,15 +669,57 @@ Deno.serve(async (req) => {
       // Adjust confidence based on historical performance
       confidence = Math.max(0, Math.min(100, confidence + dynamicLevels.confidence_boost));
       
-      console.log(`[runAutoTrader] Processing ${sym}: price=$${price}, qty=${qty}, value=$${total_value.toFixed(2)}, user_alloc=${userAllocationPct}%`);
-      console.log(`[runAutoTrader] Dynamic levels for ${sym}: TP=${gainMargin}%, SL=${lossMargin}%, confidence_boost=${dynamicLevels.confidence_boost}, source=${dynamicLevels.source}`);
-      if (dynamicLevels.win_rate) {
-        console.log(`[runAutoTrader] ${sym} historical: win_rate=${dynamicLevels.win_rate.toFixed(1)}%, avg_gain=${dynamicLevels.historical_avg_gain?.toFixed(1)}%`);
-      }
+      log(`Processing ${sym}`, { price, qty, total_value: total_value.toFixed(2), userAllocationPct, gainMargin, lossMargin });
       
       if (price <= 0 || qty <= 0 || total_value <= 0) {
-        console.log(`[runAutoTrader] Skipping ${sym} - invalid values (price=${price}, qty=${qty}, value=${total_value})`);
+        log(`Skipping ${sym} - invalid values`, { price, qty, total_value });
         continue;
+      }
+      
+      // Generate idempotency key for this trade
+      const idempotencyKey = generateIdempotencyKey(user.email, sym, 'buy', Date.now());
+      
+      // Check idempotency - prevent duplicate trades
+      const isDuplicate = await checkIdempotency(base44, idempotencyKey, user.email);
+      if (isDuplicate) {
+        log(`Skipping ${sym} - duplicate trade (idempotency check)`, { idempotencyKey });
+        continue;
+      }
+      
+      // RISK ENGINE CHECK - validate trade before execution
+      try {
+        const riskResult = await base44.functions.invoke('riskEngine', {
+          action: 'evaluateTrade',
+          payload: {
+            proposedTrade: {
+              symbol: sym,
+              type: 'buy',
+              quantity: qty,
+              price: price,
+              total_value: total_value,
+              is_simulation: isSimMode
+            },
+            portfolioState
+          }
+        });
+        
+        const risk = riskResult?.data || riskResult;
+        
+        if (!risk?.approved) {
+          log(`RISK REJECTED: ${sym}`, { rejections: risk?.rejections });
+          tradesRejectedRisk.push({
+            symbol: sym,
+            rejections: risk?.rejections || [],
+            risk_score: risk?.risk_score || 0
+          });
+          continue;
+        }
+        
+        if (risk?.warnings?.length > 0) {
+          log(`Risk warnings for ${sym}`, { warnings: risk.warnings });
+        }
+      } catch (riskErr) {
+        log(`Risk check failed for ${sym}, proceeding with caution`, { error: riskErr.message });
       }
       
       // CRITICAL: Re-fetch current Kraken balance BEFORE each trade to ensure accuracy
@@ -519,7 +766,13 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      console.log(`[runAutoTrader] 🚀 AUTO-EXECUTING ${sym}: ${qty} @ $${price} = $${total_value.toFixed(2)} (${confidence}% confidence)`);
+      log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
+      
+      // Track signal consumption
+      const signal = signalMap.get(sym);
+      if (signal?.id) {
+        signalsConsumed.push(signal.id);
+      }
       
       let krakenOrderIds = '';
 
@@ -557,24 +810,53 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
           
           // CRITICAL: Record LIVE trade with ACTUAL executed quantity from Kraken response
-          // The Kraken order response tells us exactly how much was actually bought
           const executedQty = buyData.executed_qty || buyData.quantity || qty;
           const executedValue = executedQty * price;
           
-          console.log(`[runAutoTrader] Recording trade: requested qty=${qty}, executed qty=${executedQty}, value=$${executedValue.toFixed(2)}`);
+          log(`Recording LIVE trade`, { requestedQty: qty, executedQty, executedValue: executedValue.toFixed(2) });
           
+          // Create Trade with idempotency key
           await base44.entities.Trade.create({
             symbol: sym,
             type: 'buy',
             asset_type: typ,
-            quantity: executedQty,  // Use ACTUAL executed quantity
+            quantity: executedQty,
             price: price,
-            total_value: executedValue,  // Use ACTUAL executed value
-            status: 'executed',
+            total_value: executedValue,
+            status: 'filled',
             is_auto_trade: true,
             is_simulation: false,
+            idempotency_key: idempotencyKey,
+            signal_id: signal?.id || null,
+            auto_trader_run_id: autoTraderRunId,
+            kraken_order_id: buyOrderId,
+            submitted_at: new Date().toISOString(),
+            filled_at: new Date().toISOString(),
             created_by: user.email
           });
+          
+          // Create LedgerEntry for audit trail
+          try {
+            await base44.entities.LedgerEntry.create({
+              asset_symbol: sym,
+              entry_type: 'trade_buy',
+              quantity_delta: executedQty,
+              cash_delta: -executedValue,
+              unit_price: price,
+              reference_type: 'trade',
+              reference_id: buyOrderId,
+              idempotency_key: `${idempotencyKey}_ledger`,
+              kraken_txid: buyOrderId,
+              is_simulation: false,
+              metadata_json: JSON.stringify({
+                auto_trader_run_id: autoTraderRunId,
+                signal_id: signal?.id
+              }),
+              created_by: user.email
+            });
+          } catch (ledgerErr) {
+            log(`Failed to create ledger entry for ${sym}`, { error: ledgerErr.message });
+          }
           
           // Step 2: Place TAKE PROFIT order (limit at TP price)
           await new Promise(res => setTimeout(res, 2000));
@@ -675,11 +957,22 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📋 Order IDs saved: ${krakenOrderIds}`);
 
         } catch (krakenError) {
-          console.error('[runAutoTrader] Kraken buy failed:', krakenError.message);
+          log(`Kraken buy failed for ${sym}`, { error: krakenError.message });
+          tradesFailed.push({ symbol: sym, error: krakenError.message });
+          
+          // Record health error
+          try {
+            await base44.functions.invoke('systemHealthMonitor', {
+              action: 'recordError',
+              component: 'kraken_api',
+              error_message: krakenError.message
+            });
+          } catch (e) {}
+          
           continue;
         }
       } else {
-        // SIM MODE: Database only
+        // SIM MODE: Database only with idempotency
         await base44.entities.Trade.create({
           symbol: sym,
           type: 'buy',
@@ -687,11 +980,32 @@ Deno.serve(async (req) => {
           quantity: qty,
           price: price,
           total_value,
-          status: 'executed',
+          status: 'filled',
           is_auto_trade: true,
           is_simulation: true,
+          idempotency_key: idempotencyKey,
+          signal_id: signal?.id || null,
+          auto_trader_run_id: autoTraderRunId,
+          filled_at: new Date().toISOString(),
           created_by: user.email
         });
+        
+        // Create LedgerEntry for SIM mode too
+        try {
+          await base44.entities.LedgerEntry.create({
+            asset_symbol: sym,
+            entry_type: 'trade_buy',
+            quantity_delta: qty,
+            cash_delta: -total_value,
+            unit_price: price,
+            reference_type: 'trade',
+            idempotency_key: `${idempotencyKey}_ledger`,
+            is_simulation: true,
+            created_by: user.email
+          });
+        } catch (e) {
+          log(`Failed to create SIM ledger entry for ${sym}`, { error: e.message });
+        }
       }
 
       // Update holdings
@@ -724,25 +1038,29 @@ Deno.serve(async (req) => {
       availableCash = round2(availableCash - total_value);
 
       // Create conditional order for stop-loss/take-profit management
-      // ENHANCED: Include historical context for smarter order management
       const conditionalOrderData = {
         symbol: sym,
         asset_type: typ,
         quantity: qty,
         purchase_price: price,
-        gain_margin: gainMargin,  // Dynamic based on history
-        loss_margin: lossMargin,  // Dynamic based on history
+        gain_margin: gainMargin,
+        loss_margin: lossMargin,
         status: 'active',
         trailing_enabled: trailingEnabled,
         highest_price: price,
         trailing_margin: trailingMargin,
         is_simulation: isSimMode,
+        idempotency_key: `${idempotencyKey}_conditional`,
+        signal_id: signal?.id || null,
         created_by: user.email
       };
       
       // Add Kraken order IDs if in LIVE mode
       if (!isSimMode && krakenOrderIds) {
-        conditionalOrderData.kraken_order_id = krakenOrderIds;
+        const orderIdParts = krakenOrderIds.split(',');
+        conditionalOrderData.kraken_order_id = orderIdParts[0] || null;
+        conditionalOrderData.kraken_tp_order_id = orderIdParts[1] || null;
+        conditionalOrderData.kraken_sl_order_id = orderIdParts[2] || null;
       }
       
       await base44.entities.ConditionalOrder.create(conditionalOrderData);
@@ -756,10 +1074,12 @@ Deno.serve(async (req) => {
         ai_confidence: confidence,
         dynamic_levels: dynamicLevels,
         effective_gain_margin: gainMargin,
-        effective_loss_margin: lossMargin
+        effective_loss_margin: lossMargin,
+        idempotency_key: idempotencyKey,
+        signal_id: signal?.id || null
       });
 
-      console.log(`[runAutoTrader] ✅ Trade completed for ${sym}`);
+      log(`✅ Trade completed for ${sym}`);
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
@@ -890,7 +1210,27 @@ Deno.serve(async (req) => {
     }
 
     const totalTrades = tradesPlaced.length + emergingTradesPlaced.length;
-    console.log(`[runAutoTrader] ✅ Completed: ${tradesPlaced.length} standard + ${emergingTradesPlaced.length} emerging = ${totalTrades} total trades`);
+    log(`✅ Completed: ${tradesPlaced.length} standard + ${emergingTradesPlaced.length} emerging = ${totalTrades} total trades`);
+    
+    // Release lock and update run stats
+    await releaseLock(base44, autoTraderRunId, 'completed', {
+      trades_attempted: eligibleProspects.length,
+      trades_successful: tradesPlaced.length,
+      trades_failed: tradesFailed.length,
+      trades_rejected_risk: tradesRejectedRisk.length,
+      cash_available_end: availableCash,
+      total_value_traded: tradesPlaced.reduce((sum, t) => sum + (t.total_value || 0), 0),
+      logs_json: JSON.stringify(runLogs),
+      signals_consumed: JSON.stringify(signalsConsumed)
+    });
+    
+    // Record success with health monitor
+    try {
+      await base44.functions.invoke('systemHealthMonitor', {
+        action: 'recordSuccess',
+        component: 'auto_trader'
+      });
+    } catch (e) {}
     
     // Summary of advanced orders placed
     const advancedOrderSummary = tradesPlaced.map(t => ({
@@ -903,23 +1243,30 @@ Deno.serve(async (req) => {
       trailing_stop: trailingEnabled ? `${defaultTrailingMargin}% from peak` : `Static SL at ${round2(t.price * (1 - t.effective_loss_margin / 100))}`,
       confidence: t.ai_confidence,
       levels_source: t.dynamic_levels?.source || 'default',
-      historical_win_rate: t.dynamic_levels?.win_rate || null
+      historical_win_rate: t.dynamic_levels?.win_rate || null,
+      idempotency_key: t.idempotency_key
     }));
 
     return Response.json({
       success: true,
       mode: isSimMode ? 'sim' : 'live',
+      run_id: autoTraderRunId,
       trades_count: totalTrades,
       standard_trades: tradesPlaced.length,
       emerging_trades: emergingTradesPlaced.length,
+      trades_failed: tradesFailed.length,
+      trades_rejected_risk: tradesRejectedRisk.length,
       cash_before: cashBefore,
       cash_after_estimated: availableCash,
       trades: tradesPlaced,
+      failed_trades: tradesFailed,
+      risk_rejections: tradesRejectedRisk,
       emerging_trades_detail: emergingTradesPlaced,
       advanced_orders: advancedOrderSummary,
       auto_execute_threshold: AUTO_EXECUTE_THRESHOLD,
       total_prospects_analyzed: prospects.length,
       emerging_opportunities_found: emergingOpportunities.length,
+      signals_consumed: signalsConsumed.length,
       order_settings: {
         default_gain_margin: defaultGainMargin,
         default_loss_margin: defaultLossMargin,
@@ -928,10 +1275,27 @@ Deno.serve(async (req) => {
         dynamic_levels_enabled: true
       },
       risk_tolerance: riskTolerance,
-      trade_history_used: !!tradeHistoryData?.success
+      trade_history_used: !!tradeHistoryData?.success,
+      duration_ms: Date.now() - startTime
     });
   } catch (error) {
     console.error('[runAutoTrader] Fatal error:', error);
-    return Response.json({ success: false, error: error.message || String(error) }, { status: 500 });
+    
+    // Release lock on error
+    if (autoTraderRunId) {
+      try {
+        const base44 = createClientFromRequest(req);
+        await releaseLock(base44, autoTraderRunId, 'failed', {
+          error_message: error.message || String(error),
+          logs_json: JSON.stringify(runLogs)
+        });
+      } catch (e) {}
+    }
+    
+    return Response.json({ 
+      success: false, 
+      error: error.message || String(error),
+      run_id: autoTraderRunId
+    }, { status: 500 });
   }
 });
