@@ -190,10 +190,19 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
   const prepareTrade = async () => {
     if (!canExecuteTrade) return;
 
-    // Extra guard in LIVE mode: prevent over-spend vs shown available cash
-    if (!isSimMode && orderType === 'buy' && roundToCents(totalValue) > roundToCents(availableCash)) {
-      notify.error('Insufficient real funds', { description: 'Your available cash is lower than the order total.' });
-      return;
+    // CRITICAL: Extra guard in LIVE mode - check BEFORE even showing confirmation dialog
+    // This prevents users from seeing a confirmation and then getting "insufficient funds" error
+    if (!isSimMode && orderType === 'buy') {
+      const estCost = roundToCents(totalValue);
+      const buffer = Math.max(1.0, estCost * 0.05); // 5% buffer for slippage
+      const totalRequired = estCost + buffer;
+      
+      if (availableCash < totalRequired) {
+        notify.error('Insufficient funds for this order', { 
+          description: `Available: $${availableCash.toFixed(2)} • Needed: $${totalRequired.toFixed(2)} (incl. 5% buffer for fees)` 
+        });
+        return;
+      }
     }
 
     // FIXED: ALWAYS include asset_type - get from ownedAsset if selling, otherwise use current assetType
@@ -273,23 +282,51 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
       try {
         console.log('[TradingInterface] LIVE mode - sending order to Kraken:', tradeData);
 
-        // Preflight funds check (LIVE BUY) against Kraken USD available
+        // CRITICAL: Preflight funds check (LIVE BUY) - MUST pass before any order is sent
+        // This is the FIRST LINE OF DEFENSE against "insufficient funds" errors
         if (tradeData.type === 'buy') {
+          const estCost = Number(tradeData.total_value || (tradeData.quantity * tradeData.price) || 0);
+          const buffer = Math.max(1.0, estCost * 0.05); // 5% or $1 buffer for slippage + fees
+          const totalRequired = estCost + buffer;
+          
+          // First check: UI-displayed available cash (quick fail)
+          if (availableCash < totalRequired) {
+            notify.error('Insufficient funds', {
+              description: `Available: $${availableCash.toFixed(2)} • Needed: $${totalRequired.toFixed(2)} (incl. fees)`
+            });
+            rollbackOptimistic();
+            setIsExecuting(false);
+            return;
+          }
+          
+          // Second check: Fresh Kraken balance (authoritative)
           try {
             const balRes = await base44.functions.invoke('getKrakenBalance', {});
             const bal = balRes?.data || balRes;
-            const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
-            const estCost = Number(tradeData.total_value || (tradeData.quantity * tradeData.price) || 0);
-            const buffer = Math.max(0.5, estCost * 0.02); // 2% or $0.50 buffer for slippage
-            if (usdAvail + 1e-6 < estCost + buffer) {
+            // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
+            const usdAvail = parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0);
+            
+            console.log(`[TradingInterface] Preflight check: UI shows $${availableCash.toFixed(2)}, Kraken has $${usdAvail.toFixed(2)}, need $${totalRequired.toFixed(2)}`);
+            
+            if (usdAvail < totalRequired) {
               notify.error('Insufficient USD on Kraken', {
-                description: `Available: $${usdAvail.toFixed(2)} • Needed: $${(estCost + buffer).toFixed(2)} (incl. 2% buffer)`
+                description: `Available: $${usdAvail.toFixed(2)} • Needed: $${totalRequired.toFixed(2)} (incl. 5% buffer)`
               });
+              rollbackOptimistic();
               setIsExecuting(false);
               return;
             }
           } catch (e) {
-            console.warn('[TradingInterface] Balance preflight failed, proceeding:', e?.message || e);
+            // If we can't verify Kraken balance, use UI cash as fallback
+            console.warn('[TradingInterface] Balance preflight failed:', e?.message);
+            if (availableCash < totalRequired) {
+              notify.error('Insufficient funds (verification failed)', {
+                description: `Available: $${availableCash.toFixed(2)} • Needed: $${totalRequired.toFixed(2)}`
+              });
+              rollbackOptimistic();
+              setIsExecuting(false);
+              return;
+            }
           }
         }
         

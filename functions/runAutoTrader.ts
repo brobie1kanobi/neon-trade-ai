@@ -339,6 +339,23 @@ Deno.serve(async (req) => {
       });
     }
 
+    // CRITICAL: Check available cash FIRST before filtering prospects
+    // This prevents processing prospects when there's no money to trade with
+    if (!isSimMode) {
+      console.log(`[runAutoTrader] LIVE mode - initial cash available: $${availableCash.toFixed(2)}`);
+      if (availableCash < 5) {
+        console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
+        return Response.json({ 
+          success: true, 
+          message: 'Insufficient cash for trading', 
+          trades_count: 0,
+          mode: 'live',
+          available_cash: availableCash,
+          reason: 'Available cash is below minimum threshold ($5)'
+        });
+      }
+    }
+    
     // CRITICAL: Auto-execution threshold - 85% confidence (raised from 75% to be MUCH more selective)
     // Only execute trades with VERY HIGH confidence to avoid buying into downtrends
     const AUTO_EXECUTE_THRESHOLD = 85;
@@ -458,26 +475,37 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // CRITICAL: Re-fetch current Kraken balance before each trade to ensure accuracy
-      // This prevents "insufficient funds" errors when multiple trades are queued
+      // CRITICAL: Re-fetch current Kraken balance BEFORE each trade to ensure accuracy
+      // This is the MOST IMPORTANT check - prevents "insufficient funds" errors
       if (!isSimMode) {
         try {
           const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
           const freshData = freshBalanceRes?.data || freshBalanceRes;
           if (freshData?.success && freshData?.connected) {
-            const freshAvailable = freshData.available_usd_balance || freshData.usd_balance || 0;
-            // Apply 5% safety buffer
-            availableCash = Math.max(0, freshAvailable * 0.95);
-            console.log(`[runAutoTrader] Fresh Kraken balance: $${freshAvailable.toFixed(2)}, effective: $${availableCash.toFixed(2)}`);
+            // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
+            const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
+            // Apply 10% safety buffer to be EXTRA conservative
+            availableCash = Math.max(0, freshAvailable * 0.90);
+            console.log(`[runAutoTrader] Fresh Kraken balance: $${freshAvailable.toFixed(2)}, effective (90%): $${availableCash.toFixed(2)}`);
+            
+            // CRITICAL: Abort early if no cash available
+            if (availableCash < 1) {
+              console.log(`[runAutoTrader] Aborting - no cash available after refresh`);
+              break;
+            }
+          } else {
+            console.warn(`[runAutoTrader] Balance refresh failed - aborting to prevent insufficient funds error`);
+            break; // Don't proceed without confirmed balance
           }
         } catch (balErr) {
-          console.warn(`[runAutoTrader] Could not refresh balance:`, balErr.message);
+          console.error(`[runAutoTrader] Balance refresh failed - aborting: ${balErr.message}`);
+          break; // Don't proceed without confirmed balance
         }
       }
       
-      // CRITICAL: Add 5% buffer for slippage/fees + $2 minimum buffer
-      // This ensures we never try to spend more than actually available
-      const feeBuffer = Math.max(2.0, total_value * 0.05);
+      // CRITICAL: Add 10% buffer for slippage/fees + $2 minimum buffer
+      // This ensures we NEVER try to spend more than actually available
+      const feeBuffer = Math.max(2.0, total_value * 0.10);
       const requiredCash = total_value + feeBuffer;
       
       if (requiredCash > availableCash) {
@@ -485,9 +513,9 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // Double-check: ensure total_value doesn't exceed 95% of available (leave room for fees)
-      if (total_value > availableCash * 0.95) {
-        console.log(`[runAutoTrader] Skipping ${sym} - would use ${((total_value/availableCash)*100).toFixed(1)}% of cash (max 95%)`);
+      // Double-check: ensure total_value doesn't exceed 85% of available (leave room for fees)
+      if (total_value > availableCash * 0.85) {
+        console.log(`[runAutoTrader] Skipping ${sym} - would use ${((total_value/availableCash)*100).toFixed(1)}% of cash (max 85%)`);
         continue;
       }
 
