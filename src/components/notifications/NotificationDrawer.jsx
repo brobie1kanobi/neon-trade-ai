@@ -69,10 +69,20 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
 
   const handleClearAll = async () => {
     try {
-      // Delete all visible notifications
-      // In a real app we might just mark as read or have a bulk delete API.
-      // Since we don't have bulk delete, we'll iterate (limit 50).
-      await Promise.all(notifications.map((n) => Notification.delete(n.id)));
+      // Fetch ALL notifications for this user (not just the visible 50)
+      let allNotifications = [];
+      let batch = await Notification.filter({ created_by: user.email }, "-created_date", 100);
+      allNotifications = batch;
+      
+      // Keep fetching if there might be more
+      while (batch.length === 100) {
+        const lastId = batch[batch.length - 1].id;
+        batch = await Notification.filter({ created_by: user.email, id: { $lt: lastId } }, "-created_date", 100);
+        allNotifications = [...allNotifications, ...batch];
+      }
+      
+      // Delete all notifications
+      await Promise.all(allNotifications.map((n) => Notification.delete(n.id)));
       setNotifications([]);
       setUnreadCount(0);
     } catch (err) {

@@ -32,12 +32,25 @@ const hadRecentSuccess = (key, ms = 10000) => {
   return !!t && (Date.now() - t < ms);
 };
 
+// Messages that should NOT be saved to the notification list (just show toast)
+const TOAST_ONLY_MESSAGES = [
+  'Orders refresh failed',
+  'orders refresh failed',
+  'Failed to refresh orders'
+];
+
+const shouldSaveToDb = (title) => {
+  return !TOAST_ONLY_MESSAGES.some(msg => title?.toLowerCase().includes(msg.toLowerCase()));
+};
+
 export const notify = {
   success: (title, options = {}) => {
     const dedupKey = options.dedupKey;
     if (dedupKey) markRecentSuccess(dedupKey);
     toast.success(title, options);
-    saveNotification(title, options.description, 'success', options.data);
+    if (shouldSaveToDb(title)) {
+      saveNotification(title, options.description, 'success', options.data);
+    }
   },
   error: (title, options = {}) => {
     const dedupKey = options.dedupKey;
@@ -45,18 +58,26 @@ export const notify = {
       // Downgrade to info to avoid false failures right after confirmed success
       const infoOpts = { ...options };
       toast.info(title, infoOpts);
-      saveNotification(title, options.description, 'info', options.data);
+      if (shouldSaveToDb(title)) {
+        saveNotification(title, options.description, 'info', options.data);
+      }
       return;
     }
     toast.error(title, options);
-    saveNotification(title, options.description, 'error', options.data);
+    if (shouldSaveToDb(title)) {
+      saveNotification(title, options.description, 'error', options.data);
+    }
   },
   info: (title, options = {}) => {
     toast.info(title, options);
-    saveNotification(title, options.description, 'info', options.data);
+    if (shouldSaveToDb(title)) {
+      saveNotification(title, options.description, 'info', options.data);
+    }
   },
   warning: (title, options = {}) => {
     toast.warning(title, options);
-    saveNotification(title, options.description, 'warning', options.data);
+    if (shouldSaveToDb(title)) {
+      saveNotification(title, options.description, 'warning', options.data);
+    }
   }
 };
