@@ -3,6 +3,9 @@ import { useKrakenWebSocketManager } from '@/components/hooks/useKrakenWebSocket
 import { useSettings } from '@/components/utils/SettingsContext';
 import { base44 } from '@/api/base44Client';
 
+// Track last execution timestamp for recovery
+let lastExecutionTimestamp = null;
+
 const KrakenWebSocketContext = createContext(null);
 
 export const useKrakenWebSocket = () => {
@@ -200,6 +203,9 @@ export function KrakenWebSocketProvider({ children }) {
   useEffect(() => {
     const handleTradeCompleted = () => {
       console.log('[KrakenWebSocketProvider] Trade completed event received');
+      // Update execution timestamp for recovery
+      lastExecutionTimestamp = new Date().toISOString();
+      
       // Small delay to allow Kraken to process the trade
       setTimeout(() => {
         refresh();
@@ -214,6 +220,43 @@ export function KrakenWebSocketProvider({ children }) {
       window.removeEventListener('kraken:synced', handleTradeCompleted);
     };
   }, []); // Empty deps - refresh is stable
+
+  // CRITICAL: WebSocket recovery - detect disconnects and recover missed trades
+  useEffect(() => {
+    if (!shouldConnect) return;
+    
+    const handleReconnect = async () => {
+      if (!lastExecutionTimestamp) return;
+      
+      console.log('[KrakenWebSocketProvider] WebSocket reconnected - checking for missed trades');
+      
+      try {
+        const recoveryRes = await base44.functions.invoke('wsRecovery', {
+          action: 'recoverMissedTrades',
+          since_timestamp: lastExecutionTimestamp
+        });
+        
+        const result = recoveryRes?.data || recoveryRes;
+        
+        if (result?.trades_recovered > 0) {
+          console.log(`[KrakenWebSocketProvider] Recovered ${result.trades_recovered} missed trades`);
+          // Dispatch event to refresh UI
+          window.dispatchEvent(new CustomEvent('kraken:synced', { 
+            detail: { recovered: result.trades_recovered } 
+          }));
+        }
+      } catch (e) {
+        console.warn('[KrakenWebSocketProvider] Recovery check failed:', e.message);
+      }
+    };
+    
+    // Listen for WebSocket reconnect events
+    window.addEventListener('kraken:ws-reconnected', handleReconnect);
+    
+    return () => {
+      window.removeEventListener('kraken:ws-reconnected', handleReconnect);
+    };
+  }, [shouldConnect]);
 
   // CRITICAL: REST API fetcher - ONLY for initial snapshot and post-action verification
   // After WebSocket is active, this should rarely be called
