@@ -120,11 +120,18 @@ Deno.serve(async (req) => {
     const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
 
     if (!connections || connections.length === 0) {
-      clearTimeout(globalTimeoutId);
+      console.log('[getKrakenBalance] No Kraken connection found for user');
       return Response.json({
         error: 'Not connected',
         connected: false,
-        success: false
+        success: false,
+        usd_balance: 0,
+        total_usd_balance: 0,
+        available_usd_balance: 0,
+        holdings: [],
+        total_assets: 0,
+        total_crypto_value_usd: 0,
+        total_portfolio_value_usd: 0
       }, { status: 200 });
     }
 
