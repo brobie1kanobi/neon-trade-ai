@@ -270,19 +270,21 @@ export function KrakenWebSocketProvider({ children }) {
     // 1. Force refresh requested (after order placement)
     // 2. Initial snapshot not yet loaded
     // 3. WebSocket disconnected (recovery mode)
+    // 4. More than 10 seconds since last fetch (prevents stale data)
     const wsConnected = state.isConnected;
     const needsInitialSnapshot = !hasInitialSnapshotRef.current;
     const isRecoveryMode = !wsConnected && timeSinceLastFetch > MIN_REST_INTERVAL;
+    const isStaleData = timeSinceLastFetch > 10000 && needsInitialSnapshot;
     
-    if (!force && !needsInitialSnapshot && !isRecoveryMode) {
+    if (!force && !needsInitialSnapshot && !isRecoveryMode && !isStaleData) {
       console.log('[KrakenWebSocketProvider] Skipping REST - WebSocket is active');
       return null;
     }
     
-    // Check if already loading
+    // Check if already loading - but allow force to proceed
     let shouldSkip = false;
     setRestData(prev => {
-      if (prev.isLoading) {
+      if (prev.isLoading && !force) {
         shouldSkip = true;
         return prev;
       }
@@ -369,7 +371,7 @@ export function KrakenWebSocketProvider({ children }) {
         fetchRestData(true);
         // Fetch PnL separately (less critical)
         setTimeout(() => fetchPnL(), 5000);
-      }, 2000);
+      }, 500); // Reduced from 2000ms to 500ms for faster initial load
       
       return () => clearTimeout(timer);
     }
