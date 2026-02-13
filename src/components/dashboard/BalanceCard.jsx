@@ -77,9 +77,11 @@ export default function BalanceCard({
         
         <div className="space-y-1">
           {isLoading ? (
-            <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse">
+              <span className="sr-only">Loading balance...</span>
+            </div>
           ) : isVisible ? (
-            amount !== null ? (
+            amount !== null && amount !== undefined ? (
               <NumberDisplay
                 value={amount || 0}
                 prefix="$"
@@ -89,7 +91,9 @@ export default function BalanceCard({
                 minFontSize={16}
               />
             ) : (
-              <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse">
+                <span className="sr-only">Loading balance...</span>
+              </div>
             )
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}
