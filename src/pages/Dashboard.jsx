@@ -1771,23 +1771,16 @@ export default function Dashboard() {
   const liveDataReady = isSimMode || krakenApiBalances.loaded;
   
   // Cash Wallet = USD balance from Kraken
+  // CRITICAL: Show $0 as fallback instead of blocking UI - data will update when loaded
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.usdBalance ?? 0)
-          : null // Don't use fallback - wait for Kraken data
-      );
+    : (krakenApiBalances.usdBalance ?? lastKnownBalancesRef.current.cash ?? 0);
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
-  // CRITICAL: REST API is authoritative for balance data
+  // CRITICAL: Show $0 as fallback instead of blocking UI
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : (
-        krakenApiBalances.loaded
-          ? (krakenApiBalances.cryptoValue ?? 0)
-          : null // Don't use fallback - wait for Kraken data
-      );
+    : (krakenApiBalances.cryptoValue ?? lastKnownBalancesRef.current.portfolio ?? 0);
     
   // Update cache when we have valid data
   React.useEffect(() => {
@@ -1800,30 +1793,20 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, krakenApiBalances.usdBalance, krakenApiBalances.cryptoValue]);
   
-  // CRITICAL: In LIVE mode, show null (loading) until Kraken data is ready
-  // This prevents showing SIM balances while waiting for LIVE data
-  const currentCashBalance = rawCashBalance !== null ? rawCashBalance : null;
-  const currentPortfolioValue = rawPortfolioValue !== null ? rawPortfolioValue : null;
+  // CRITICAL: Always show values - use 0 as fallback, loading indicator shown separately
+  const currentCashBalance = rawCashBalance;
+  const currentPortfolioValue = rawPortfolioValue;
     
-  // Total Balance = Cash + Portfolio (crypto) - null if either is loading
-  const totalBalance = (currentCashBalance !== null && currentPortfolioValue !== null)
-    ? (currentCashBalance + currentPortfolioValue)
-    : null;
+  // Total Balance = Cash + Portfolio (crypto)
+  const totalBalance = currentCashBalance + currentPortfolioValue;
 
   const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
   const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
   const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
   const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
 
-  if (isLoading && !wallet && !user && trades.length === 0 && effectiveHoldings.length === 0) {
-    return (
-      <div className="p-4 space-y-4">
-        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-      </div>
-    );
-  }
+  // CRITICAL: Don't block rendering - show UI immediately
+  // Balance cards have their own isLoading prop to show loading state
 
   return (
     <div
@@ -1867,14 +1850,14 @@ export default function Dashboard() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <BalanceCard
             title="Total Balance"
-            amount={balanceVisible ? (showZerosInLive ? 0 : totalBalance) : null}
-            change={showZerosInLive ? { value: 0, percentage: 0 } : (totalBalance !== null ? lifetimeChange : { value: 0, percentage: 0 })}
+            amount={balanceVisible ? (showZerosInLive ? 0 : (totalBalance ?? 0)) : null}
+            change={showZerosInLive ? { value: 0, percentage: 0 } : lifetimeChange}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
-            isLoading={!isSimMode && !krakenApiBalances.loaded}
+            isLoading={!isSimMode && providerLoading}
           />
         </motion.div>
 
@@ -1882,26 +1865,26 @@ export default function Dashboard() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
             <BalanceCard
               title="Cash Wallet"
-              amount={balanceVisible ? (showZerosInLive ? 0 : currentCashBalance) : null}
+              amount={balanceVisible ? (showZerosInLive ? 0 : (currentCashBalance ?? 0)) : null}
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
-              isLoading={!isSimMode && !krakenApiBalances.loaded}
+              isLoading={!isSimMode && providerLoading}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
             <BalanceCard
               title="Portfolio"
-              amount={balanceVisible ? (showZerosInLive ? 0 : currentPortfolioValue) : null}
-              change={showZerosInLive ? { value: 0, percentage: 0 } : (currentPortfolioValue !== null ? lifetimeChange : { value: 0, percentage: 0 })}
+              amount={balanceVisible ? (showZerosInLive ? 0 : (currentPortfolioValue ?? 0)) : null}
+              change={showZerosInLive ? { value: 0, percentage: 0 } : lifetimeChange}
               icon={Activity}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
-              isLoading={!isSimMode && !krakenApiBalances.loaded}
+              isLoading={!isSimMode && providerLoading}
             />
           </motion.div>
         </div>

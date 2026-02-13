@@ -398,15 +398,8 @@ export default function WalletPage() {
   const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
   const displayCashBalance = isSimMode ? (wallet?.cash_balance || 0) : krakenCashBalance;
 
-  if (isLoading) {
-    return (
-      <div className="p-4 space-y-4">
-        <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-      </div>
-    );
-  }
+  // CRITICAL: Don't block rendering - show UI immediately with loading states
+  // The wallet components handle their own loading states
 
   return (
     <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: 'var(--primary-bg)' }}>
@@ -432,6 +425,7 @@ export default function WalletPage() {
           isSimMode={isSimMode} 
           portfolioMarketValue={displayPortfolioValue}
           cashBalance={displayCashBalance}
+          isLoading={isLoading || (!isSimMode && restDataLoading)}
           onSyncComplete={() => {
             console.log('[Wallet] Sync complete, reloading data...');
             setTimeout(() => {
