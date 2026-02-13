@@ -11,7 +11,7 @@ import { invalidatePriceCache } from "@/components/hooks/usePriceData";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
 
-export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, cashBalance = 0, onSyncComplete }) {
+export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, cashBalance = 0, isLoading = false, onSyncComplete }) {
   const { settings } = useSettings();
   const [isVisible, setIsVisible] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -212,7 +212,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Total Balance</p>
-          {isVisible ? (
+          {isLoading ? (
+            <div className="h-10 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+          ) : isVisible ? (
             <NumberDisplay
               value={totalBalance}
               prefix="$"
@@ -224,7 +226,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
           ) : (
             <p className="text-3xl font-bold neon-text">••••••</p>
           )}
-          {!isSimMode && wsConnected && totalBalance > 0 && (
+          {!isSimMode && wsConnected && totalBalance > 0 && !isLoading && (
             <p className="text-xs mt-1 text-green-600 dark:text-green-400">
               ✅ Live via WebSocket
             </p>
@@ -271,7 +273,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
         <div className="grid grid-cols-2 gap-4 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Available Cash</p>
-            {isVisible ? (
+            {isLoading ? (
+              <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            ) : isVisible ? (
               <div>
                 <NumberDisplay value={displayCash} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
                 {!isSimMode && wsConnected && displayCash > 0 && (
@@ -289,7 +293,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               )}
             </p>
-            {isVisible ? (
+            {isLoading ? (
+              <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            ) : isVisible ? (
               <div>
                 <NumberDisplay value={displayPortfolioValue} prefix="$" decimals={2} maxFontSize={20} minFontSize={14} />
                 {!isSimMode && wsConnected && totalAssets > 0 && (
