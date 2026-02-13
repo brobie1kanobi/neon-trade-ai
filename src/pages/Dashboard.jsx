@@ -1078,7 +1078,8 @@ export default function Dashboard() {
     wsManager,
     // REST snapshot data from provider (initial load only)
     krakenBalance: providerKrakenBalance,
-    restDataLoading: providerLoading
+    restDataLoading: providerLoading,
+    fetchKrakenData
   } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1117,17 +1118,15 @@ export default function Dashboard() {
   React.useEffect(() => {
     if (isSimMode) return;
     
-    // Get data from WebSocket provider's REST snapshot (already fetched)
-    const krakenBalance = wsManager?.krakenBalance;
-    
-    if (krakenBalance?.success && krakenBalance?.connected) {
+    // CRITICAL: Use providerKrakenBalance directly from context (not wsManager)
+    if (providerKrakenBalance?.success && providerKrakenBalance?.connected) {
       const newBalances = {
-        usdBalance: krakenBalance.usd_balance || 0,
-        cryptoValue: krakenBalance.total_crypto_value_usd || 0,
-        totalValue: krakenBalance.total_portfolio_value_usd || 0,
-        holdings: krakenBalance.holdings || [],
-        costBasis: krakenBalance.total_cost_basis_usd || 0,
-        unrealizedPnL: krakenBalance.total_unrealized_pnl_usd || 0,
+        usdBalance: providerKrakenBalance.usd_balance || 0,
+        cryptoValue: providerKrakenBalance.total_crypto_value_usd || 0,
+        totalValue: providerKrakenBalance.total_portfolio_value_usd || 0,
+        holdings: providerKrakenBalance.holdings || [],
+        costBasis: providerKrakenBalance.total_cost_basis_usd || 0,
+        unrealizedPnL: providerKrakenBalance.total_unrealized_pnl_usd || 0,
         loaded: true
       };
       
@@ -1157,7 +1156,7 @@ export default function Dashboard() {
         total: wsUsdBalance + wsCryptoValue
       };
     }
-  }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, wsManager]);
+  }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, providerKrakenBalance]);
 
   // CRITICAL: Build effective holdings - WebSocket is PRIMARY in LIVE mode
   // REST snapshot provides initial data, WebSocket provides real-time updates
@@ -1757,6 +1756,15 @@ export default function Dashboard() {
   // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
   // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
   // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
+  
+  // CRITICAL: In LIVE mode, fetch Kraken data if not loaded yet
+  // This ensures balance cards show actual data instead of grey boxes
+  React.useEffect(() => {
+    if (!isSimMode && !krakenApiBalances.loaded && !providerLoading && fetchKrakenData) {
+      console.log('[Dashboard] LIVE mode - triggering Kraken data fetch');
+      fetchKrakenData(true);
+    }
+  }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
   
   // CRITICAL: In LIVE mode, DON'T show any balances until Kraken REST API has loaded
   // This prevents showing incorrect SIM mode data while waiting for LIVE data
