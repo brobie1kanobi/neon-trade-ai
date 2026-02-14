@@ -371,9 +371,22 @@ export function KrakenWebSocketProvider({ children }) {
         fetchRestData(true);
         // Fetch PnL separately (less critical)
         setTimeout(() => fetchPnL(), 5000);
-      }, 500); // Reduced from 2000ms to 500ms for faster initial load
+      }, 500);
       
-      return () => clearTimeout(timer);
+      // CRITICAL: Safety valve - if REST hasn't loaded after 20s, clear loading state
+      // This prevents the UI from being stuck in "loading" indefinitely
+      const safetyTimer = setTimeout(() => {
+        if (!hasInitialSnapshotRef.current) {
+          console.warn('[KrakenWebSocketProvider] Safety valve: clearing loading state after 20s');
+          hasInitialSnapshotRef.current = true;
+          setRestData(prev => ({ ...prev, isLoading: false }));
+        }
+      }, 20000);
+      
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(safetyTimer);
+      };
     }
   }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
