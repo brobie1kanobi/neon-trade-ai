@@ -20,7 +20,6 @@ import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
-import { useKrakenPnL } from "@/components/hooks/useKrakenPnL";
 
 import BalanceCard from "../components/dashboard/BalanceCard";
 import RecentTrades from "../components/dashboard/RecentTrades";
@@ -1078,8 +1077,10 @@ export default function Dashboard() {
     wsManager,
     // REST snapshot data from provider (initial load only)
     krakenBalance: providerKrakenBalance,
+    krakenPnL: providerKrakenPnL,
     restDataLoading: providerLoading,
-    fetchKrakenData
+    fetchKrakenData,
+    fetchPnL: providerFetchPnL
   } = useKrakenWebSocket();
   
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1548,8 +1549,16 @@ export default function Dashboard() {
   // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
   
-  // CRITICAL: Fetch REAL Kraken PnL data for LIVE mode
-  const { pnlData: krakenPnL, refresh: refreshKrakenPnL } = useKrakenPnL(isSimMode);
+  // CRITICAL: Use PnL from provider (already fetched, no duplicate call)
+  const krakenPnL = React.useMemo(() => {
+    if (isSimMode || !providerKrakenPnL?.success) return null;
+    return {
+      pnl_24h: providerKrakenPnL.pnl_24h || 0,
+      pnl_lifetime: providerKrakenPnL.pnl_lifetime || 0,
+      realized_pnl: providerKrakenPnL.realized_pnl || 0,
+      unrealized_pnl: providerKrakenPnL.unrealized_pnl || 0
+    };
+  }, [isSimMode, providerKrakenPnL]);
 
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
