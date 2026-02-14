@@ -81,20 +81,14 @@ export default function BalanceCard({
               <span className="sr-only">Loading balance...</span>
             </div>
           ) : isVisible ? (
-            amount !== null && amount !== undefined ? (
-              <NumberDisplay
-                value={amount || 0}
-                prefix="$"
-                decimals={2}
-                className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
-                maxFontSize={isPrimary ? 40 : 28}
-                minFontSize={16}
-              />
-            ) : (
-              <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse">
-                <span className="sr-only">Loading balance...</span>
-              </div>
-            )
+            <NumberDisplay
+              value={typeof amount === 'number' ? amount : 0}
+              prefix="$"
+              decimals={2}
+              className={`max-w-full ${isPrimary ? 'neon-text' : ''}`}
+              maxFontSize={isPrimary ? 40 : 28}
+              minFontSize={16}
+            />
           ) : (
             <p className={`text-2xl font-bold ${isPrimary ? 'neon-text' : ''}`}
               style={{ color: isPrimary ? 'var(--neon-green)' : 'var(--text-primary)' }}>
