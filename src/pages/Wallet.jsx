@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { getMarketData } from "@/functions/getMarketData";
-import { usePriceData } from "@/components/hooks/usePriceData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 import WalletBalance from "../components/wallet/WalletBalance";
@@ -39,47 +38,31 @@ export default function WalletPage() {
     restDataLoading
   } = useKrakenWebSocket();
 
-  // Get prices for Kraken holdings
-  const krakenSymbols = React.useMemo(() => {
-    if (isSimMode || !krakenData?.holdings) return [];
-    return krakenData.holdings.map(h => h.symbol);
-  }, [isSimMode, krakenData]);
-
-  const { priceData } = usePriceData(krakenSymbols);
-
-  // CRITICAL FIX: Use REST API (krakenData) as PRIMARY source - most reliable
-  // WebSocket can return stale/zero data
+  // CRITICAL: Use provider data directly - no duplicate price fetching
   const krakenPortfolioValue = React.useMemo(() => {
     if (isSimMode) return 0;
 
     // PRIORITY 1: Use Kraken REST API data (most reliable)
     if (krakenData?.total_crypto_value_usd !== undefined) {
-      console.log('[Wallet] ✅ Using Kraken API total_crypto_value_usd:', krakenData.total_crypto_value_usd.toFixed(2));
       return krakenData.total_crypto_value_usd;
     }
     if (krakenData?.total_crypto_value !== undefined) {
-      console.log('[Wallet] ✅ Using Kraken API total_crypto_value:', krakenData.total_crypto_value.toFixed(2));
       return krakenData.total_crypto_value;
     }
 
     // PRIORITY 2: Sum up total_value_usd from individual holdings
     if (krakenData?.holdings && krakenData.holdings.length > 0) {
       const sumOfHoldings = krakenData.holdings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
-      if (sumOfHoldings >= 0) {
-        console.log('[Wallet] ✅ Using sum of holding values:', sumOfHoldings.toFixed(2));
-        return sumOfHoldings;
-      }
+      if (sumOfHoldings >= 0) return sumOfHoldings;
     }
 
-    // PRIORITY 3: Use WebSocket as fallback (can be unreliable)
+    // PRIORITY 3: Use WebSocket as fallback
     if (wsConnected && wsCryptoValue > 0) {
-      console.log('[Wallet] ✅ Using WebSocket portfolio value (fallback):', wsCryptoValue.toFixed(2));
       return wsCryptoValue;
     }
 
-    console.warn('[Wallet] ⚠️ No valid portfolio data');
     return 0;
-  }, [isSimMode, wsConnected, wsCryptoValue, krakenData, priceData]);
+  }, [isSimMode, wsConnected, wsCryptoValue, krakenData]);
   
   // CRITICAL: Cash balance from Kraken REST API
   const krakenCashBalance = React.useMemo(() => {
