@@ -30,12 +30,11 @@ export function usePriceData(symbols = []) {
   const [loading, setLoading] = useState(false);
   const subscriberIdRef = useRef(Symbol());
 
-  // WebSocket for LIVE mode
+  // WebSocket for LIVE mode - use SHARED provider (no args, no duplicate connections)
   const { 
     prices: wsPrices, 
-    isConnected: wsConnected,
-    getAllPrices: wsGetAllPrices 
-  } = useKrakenWebSocket(symbols, !isSimMode && symbols.length > 0);
+    isConnected: wsConnected
+  } = useKrakenWebSocket();
 
   // REST API fetch for SIM mode
   const fetchPricesREST = useCallback(async (force = false) => {
