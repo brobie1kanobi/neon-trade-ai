@@ -1868,7 +1868,7 @@ export default function Dashboard() {
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
-            isLoading={!isSimMode && providerLoading}
+            isLoading={!isSimMode && providerLoading && !wsConnected && rawCashBalance === 0}
           />
         </motion.div>
 
@@ -1882,7 +1882,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
-              isLoading={!isSimMode && providerLoading}
+              isLoading={!isSimMode && providerLoading && !wsConnected && rawCashBalance === 0}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1895,7 +1895,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
-              isLoading={!isSimMode && providerLoading}
+              isLoading={!isSimMode && providerLoading && !wsConnected && rawPortfolioValue === 0}
             />
           </motion.div>
         </div>
