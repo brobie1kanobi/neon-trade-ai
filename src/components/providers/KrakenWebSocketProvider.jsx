@@ -266,11 +266,6 @@ export function KrakenWebSocketProvider({ children }) {
     const now = Date.now();
     const timeSinceLastFetch = now - lastRestCallRef.current;
     
-    // CRITICAL: Only fetch if:
-    // 1. Force refresh requested (after order placement)
-    // 2. Initial snapshot not yet loaded
-    // 3. WebSocket disconnected (recovery mode)
-    // 4. More than 10 seconds since last fetch (prevents stale data)
     const wsConnected = state.isConnected;
     const needsInitialSnapshot = !hasInitialSnapshotRef.current;
     const isRecoveryMode = !wsConnected && timeSinceLastFetch > MIN_REST_INTERVAL;
@@ -301,33 +296,36 @@ export function KrakenWebSocketProvider({ children }) {
     lastRestCallRef.current = now;
     
     try {
-      // Fetch balance and orders in parallel
+      // CRITICAL: Add timeout to prevent hanging forever
       const [balanceRes, ordersRes] = await Promise.all([
-        base44.functions.invoke('getKrakenBalance', {}).catch(e => ({ error: e.message })),
-        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }).catch(e => ({ error: e.message }))
+        Promise.race([
+          base44.functions.invoke('getKrakenBalance', {}),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Balance fetch timeout')), 15000))
+        ]).catch(e => ({ error: e.message, success: false })),
+        Promise.race([
+          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Orders fetch timeout')), 15000))
+        ]).catch(e => ({ error: e.message }))
       ]);
       
       const balanceData = balanceRes?.data || balanceRes;
       const ordersData = ordersRes?.data || ordersRes;
       
-      // Mark initial snapshot as complete
-      if (balanceData?.success) {
-        hasInitialSnapshotRef.current = true;
-      }
+      // Mark initial snapshot as complete even on failure so we don't keep retrying
+      hasInitialSnapshotRef.current = true;
       
       setRestData(prev => ({
-        krakenBalance: balanceData?.success ? balanceData : null,
-        krakenOrders: ordersData?.orders || [],
+        krakenBalance: balanceData?.success ? balanceData : prev.krakenBalance,
+        krakenOrders: ordersData?.orders || prev.krakenOrders || [],
         krakenTrades: prev.krakenTrades,
         krakenPnL: prev.krakenPnL,
         lastFetchTime: Date.now(),
         isLoading: false,
-        error: balanceData?.error || ordersData?.error || null
+        error: (balanceData?.success ? null : (balanceData?.error || null))
       }));
       
       console.log('[KrakenWebSocketProvider] REST snapshot complete - Balance:', !!balanceData?.success, 'Orders:', (ordersData?.orders || []).length);
       
-      // Dispatch event for other components
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('kraken:snapshot-loaded', { 
           detail: { balance: balanceData, orders: ordersData?.orders } 
@@ -337,6 +335,8 @@ export function KrakenWebSocketProvider({ children }) {
       return { krakenBalance: balanceData, krakenOrders: ordersData?.orders || [] };
     } catch (err) {
       console.error('[KrakenWebSocketProvider] REST snapshot error:', err);
+      // CRITICAL: Always clear loading state so UI doesn't stay stuck
+      hasInitialSnapshotRef.current = true;
       setRestData(prev => ({ ...prev, isLoading: false, error: err.message }));
       return null;
     }
