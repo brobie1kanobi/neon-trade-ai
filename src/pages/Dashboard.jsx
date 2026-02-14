@@ -1188,7 +1188,8 @@ export default function Dashboard() {
           is_simulation: false
         }));
       }
-      return holdings;
+      // CRITICAL: Only return DB holdings that are LIVE mode - never show SIM data in LIVE
+      return holdings.filter(h => h.is_simulation === false);
     }
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
 
