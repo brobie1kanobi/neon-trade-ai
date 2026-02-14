@@ -1771,21 +1771,27 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
   
-  // CRITICAL: In LIVE mode, DON'T show any balances until Kraken REST API has loaded
-  // This prevents showing incorrect SIM mode data while waiting for LIVE data
-  const liveDataReady = isSimMode || krakenApiBalances.loaded;
-  
   // Cash Wallet = USD balance from Kraken
-  // CRITICAL: Show $0 as fallback instead of blocking UI - data will update when loaded
+  // CRITICAL: Use WebSocket as primary in LIVE mode, REST as fallback
   const rawCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : (krakenApiBalances.usdBalance ?? lastKnownBalancesRef.current.cash ?? 0);
+    : (
+        // WebSocket first (real-time, always fresh)
+        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance
+        // REST snapshot fallback
+        : (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) ? krakenApiBalances.usdBalance
+        // Cache fallback
+        : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
+      );
   
   // Portfolio = ONLY crypto holdings (NOT including cash)
-  // CRITICAL: Show $0 as fallback instead of blocking UI
   const rawPortfolioValue = isSimMode
     ? portfolioMarketValue
-    : (krakenApiBalances.cryptoValue ?? lastKnownBalancesRef.current.portfolio ?? 0);
+    : (
+        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue
+        : (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue
+        : (lastKnownBalancesRef.current.portfolio ?? 0)
+      );
     
   // Update cache when we have valid data
   React.useEffect(() => {
