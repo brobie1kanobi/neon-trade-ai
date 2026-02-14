@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { invalidatePriceCache } from "@/components/hooks/usePriceData";
 import { useSettings } from "@/components/utils/SettingsContext";
-import { useRealtimeKrakenData } from "@/components/hooks/useRealtimeKrakenData";
+import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 
 export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue = 0, cashBalance = 0, isLoading = false, onSyncComplete }) {
   const { settings } = useSettings();
@@ -17,7 +17,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
 
-  // Use WebSocket for LIVE mode
+  // CRITICAL: Use the SHARED provider instead of creating duplicate WebSocket connections
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -25,16 +25,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     totalPortfolioValue: wsTotalValue,
     balances: wsBalances,
     totalAssets: wsTotalAssets,
-    lastUpdated: wsLastUpdated,
     refresh: wsRefresh
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    priceSymbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOT/USD', 'DOGE/USD', 'LTC/USD', 'BCH/USD', 'LINK/USD', 'UNI/USD', 'MATIC/USD', 'ATOM/USD', 'TRX/USD', 'AVAX/USD'],
-    subscribeToBalances: true,
-    subscribeToOrders: false,
-    subscribeToExecutions: true,
-    isSimMode
-  });
+  } = useKrakenWebSocket();
+  
+  const wsLastUpdated = wsConnected ? new Date().toISOString() : null;
 
   // CRITICAL: Cache last known good values to prevent showing $0
   const lastKnownRef = React.useRef({ cash: null, portfolio: null, total: null });

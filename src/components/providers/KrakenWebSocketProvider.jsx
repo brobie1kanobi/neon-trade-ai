@@ -136,8 +136,8 @@ export function KrakenWebSocketProvider({ children }) {
     // Update immediately
     updateState();
 
-    // CRITICAL: Reduced from 2s to 5s to prevent excessive state updates and re-renders
-    const interval = setInterval(updateState, 5000);
+    // Update every 3s for responsive balance cards while avoiding excessive re-renders
+    const interval = setInterval(updateState, 3000);
 
     return () => clearInterval(interval);
   }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
