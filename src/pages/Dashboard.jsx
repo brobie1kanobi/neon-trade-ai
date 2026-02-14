@@ -1113,35 +1113,31 @@ export default function Dashboard() {
     loaded: false
   });
   
-  // CRITICAL: Use data from KrakenWebSocketProvider - NO direct REST polling
-  // The provider handles initial snapshot + WebSocket updates
+  // CRITICAL: Merge REST snapshot + WebSocket live data into krakenApiBalances
+  // Provider handles initial REST snapshot; WebSocket updates flow through provider state
   React.useEffect(() => {
     if (isSimMode) return;
     
-    // CRITICAL: Use providerKrakenBalance directly from context (not wsManager)
+    // Source 1: REST snapshot from provider
     if (providerKrakenBalance?.success && providerKrakenBalance?.connected) {
-      const newBalances = {
-        usdBalance: providerKrakenBalance.usd_balance || 0,
-        cryptoValue: providerKrakenBalance.total_crypto_value_usd || 0,
-        totalValue: providerKrakenBalance.total_portfolio_value_usd || 0,
-        holdings: providerKrakenBalance.holdings || [],
-        costBasis: providerKrakenBalance.total_cost_basis_usd || 0,
-        unrealizedPnL: providerKrakenBalance.total_unrealized_pnl_usd || 0,
-        loaded: true
-      };
-      
-      console.log('[Dashboard] Updated from provider - USD:', newBalances.usdBalance, 'Crypto:', newBalances.cryptoValue);
-      setKrakenApiBalances(newBalances);
-      
-      lastKnownBalancesRef.current = {
-        cash: newBalances.usdBalance,
-        portfolio: newBalances.cryptoValue,
-        total: newBalances.totalValue
-      };
+      setKrakenApiBalances(prev => {
+        // If WebSocket already has fresher data, keep WS values but merge holdings/costBasis
+        const useWsValues = wsConnected && wsUsdBalance > 0;
+        const newBalances = {
+          usdBalance: useWsValues ? wsUsdBalance : (providerKrakenBalance.usd_balance || 0),
+          cryptoValue: useWsValues ? wsCryptoValue : (providerKrakenBalance.total_crypto_value_usd || 0),
+          totalValue: useWsValues ? (wsUsdBalance + wsCryptoValue) : (providerKrakenBalance.total_portfolio_value_usd || 0),
+          holdings: providerKrakenBalance.holdings || prev.holdings,
+          costBasis: providerKrakenBalance.total_cost_basis_usd || prev.costBasis,
+          unrealizedPnL: providerKrakenBalance.total_unrealized_pnl_usd || prev.unrealizedPnL,
+          loaded: true
+        };
+        return newBalances;
+      });
     }
     
-    // ALSO merge WebSocket real-time balance updates
-    if (wsConnected && wsUsdBalance > 0) {
+    // Source 2: WebSocket real-time updates (always fresher than REST)
+    if (wsConnected && (wsUsdBalance > 0 || wsCryptoValue > 0)) {
       setKrakenApiBalances(prev => ({
         ...prev,
         usdBalance: wsUsdBalance,
