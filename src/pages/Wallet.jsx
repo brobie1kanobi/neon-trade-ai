@@ -111,21 +111,19 @@ export default function WalletPage() {
       const isCreator = !!currentUser?.is_creator;
       const isAdminOrCreator = isAdmin || isCreator;
       
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
-      const userWallet = await Wallet.filter({ created_by: currentUser.email });
+      // Fetch all entity data in parallel for faster load
+      const [userWalletArr, userTransactions, userSettingsArr] = await Promise.all([
+        Wallet.filter({ created_by: currentUser.email }),
+        Transaction.filter({ created_by: currentUser.email }, '-created_date'),
+        UserSettings.filter({ created_by: currentUser.email })
+      ]);
       
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
-      const userTransactions = await Transaction.filter({ created_by: currentUser.email }, '-created_date');
-
-      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
-      const userSettings = await UserSettings.filter({ created_by: currentUser.email });
-      
-      const currentSettings = userSettings[0] || { sim_trading_mode: true };
+      const userWallet = userWalletArr;
+      const currentSettings = userSettingsArr[0] || { sim_trading_mode: true };
       if (!isAdminOrCreator) {
         currentSettings.sim_trading_mode = true;
       }
       
-      await new Promise(resolve => setTimeout(resolve, 200));
       const userTrades = await Trade.filter({ 
         created_by: currentUser.email, 
         is_simulation: currentSettings.sim_trading_mode !== false 
@@ -160,7 +158,6 @@ export default function WalletPage() {
       // Compute portfolio value (SIM from DB, LIVE from Kraken)
       if (currentSettings.sim_trading_mode) {
         // Simulation mode - use database holdings
-        await new Promise(resolve => setTimeout(resolve, 200)); // Reduced from 500ms
         const userHoldings = await Holding.filter({ 
           created_by: currentUser.email, 
           is_simulation: true 
