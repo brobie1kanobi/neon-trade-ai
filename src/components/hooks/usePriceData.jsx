@@ -123,18 +123,23 @@ export function usePriceData(symbols = []) {
   }, [symbols.join(',')]);
 
   // Convert WebSocket prices to REST format
+  // Provider prices are keyed like 'BTC/USD' -> { price, symbol, change_24h }
   const convertWSToREST = useCallback(() => {
     if (!wsPrices || Object.keys(wsPrices).length === 0) {
       return [];
     }
     
-    return Object.values(wsPrices).map(ws => ({
-      symbol: ws.symbol,
-      price: ws.price,
-      current_price: ws.price,
-      change_24h_percent: ws.change_24h,
-      price_change_percentage_24h: ws.change_24h
-    }));
+    return Object.entries(wsPrices).map(([pair, ws]) => {
+      // Extract base symbol from pair (e.g., 'BTC/USD' -> 'BTC')
+      const baseSymbol = pair.includes('/') ? pair.split('/')[0] : (ws.symbol || pair);
+      return {
+        symbol: baseSymbol,
+        price: ws.price,
+        current_price: ws.price,
+        change_24h_percent: ws.change_24h,
+        price_change_percentage_24h: ws.change_24h
+      };
+    });
   }, [wsPrices]);
 
   // Subscribe to global REST updates (for SIM mode)
