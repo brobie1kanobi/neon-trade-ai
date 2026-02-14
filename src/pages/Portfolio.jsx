@@ -236,7 +236,9 @@ export default function Portfolio() {
           is_simulation: false
         }));
       }
-      return holdings;
+      // CRITICAL: Only return DB holdings if they are LIVE mode holdings
+      // Never return SIM holdings in LIVE mode
+      return holdings.filter(h => h.is_simulation === false);
     }
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
 
