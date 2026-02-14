@@ -1771,6 +1771,19 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
   
+  // CRITICAL: Safety valve - after 15s, stop showing loading even if REST hasn't returned
+  // WebSocket data should be available by then
+  const [forceShowBalance, setForceShowBalance] = React.useState(false);
+  React.useEffect(() => {
+    if (!isSimMode && providerLoading) {
+      const timer = setTimeout(() => {
+        console.log('[Dashboard] Safety valve: forcing balance display after 15s');
+        setForceShowBalance(true);
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSimMode, providerLoading]);
+  
   // Cash Wallet = USD balance from Kraken
   // CRITICAL: Use WebSocket as primary in LIVE mode, REST as fallback
   const rawCashBalance = isSimMode
@@ -1807,6 +1820,9 @@ export default function Dashboard() {
   // CRITICAL: Always show values - use 0 as fallback, loading indicator shown separately
   const currentCashBalance = rawCashBalance;
   const currentPortfolioValue = rawPortfolioValue;
+  
+  // CRITICAL: Only show loading if we truly have NO data at all
+  const showBalanceLoading = !isSimMode && providerLoading && !wsConnected && rawCashBalance === 0 && !forceShowBalance;
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
@@ -1868,7 +1884,7 @@ export default function Dashboard() {
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
-            isLoading={!isSimMode && providerLoading && !wsConnected && rawCashBalance === 0}
+            isLoading={showBalanceLoading}
           />
         </motion.div>
 
@@ -1882,7 +1898,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
-              isLoading={!isSimMode && providerLoading && !wsConnected && rawCashBalance === 0}
+              isLoading={showBalanceLoading}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1895,7 +1911,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
-              isLoading={!isSimMode && providerLoading && !wsConnected && rawPortfolioValue === 0}
+              isLoading={showBalanceLoading}
             />
           </motion.div>
         </div>
