@@ -47,6 +47,9 @@ export default function WalletPage() {
     restDataLoading
   } = useKrakenWebSocket();
 
+  // CRITICAL: Also check global window state - provider React state can be stale
+  const wsConnected = wsConnectedFromProvider || (typeof window !== 'undefined' && window.__krakenWsConnected);
+
   // CRITICAL: Use provider data directly - no duplicate price fetching
   const krakenPortfolioValue = React.useMemo(() => {
     if (isSimMode) return 0;
