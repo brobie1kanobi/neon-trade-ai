@@ -79,8 +79,10 @@ export const SettingsProvider = ({ children }) => {
         console.log('[SettingsContext] Loaded timezone:', currentSettings.timezone);
       }
 
-      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!user?.is_creator;
+      // CRITICAL: Use fresh user data for role check to avoid stale data forcing sim mode
+      const freshUser = await base44.auth.me();
+      const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!freshUser?.is_creator;
 
       // Enforce simulation mode for non-admin/non-creator
       if (!(isAdmin || isCreator) && currentSettings.sim_trading_mode === false && currentSettings.id) {
@@ -116,8 +118,10 @@ export const SettingsProvider = ({ children }) => {
 
   const updateSetting = useCallback(async (key, value) => {
     try {
-      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!user?.is_creator;
+      // CRITICAL: Fetch fresh user to avoid stale role/creator data causing forced sim mode
+      const freshUser = await base44.auth.me();
+      const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!freshUser?.is_creator;
 
       // Force simulation mode for non-admin/non-creator
       if (key === 'sim_trading_mode' && !(isAdmin || isCreator)) {
@@ -127,7 +131,7 @@ export const SettingsProvider = ({ children }) => {
       if (settings?.id) {
         await UserSettings.update(settings.id, { [key]: value });
       } else {
-        const me = user || await base44.auth.me();
+        const me = freshUser || user;
         await UserSettings.create({
           ...settings,
           [key]: value,
@@ -150,8 +154,8 @@ export const SettingsProvider = ({ children }) => {
       } catch (_e) {}
 
       // Invalidate cache and refresh
-      if (user?.email) {
-        invalidateCache(`settings:${user.email}`);
+      if (freshUser?.email || user?.email) {
+        invalidateCache(`settings:${freshUser?.email || user?.email}`);
       }
       setTimeout(() => loadSettings(true), 1500);
 
