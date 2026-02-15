@@ -287,17 +287,22 @@ export function KrakenWebSocketProvider({ children }) {
   // ── Initial REST snapshot (one-time) ──
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
+      // Delay initial fetch slightly to let WS connect first
       const timer = setTimeout(() => {
-        fetchRestData(true);
-        setTimeout(() => fetchPnL(), 5000);
-      }, 500);
+        if (!hasInitialSnapshotRef.current) {
+          fetchRestData(true);
+          setTimeout(() => fetchPnL(), 5000);
+        }
+      }, 2000);
 
+      // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
+          console.log('[KrakenWSProvider] Safety timeout - marking snapshot complete');
           hasInitialSnapshotRef.current = true;
           setRestData(prev => ({ ...prev, isLoading: false }));
         }
-      }, 20000);
+      }, 15000);
 
       return () => { clearTimeout(timer); clearTimeout(safetyTimer); };
     }
