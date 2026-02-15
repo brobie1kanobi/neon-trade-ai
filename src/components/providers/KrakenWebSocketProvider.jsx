@@ -317,11 +317,11 @@ export function KrakenWebSocketProvider({ children }) {
     return () => clearInterval(id);
   }, [shouldConnect, fetchPnL]);
 
-  // ── Recovery mode: poll REST while WS is down ──
+  // ── Recovery mode: poll REST while WS is down (conservative) ──
   useEffect(() => {
     if (!shouldConnect || state.isConnected || !hasInitialSnapshotRef.current) return;
-    console.log('[KrakenWSProvider] WS down – entering recovery polling');
-    const id = setInterval(() => fetchRestData(true), 60000);
+    console.log('[KrakenWSProvider] WS down – entering recovery polling (every 2 min)');
+    const id = setInterval(() => fetchRestData(true), 120000);
     return () => clearInterval(id);
   }, [shouldConnect, state.isConnected, fetchRestData]);
 
