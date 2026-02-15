@@ -66,54 +66,25 @@ export default function Portfolio() {
   useBracketOrderSync(isSimMode, user?.email);
 
   const loadData = useCallback(async (force = false) => {
+    // CRITICAL: Don't load data until we know the mode
+    if (isSimMode === null) return;
+    
     setIsLoading(true);
-    console.log('[Portfolio] Fetching fresh data (no cache)...');
+    console.log('[Portfolio] Fetching fresh data, isSimMode:', isSimMode);
     try {
-      const [currentUser, userSettingsResult, userWalletArr, userTradesArr, userHoldingsArr] = await Promise.all([
-        Promise.race([
-          base44.auth.me(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
-        ]),
-        Promise.race([
-          (async () => {
-            const u = await base44.auth.me();
-            return UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-          })(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Settings timeout')), 5000))
-        ]),
-        Promise.race([
-          (async () => {
-            const u = await base44.auth.me();
-            return Wallet.filter({ created_by: u.email }, "-updated_date", 1);
-          })(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet timeout')), 5000))
-        ]),
-        Promise.race([
-          (async () => {
-            const u = await base44.auth.me();
-            const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-            const simMode = s[0]?.sim_trading_mode !== false;
-            return Trade.filter({ created_by: u.email, is_simulation: simMode }, "-created_date", 200);
-          })(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 8000))
-        ]),
-        Promise.race([
-          (async () => {
-            const u = await base44.auth.me();
-            const s = await UserSettings.filter({ created_by: u.email }, "-updated_date", 1);
-            const simMode = s[0]?.sim_trading_mode !== false;
-            return Holding.filter({ created_by: u.email, is_simulation: simMode }, "-updated_date", 500);
-          })(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings timeout')), 8000))
-        ])
+      const currentUser = await Promise.race([
+        base44.auth.me(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
       ]);
 
-      const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!currentUser?.is_creator;
-      const currentSettings = userSettingsResult[0] || { sim_trading_mode: true };
-      if (!isAdmin && !isCreator) currentSettings.sim_trading_mode = true;
+      // CRITICAL: Use isSimMode from SettingsContext - don't re-fetch settings
+      const [userWalletArr, userTradesArr, userHoldingsArr] = await Promise.all([
+        Wallet.filter({ created_by: currentUser.email }, "-updated_date", 1),
+        Trade.filter({ created_by: currentUser.email, is_simulation: isSimMode }, "-created_date", 200),
+        Holding.filter({ created_by: currentUser.email, is_simulation: isSimMode }, "-updated_date", 500)
+      ]);
 
-      const effectiveSimMode = currentSettings.sim_trading_mode !== false;
+      const effectiveSimMode = isSimMode;
       let currentWallet = userWalletArr[0];
 
       // Wallet initialization logic retained
@@ -158,7 +129,7 @@ export default function Portfolio() {
       }
 
       setUser(currentUser);
-      setSettings(currentSettings);
+      setSettings(ctxSettings);
       setWallet(currentWallet);
       setTrades(userTradesArr);
       setHoldings(userHoldingsArr);
@@ -170,7 +141,7 @@ export default function Portfolio() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isSimMode, ctxSettings]);
 
   useEffect(() => {
     loadData();
@@ -490,7 +461,7 @@ export default function Portfolio() {
               : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0))
       );
 
-  if (isLoading && !wallet && !user) {
+  if (isSimMode === null || ctxSettingsLoading || (isLoading && !wallet && !user)) {
     return (
       <div className="p-4 space-y-4">
         <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
