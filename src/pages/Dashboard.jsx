@@ -1855,8 +1855,17 @@ export default function Dashboard() {
   const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
   const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
 
-  // CRITICAL: Don't block rendering - show UI immediately
-  // Balance cards have their own isLoading prop to show loading state
+  // CRITICAL: Don't render with wrong mode - wait for settings
+  if (isSimMode === null || settingsLoading) {
+    return (
+      <div className="p-4 flex items-center justify-center min-h-[60vh]" style={{ backgroundColor: 'var(--primary-bg)' }}>
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-green-400 rounded-full animate-spin mx-auto mb-3" style={{ borderTopColor: 'var(--neon-green)' }} />
+          <p style={{ color: 'var(--text-secondary)' }}>Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
