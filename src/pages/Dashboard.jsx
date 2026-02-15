@@ -1067,7 +1067,7 @@ export default function Dashboard() {
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
   const { user } = useUser();
   
-  // CRITICAL: Use global WebSocket connection (single source of truth for live data)
+  // CRITICAL: Use global WebSocket provider (single source of truth for live data)
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
@@ -1077,7 +1077,8 @@ export default function Dashboard() {
     balances: wsBalances,
     prices: wsPrices,
     wsManager,
-    // REST snapshot data from provider (initial load only)
+    bestHoldings: providerBestHoldings,
+    hasData: providerHasData,
     krakenBalance: providerKrakenBalance,
     krakenPnL: providerKrakenPnL,
     restDataLoading: providerLoading,
