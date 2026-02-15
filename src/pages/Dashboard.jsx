@@ -1086,6 +1086,9 @@ export default function Dashboard() {
     fetchPnL: providerFetchPnL
   } = useKrakenWebSocket();
   
+  // CRITICAL: Also check global window state - provider React state can be stale
+  const wsConnected = wsConnectedFromProvider || (typeof window !== 'undefined' && window.__krakenWsConnected);
+  
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [change24h, setChange24h] = useState({ value: 0, percentage: 0 });
