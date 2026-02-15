@@ -19,13 +19,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
   // Use the SHARED provider (single source of truth, already merges WS > REST)
   const {
-    isConnected: wsConnected,
+    isConnected: wsConnectedFromProvider,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoHoldingsValue,
     totalAssets: wsTotalAssets,
     hasData: providerHasData,
     refresh: wsRefresh
   } = useKrakenWebSocket();
+
+  // CRITICAL: Also check global window state - provider React state can be stale
+  const wsConnected = wsConnectedFromProvider || (typeof window !== 'undefined' && window.__krakenWsConnected);
 
   // Provider merges WS > REST – use its values, with fallbacks to props/wallet
   const displayCash = isSimMode 
