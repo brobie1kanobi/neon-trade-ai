@@ -131,7 +131,7 @@ export function KrakenWebSocketProvider({ children }) {
       window.removeEventListener('kraken:price-update', handlePriceUpdate);
       clearInterval(interval);
     };
-  }, [shouldConnect]); // wsManager is stable singleton
+  }, [shouldConnect]);
 
   // ── Manual refresh (WS re-subscribe + immediate state push) ──
   const refresh = useCallback(async () => {
