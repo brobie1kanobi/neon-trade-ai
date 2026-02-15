@@ -1059,8 +1059,9 @@ export default function Dashboard() {
   const { settings } = useSettings();
   const location = useLocation();
   
-  // CRITICAL: Default to TRUE while settings are loading to prevent showing SIM data in LIVE mode
-  const isSimMode = settings ? (settings.sim_trading_mode === true) : true;
+  // CRITICAL: Default to null while settings are loading - don't render data until we know the mode
+  const settingsLoaded = settings !== null && settings !== undefined;
+  const isSimMode = settingsLoaded ? (settings.sim_trading_mode === true) : true;
   const { wallet, loading: walletLoading, refresh: refreshWallet } = useWallet();
   const { trades, loading: tradesLoading, addTrade } = useTrades(isSimMode);
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);

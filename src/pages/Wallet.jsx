@@ -24,8 +24,9 @@ export default function WalletPage() {
   const [portfolioMarketValue, setPortfolioMarketValue] = useState(0);
   const [lastLoadTime, setLastLoadTime] = useState(0);
 
-  // CRITICAL: Default to TRUE while settings are loading to prevent showing SIM data as LIVE
-  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
+  // CRITICAL: Default to TRUE while settings are loading
+  const settingsLoaded = settings !== null && settings !== undefined;
+  const isSimMode = settingsLoaded ? (settings.sim_trading_mode !== false) : true;
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   const {
