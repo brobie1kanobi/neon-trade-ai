@@ -1700,7 +1700,8 @@ export default function Dashboard() {
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  const showZerosInLive = !isSimMode && !providerHasData && !effectiveHoldings.length && !(Array.isArray(trades) && trades.some(t => t.is_simulation === false));
+  // Only show zeros if we truly have nothing - no provider data, no wallet, no holdings
+  const showZerosInLive = !isSimMode && !providerHasData && !effectiveHoldings.length && !wallet?.real_cash_balance;
 
   // CRITICAL: Don't render with wrong mode - wait for settings
   if (isSimMode === null || settingsLoading) {
