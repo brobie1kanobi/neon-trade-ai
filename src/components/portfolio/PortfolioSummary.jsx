@@ -28,7 +28,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
     window.addEventListener('trade:completed', handleTradeCompleted);
     window.addEventListener('kraken:synced', handleTradeCompleted);
-    
+
     return () => {
       window.removeEventListener('trade:completed', handleTradeCompleted);
       window.removeEventListener('kraken:synced', handleTradeCompleted);
@@ -77,7 +77,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
 
   const totalValue = currentCashBalance + effectivePortfolioValue;
-  
+
   const displayChange = change24hr || { value: 0, percentage: 0 };
   const isPositive = displayChange.value >= 0;
   const lifetime = lifetimeChange || { value: 0, percentage: 0 };
@@ -85,10 +85,10 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
 
   // Sync handler - refreshes holdings and balances
   const [isSyncing, setIsSyncing] = React.useState(false);
-  
+
   const handleSync = async () => {
     if (isSyncing) return;
-    
+
     setIsSyncing(true);
     try {
       if (isSimMode) {
@@ -98,40 +98,40 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
         // LIVE MODE: Sync from Kraken
         const syncRes = await base44.functions.invoke('syncKrakenBalance', {});
         const syncData = syncRes?.data || syncRes;
-        
+
         if (!syncData?.success) {
           throw new Error(syncData?.error || 'Sync failed');
         }
-        
+
         // Dispatch sync event for WebSocket refresh
         window.dispatchEvent(new CustomEvent('kraken:synced', {
           detail: { holdings: syncData.holdings, usdBalance: syncData.usdBalance }
         }));
       }
-      
+
       // Broadcast data update
-      window.dispatchEvent(new CustomEvent('app:data-updated', { 
-        detail: { type: 'sync', source: 'portfolio_summary' } 
+      window.dispatchEvent(new CustomEvent('app:data-updated', {
+        detail: { type: 'sync', source: 'portfolio_summary' }
       }));
-      
+
       // Refresh page after brief delay
       setTimeout(() => {
         window.location.href = window.location.pathname + '?t=' + Date.now();
       }, 500);
-      
+
     } catch (error) {
       console.error('[PortfolioSummary] Sync error:', error);
     } finally {
       setIsSyncing(false);
     }
   };
-  
+
   const onClick = onSyncClick || handleSync;
 
   return (
-    <Card className="border-2 neon-glow" style={{ 
-      backgroundColor: 'var(--card-bg)', 
-      borderColor: 'var(--neon-green)' 
+    <Card className="border-2 neon-glow" style={{
+      backgroundColor: 'var(--card-bg)',
+      borderColor: 'var(--neon-green)'
     }}>
       <CardContent className="p-6">
         <div className="text-center space-y-4">
@@ -139,24 +139,24 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
             <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
               Portfolio Summary
             </h2>
-            {isSimMode && (
-              <Badge variant="outline" className="text-xs">
+            {isSimMode &&
+            <Badge variant="outline" className="text-xs">
                 Demo Mode
               </Badge>
-            )}
-            {!isSimMode && (
-              <div className="flex items-center gap-2">
-                <Badge className="bg-green-100 text-green-800 text-xs">
-                  Live Mode
-                </Badge>
-                {wsConnected && (
-                  <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
+            }
+            {!isSimMode &&
+            <div className="flex items-center gap-2">
+                
+
+
+                {wsConnected &&
+              <Badge variant="outline" className="text-xs flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
                     <Wifi className="w-3 h-3" />
                     Live
                   </Badge>
-                )}
+              }
               </div>
-            )}
+            }
           </div>
           
           <div>
@@ -172,8 +172,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
               maxFontSize={40}
               minFontSize={18}
               // New: colorize by lifetime PnL sign (green profit, red loss)
-              tone={lifetime.value === 0 ? 'neutral' : (isLifetimePositive ? 'positive' : 'negative')}
-            />
+              tone={lifetime.value === 0 ? 'neutral' : isLifetimePositive ? 'positive' : 'negative'} />
+
           </div>
           
           <div className="flex items-center justify-center gap-6 flex-wrap">
@@ -185,11 +185,11 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
                 decimals={2}
                 className="mx-auto max-w-[160px]"
                 maxFontSize={20}
-                minFontSize={12}
-              />
-              {!isSimMode && wsConnected && currentCashBalance > 0 && (
-                <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
-              )}
+                minFontSize={12} />
+
+              {!isSimMode && wsConnected && currentCashBalance > 0 &&
+              <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
+              }
             </div>
             <div className="text-center min-w-[140px]">
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Assets Value</p>
@@ -200,21 +200,21 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
                 decimals={2}
                 className="mx-auto max-w-[180px]"
                 maxFontSize={20}
-                minFontSize={12}
-              />
-              {!isSimMode && wsConnected && effectivePortfolioValue > 0 && (
-                <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
-              )}
+                minFontSize={12} />
+
+              {!isSimMode && wsConnected && effectivePortfolioValue > 0 &&
+              <p className="text-xs text-green-500 mt-0.5">✅ Live</p>
+              }
             </div>
           </div>
 
           <div className="flex flex-col items-center gap-2 pt-2">
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              {isPositive ? (
-                <TrendingUp className="w-4 h-4 text-green-500" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-red-500" />
-              )}
+              {isPositive ?
+              <TrendingUp className="w-4 h-4 text-green-500" /> :
+
+              <TrendingDown className="w-4 h-4 text-red-500" />
+              }
               <span className={`text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                 {isPositive ? '+' : ''}${displayChange.value.toFixed(2)} ({displayChange.percentage.toFixed(1)}%)
               </span>
@@ -222,11 +222,11 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
             </div>
 
             <div className="flex items-center gap-2 flex-wrap justify-center">
-              {isLifetimePositive ? (
-                <TrendingUp className="w-4 h-4 text-green-500" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-red-500" />
-              )}
+              {isLifetimePositive ?
+              <TrendingUp className="w-4 h-4 text-green-500" /> :
+
+              <TrendingDown className="w-4 h-4 text-red-500" />
+              }
               <span className={`text-sm font-medium ${isLifetimePositive ? 'text-green-500' : 'text-red-500'}`}>
                 {isLifetimePositive ? '+' : ''}${lifetime.value.toFixed(2)} ({lifetime.percentage.toFixed(1)}%)
               </span>
@@ -240,12 +240,12 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
           <Button
             onClick={onClick}
             disabled={isSyncing}
-            className="w-full neon-glow bg-green-600 hover:bg-green-700"
-          >
-            {isSyncing ? 'Syncing...' : (isSimMode ? 'Sync Portfolio Data' : 'Sync Kraken Balance')}
+            className="w-full neon-glow bg-green-600 hover:bg-green-700">
+
+            {isSyncing ? 'Syncing...' : isSimMode ? 'Sync Portfolio Data' : 'Sync Kraken Balance'}
           </Button>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>);
+
 }
