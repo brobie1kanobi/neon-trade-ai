@@ -208,6 +208,11 @@ async function connectPrivateBalancesWebSocket() {
 
     ws.onopen = () => {
       GLOBAL_WS_STATE.isPrivateBalancesConnected = true;
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      if (typeof window !== 'undefined') {
+        window.__krakenWsConnected = true;
+        window.dispatchEvent(new CustomEvent('kraken:connected'));
+      }
       emitEvent('privateConnected', {});
       
       // Subscribe to balances only (balance key)
