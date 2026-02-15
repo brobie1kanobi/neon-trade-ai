@@ -63,9 +63,12 @@ export function useHoldings(isSimMode = true) {
     }
   }, [isSimMode, holdings]);
 
+  // CRITICAL: When isSimMode changes, invalidate cache and re-fetch
   useEffect(() => {
-    fetchHoldings();
-  }, [fetchHoldings]);
+    invalidateCache(`holdings:sim`);
+    invalidateCache(`holdings:real`);
+    fetchHoldings(false);
+  }, [isSimMode]);
 
   // Listen for holdings updates
   useEffect(() => {

@@ -63,9 +63,12 @@ export function useTrades(isSimMode = true) {
     }
   }, [isSimMode, trades]);
 
+  // CRITICAL: When isSimMode changes, invalidate cache and re-fetch
   useEffect(() => {
-    fetchTrades();
-  }, [fetchTrades]);
+    invalidateCache(`trades:sim`);
+    invalidateCache(`trades:real`);
+    fetchTrades(false);
+  }, [isSimMode]);
 
   // Listen for trade updates
   useEffect(() => {
