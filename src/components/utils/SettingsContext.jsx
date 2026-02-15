@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { base44 } from '@/api/base44Client';
 import { UserSettings } from "@/entities/all";
 import { useUser } from "@/components/hooks/useUser";
-import { getCached, invalidateCache } from "@/components/hooks/useDataFetching";
+import { invalidateCache } from "@/components/hooks/useDataFetching";
 
 const SettingsContext = createContext();
 
@@ -18,11 +18,11 @@ export const SettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastFetch, setLastFetch] = useState(0);
-  // CRITICAL: freshUser is the AUTHORITATIVE user object (fetched via base44.auth.me() each load)
-  // useUser cache can be stale for up to 10 minutes, so we DON'T expose it for role checks
-  const [freshUser, setFreshUser] = useState(null);
-  
-  // Use centralized user hook only to trigger initial load
+  // CRITICAL: This is the AUTHORITATIVE user object, fetched fresh via base44.auth.me()
+  // The useUser hook caches for 10 minutes and can have stale role data
+  const [authUser, setAuthUser] = useState(null);
+
+  // useUser only triggers initial load - we fetch fresh user inside loadSettings
   const { user: cachedUser } = useUser();
 
   const loadSettings = useCallback(async (force = false) => {
@@ -33,12 +33,11 @@ export const SettingsProvider = ({ children }) => {
 
     try {
       const cacheKey = `settings:${cachedUser.email}`;
-      
-      let currentSettings;
-      // CRITICAL: Always force-fetch settings for sim_trading_mode accuracy
+
+      // Always force-fetch settings to avoid stale sim_trading_mode
       invalidateCache(cacheKey);
       const userSettings = await UserSettings.filter({ created_by: cachedUser.email });
-      currentSettings = userSettings[0];
+      let currentSettings = userSettings[0];
 
       if (!currentSettings) {
         currentSettings = {
@@ -63,17 +62,17 @@ export const SettingsProvider = ({ children }) => {
         };
       }
 
-      // CRITICAL: Ensure timezone is always set
+      // Ensure timezone is always set
       if (!currentSettings.timezone || currentSettings.timezone.trim() === '') {
         currentSettings.timezone = "America/New_York";
       }
 
-      // CRITICAL: Use fresh user data for role check to avoid stale data forcing sim mode
-      const freshUser = await base44.auth.me();
-      const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!freshUser?.is_creator;
-      
-      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator, 'role:', fetchedUser?.role);
+      // CRITICAL: Fetch FRESH user for accurate role/is_creator checks
+      const meUser = await base44.auth.me();
+      const isAdmin = (meUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!meUser?.is_creator;
+
+      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator, 'role:', meUser?.role);
 
       // Enforce simulation mode for non-admin/non-creator
       if (!(isAdmin || isCreator) && currentSettings.sim_trading_mode === false && currentSettings.id) {
@@ -84,38 +83,35 @@ export const SettingsProvider = ({ children }) => {
         currentSettings.sim_trading_mode = true;
       }
 
-      // CRITICAL: Store the fresh user so the provider exposes up-to-date role/is_creator
-      setFreshUser(fetchedUser);
+      setAuthUser(meUser);
       setSettings(currentSettings);
       setLastFetch(Date.now());
       setIsLoading(false);
 
-      // Cache to localStorage
       try {
         localStorage.setItem('nt_settings_cache', JSON.stringify(currentSettings));
       } catch (_e) {}
 
-      return { settings: currentSettings, user: fetchedUser };
+      return { settings: currentSettings, user: meUser };
     } catch (error) {
       console.error("Settings loading error:", error);
-      
-      // Try to use localStorage cache
+
       try {
         const cache = localStorage.getItem('nt_settings_cache');
         if (cache) setSettings(JSON.parse(cache));
       } catch (_e) {}
-      
+
       setIsLoading(false);
-      return { settings, user };
+      return { settings, user: authUser };
     }
-  }, [user, settings]);
+  }, [cachedUser?.email]);
 
   const updateSetting = useCallback(async (key, value) => {
     try {
-      // CRITICAL: Fetch fresh user to avoid stale role/creator data causing forced sim mode
-      const freshUser = await base44.auth.me();
-      const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!freshUser?.is_creator;
+      // CRITICAL: Fetch fresh user for accurate role check
+      const meUser = await base44.auth.me();
+      const isAdmin = (meUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!meUser?.is_creator;
 
       // Force simulation mode for non-admin/non-creator
       if (key === 'sim_trading_mode' && !(isAdmin || isCreator)) {
@@ -125,47 +121,36 @@ export const SettingsProvider = ({ children }) => {
       if (settings?.id) {
         await UserSettings.update(settings.id, { [key]: value });
       } else {
-        const me = freshUser || user;
         await UserSettings.create({
           ...settings,
           [key]: value,
           sim_trading_mode: (key === 'sim_trading_mode') ? value : true,
-          created_by: me.email
+          created_by: meUser?.email || cachedUser?.email
         });
       }
 
-      // Update local state immediately for responsive UI
-      const newSettings = {
-        ...settings,
-        [key]: value,
-        // CRITICAL: When updating sim_trading_mode, use the new value directly
-        // For other keys, preserve the current sim_trading_mode
-        ...(key !== 'sim_trading_mode' ? {} : {})
-      };
+      // Update local state immediately
+      const newSettings = { ...settings, [key]: value };
       setSettings(newSettings);
-      
-      // Also update localStorage cache immediately
+      // Also update authUser in case role changed
+      setAuthUser(meUser);
+
       try {
         localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings));
       } catch (_e) {}
-      
-      // CRITICAL: If sim mode changed, force a full page reload to reset all component states
-      // This ensures no component retains stale sim/live data
+
+      // If sim mode changed, full reload to reset all component states
       if (key === 'sim_trading_mode') {
         console.log('[SettingsContext] sim_trading_mode changed to:', value, '- scheduling full refresh');
-        // Clear all caches
         invalidateCache();
         try { localStorage.removeItem('nt_settings_cache'); } catch (_e) {}
-        // Force reload after a short delay to let the DB update propagate
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
-        return; // Don't continue with normal flow
+        setTimeout(() => { window.location.reload(); }, 500);
+        return;
       }
 
-      // Invalidate cache and refresh
-      if (freshUser?.email || user?.email) {
-        invalidateCache(`settings:${freshUser?.email || user?.email}`);
+      // For other settings, invalidate and refresh
+      if (meUser?.email || cachedUser?.email) {
+        invalidateCache(`settings:${meUser?.email || cachedUser?.email}`);
       }
       setTimeout(() => loadSettings(true), 1500);
 
@@ -173,18 +158,18 @@ export const SettingsProvider = ({ children }) => {
       console.error("Error updating setting:", error);
       throw error;
     }
-  }, [settings, user, loadSettings]);
+  }, [settings, cachedUser, loadSettings]);
 
   useEffect(() => {
-    if (user) {
+    if (cachedUser) {
       loadSettings();
     }
-  }, [user, loadSettings]);
+  }, [cachedUser, loadSettings]);
 
   return (
     <SettingsContext.Provider value={{
       settings,
-      user,
+      user: authUser,
       isLoading,
       loadSettings,
       updateSetting
@@ -192,4 +177,4 @@ export const SettingsProvider = ({ children }) => {
       {children}
     </SettingsContext.Provider>
   );
-}
+};
