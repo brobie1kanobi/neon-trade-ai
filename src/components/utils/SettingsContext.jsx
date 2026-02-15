@@ -69,6 +69,8 @@ export const SettingsProvider = ({ children }) => {
           timezone: "America/New_York"
         };
       }
+      
+      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator);
 
       // CRITICAL: Ensure timezone is always set (for existing users who don't have it)
       // Also handle cases where timezone might be null, undefined, or empty string
