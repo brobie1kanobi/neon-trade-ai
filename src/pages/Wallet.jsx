@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Wallet, Transaction, UserSettings, User, Holding, Trade } from "@/entities/all";
+import { Wallet as WalletEntity, Transaction, UserSettings, User, Holding, Trade } from "@/entities/all";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
 import { getMarketData } from "@/functions/getMarketData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 import WalletBalance from "../components/wallet/WalletBalance";
 import BankConnection from "../components/wallet/BankConnection";
@@ -17,15 +18,19 @@ export default function WalletPage() {
   const [transactions, setTransactions] = useState([]);
   const [trades, setTrades] = useState([]);
   const [krakenTrades, setKrakenTrades] = useState([]);
-  const [settings, setSettings] = useState(null);
   const [user, setUser] = useState(null);
   const [activeAction, setActiveAction] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [portfolioMarketValue, setPortfolioMarketValue] = useState(0);
   const [lastLoadTime, setLastLoadTime] = useState(0);
 
-  // CRITICAL: Derive sim mode from settings - default to true while loading
-  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
+  // CRITICAL: Use shared SettingsContext as single source of truth for mode
+  // This prevents the page from defaulting to sim mode during loading/rate limits
+  const { settings, isLoading: settingsLoading } = useSettings();
+  
+  // CRITICAL: Derive sim mode from SHARED settings context - NOT local state
+  // Default to null while loading (not true) so we can show loading state
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : null;
   
   // Track previous mode to detect transitions
   const prevSimModeRef = React.useRef(isSimMode);
@@ -87,6 +92,9 @@ export default function WalletPage() {
   }, [isSimMode, krakenData, wsConnected, wsUsdBalance]);
 
   const loadData = useCallback(async () => {
+    // CRITICAL: Don't load data until we know the mode from SettingsContext
+    if (isSimMode === null) return;
+    
     if (typeof window !== "undefined") {
       if (window.__entityCooldownUntil && Date.now() < window.__entityCooldownUntil) {
         console.log('Wallet: Global cooldown active, skipping load');
@@ -101,40 +109,31 @@ export default function WalletPage() {
     }
 
     const now = Date.now();
-    if (lastLoadTime && (now - lastLoadTime) < 30000) { // REDUCED from 60s to 30s
+    if (lastLoadTime && (now - lastLoadTime) < 30000) {
       if (typeof window !== "undefined") window.__entityCallInFlight = false;
       return;
     }
 
     try {
-      // CRITICAL: Removed 5-second artificial delay - was causing slow loads
-      
       const currentUser = await User.me();
       setUser(currentUser);
-      const isAdmin = (currentUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!currentUser?.is_creator;
-      const isAdminOrCreator = isAdmin || isCreator;
       
-      // Fetch all entity data in parallel for faster load
-      const [userWalletArr, userTransactions, userSettingsArr] = await Promise.all([
-        Wallet.filter({ created_by: currentUser.email }),
-        Transaction.filter({ created_by: currentUser.email }, '-created_date'),
-        UserSettings.filter({ created_by: currentUser.email })
+      // Fetch wallet and transaction data in parallel
+      const [userWalletArr, userTransactions] = await Promise.all([
+        WalletEntity.filter({ created_by: currentUser.email }),
+        Transaction.filter({ created_by: currentUser.email }, '-created_date')
       ]);
       
       const userWallet = userWalletArr;
-      const currentSettings = userSettingsArr[0] || { sim_trading_mode: true };
-      if (!isAdminOrCreator) {
-        currentSettings.sim_trading_mode = true;
-      }
       
+      // CRITICAL: Use isSimMode from SettingsContext (already validated by context)
       const userTrades = await Trade.filter({ 
         created_by: currentUser.email, 
-        is_simulation: currentSettings.sim_trading_mode !== false 
+        is_simulation: isSimMode 
       }, '-created_date', 100);
       
-      // CRITICAL: In LIVE mode, fetch Kraken trades for display (sync is heavy, do less often)
-      if (currentSettings.sim_trading_mode === false) {
+      // CRITICAL: In LIVE mode, fetch Kraken trades for display
+      if (!isSimMode) {
         try {
           const response = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
           const data = response?.data || response;
@@ -157,10 +156,9 @@ export default function WalletPage() {
       
       setTransactions(userTransactions);
       setTrades(userTrades);
-      setSettings(currentSettings);
 
       // Compute portfolio value (SIM from DB, LIVE from Kraken)
-      if (currentSettings.sim_trading_mode) {
+      if (isSimMode) {
         // Simulation mode - use database holdings
         const userHoldings = await Holding.filter({ 
           created_by: currentUser.email, 
@@ -236,7 +234,7 @@ export default function WalletPage() {
         window.__entityCallInFlight = false;
       }
     }
-  }, [lastLoadTime]);
+  }, [lastLoadTime, isSimMode]);
 
   useEffect(() => {
     loadData();
@@ -250,7 +248,7 @@ export default function WalletPage() {
   
   // CRITICAL: When mode changes, reset all data to prevent sim data showing in live mode
   React.useEffect(() => {
-    if (prevSimModeRef.current !== isSimMode && settings) {
+    if (prevSimModeRef.current !== isSimMode && isSimMode !== null) {
       console.log('[Wallet] Mode changed from', prevSimModeRef.current ? 'SIM' : 'LIVE', 'to', isSimMode ? 'SIM' : 'LIVE', '- resetting data');
       prevSimModeRef.current = isSimMode;
       setPortfolioMarketValue(0);
@@ -258,7 +256,7 @@ export default function WalletPage() {
       setLastLoadTime(0); // Reset cooldown to allow immediate reload
       loadData();
     }
-  }, [isSimMode, settings, loadData]);
+  }, [isSimMode, loadData]);
 
   // CRITICAL: Listen for Kraken sync events
   useEffect(() => {
@@ -278,7 +276,7 @@ export default function WalletPage() {
   }, [fetchKrakenData, loadData]);
 
   const executeTransaction = async (transactionData) => {
-    const currentIsSimMode = settings?.sim_trading_mode !== false;
+    const currentIsSimMode = isSimMode;
 
     try {
       await Transaction.create({
@@ -325,7 +323,7 @@ export default function WalletPage() {
       };
 
       if (wallet.id) {
-        await Wallet.update(wallet.id, updateData);
+        await WalletEntity.update(wallet.id, updateData);
       } else {
         const newWalletData = {
           cash_balance: currentIsSimMode ? Math.max(0, newBalanceValue) : 0,
@@ -337,7 +335,7 @@ export default function WalletPage() {
           created_by: user.email
         };
         
-        await Wallet.create(newWalletData);
+        await WalletEntity.create(newWalletData);
       }
       
       await loadData();
@@ -378,8 +376,17 @@ export default function WalletPage() {
   const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
   const displayCashBalance = isSimMode ? (wallet?.cash_balance || 0) : krakenCashBalance;
 
-  // CRITICAL: Don't block rendering - show UI immediately with loading states
-  // The wallet components handle their own loading states
+  // CRITICAL: Don't render until we know the mode - prevents showing sim UI in live mode
+  if (isSimMode === null || settingsLoading) {
+    return (
+      <div className="p-4 flex items-center justify-center min-h-[60vh]" style={{ backgroundColor: 'var(--primary-bg)' }}>
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-green-400 rounded-full animate-spin mx-auto mb-3" style={{ borderTopColor: 'var(--neon-green)' }} />
+          <p style={{ color: 'var(--text-secondary)' }}>Loading wallet...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: 'var(--primary-bg)' }}>
