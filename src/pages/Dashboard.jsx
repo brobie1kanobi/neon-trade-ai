@@ -1692,10 +1692,7 @@ export default function Dashboard() {
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  const hasRealCash = Number(wallet?.real_cash_balance || 0) > 0 || (wsConnected && wsUsdBalance > 0);
-  const hasRealHoldings = (Array.isArray(holdings) && holdings.some(h => h.is_simulation === false)) || (wsConnected && wsTotalAssets > 0);
-  const hasRealTrades = Array.isArray(trades) && trades.some(t => t.is_simulation === false);
-  const showZerosInLive = !isSimMode && !hasRealCash && !hasRealHoldings && !hasRealTrades;
+  const showZerosInLive = !isSimMode && !providerHasData && !effectiveHoldings.length && !(Array.isArray(trades) && trades.some(t => t.is_simulation === false));
 
   // CRITICAL: Don't render with wrong mode - wait for settings
   if (isSimMode === null || settingsLoading) {
