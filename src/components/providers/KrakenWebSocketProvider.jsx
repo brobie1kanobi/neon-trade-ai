@@ -18,15 +18,36 @@ export const useKrakenWebSocket = () => {
 };
 
 /**
- * Helper: compute portfolio metrics from raw WS balances + prices.
- * Extracted to avoid duplication between interval and manual refresh.
+ * Helper: compute portfolio metrics from GLOBAL WS state directly.
+ * CRITICAL: Reads from GLOBAL_WS_STATE, not from React state (avoids stale closures).
  */
-function computeMetrics(wsManager) {
-  const isConnected = !!wsManager.isConnected;
-  const prices = wsManager.getAllPrices?.() || {};
-  const balances = wsManager.getAllBalances?.() || {};
-  const orders = wsManager.getAllOrders?.() || {};
-  const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
+function computeMetricsFromGlobal() {
+  // Read connection state directly from global singleton - NOT from React state
+  const isConnected = !!(
+    (typeof window !== 'undefined' && window.__krakenWsConnected) ||
+    false
+  );
+  
+  // Read data from global Maps directly
+  const prices = {};
+  const balances = {};
+  const orders = {};
+
+  // Access window globals set by the WS manager
+  if (typeof window !== 'undefined') {
+    // Prices from global
+    if (window.__krakenWsPrices) {
+      Object.assign(prices, window.__krakenWsPrices);
+    }
+    // Balances from global
+    if (window.__krakenWsBalances) {
+      Object.assign(balances, window.__krakenWsBalances);
+    }
+    // Orders from global
+    if (window.__krakenWsOrders) {
+      Object.assign(orders, window.__krakenWsOrders);
+    }
+  }
 
   let usdBalance = 0;
   let cryptoHoldingsValue = 0;
@@ -51,7 +72,7 @@ function computeMetrics(wsManager) {
     prices,
     balances,
     orders,
-    executions,
+    executions: [],
     usdBalance,
     cryptoHoldingsValue,
     totalPortfolioValue: usdBalance + cryptoHoldingsValue,
