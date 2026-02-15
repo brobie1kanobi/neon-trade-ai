@@ -31,15 +31,23 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const wsLastUpdated = wsConnected ? new Date().toISOString() : null;
 
   // CRITICAL: Cache last known good values to prevent showing $0
-  const lastKnownRef = React.useRef({ cash: null, portfolio: null, total: null });
+  // RESET cache when mode changes to prevent sim data showing in live mode
+  const lastKnownRef = React.useRef({ cash: null, portfolio: null, total: null, mode: isSimMode });
+  
+  // CRITICAL: Reset cached values when mode changes
+  React.useEffect(() => {
+    if (lastKnownRef.current.mode !== isSimMode) {
+      console.log('[WalletBalance] Mode changed to', isSimMode ? 'SIM' : 'LIVE', '- resetting cache');
+      lastKnownRef.current = { cash: null, portfolio: null, total: null, mode: isSimMode };
+    }
+  }, [isSimMode]);
 
   const displayCash = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
 
-    // CRITICAL: Use cashBalance prop from parent (REST API data) as PRIMARY source
-    // Parent (Wallet page) uses krakenCashBalance which prioritizes REST API
+    // LIVE MODE ONLY: Use Kraken data sources
     const propCash = cashBalance || 0;
     const dbCash = wallet?.real_cash_balance || 0;
     const wsValue = wsUsdBalance || 0;
@@ -61,21 +69,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       return portfolioMarketValue;
     }
     
-    // CRITICAL: portfolioMarketValue prop comes from parent (Wallet page) which uses
-    // REST API (krakenData) as PRIMARY source - this is the most reliable
-    // Only fall back to WebSocket if portfolioMarketValue is not available
+    // LIVE MODE ONLY: Use Kraken data sources
     const propValue = portfolioMarketValue || 0;
     const wsValue = wsCryptoHoldingsValue || 0;
     
-    // Use prop value first (REST API via parent), then WebSocket as fallback
     const value = propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
     
-    // Cache valid values
     if (value > 0) {
       lastKnownRef.current.portfolio = value;
     }
     
-    // Return cached value if current is 0 but we had data before
     return value > 0 ? value : (lastKnownRef.current.portfolio ?? value);
   }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
 

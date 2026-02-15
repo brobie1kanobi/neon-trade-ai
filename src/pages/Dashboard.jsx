@@ -1059,8 +1059,8 @@ export default function Dashboard() {
   const { settings } = useSettings();
   const location = useLocation();
   
-  // CRITICAL: Default to TRUE while settings are loading to prevent showing SIM data in LIVE mode
-  const isSimMode = settings ? (settings.sim_trading_mode === true) : true;
+  // CRITICAL: Derive sim mode from settings - default to true while loading
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
   const { wallet, loading: walletLoading, refresh: refreshWallet } = useWallet();
   const { trades, loading: tradesLoading, addTrade } = useTrades(isSimMode);
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
@@ -1097,11 +1097,31 @@ export default function Dashboard() {
   const [lifetimeChange, setLifetimeChange] = useState({ value: 0, percentage: 0 });
   
   // CRITICAL: Cache last known good balances to prevent showing $0 during API failures
+  // RESET cache when mode changes to prevent sim data showing in live mode
   const lastKnownBalancesRef = React.useRef({
     cash: null,
     portfolio: null,
-    total: null
+    total: null,
+    mode: isSimMode
   });
+  
+  // CRITICAL: Reset cached values when sim mode changes
+  React.useEffect(() => {
+    if (lastKnownBalancesRef.current.mode !== isSimMode) {
+      console.log('[Dashboard] Mode changed to', isSimMode ? 'SIM' : 'LIVE', '- resetting balance cache');
+      lastKnownBalancesRef.current = { cash: null, portfolio: null, total: null, mode: isSimMode };
+      // Also reset Kraken API balances state
+      setKrakenApiBalances({
+        usdBalance: 0,
+        cryptoValue: 0,
+        totalValue: 0,
+        holdings: [],
+        costBasis: 0,
+        unrealizedPnL: 0,
+        loaded: false
+      });
+    }
+  }, [isSimMode]);
   
   // CRITICAL: Kraken balances come from WebSocket Provider (single source of truth)
   // REST is ONLY used for initial snapshot - WebSocket handles live updates

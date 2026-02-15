@@ -24,8 +24,11 @@ export default function WalletPage() {
   const [portfolioMarketValue, setPortfolioMarketValue] = useState(0);
   const [lastLoadTime, setLastLoadTime] = useState(0);
 
-  // CRITICAL: Default to TRUE while settings are loading to prevent showing SIM data as LIVE
+  // CRITICAL: Derive sim mode from settings - default to true while loading
   const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
+  
+  // Track previous mode to detect transitions
+  const prevSimModeRef = React.useRef(isSimMode);
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   const {
@@ -244,6 +247,18 @@ export default function WalletPage() {
       setActiveAction(action);
     }
   }, [loadData]);
+  
+  // CRITICAL: When mode changes, reset all data to prevent sim data showing in live mode
+  React.useEffect(() => {
+    if (prevSimModeRef.current !== isSimMode && settings) {
+      console.log('[Wallet] Mode changed from', prevSimModeRef.current ? 'SIM' : 'LIVE', 'to', isSimMode ? 'SIM' : 'LIVE', '- resetting data');
+      prevSimModeRef.current = isSimMode;
+      setPortfolioMarketValue(0);
+      setKrakenTrades([]);
+      setLastLoadTime(0); // Reset cooldown to allow immediate reload
+      loadData();
+    }
+  }, [isSimMode, settings, loadData]);
 
   // CRITICAL: Listen for Kraken sync events
   useEffect(() => {
