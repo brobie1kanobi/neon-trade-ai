@@ -775,12 +775,9 @@ export function useKrakenWebSocketManager(options = {}) {
   // Watchdog: reconnect if disconnected - VERY conservative to prevent rate limits
   useEffect(() => {
     const interval = setInterval(() => {
-      // CRITICAL: Only reconnect if we have very few attempts AND been disconnected for a while
-      // This prevents spam reconnects that cause rate limit errors
-      if (GLOBAL_WS_STATE.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        // Already hit max retries, don't spam
-        return;
-      }
+      // Reset reconnect counter every watchdog cycle so we always try to reconnect
+      // The 60s interval itself is the rate limit
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
       
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
