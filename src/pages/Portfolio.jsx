@@ -17,6 +17,7 @@ import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 
 
@@ -36,9 +37,10 @@ export default function Portfolio() {
 
   const [error, setError] = useState(null);
 
-  // CRITICAL: Determine sim mode FIRST
-  // IMPORTANT: Default to TRUE (sim mode) while settings are loading to prevent showing SIM data in LIVE mode
-  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
+  // CRITICAL: Use SettingsContext as THE source of truth for mode
+  // This prevents pages from incorrectly defaulting to sim mode during rate limits
+  const { settings: ctxSettings, isLoading: ctxSettingsLoading } = useSettings();
+  const isSimMode = ctxSettings ? (ctxSettings.sim_trading_mode !== false) : null;
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   // WebSocket = live data, REST snapshot = initial load only
