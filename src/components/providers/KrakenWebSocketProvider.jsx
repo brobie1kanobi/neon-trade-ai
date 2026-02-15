@@ -226,7 +226,7 @@ export function KrakenWebSocketProvider({ children }) {
     if (shouldSkip) return null;
 
     const reason = force ? 'forced' : needsInitialSnapshot ? 'initial' : 'recovery';
-    console.log(`[KrakenWSProvider] REST fetch (${reason})`);
+    console.log(`[KrakenWSProvider] REST fetch (${reason}) at ${new Date().toISOString()}`);
     lastRestCallRef.current = now;
 
     try {
