@@ -60,22 +60,18 @@ export const SettingsProvider = ({ children }) => {
           timezone: "America/New_York"
         };
       }
-      
-      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator);
 
-      // CRITICAL: Ensure timezone is always set (for existing users who don't have it)
-      // Also handle cases where timezone might be null, undefined, or empty string
+      // CRITICAL: Ensure timezone is always set
       if (!currentSettings.timezone || currentSettings.timezone.trim() === '') {
         currentSettings.timezone = "America/New_York";
-        console.log('[SettingsContext] Timezone was empty, set to default: America/New_York');
-      } else {
-        console.log('[SettingsContext] Loaded timezone:', currentSettings.timezone);
       }
 
       // CRITICAL: Use fresh user data for role check to avoid stale data forcing sim mode
       const freshUser = await base44.auth.me();
       const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
       const isCreator = !!freshUser?.is_creator;
+      
+      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator);
 
       // Enforce simulation mode for non-admin/non-creator
       if (!(isAdmin || isCreator) && currentSettings.sim_trading_mode === false && currentSettings.id) {
@@ -94,7 +90,8 @@ export const SettingsProvider = ({ children }) => {
         localStorage.setItem('nt_settings_cache', JSON.stringify(currentSettings));
       } catch (_e) {}
 
-      return { settings: currentSettings, user };
+      // CRITICAL: Return freshUser so consumers get up-to-date role/is_creator
+      return { settings: currentSettings, user: freshUser };
     } catch (error) {
       console.error("Settings loading error:", error);
       
