@@ -143,6 +143,11 @@ function connectPublicWebSocket(priceSymbols = []) {
 
     ws.onopen = () => {
       GLOBAL_WS_STATE.isPublicConnected = true;
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      if (typeof window !== 'undefined') {
+        window.__krakenWsConnected = true;
+        window.dispatchEvent(new CustomEvent('kraken:connected'));
+      }
       emitEvent('publicConnected', {});
       
       // Subscribe to prices if symbols provided
