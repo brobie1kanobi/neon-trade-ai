@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { useKrakenWebSocketManager } from '@/components/hooks/useKrakenWebSocketManager';
 import { useSettings } from '@/components/utils/SettingsContext';
 import { base44 } from '@/api/base44Client';
+import { invalidateCache } from '@/components/hooks/useDataFetching';
 
 // Track last execution timestamp for recovery
 let lastExecutionTimestamp = null;
@@ -17,26 +18,62 @@ export const useKrakenWebSocket = () => {
 };
 
 /**
- * Global WebSocket Provider - SINGLE SOURCE OF TRUTH for ALL Kraken REALTIME data
- * 
- * ARCHITECTURE:
- * - WebSocket: LIVE prices, balance updates, order fills, executions
- * - REST API: Initial snapshot, order placement, historical data, recovery
- * 
- * This provider:
- * 1. Maintains WebSocket connections for real-time data
- * 2. Fetches initial REST snapshot on mount (one-time)
- * 3. Updates state from WebSocket deltas (real-time)
- * 4. NEVER polls REST for live data after WebSocket is active
+ * Helper: compute portfolio metrics from raw WS balances + prices.
+ * Extracted to avoid duplication between interval and manual refresh.
+ */
+function computeMetrics(wsManager) {
+  const isConnected = !!wsManager.isConnected;
+  const prices = wsManager.getAllPrices?.() || {};
+  const balances = wsManager.getAllBalances?.() || {};
+  const orders = wsManager.getAllOrders?.() || {};
+  const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
+
+  let usdBalance = 0;
+  let cryptoHoldingsValue = 0;
+  let totalAssets = 0;
+
+  if (balances && Object.keys(balances).length > 0) {
+    usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
+
+    Object.entries(balances).forEach(([asset, balance]) => {
+      if (asset === 'USD' || asset === 'ZUSD') return;
+      const quantity = balance.available || balance.balance || 0;
+      if (quantity <= 0.00001) return;
+      const pair = `${asset}/USD`;
+      const price = prices[pair]?.price || 0;
+      cryptoHoldingsValue += quantity * price;
+      totalAssets++;
+    });
+  }
+
+  return {
+    isConnected,
+    prices,
+    balances,
+    orders,
+    executions,
+    usdBalance,
+    cryptoHoldingsValue,
+    totalPortfolioValue: usdBalance + cryptoHoldingsValue,
+    totalAssets
+  };
+}
+
+/**
+ * Global WebSocket Provider - SINGLE SOURCE OF TRUTH for ALL Kraken data.
+ *
+ * Data priority (highest to lowest):
+ *   1. WebSocket real-time streams (balances, prices)
+ *   2. REST snapshot (getKrakenBalance) – initial load & post-trade verification
+ *   3. Nothing (show loading / 0)
+ *
+ * Components consume `useKrakenWebSocket()` and NEVER call REST for balances.
  */
 export function KrakenWebSocketProvider({ children }) {
   const { settings, user } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
-  
-  // Only connect in LIVE mode with authenticated user
   const shouldConnect = !isSimMode && !!user?.email;
 
-  // Initialize WebSocket manager with ALL subscriptions
   const wsManager = useKrakenWebSocketManager({
     subscribeToPrices: shouldConnect,
     priceSymbols: settings?.watched_crypto || [],
@@ -45,12 +82,11 @@ export function KrakenWebSocketProvider({ children }) {
     subscribeToExecutions: shouldConnect
   });
 
-  // CRITICAL: REST API is ONLY for initial snapshot and post-action verification
-  // WebSocket handles ALL live data after initial load
   const lastRestCallRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
-  const MIN_REST_INTERVAL = 30000; // 30 seconds - REST is backup only, not primary data source
+  const MIN_REST_INTERVAL = 30000;
 
+  // ── Merged state: WS real-time + REST snapshot ──
   const [state, setState] = useState({
     isConnected: false,
     prices: {},
@@ -63,7 +99,6 @@ export function KrakenWebSocketProvider({ children }) {
     totalAssets: 0
   });
 
-  // CRITICAL: Centralized REST API data - fetched once and shared across all components
   const [restData, setRestData] = useState({
     krakenBalance: null,
     krakenPnL: null,
@@ -74,246 +109,142 @@ export function KrakenWebSocketProvider({ children }) {
     error: null
   });
 
-  // Update state when WebSocket data changes
-  // CRITICAL: Reduced frequency from 2s to 5s to prevent excessive updates
+  // ── Reactive WS state updates via window events (no stale closure) ──
   useEffect(() => {
     if (!shouldConnect) return;
 
-    const updateState = () => {
-      try {
-        const isConnected = !!wsManager.isConnected;
-        const prices = wsManager.getAllPrices?.() || {};
-        const balances = wsManager.getAllBalances?.() || {};
-        const orders = wsManager.getAllOrders?.() || {};
-        const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
+    // Immediate first read
+    setState(computeMetrics(wsManager));
 
-        // Calculate portfolio metrics
-        let usdBalance = 0;
-        let cryptoHoldingsValue = 0;
-        let totalAssets = 0;
+    // Listen to WS data events instead of blind interval
+    const handleBalanceUpdate = () => setState(computeMetrics(wsManager));
+    const handlePriceUpdate = () => setState(computeMetrics(wsManager));
 
-        if (balances && Object.keys(balances).length > 0) {
-          // USD balance - WebSocket only returns available, not locked
-          usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
-          
-          // Calculate crypto holdings value
-          // NOTE: WebSocket balance.balance is AVAILABLE only (NOT including locked in orders)
-          // This will be LESS than REST API total when assets are in pending sell orders
-          Object.entries(balances).forEach(([asset, balance]) => {
-            if (asset === 'USD' || asset === 'ZUSD') return;
-            
-            // Use available balance from WebSocket
-            const quantity = balance.available || balance.balance || 0;
-            if (quantity <= 0.00001) return;
-            
-            const pair = `${asset}/USD`;
-            const priceInfo = prices[pair];
-            const price = priceInfo?.price || 0;
-            
-            cryptoHoldingsValue += quantity * price;
-            totalAssets++;
-          });
-        }
+    window.addEventListener('kraken:balance-update', handleBalanceUpdate);
+    window.addEventListener('kraken:price-update', handlePriceUpdate);
 
-        const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
+    // Fallback interval at 5s for connection-state changes
+    const interval = setInterval(() => setState(computeMetrics(wsManager)), 5000);
 
-        setState({
-          isConnected,
-          prices,
-          balances,
-          orders,
-          executions,
-          usdBalance,
-          cryptoHoldingsValue,
-          totalPortfolioValue,
-          totalAssets
-        });
-      } catch (err) {
-        console.error('[KrakenWebSocketProvider] State update error:', err);
-      }
+    return () => {
+      window.removeEventListener('kraken:balance-update', handleBalanceUpdate);
+      window.removeEventListener('kraken:price-update', handlePriceUpdate);
+      clearInterval(interval);
     };
+  }, [shouldConnect]); // wsManager is stable singleton
 
-    // Update immediately
-    updateState();
-
-    // Update every 3s for responsive balance cards while avoiding excessive re-renders
-    const interval = setInterval(updateState, 3000);
-
-    return () => clearInterval(interval);
-  }, [shouldConnect]); // CRITICAL: Removed wsManager from deps to prevent infinite loop
-
-  // Provide refresh function - CRITICAL: Force immediate state update after refresh
-  const refresh = async () => {
-    console.log('[KrakenWebSocketProvider] Manual refresh requested');
+  // ── Manual refresh (WS re-subscribe + immediate state push) ──
+  const refresh = useCallback(async () => {
+    console.log('[KrakenWSProvider] Manual refresh');
     try {
       await wsManager.refreshBalances?.();
       await wsManager.refreshOrders?.();
-      
-      // CRITICAL: Force immediate state update after refresh
-      const isConnected = !!wsManager.isConnected;
-      const prices = wsManager.getAllPrices?.() || {};
-      const balances = wsManager.getAllBalances?.() || {};
-      const orders = wsManager.getAllOrders?.() || {};
-      const executions = wsManager.lastExecution ? [wsManager.lastExecution] : [];
-
-      // Recalculate portfolio metrics
-      let usdBalance = 0;
-      let cryptoHoldingsValue = 0;
-      let totalAssets = 0;
-
-      if (balances && Object.keys(balances).length > 0) {
-        usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
-        
-        Object.entries(balances).forEach(([asset, balance]) => {
-          if (asset === 'USD' || asset === 'ZUSD') return;
-          
-          const quantity = balance.balance || 0;
-          if (quantity <= 0.00001) return;
-          
-          const pair = `${asset}/USD`;
-          const priceInfo = prices[pair];
-          const price = priceInfo?.price || 0;
-          
-          cryptoHoldingsValue += quantity * price;
-          totalAssets++;
-        });
-      }
-
-      const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
-
-      setState({
-        isConnected,
-        prices,
-        balances,
-        orders,
-        executions,
-        usdBalance,
-        cryptoHoldingsValue,
-        totalPortfolioValue,
-        totalAssets
-      });
-      
-      console.log('[KrakenWebSocketProvider] Refresh complete - USD:', usdBalance.toFixed(2), 'Crypto:', cryptoHoldingsValue.toFixed(2));
+      // Allow a tick for WS manager to update its maps
+      await new Promise(r => setTimeout(r, 300));
+      setState(computeMetrics(wsManager));
     } catch (err) {
-      console.error('[KrakenWebSocketProvider] Refresh error:', err);
+      console.error('[KrakenWSProvider] Refresh error:', err);
     }
-  };
+  }, [wsManager]);
 
-  // CRITICAL: Listen for trade completion events and auto-refresh
+  // ── Trade / sync events: aggressive invalidation ──
   useEffect(() => {
     const handleTradeCompleted = () => {
-      console.log('[KrakenWebSocketProvider] Trade completed event received');
-      // Update execution timestamp for recovery
+      console.log('[KrakenWSProvider] Trade completed – invalidating caches');
       lastExecutionTimestamp = new Date().toISOString();
-      
-      // Small delay to allow Kraken to process the trade
+      // Nuke ALL financial caches so no stale data survives
+      invalidateCache();
+      // Force REST re-fetch (Kraken needs ~2s to settle)
       setTimeout(() => {
+        fetchRestData(true);
+        refresh();
+      }, 2000);
+    };
+
+    const handleSync = () => {
+      invalidateCache();
+      setTimeout(() => {
+        fetchRestData(true);
         refresh();
       }, 1500);
     };
 
     window.addEventListener('trade:completed', handleTradeCompleted);
-    window.addEventListener('kraken:synced', handleTradeCompleted);
-    
+    window.addEventListener('kraken:synced', handleSync);
+    window.addEventListener('kraken:order-placed', () => setTimeout(() => fetchRestData(true), 2000));
+
     return () => {
       window.removeEventListener('trade:completed', handleTradeCompleted);
-      window.removeEventListener('kraken:synced', handleTradeCompleted);
+      window.removeEventListener('kraken:synced', handleSync);
     };
-  }, []); // Empty deps - refresh is stable
+  }, [refresh]); // fetchRestData added below
 
-  // CRITICAL: WebSocket recovery - detect disconnects and recover missed trades
+  // ── WebSocket reconnect recovery ──
   useEffect(() => {
     if (!shouldConnect) return;
-    
+
     const handleReconnect = async () => {
       if (!lastExecutionTimestamp) return;
-      
-      console.log('[KrakenWebSocketProvider] WebSocket reconnected - checking for missed trades');
-      
+      console.log('[KrakenWSProvider] Reconnected – recovering missed trades');
       try {
-        const recoveryRes = await base44.functions.invoke('wsRecovery', {
+        const res = await base44.functions.invoke('wsRecovery', {
           action: 'recoverMissedTrades',
           since_timestamp: lastExecutionTimestamp
         });
-        
-        const result = recoveryRes?.data || recoveryRes;
-        
+        const result = res?.data || res;
         if (result?.trades_recovered > 0) {
-          console.log(`[KrakenWebSocketProvider] Recovered ${result.trades_recovered} missed trades`);
-          // Dispatch event to refresh UI
-          window.dispatchEvent(new CustomEvent('kraken:synced', { 
-            detail: { recovered: result.trades_recovered } 
-          }));
+          window.dispatchEvent(new CustomEvent('kraken:synced', { detail: { recovered: result.trades_recovered } }));
         }
       } catch (e) {
-        console.warn('[KrakenWebSocketProvider] Recovery check failed:', e.message);
+        console.warn('[KrakenWSProvider] Recovery failed:', e.message);
       }
     };
-    
-    // Listen for WebSocket reconnect events
+
     window.addEventListener('kraken:ws-reconnected', handleReconnect);
-    
-    return () => {
-      window.removeEventListener('kraken:ws-reconnected', handleReconnect);
-    };
+    return () => window.removeEventListener('kraken:ws-reconnected', handleReconnect);
   }, [shouldConnect]);
 
-  // CRITICAL: REST API fetcher - ONLY for initial snapshot and post-action verification
-  // After WebSocket is active, this should rarely be called
+  // ── REST fetcher ──
   const fetchRestData = useCallback(async (force = false) => {
     if (isSimMode) return null;
-    
+
     const now = Date.now();
     const timeSinceLastFetch = now - lastRestCallRef.current;
-    
-    const wsConnected = state.isConnected;
     const needsInitialSnapshot = !hasInitialSnapshotRef.current;
-    const isRecoveryMode = !wsConnected && timeSinceLastFetch > MIN_REST_INTERVAL;
-    const isStaleData = timeSinceLastFetch > 10000 && needsInitialSnapshot;
-    
-    if (!force && !needsInitialSnapshot && !isRecoveryMode && !isStaleData) {
-      console.log('[KrakenWebSocketProvider] Skipping REST - WebSocket is active');
+    const isRecoveryMode = !state.isConnected && timeSinceLastFetch > MIN_REST_INTERVAL;
+
+    if (!force && !needsInitialSnapshot && !isRecoveryMode) {
       return null;
     }
-    
-    // Check if already loading - but allow force to proceed
+
+    // Prevent concurrent fetches unless forced
     let shouldSkip = false;
     setRestData(prev => {
-      if (prev.isLoading && !force) {
-        shouldSkip = true;
-        return prev;
-      }
+      if (prev.isLoading && !force) { shouldSkip = true; return prev; }
       return { ...prev, isLoading: true, error: null };
     });
-    
-    if (shouldSkip) {
-      console.log('[KrakenWebSocketProvider] REST fetch already in progress');
-      return null;
-    }
-    
-    const reason = force ? 'forced' : needsInitialSnapshot ? 'initial snapshot' : 'WS recovery';
-    console.log(`[KrakenWebSocketProvider] Fetching REST snapshot (${reason})...`);
+    if (shouldSkip) return null;
+
+    const reason = force ? 'forced' : needsInitialSnapshot ? 'initial' : 'recovery';
+    console.log(`[KrakenWSProvider] REST fetch (${reason})`);
     lastRestCallRef.current = now;
-    
+
     try {
-      // CRITICAL: Add timeout to prevent hanging forever
       const [balanceRes, ordersRes] = await Promise.all([
         Promise.race([
           base44.functions.invoke('getKrakenBalance', {}),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Balance fetch timeout')), 15000))
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))
         ]).catch(e => ({ error: e.message, success: false })),
         Promise.race([
           base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Orders fetch timeout')), 15000))
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))
         ]).catch(e => ({ error: e.message }))
       ]);
-      
+
       const balanceData = balanceRes?.data || balanceRes;
       const ordersData = ordersRes?.data || ordersRes;
-      
-      // Mark initial snapshot as complete even on failure so we don't keep retrying
       hasInitialSnapshotRef.current = true;
-      
+
       setRestData(prev => ({
         krakenBalance: balanceData?.success ? balanceData : prev.krakenBalance,
         krakenOrders: ordersData?.orders || prev.krakenOrders || [],
@@ -321,146 +252,109 @@ export function KrakenWebSocketProvider({ children }) {
         krakenPnL: prev.krakenPnL,
         lastFetchTime: Date.now(),
         isLoading: false,
-        error: (balanceData?.success ? null : (balanceData?.error || null))
+        error: balanceData?.success ? null : (balanceData?.error || null)
       }));
-      
-      console.log('[KrakenWebSocketProvider] REST snapshot complete - Balance:', !!balanceData?.success, 'Orders:', (ordersData?.orders || []).length);
-      
+
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('kraken:snapshot-loaded', { 
-          detail: { balance: balanceData, orders: ordersData?.orders } 
+        window.dispatchEvent(new CustomEvent('kraken:snapshot-loaded', {
+          detail: { balance: balanceData, orders: ordersData?.orders }
         }));
       }
-      
+
       return { krakenBalance: balanceData, krakenOrders: ordersData?.orders || [] };
     } catch (err) {
-      console.error('[KrakenWebSocketProvider] REST snapshot error:', err);
-      // CRITICAL: Always clear loading state so UI doesn't stay stuck
+      console.error('[KrakenWSProvider] REST error:', err);
       hasInitialSnapshotRef.current = true;
       setRestData(prev => ({ ...prev, isLoading: false, error: err.message }));
       return null;
     }
   }, [isSimMode, state.isConnected]);
 
-  // CRITICAL: Fetch PnL separately and less frequently (every 60s)
+  // ── PnL fetcher (separate, less frequent) ──
   const fetchPnL = useCallback(async () => {
     if (isSimMode) return;
-    
     try {
       const response = await base44.functions.invoke('getKrakenPnL', {});
       const data = response?.data || response;
-      
       if (data?.success) {
-        setRestData(prev => ({
-          ...prev,
-          krakenPnL: data
-        }));
-        console.log('[KrakenWebSocketProvider] PnL updated:', data.pnl_lifetime?.toFixed(2));
+        setRestData(prev => ({ ...prev, krakenPnL: data }));
       }
     } catch (err) {
-      console.error('[KrakenWebSocketProvider] PnL fetch error:', err);
+      console.error('[KrakenWSProvider] PnL error:', err);
     }
   }, [isSimMode]);
 
-  // CRITICAL: Initial REST snapshot on mount (one-time only)
-  // WebSocket handles all subsequent updates
+  // ── Initial REST snapshot (one-time) ──
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
       const timer = setTimeout(() => {
-        console.log('[KrakenWebSocketProvider] Fetching initial REST snapshot...');
         fetchRestData(true);
-        // Fetch PnL separately (less critical)
         setTimeout(() => fetchPnL(), 5000);
       }, 500);
-      
-      // CRITICAL: Safety valve - if REST hasn't loaded after 20s, clear loading state
-      // This prevents the UI from being stuck in "loading" indefinitely
+
       const safetyTimer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
-          console.warn('[KrakenWebSocketProvider] Safety valve: clearing loading state after 20s');
           hasInitialSnapshotRef.current = true;
           setRestData(prev => ({ ...prev, isLoading: false }));
         }
       }, 20000);
-      
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(safetyTimer);
-      };
-    }
-  }, [shouldConnect]); // eslint-disable-line react-hooks-deps
 
-  // CRITICAL: NO periodic REST polling - WebSocket handles live data
-  // Only fetch PnL periodically (it's not available via WebSocket)
+      return () => { clearTimeout(timer); clearTimeout(safetyTimer); };
+    }
+  }, [shouldConnect]);
+
+  // ── PnL polling (only thing not available via WS) ──
   useEffect(() => {
     if (!shouldConnect) return;
-    
-    // PnL is the ONLY thing we poll - it's not available via WebSocket
-    const pnlInterval = setInterval(() => {
-      fetchPnL();
-    }, 120000); // 2 minutes
-    
-    return () => {
-      clearInterval(pnlInterval);
-    };
+    const id = setInterval(fetchPnL, 120000);
+    return () => clearInterval(id);
   }, [shouldConnect, fetchPnL]);
 
-  // CRITICAL: Recovery mode - if WebSocket disconnects, fall back to REST temporarily
+  // ── Recovery mode: poll REST while WS is down ──
   useEffect(() => {
-    if (!shouldConnect) return;
-    
-    let recoveryInterval = null;
-    
-    if (!state.isConnected && hasInitialSnapshotRef.current) {
-      console.log('[KrakenWebSocketProvider] WebSocket disconnected - entering recovery mode');
-      
-      // Poll REST every 60s while WebSocket is down
-      recoveryInterval = setInterval(() => {
-        if (!state.isConnected) {
-          console.log('[KrakenWebSocketProvider] Recovery mode - fetching REST data');
-          fetchRestData(true);
-        }
-      }, 60000);
-    }
-    
-    return () => {
-      if (recoveryInterval) clearInterval(recoveryInterval);
-    };
+    if (!shouldConnect || state.isConnected || !hasInitialSnapshotRef.current) return;
+    console.log('[KrakenWSProvider] WS down – entering recovery polling');
+    const id = setInterval(() => fetchRestData(true), 60000);
+    return () => clearInterval(id);
   }, [shouldConnect, state.isConnected, fetchRestData]);
 
-  // CRITICAL: Listen for trade/order events - fetch REST to verify (one-time)
-  // WebSocket will handle subsequent real-time updates
-  useEffect(() => {
-    const handleOrderPlaced = () => {
-      console.log('[KrakenWebSocketProvider] Order placed - verifying via REST');
-      // Single REST fetch to verify order was accepted
-      setTimeout(() => fetchRestData(true), 2000);
-    };
-    
-    const handleTradeCompleted = () => {
-      console.log('[KrakenWebSocketProvider] Trade completed - WebSocket will update balance');
-      // Trust WebSocket for balance update, only fetch REST if WS is down
-      if (!state.isConnected) {
-        setTimeout(() => fetchRestData(true), 2000);
-      }
-    };
-    
-    window.addEventListener('kraken:order-placed', handleOrderPlaced);
-    window.addEventListener('trade:completed', handleTradeCompleted);
-    window.addEventListener('kraken:synced', handleTradeCompleted);
-    
-    return () => {
-      window.removeEventListener('kraken:order-placed', handleOrderPlaced);
-      window.removeEventListener('trade:completed', handleTradeCompleted);
-      window.removeEventListener('kraken:synced', handleTradeCompleted);
-    };
-  }, [fetchRestData, state.isConnected]);
+  // ── Derived: best available balance (WS > REST) ──
+  const bestUsdBalance = (state.isConnected && state.usdBalance > 0)
+    ? state.usdBalance
+    : (restData.krakenBalance?.success ? (restData.krakenBalance.usd_balance || 0) : 0);
+
+  const bestCryptoValue = (state.isConnected && state.cryptoHoldingsValue > 0)
+    ? state.cryptoHoldingsValue
+    : (restData.krakenBalance?.success ? (restData.krakenBalance.total_crypto_value_usd || 0) : 0);
+
+  const bestHoldings = (state.isConnected && Object.keys(state.balances).length > 0)
+    ? Object.entries(state.balances)
+        .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
+        .filter(([_, b]) => (b.balance || 0) > 0.00001)
+        .map(([asset, bal]) => ({
+          symbol: asset,
+          quantity: bal.balance || 0,
+          asset_type: 'crypto',
+          current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
+          total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
+          is_simulation: false
+        }))
+    : (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }));
+
+  const hasData = (state.isConnected && (state.usdBalance > 0 || state.cryptoHoldingsValue > 0))
+    || (restData.krakenBalance?.success);
 
   const value = {
     ...state,
+    // Override with best-available merged values
+    usdBalance: bestUsdBalance,
+    cryptoHoldingsValue: bestCryptoValue,
+    totalPortfolioValue: bestUsdBalance + bestCryptoValue,
+    // Derived holdings for consumers
+    bestHoldings,
+    hasData,
     refresh,
     wsManager,
-    // CRITICAL: Expose centralized REST data for all components
     krakenBalance: restData.krakenBalance,
     krakenPnL: restData.krakenPnL,
     krakenOrders: restData.krakenOrders,
@@ -468,7 +362,6 @@ export function KrakenWebSocketProvider({ children }) {
     restDataLoading: restData.isLoading,
     restDataError: restData.error,
     lastRestFetchTime: restData.lastFetchTime,
-    // Expose the fetch function for manual refresh (but it enforces rate limits)
     fetchKrakenData: fetchRestData,
     fetchPnL
   };
