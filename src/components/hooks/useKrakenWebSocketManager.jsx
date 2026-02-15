@@ -645,27 +645,17 @@ export function useKrakenWebSocketManager(options = {}) {
 
   // Handle connection state changes
   useEffect(() => {
-    const handlePublicConnected = () => {
-      setIsConnected(true);
-      GLOBAL_WS_STATE.reconnectAttempts = 0;
+    const checkAndUpdateConnection = () => {
+      const anyConnected = GLOBAL_WS_STATE.isPublicConnected || 
+                           GLOBAL_WS_STATE.isPrivateBalancesConnected || 
+                           GLOBAL_WS_STATE.isPrivateOrdersConnected;
+      setIsConnected(anyConnected);
     };
     
-    const handlePrivateConnected = () => {
-      setIsConnected(true);
-      GLOBAL_WS_STATE.reconnectAttempts = 0;
-    };
-    
-    const handlePublicDisconnected = () => {
-      if (!GLOBAL_WS_STATE.isPrivateBalancesConnected && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
-        setIsConnected(false);
-      }
-    };
-    
-    const handlePrivateDisconnected = () => {
-      if (!GLOBAL_WS_STATE.isPublicConnected && !GLOBAL_WS_STATE.isPrivateBalancesConnected && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
-        setIsConnected(false);
-      }
-    };
+    const handlePublicConnected = () => checkAndUpdateConnection();
+    const handlePrivateConnected = () => checkAndUpdateConnection();
+    const handlePublicDisconnected = () => checkAndUpdateConnection();
+    const handlePrivateDisconnected = () => checkAndUpdateConnection();
 
     // Add listeners
     const addListener = (event, handler) => {
