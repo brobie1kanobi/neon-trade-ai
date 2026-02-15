@@ -298,6 +298,10 @@ async function connectPrivateOrdersWebSocket() {
     ws.onclose = () => {
       GLOBAL_WS_STATE.isPrivateOrdersConnected = false;
       GLOBAL_WS_STATE.privateWsOrders = null;
+      if (typeof window !== 'undefined' && !GLOBAL_WS_STATE.isPublicConnected && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
+        window.__krakenWsConnected = false;
+        window.dispatchEvent(new CustomEvent('kraken:disconnected'));
+      }
       emitEvent('privateDisconnected', {});
       if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         GLOBAL_WS_STATE.reconnectAttempts++;
