@@ -1529,18 +1529,13 @@ export default function Dashboard() {
     setEnrichedHoldings(updatedEnrichedHoldings);
     setPortfolioMarketValue(currentHoldingsValue);
 
-    const cash = isSimMode
-      ? (wallet?.cash_balance || 0)
-      : (
-          (wsConnected && wsUsdBalance > 0) ? wsUsdBalance
-          : (krakenApiBalances.loaded ? (krakenApiBalances.usdBalance ?? 0) : 0)
-        );
+    const cash = isSimMode ? (wallet?.cash_balance || 0) : wsUsdBalance;
     const totalDelta = currentHoldingsValue - prevHoldingsValue;
     const prevTotal = (cash || 0) + prevHoldingsValue;
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
 
     setChange24h({ value: totalDelta, percentage: pctChange });
-  }, [effectiveHoldings, wallet, settings, priceData, isSimMode, wsConnected, wsTotalValue, wsUsdBalance, krakenApiBalances]);
+  }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance]);
 
   useEffect(() => {
     if (effectiveHoldings.length > 0 && (priceData?.length > 0 || (wsConnected && wsTotalValue >= 0)) || effectiveHoldings.length === 0) {
