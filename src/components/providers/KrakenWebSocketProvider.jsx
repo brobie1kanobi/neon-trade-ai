@@ -217,13 +217,7 @@ export function KrakenWebSocketProvider({ children }) {
       return null;
     }
 
-    // Prevent concurrent fetches unless forced
-    let shouldSkip = false;
-    setRestData(prev => {
-      if (prev.isLoading && !force) { shouldSkip = true; return prev; }
-      return { ...prev, isLoading: true, error: null };
-    });
-    if (shouldSkip) return null;
+    setRestData(prev => ({ ...prev, isLoading: true, error: null }));
 
     const reason = force ? 'forced' : needsInitialSnapshot ? 'initial' : 'recovery';
     console.log(`[KrakenWSProvider] REST fetch (${reason}) at ${new Date().toISOString()}`);
