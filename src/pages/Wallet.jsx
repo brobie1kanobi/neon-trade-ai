@@ -37,7 +37,7 @@ export default function WalletPage() {
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   const {
-    isConnected: wsConnected,
+    isConnected: wsConnectedFromProvider,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
