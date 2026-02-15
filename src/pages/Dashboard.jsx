@@ -1622,9 +1622,8 @@ export default function Dashboard() {
     const cash = isSimMode
       ? (wallet?.cash_balance || 0)
       : (
-          krakenApiBalances.loaded
-            ? (krakenApiBalances.usdBalance ?? 0)
-            : (lastKnownBalancesRef.current.cash ?? (wallet?.real_cash_balance || 0))
+          (wsConnected && wsUsdBalance > 0) ? wsUsdBalance
+          : (krakenApiBalances.loaded ? (krakenApiBalances.usdBalance ?? 0) : 0)
         );
     const totalDelta = currentHoldingsValue - prevHoldingsValue;
     const prevTotal = (cash || 0) + prevHoldingsValue;
