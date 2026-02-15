@@ -1780,10 +1780,10 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
   
-  // Safety valve - after 15s, stop showing loading even if REST hasn't returned
+  // Safety valve - after 15s, stop showing loading even if data hasn't arrived
   const [forceShowBalance, setForceShowBalance] = React.useState(false);
   React.useEffect(() => {
-    if (!isSimMode && !hasKrakenData) {
+    if (!isSimMode) {
       const timer = setTimeout(() => setForceShowBalance(true), 15000);
       return () => clearTimeout(timer);
     }
