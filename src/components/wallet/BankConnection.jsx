@@ -10,7 +10,10 @@ import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { motion } from "framer-motion";
 
-export default function BankConnection({ settings, onConnectionChange, onQuickAction, isSimMode = true }) {
+export default function BankConnection({ settings: _settingsProp, onConnectionChange, onQuickAction, isSimMode: isSimModeProp }) {
+  // CRITICAL: Use SettingsContext as source of truth - prop can be stale during rate limits
+  const { settings: ctxSettings } = useSettings();
+  const isSimMode = ctxSettings ? (ctxSettings.sim_trading_mode !== false) : (isSimModeProp ?? true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [krakenConnected, setKrakenConnected] = useState(false);
   const [krakenChecking, setKrakenChecking] = useState(true);
