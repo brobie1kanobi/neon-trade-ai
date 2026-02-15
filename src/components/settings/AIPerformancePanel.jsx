@@ -90,7 +90,7 @@ export default function AIPerformancePanel() {
     );
   }
 
-  if (performance?.error || performance?.noData) {
+  if (performance?.noData) {
     return (
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <CardHeader>

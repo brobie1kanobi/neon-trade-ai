@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { base44 } from '@/api/base44Client';
 import { UserSettings } from "@/entities/all";
 import { useUser } from "@/components/hooks/useUser";
-import { invalidateCache } from "@/components/hooks/useDataFetching";
+import { getCached, invalidateCache } from "@/components/hooks/useDataFetching";
 
 const SettingsContext = createContext();
 
@@ -18,26 +18,34 @@ export const SettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastFetch, setLastFetch] = useState(0);
-  // CRITICAL: This is the AUTHORITATIVE user object, fetched fresh via base44.auth.me()
-  // The useUser hook caches for 10 minutes and can have stale role data
-  const [authUser, setAuthUser] = useState(null);
-
-  // useUser only triggers initial load - we fetch fresh user inside loadSettings
-  const { user: cachedUser } = useUser();
+  
+  // Use centralized user hook
+  const { user } = useUser();
 
   const loadSettings = useCallback(async (force = false) => {
-    if (!cachedUser?.email) {
+    if (!user?.email) {
       setIsLoading(false);
       return { settings: null, user: null };
     }
 
     try {
-      const cacheKey = `settings:${cachedUser.email}`;
-
-      // Always force-fetch settings to avoid stale sim_trading_mode
-      invalidateCache(cacheKey);
-      const userSettings = await UserSettings.filter({ created_by: cachedUser.email });
-      let currentSettings = userSettings[0];
+      const cacheKey = `settings:${user.email}`;
+      
+      let currentSettings;
+      if (force) {
+        invalidateCache(cacheKey);
+        const userSettings = await UserSettings.filter({ created_by: user.email });
+        currentSettings = userSettings[0];
+      } else {
+        currentSettings = await getCached(
+          cacheKey,
+          async () => {
+            const userSettings = await UserSettings.filter({ created_by: user.email });
+            return userSettings[0];
+          },
+          5 * 60 * 1000 // 5 minute cache
+        );
+      }
 
       if (!currentSettings) {
         currentSettings = {
@@ -62,56 +70,54 @@ export const SettingsProvider = ({ children }) => {
         };
       }
 
-      // Ensure timezone is always set
+      // CRITICAL: Ensure timezone is always set (for existing users who don't have it)
+      // Also handle cases where timezone might be null, undefined, or empty string
       if (!currentSettings.timezone || currentSettings.timezone.trim() === '') {
         currentSettings.timezone = "America/New_York";
+        console.log('[SettingsContext] Timezone was empty, set to default: America/New_York');
+      } else {
+        console.log('[SettingsContext] Loaded timezone:', currentSettings.timezone);
       }
 
-      // CRITICAL: Fetch FRESH user for accurate role/is_creator checks
-      const meUser = await base44.auth.me();
-      const isAdmin = (meUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!meUser?.is_creator;
-
-      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator, 'role:', meUser?.role);
+      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!user?.is_creator;
 
       // Enforce simulation mode for non-admin/non-creator
       if (!(isAdmin || isCreator) && currentSettings.sim_trading_mode === false && currentSettings.id) {
-        console.log('[SettingsContext] Non-admin user has live mode - forcing back to sim');
         try {
           await UserSettings.update(currentSettings.id, { sim_trading_mode: true });
         } catch (_e) {}
         currentSettings.sim_trading_mode = true;
       }
 
-      setAuthUser(meUser);
       setSettings(currentSettings);
       setLastFetch(Date.now());
       setIsLoading(false);
 
+      // Cache to localStorage
       try {
         localStorage.setItem('nt_settings_cache', JSON.stringify(currentSettings));
       } catch (_e) {}
 
-      return { settings: currentSettings, user: meUser };
+      return { settings: currentSettings, user };
     } catch (error) {
       console.error("Settings loading error:", error);
-
+      
+      // Try to use localStorage cache
       try {
         const cache = localStorage.getItem('nt_settings_cache');
         if (cache) setSettings(JSON.parse(cache));
       } catch (_e) {}
-
+      
       setIsLoading(false);
-      return { settings, user: authUser };
+      return { settings, user };
     }
-  }, [cachedUser?.email]);
+  }, [user, settings]);
 
   const updateSetting = useCallback(async (key, value) => {
     try {
-      // CRITICAL: Fetch fresh user for accurate role check
-      const meUser = await base44.auth.me();
-      const isAdmin = (meUser?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!meUser?.is_creator;
+      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!user?.is_creator;
 
       // Force simulation mode for non-admin/non-creator
       if (key === 'sim_trading_mode' && !(isAdmin || isCreator)) {
@@ -121,36 +127,31 @@ export const SettingsProvider = ({ children }) => {
       if (settings?.id) {
         await UserSettings.update(settings.id, { [key]: value });
       } else {
+        const me = user || await base44.auth.me();
         await UserSettings.create({
           ...settings,
           [key]: value,
           sim_trading_mode: (key === 'sim_trading_mode') ? value : true,
-          created_by: meUser?.email || cachedUser?.email
+          created_by: me.email
         });
       }
 
-      // Update local state immediately
-      const newSettings = { ...settings, [key]: value };
+      // Update local state immediately for responsive UI
+      const newSettings = {
+        ...settings,
+        [key]: value,
+        ...(key !== 'sim_trading_mode' ? { sim_trading_mode: settings?.sim_trading_mode ?? true } : {})
+      };
       setSettings(newSettings);
-      // Also update authUser in case role changed
-      setAuthUser(meUser);
-
+      
+      // Also update localStorage cache immediately
       try {
         localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings));
       } catch (_e) {}
 
-      // If sim mode changed, full reload to reset all component states
-      if (key === 'sim_trading_mode') {
-        console.log('[SettingsContext] sim_trading_mode changed to:', value, '- scheduling full refresh');
-        invalidateCache();
-        try { localStorage.removeItem('nt_settings_cache'); } catch (_e) {}
-        setTimeout(() => { window.location.reload(); }, 500);
-        return;
-      }
-
-      // For other settings, invalidate and refresh
-      if (meUser?.email || cachedUser?.email) {
-        invalidateCache(`settings:${meUser?.email || cachedUser?.email}`);
+      // Invalidate cache and refresh
+      if (user?.email) {
+        invalidateCache(`settings:${user.email}`);
       }
       setTimeout(() => loadSettings(true), 1500);
 
@@ -158,18 +159,18 @@ export const SettingsProvider = ({ children }) => {
       console.error("Error updating setting:", error);
       throw error;
     }
-  }, [settings, cachedUser, loadSettings]);
+  }, [settings, user, loadSettings]);
 
   useEffect(() => {
-    if (cachedUser) {
+    if (user) {
       loadSettings();
     }
-  }, [cachedUser, loadSettings]);
+  }, [user, loadSettings]);
 
   return (
     <SettingsContext.Provider value={{
       settings,
-      user: authUser,
+      user,
       isLoading,
       loadSettings,
       updateSetting
@@ -177,4 +178,4 @@ export const SettingsProvider = ({ children }) => {
       {children}
     </SettingsContext.Provider>
   );
-};
+}

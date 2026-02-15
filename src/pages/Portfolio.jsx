@@ -37,8 +37,8 @@ export default function Portfolio() {
   const [error, setError] = useState(null);
 
   // CRITICAL: Determine sim mode FIRST
-  const settingsLoaded = settings !== null && settings !== undefined;
-  const isSimMode = settingsLoaded ? (settings.sim_trading_mode !== false) : true;
+  // IMPORTANT: Default to TRUE (sim mode) while settings are loading to prevent showing SIM data in LIVE mode
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - single source of truth for ALL Kraken data
   // WebSocket = live data, REST snapshot = initial load only
