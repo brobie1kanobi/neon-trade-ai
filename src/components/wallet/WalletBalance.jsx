@@ -35,16 +35,16 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
   const displayCash = React.useMemo(() => {
     if (isSimMode) {
+      // SIM MODE: Only use sim wallet balance - never show live data
       return wallet?.cash_balance || 0;
     }
 
-    // CRITICAL: Use cashBalance prop from parent (REST API data) as PRIMARY source
-    // Parent (Wallet page) uses krakenCashBalance which prioritizes REST API
+    // LIVE MODE: Only use live data sources - never show sim data
     const propCash = cashBalance || 0;
     const dbCash = wallet?.real_cash_balance || 0;
     const wsValue = wsUsdBalance || 0;
 
-    // Priority: Prop (REST API) > WebSocket > DB
+    // Priority: Prop (REST API) > WebSocket > DB real balance
     const value = propCash > 0 ? propCash : ((wsConnected && wsValue > 0) ? wsValue : dbCash);
     
     // Cache valid values
@@ -58,24 +58,20 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
   const displayPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
+      // SIM MODE: Only use sim portfolio value
       return portfolioMarketValue;
     }
     
-    // CRITICAL: portfolioMarketValue prop comes from parent (Wallet page) which uses
-    // REST API (krakenData) as PRIMARY source - this is the most reliable
-    // Only fall back to WebSocket if portfolioMarketValue is not available
+    // LIVE MODE: Only use live data sources
     const propValue = portfolioMarketValue || 0;
     const wsValue = wsCryptoHoldingsValue || 0;
     
-    // Use prop value first (REST API via parent), then WebSocket as fallback
     const value = propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
     
-    // Cache valid values
     if (value > 0) {
       lastKnownRef.current.portfolio = value;
     }
     
-    // Return cached value if current is 0 but we had data before
     return value > 0 ? value : (lastKnownRef.current.portfolio ?? value);
   }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
 
