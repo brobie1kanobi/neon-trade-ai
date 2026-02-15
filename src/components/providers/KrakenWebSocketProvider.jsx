@@ -244,6 +244,8 @@ export function KrakenWebSocketProvider({ children }) {
       const balanceData = balanceRes?.data || balanceRes;
       const ordersData = ordersRes?.data || ordersRes;
       hasInitialSnapshotRef.current = true;
+      
+      console.log('[KrakenWSProvider] REST snapshot complete - Balance:', balanceData?.success, 'USD:', balanceData?.usd_balance);
 
       setRestData(prev => ({
         krakenBalance: balanceData?.success ? balanceData : prev.krakenBalance,
