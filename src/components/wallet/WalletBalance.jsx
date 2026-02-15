@@ -30,70 +30,30 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   
   const wsLastUpdated = wsConnected ? new Date().toISOString() : null;
 
-  // CRITICAL: Cache last known good values to prevent showing $0
-  // RESET cache when mode changes to prevent sim data showing in live mode
-  const lastKnownRef = React.useRef({ cash: null, portfolio: null, total: null, mode: isSimMode });
-  
-  // CRITICAL: Reset cached values when mode changes
-  React.useEffect(() => {
-    if (lastKnownRef.current.mode !== isSimMode) {
-      console.log('[WalletBalance] Mode changed to', isSimMode ? 'SIM' : 'LIVE', '- resetting cache');
-      lastKnownRef.current = { cash: null, portfolio: null, total: null, mode: isSimMode };
-    }
-  }, [isSimMode]);
-
+  // CRITICAL: No stale caching - only show real Kraken data or 0
   const displayCash = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-
-    // LIVE MODE ONLY: Use Kraken data sources
+    // LIVE MODE: Kraken sources ONLY - never fall back to stale local data
     const propCash = cashBalance || 0;
-    const dbCash = wallet?.real_cash_balance || 0;
     const wsValue = wsUsdBalance || 0;
-
-    // Priority: Prop (REST API) > WebSocket > DB
-    const value = propCash > 0 ? propCash : ((wsConnected && wsValue > 0) ? wsValue : dbCash);
-    
-    // Cache valid values
-    if (value > 0) {
-      lastKnownRef.current.cash = value;
-    }
-    
-    // Return cached value if current is 0 but we had data before
-    return value > 0 ? value : (lastKnownRef.current.cash ?? value);
+    // Priority: Prop (REST API from parent) > WebSocket > 0
+    return propCash > 0 ? propCash : ((wsConnected && wsValue > 0) ? wsValue : 0);
   }, [isSimMode, wallet, wsUsdBalance, wsConnected, cashBalance]);
 
   const displayPortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return portfolioMarketValue;
     }
-    
-    // LIVE MODE ONLY: Use Kraken data sources
+    // LIVE MODE: Kraken sources ONLY
     const propValue = portfolioMarketValue || 0;
     const wsValue = wsCryptoHoldingsValue || 0;
-    
-    const value = propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
-    
-    if (value > 0) {
-      lastKnownRef.current.portfolio = value;
-    }
-    
-    return value > 0 ? value : (lastKnownRef.current.portfolio ?? value);
+    return propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
   }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
 
-  // CRITICAL: Total Balance = Cash (USD) + Portfolio (crypto only)
-  const totalBalance = React.useMemo(() => {
-    const total = displayCash + displayPortfolioValue;
-    
-    // Cache valid totals
-    if (total > 0) {
-      lastKnownRef.current.total = total;
-    }
-    
-    // Return cached value if current is 0 but we had data before
-    return total > 0 ? total : (lastKnownRef.current.total ?? total);
-  }, [displayCash, displayPortfolioValue]);
+  // Total Balance = Cash (USD) + Portfolio (crypto only)
+  const totalBalance = displayCash + displayPortfolioValue;
   
   const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
 
