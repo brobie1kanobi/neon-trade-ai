@@ -17,45 +17,21 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
 
-  // CRITICAL: Use the SHARED provider instead of creating duplicate WebSocket connections
+  // Use the SHARED provider (single source of truth, already merges WS > REST)
   const {
     isConnected: wsConnected,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoHoldingsValue,
-    totalPortfolioValue: wsTotalValue,
-    balances: wsBalances,
     totalAssets: wsTotalAssets,
+    hasData: providerHasData,
     refresh: wsRefresh
   } = useKrakenWebSocket();
-  
-  const wsLastUpdated = wsConnected ? new Date().toISOString() : null;
 
-  // CRITICAL: No stale caching - only show real Kraken data or 0
-  const displayCash = React.useMemo(() => {
-    if (isSimMode) {
-      return wallet?.cash_balance || 0;
-    }
-    // LIVE MODE: Kraken sources ONLY - never fall back to stale local data
-    const propCash = cashBalance || 0;
-    const wsValue = wsUsdBalance || 0;
-    // Priority: Prop (REST API from parent) > WebSocket > 0
-    return propCash > 0 ? propCash : ((wsConnected && wsValue > 0) ? wsValue : 0);
-  }, [isSimMode, wallet, wsUsdBalance, wsConnected, cashBalance]);
-
-  const displayPortfolioValue = React.useMemo(() => {
-    if (isSimMode) {
-      return portfolioMarketValue;
-    }
-    // LIVE MODE: Kraken sources ONLY
-    const propValue = portfolioMarketValue || 0;
-    const wsValue = wsCryptoHoldingsValue || 0;
-    return propValue > 0 ? propValue : ((wsConnected && wsValue > 0) ? wsValue : 0);
-  }, [isSimMode, wsCryptoHoldingsValue, portfolioMarketValue, wsConnected]);
-
-  // Total Balance = Cash (USD) + Portfolio (crypto only)
+  // Provider already merges WS > REST – use its values directly
+  const displayCash = isSimMode ? (wallet?.cash_balance || 0) : (cashBalance > 0 ? cashBalance : wsUsdBalance);
+  const displayPortfolioValue = isSimMode ? portfolioMarketValue : (portfolioMarketValue > 0 ? portfolioMarketValue : wsCryptoHoldingsValue);
   const totalBalance = displayCash + displayPortfolioValue;
-  
-  const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
+  const totalAssets = isSimMode ? 0 : wsTotalAssets;
 
   const totalDeposits = isSimMode ? wallet?.total_deposits || 0 : wallet?.real_total_deposits || 0;
   const totalWithdrawals = isSimMode ? wallet?.total_withdrawals || 0 : wallet?.real_total_withdrawals || 0;
