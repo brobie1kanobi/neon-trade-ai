@@ -18,24 +18,26 @@ export const SettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastFetch, setLastFetch] = useState(0);
+  // CRITICAL: freshUser is the AUTHORITATIVE user object (fetched via base44.auth.me() each load)
+  // useUser cache can be stale for up to 10 minutes, so we DON'T expose it for role checks
+  const [freshUser, setFreshUser] = useState(null);
   
-  // Use centralized user hook
-  const { user } = useUser();
+  // Use centralized user hook only to trigger initial load
+  const { user: cachedUser } = useUser();
 
   const loadSettings = useCallback(async (force = false) => {
-    if (!user?.email) {
+    if (!cachedUser?.email) {
       setIsLoading(false);
       return { settings: null, user: null };
     }
 
     try {
-      const cacheKey = `settings:${user.email}`;
+      const cacheKey = `settings:${cachedUser.email}`;
       
       let currentSettings;
       // CRITICAL: Always force-fetch settings for sim_trading_mode accuracy
-      // Stale cached settings caused the "stuck in sim mode" bug
       invalidateCache(cacheKey);
-      const userSettings = await UserSettings.filter({ created_by: user.email });
+      const userSettings = await UserSettings.filter({ created_by: cachedUser.email });
       currentSettings = userSettings[0];
 
       if (!currentSettings) {
