@@ -135,6 +135,9 @@ export default function AutoBuyPreferences() {
       }
     };
 
+    // CRITICAL: Invalidate cache on load to ensure fresh mode-filtered data
+    window.__autoBuyCache.data = null;
+    window.__autoBuyCache.timestamp = 0;
     load();
   }, []);
 
