@@ -1098,66 +1098,8 @@ export default function Dashboard() {
   const [enrichedHoldings, setEnrichedHoldings] = useState([]);
   const [lifetimeChange, setLifetimeChange] = useState({ value: 0, percentage: 0 });
   
-  // CRITICAL: Reset Kraken API balances when mode changes
-  React.useEffect(() => {
-    if (!isSimMode) return;
-    setKrakenApiBalances({
-      usdBalance: 0,
-      cryptoValue: 0,
-      totalValue: 0,
-      holdings: [],
-      costBasis: 0,
-      unrealizedPnL: 0,
-      loaded: false
-    });
-  }, [isSimMode]);
-  
-  // CRITICAL: Kraken balances come from WebSocket Provider (single source of truth)
-  // REST is ONLY used for initial snapshot - WebSocket handles live updates
-  const [krakenApiBalances, setKrakenApiBalances] = React.useState({
-    usdBalance: 0,
-    cryptoValue: 0,
-    totalValue: 0,
-    holdings: [],
-    costBasis: 0,
-    unrealizedPnL: 0,
-    loaded: false
-  });
-  
-  // CRITICAL: Merge REST snapshot + WebSocket live data into krakenApiBalances
-  // Provider handles initial REST snapshot; WebSocket updates flow through provider state
-  React.useEffect(() => {
-    if (isSimMode) return;
-    
-    // Source 1: REST snapshot from provider
-    if (providerKrakenBalance?.success && providerKrakenBalance?.connected) {
-      setKrakenApiBalances(prev => {
-        // If WebSocket already has fresher data, keep WS values but merge holdings/costBasis
-        const useWsValues = wsConnected && wsUsdBalance > 0;
-        const newBalances = {
-          usdBalance: useWsValues ? wsUsdBalance : (providerKrakenBalance.usd_balance || 0),
-          cryptoValue: useWsValues ? wsCryptoValue : (providerKrakenBalance.total_crypto_value_usd || 0),
-          totalValue: useWsValues ? (wsUsdBalance + wsCryptoValue) : (providerKrakenBalance.total_portfolio_value_usd || 0),
-          holdings: providerKrakenBalance.holdings || prev.holdings,
-          costBasis: providerKrakenBalance.total_cost_basis_usd || prev.costBasis,
-          unrealizedPnL: providerKrakenBalance.total_unrealized_pnl_usd || prev.unrealizedPnL,
-          loaded: true
-        };
-        return newBalances;
-      });
-    }
-    
-    // Source 2: WebSocket real-time updates (always fresher than REST)
-    if (wsConnected && (wsUsdBalance > 0 || wsCryptoValue > 0)) {
-      setKrakenApiBalances(prev => ({
-        ...prev,
-        usdBalance: wsUsdBalance,
-        cryptoValue: wsCryptoValue,
-        totalValue: wsUsdBalance + wsCryptoValue,
-        loaded: true
-      }));
-    }
-  }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, providerKrakenBalance]);
+  // Provider now exposes merged best-available data (WS > REST).
+  // No local krakenApiBalances state needed – derive directly from provider.
 
   // CRITICAL: Build effective holdings - WebSocket is PRIMARY in LIVE mode
   // REST snapshot provides initial data, WebSocket provides real-time updates
