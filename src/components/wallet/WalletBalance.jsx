@@ -134,7 +134,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
               <div>
                 <p className="text-xs font-semibold text-green-700 dark:text-green-400">Real-Time WebSocket</p>
                 <p className="text-xs text-green-600 dark:text-green-500">
-                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} found • Updated: {wsLastUpdated ? new Date(wsLastUpdated).toLocaleTimeString() : '—'}
+                  {totalAssets} asset{totalAssets !== 1 ? 's' : ''} found • Live
                 </p>
               </div>
             </div>
