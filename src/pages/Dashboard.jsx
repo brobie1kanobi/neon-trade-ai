@@ -1056,11 +1056,12 @@ if (typeof window !== 'undefined') {
 }
 
 export default function Dashboard() {
-  const { settings } = useSettings();
+  const { settings, isLoading: settingsLoading } = useSettings();
   const location = useLocation();
   
-  // CRITICAL: Derive sim mode from settings - default to true while loading
-  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
+  // CRITICAL: Derive sim mode from SettingsContext - single source of truth
+  // Use null while loading to prevent rendering with wrong mode
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : null;
   const { wallet, loading: walletLoading, refresh: refreshWallet } = useWallet();
   const { trades, loading: tradesLoading, addTrade } = useTrades(isSimMode);
   const { holdings, loading: holdingsLoading, refresh: refreshHoldings } = useHoldings(isSimMode);
