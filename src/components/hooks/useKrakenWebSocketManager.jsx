@@ -583,7 +583,11 @@ function handlePrivateMessage(message) {
         }
       });
       
-      emitEvent('ordersUpdated', Object.fromEntries(GLOBAL_WS_STATE.orders));
+      const ordersObj = Object.fromEntries(GLOBAL_WS_STATE.orders);
+      if (typeof window !== 'undefined') {
+        window.__krakenWsOrders = ordersObj;
+      }
+      emitEvent('ordersUpdated', ordersObj);
     }
   }
 }
