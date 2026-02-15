@@ -415,12 +415,14 @@ function handlePublicMessage(message) {
         GLOBAL_WS_STATE.prices.set(symbol, priceData);
       });
       
-      emitEvent('pricesUpdated', Object.fromEntries(GLOBAL_WS_STATE.prices));
+      const pricesObj = Object.fromEntries(GLOBAL_WS_STATE.prices);
+      emitEvent('pricesUpdated', pricesObj);
       
-      // Dispatch event for components listening
+      // Dispatch event for components listening + store on window for provider
       if (typeof window !== 'undefined') {
+        window.__krakenWsPrices = pricesObj;
         window.dispatchEvent(new CustomEvent('kraken:price-update', { 
-          detail: Object.fromEntries(GLOBAL_WS_STATE.prices) 
+          detail: pricesObj 
         }));
       }
     }
