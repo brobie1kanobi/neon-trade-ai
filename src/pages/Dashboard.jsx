@@ -1684,10 +1684,15 @@ export default function Dashboard() {
     }
   }, [isSimMode]);
 
-  // Provider already exposes best-available merged values (WS > REST)
-  const currentCashBalance = isSimMode ? (wallet?.cash_balance || 0) : wsUsdBalance;
-  const currentPortfolioValue = isSimMode ? portfolioMarketValue : wsCryptoValue;
-  const showBalanceLoading = !isSimMode && !providerHasData && !forceShowBalance;
+  // Provider exposes best-available merged values (WS > REST > 0)
+  // CRITICAL: In live mode, prefer provider values but fall back to local calculations
+  const currentCashBalance = isSimMode 
+    ? (wallet?.cash_balance || 0) 
+    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+  const currentPortfolioValue = isSimMode 
+    ? portfolioMarketValue 
+    : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
+  const showBalanceLoading = !isSimMode && !providerHasData && !forceShowBalance && !wallet;
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
