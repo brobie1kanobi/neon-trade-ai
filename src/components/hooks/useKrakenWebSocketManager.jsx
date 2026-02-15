@@ -613,9 +613,14 @@ export function useKrakenWebSocketManager(options = {}) {
     subscribeToExecutions = false
   } = options;
 
-  const [isConnected, setIsConnected] = useState(
-    GLOBAL_WS_STATE.isPublicConnected || GLOBAL_WS_STATE.isPrivateBalancesConnected || GLOBAL_WS_STATE.isPrivateOrdersConnected
-  );
+  const [isConnected, setIsConnected] = useState(() => {
+    const connected = GLOBAL_WS_STATE.isPublicConnected || GLOBAL_WS_STATE.isPrivateBalancesConnected || GLOBAL_WS_STATE.isPrivateOrdersConnected;
+    // Also sync to window global on init
+    if (typeof window !== 'undefined') {
+      window.__krakenWsConnected = connected;
+    }
+    return connected;
+  });
   const [prices, setPrices] = useState({});
   const [balances, setBalances] = useState({});
   const [orders, setOrders] = useState({});
