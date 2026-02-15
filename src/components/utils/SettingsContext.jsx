@@ -123,8 +123,15 @@ export const SettingsProvider = ({ children }) => {
 
   const updateSetting = useCallback(async (key, value) => {
     try {
-      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!user?.is_creator;
+      // CRITICAL: Always re-check role from fresh user data to prevent stale role forcing sim mode
+      let freshUser = user;
+      try {
+        freshUser = await base44.auth.me();
+      } catch (_e) {
+        freshUser = user;
+      }
+      const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
+      const isCreator = !!freshUser?.is_creator;
 
       // Force simulation mode for non-admin/non-creator
       if (key === 'sim_trading_mode' && !(isAdmin || isCreator)) {
