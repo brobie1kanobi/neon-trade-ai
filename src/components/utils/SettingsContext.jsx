@@ -73,16 +73,19 @@ export const SettingsProvider = ({ children }) => {
       const isAdmin = (freshUser?.role || '').toLowerCase() === 'admin';
       const isCreator = !!freshUser?.is_creator;
       
-      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator);
+      console.log('[SettingsContext] Settings loaded - sim_trading_mode:', currentSettings.sim_trading_mode, 'isAdmin:', isAdmin, 'isCreator:', isCreator, 'role:', fetchedUser?.role);
 
       // Enforce simulation mode for non-admin/non-creator
       if (!(isAdmin || isCreator) && currentSettings.sim_trading_mode === false && currentSettings.id) {
+        console.log('[SettingsContext] Non-admin user has live mode - forcing back to sim');
         try {
           await UserSettings.update(currentSettings.id, { sim_trading_mode: true });
         } catch (_e) {}
         currentSettings.sim_trading_mode = true;
       }
 
+      // CRITICAL: Store the fresh user so the provider exposes up-to-date role/is_creator
+      setFreshUser(fetchedUser);
       setSettings(currentSettings);
       setLastFetch(Date.now());
       setIsLoading(false);
@@ -92,8 +95,7 @@ export const SettingsProvider = ({ children }) => {
         localStorage.setItem('nt_settings_cache', JSON.stringify(currentSettings));
       } catch (_e) {}
 
-      // CRITICAL: Return freshUser so consumers get up-to-date role/is_creator
-      return { settings: currentSettings, user: freshUser };
+      return { settings: currentSettings, user: fetchedUser };
     } catch (error) {
       console.error("Settings loading error:", error);
       
