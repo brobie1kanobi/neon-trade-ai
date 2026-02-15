@@ -130,26 +130,30 @@ export function KrakenWebSocketProvider({ children }) {
     error: null
   });
 
-  // ── Reactive WS state updates via window events (no stale closure) ──
+  // ── Reactive WS state updates via window events ──
+  // CRITICAL: Uses computeMetricsFromGlobal() which reads window globals directly
+  // This avoids stale closure issues with wsManager React state
   useEffect(() => {
     if (!shouldConnect) return;
 
     // Immediate first read
-    setState(computeMetrics(wsManager));
+    setState(computeMetricsFromGlobal());
 
-    // Listen to WS data events instead of blind interval
-    const handleBalanceUpdate = () => setState(computeMetrics(wsManager));
-    const handlePriceUpdate = () => setState(computeMetrics(wsManager));
+    const handleUpdate = () => setState(computeMetricsFromGlobal());
 
-    window.addEventListener('kraken:balance-update', handleBalanceUpdate);
-    window.addEventListener('kraken:price-update', handlePriceUpdate);
+    window.addEventListener('kraken:balance-update', handleUpdate);
+    window.addEventListener('kraken:price-update', handleUpdate);
+    window.addEventListener('kraken:connected', handleUpdate);
+    window.addEventListener('kraken:disconnected', handleUpdate);
 
     // Fallback interval at 5s for connection-state changes
-    const interval = setInterval(() => setState(computeMetrics(wsManager)), 5000);
+    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 5000);
 
     return () => {
-      window.removeEventListener('kraken:balance-update', handleBalanceUpdate);
-      window.removeEventListener('kraken:price-update', handlePriceUpdate);
+      window.removeEventListener('kraken:balance-update', handleUpdate);
+      window.removeEventListener('kraken:price-update', handleUpdate);
+      window.removeEventListener('kraken:connected', handleUpdate);
+      window.removeEventListener('kraken:disconnected', handleUpdate);
       clearInterval(interval);
     };
   }, [shouldConnect]);
