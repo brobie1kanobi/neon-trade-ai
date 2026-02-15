@@ -318,16 +318,23 @@ export function KrakenWebSocketProvider({ children }) {
     return () => clearInterval(id);
   }, [shouldConnect, state.isConnected, fetchRestData]);
 
-  // ── Derived: best available balance (WS > REST) ──
-  const bestUsdBalance = (state.isConnected && state.usdBalance > 0)
+  // ── Derived: best available balance (WS > REST > cached) ──
+  // Priority: WS real-time > REST snapshot > 0
+  // CRITICAL: Always try to show SOMETHING - don't show $0 if we have any data source
+  const wsHasBalances = state.isConnected && Object.keys(state.balances).length > 0;
+  const restHasBalance = restData.krakenBalance?.success;
+  
+  const bestUsdBalance = wsHasBalances && state.usdBalance > 0
     ? state.usdBalance
-    : (restData.krakenBalance?.success ? (restData.krakenBalance.usd_balance || 0) : 0);
+    : restHasBalance ? (restData.krakenBalance.usd_balance || 0)
+    : state.usdBalance || 0; // Last resort: whatever WS has even if 0
 
-  const bestCryptoValue = (state.isConnected && state.cryptoHoldingsValue > 0)
+  const bestCryptoValue = wsHasBalances && state.cryptoHoldingsValue > 0
     ? state.cryptoHoldingsValue
-    : (restData.krakenBalance?.success ? (restData.krakenBalance.total_crypto_value_usd || 0) : 0);
+    : restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0)
+    : state.cryptoHoldingsValue || 0;
 
-  const bestHoldings = (state.isConnected && Object.keys(state.balances).length > 0)
+  const bestHoldings = wsHasBalances
     ? Object.entries(state.balances)
         .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
         .filter(([_, b]) => (b.balance || 0) > 0.00001)
@@ -341,8 +348,7 @@ export function KrakenWebSocketProvider({ children }) {
         }))
     : (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }));
 
-  const hasData = (state.isConnected && (state.usdBalance > 0 || state.cryptoHoldingsValue > 0))
-    || (restData.krakenBalance?.success);
+  const hasData = wsHasBalances || restHasBalance;
 
   const value = {
     ...state,
