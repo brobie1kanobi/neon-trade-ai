@@ -1069,7 +1069,7 @@ export default function Dashboard() {
   
   // CRITICAL: Use global WebSocket provider (single source of truth for live data)
   const {
-    isConnected: wsConnected,
+    isConnected: wsConnectedFromProvider,
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
