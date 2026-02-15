@@ -1155,12 +1155,6 @@ export default function Dashboard() {
         totalValue: wsUsdBalance + wsCryptoValue,
         loaded: true
       }));
-      
-      lastKnownBalancesRef.current = {
-        cash: wsUsdBalance,
-        portfolio: wsCryptoValue,
-        total: wsUsdBalance + wsCryptoValue
-      };
     }
   }, [isSimMode, wsConnected, wsUsdBalance, wsCryptoValue, providerKrakenBalance]);
 
