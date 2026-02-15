@@ -32,20 +32,11 @@ export const SettingsProvider = ({ children }) => {
       const cacheKey = `settings:${user.email}`;
       
       let currentSettings;
-      if (force) {
-        invalidateCache(cacheKey);
-        const userSettings = await UserSettings.filter({ created_by: user.email });
-        currentSettings = userSettings[0];
-      } else {
-        currentSettings = await getCached(
-          cacheKey,
-          async () => {
-            const userSettings = await UserSettings.filter({ created_by: user.email });
-            return userSettings[0];
-          },
-          5 * 60 * 1000 // 5 minute cache
-        );
-      }
+      // CRITICAL: Always force-fetch settings for sim_trading_mode accuracy
+      // Stale cached settings caused the "stuck in sim mode" bug
+      invalidateCache(cacheKey);
+      const userSettings = await UserSettings.filter({ created_by: user.email });
+      currentSettings = userSettings[0];
 
       if (!currentSettings) {
         currentSettings = {
