@@ -34,13 +34,13 @@ export const SettingsProvider = ({ children }) => {
       let currentSettings;
       if (force) {
         invalidateCache(cacheKey);
-        const userSettings = await UserSettings.filter({ created_by: user.email });
+        const userSettings = await UserSettings.filter({ created_by: user.email }, "-updated_date", 1);
         currentSettings = userSettings[0];
       } else {
         currentSettings = await getCached(
           cacheKey,
           async () => {
-            const userSettings = await UserSettings.filter({ created_by: user.email });
+            const userSettings = await UserSettings.filter({ created_by: user.email }, "-updated_date", 1);
             return userSettings[0];
           },
           5 * 60 * 1000 // 5 minute cache
