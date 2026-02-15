@@ -384,6 +384,8 @@ export function KrakenWebSocketProvider({ children }) {
 
   const value = {
     ...state,
+    // Override connection status with global check
+    isConnected: wsActuallyConnected,
     // Override with best-available merged values
     usdBalance: bestUsdBalance,
     cryptoHoldingsValue: bestCryptoValue,
