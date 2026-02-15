@@ -144,7 +144,9 @@ export const SettingsProvider = ({ children }) => {
       const newSettings = {
         ...settings,
         [key]: value,
-        ...(key !== 'sim_trading_mode' ? { sim_trading_mode: settings?.sim_trading_mode ?? true } : {})
+        // CRITICAL: When updating sim_trading_mode, use the new value directly
+        // For other keys, preserve the current sim_trading_mode
+        ...(key !== 'sim_trading_mode' ? {} : {})
       };
       setSettings(newSettings);
       
@@ -152,6 +154,20 @@ export const SettingsProvider = ({ children }) => {
       try {
         localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings));
       } catch (_e) {}
+      
+      // CRITICAL: If sim mode changed, force a full page reload to reset all component states
+      // This ensures no component retains stale sim/live data
+      if (key === 'sim_trading_mode') {
+        console.log('[SettingsContext] sim_trading_mode changed to:', value, '- scheduling full refresh');
+        // Clear all caches
+        invalidateCache();
+        try { localStorage.removeItem('nt_settings_cache'); } catch (_e) {}
+        // Force reload after a short delay to let the DB update propagate
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+        return; // Don't continue with normal flow
+      }
 
       // Invalidate cache and refresh
       if (freshUser?.email || user?.email) {
