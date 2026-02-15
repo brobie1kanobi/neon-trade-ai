@@ -164,9 +164,8 @@ export function KrakenWebSocketProvider({ children }) {
     try {
       await wsManager.refreshBalances?.();
       await wsManager.refreshOrders?.();
-      // Allow a tick for WS manager to update its maps
-      await new Promise(r => setTimeout(r, 300));
-      setState(computeMetrics(wsManager));
+      await new Promise(r => setTimeout(r, 500));
+      setState(computeMetricsFromGlobal());
     } catch (err) {
       console.error('[KrakenWSProvider] Refresh error:', err);
     }
