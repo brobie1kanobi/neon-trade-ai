@@ -227,12 +227,18 @@ export function KrakenWebSocketProvider({ children }) {
       const [balanceRes, ordersRes] = await Promise.all([
         Promise.race([
           base44.functions.invoke('getKrakenBalance', {}),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))
-        ]).catch(e => ({ error: e.message, success: false })),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Balance fetch timeout')), 25000))
+        ]).catch(e => {
+          console.warn('[KrakenWSProvider] Balance fetch failed:', e.message);
+          return { error: e.message, success: false };
+        }),
         Promise.race([
           base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))
-        ]).catch(e => ({ error: e.message }))
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Orders fetch timeout')), 25000))
+        ]).catch(e => {
+          console.warn('[KrakenWSProvider] Orders fetch failed:', e.message);
+          return { error: e.message };
+        })
       ]);
 
       const balanceData = balanceRes?.data || balanceRes;
