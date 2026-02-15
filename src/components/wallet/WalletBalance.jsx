@@ -90,8 +90,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   
   const totalAssets = isSimMode ? 0 : (wsConnected ? wsTotalAssets : 0);
 
-  const totalDeposits = isSimMode ? wallet?.total_deposits || 0 : wallet?.real_total_deposits || 0;
-  const totalWithdrawals = isSimMode ? wallet?.total_withdrawals || 0 : wallet?.real_total_withdrawals || 0;
+  // CRITICAL: SIM and LIVE use completely separate deposit/withdrawal fields
+  const totalDeposits = isSimMode ? (wallet?.total_deposits || 0) : (wallet?.real_total_deposits || 0);
+  const totalWithdrawals = isSimMode ? (wallet?.total_withdrawals || 0) : (wallet?.real_total_withdrawals || 0);
   const netFlow = totalDeposits - totalWithdrawals;
 
   const handleKrakenSync = async () => {
