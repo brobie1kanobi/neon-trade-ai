@@ -1101,43 +1101,16 @@ export default function Dashboard() {
   // Provider now exposes merged best-available data (WS > REST).
   // No local krakenApiBalances state needed – derive directly from provider.
 
-  // CRITICAL: Build effective holdings - WebSocket is PRIMARY in LIVE mode
-  // REST snapshot provides initial data, WebSocket provides real-time updates
+  // effectiveHoldings: provider already merges WS > REST > DB
   const effectiveHoldings = React.useMemo(() => {
-    if (isSimMode) {
-      return holdings;
-    } else {
-      // LIVE MODE: WebSocket balances are PRIMARY (real-time)
-      if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-        return Object.entries(wsBalances)
-          .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
-          .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
-          .map(([asset, balance]) => {
-            const pair = `${asset}/USD`;
-            const priceInfo = wsPrices[pair];
-            
-            return {
-              symbol: asset,
-              quantity: balance.balance || 0,
-              average_cost_price: priceInfo?.price || 0,
-              asset_type: 'crypto',
-              current_price_usd: priceInfo?.price || 0,
-              total_value_usd: (balance.balance || 0) * (priceInfo?.price || 0),
-              is_simulation: false
-            };
-          });
-      }
-      // Fallback to REST snapshot (initial load or WS disconnected)
-      if (krakenApiBalances.loaded && krakenApiBalances.holdings.length > 0) {
-        return krakenApiBalances.holdings.map(h => ({
-          ...h,
-          is_simulation: false
-        }));
-      }
-      // CRITICAL: Only return DB holdings that are LIVE mode - never show SIM data in LIVE
-      return holdings.filter(h => h.is_simulation === false);
+    if (isSimMode) return holdings;
+    // LIVE: Provider has already merged WS + REST into bestHoldings
+    if (providerBestHoldings && providerBestHoldings.length > 0) {
+      return providerBestHoldings;
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenApiBalances]);
+    // Final fallback: live DB holdings only
+    return holdings.filter(h => h.is_simulation === false);
+  }, [isSimMode, holdings, providerBestHoldings]);
 
   const allSymbols = React.useMemo(() => {
     const holdingSyms = effectiveHoldings.map(h => (h.symbol || "").toUpperCase());
