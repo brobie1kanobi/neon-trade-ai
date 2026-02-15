@@ -275,6 +275,11 @@ async function connectPrivateOrdersWebSocket() {
     const ws = new WebSocket(PRIVATE_WS_URL);
     ws.onopen = () => {
       GLOBAL_WS_STATE.isPrivateOrdersConnected = true;
+      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      if (typeof window !== 'undefined') {
+        window.__krakenWsConnected = true;
+        window.dispatchEvent(new CustomEvent('kraken:connected'));
+      }
       emitEvent('privateConnected', {});
       // Subscribe to executions only (trade key)
       subscribeToExecutions(ws, token);
