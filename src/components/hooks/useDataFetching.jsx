@@ -123,24 +123,24 @@ export async function getCached(key, fetchFn, ttl = 5 * 60 * 1000) {
     } catch (error) {
       console.error(`[getCached] Error fetching ${key}:`, error);
       
-      // On error, try to return stale cache if available
-      const staleCache = cache.get(key);
-      if (staleCache) {
-        console.log(`[getCached] Returning stale cache for ${key}`);
-        return staleCache.data;
-      }
+      // For financial data, never return stale cache – it causes wrong balance display
+      const isFinancialKey = /wallet|holding|balance|kraken/i.test(key);
       
-      // Try localStorage as last resort
-      try {
-        const localCached = localStorage.getItem(localCacheKey);
-        if (localCached) {
-          const parsed = JSON.parse(localCached);
-          if (parsed?.data) {
-            console.log(`[getCached] Returning stale localStorage cache for ${key}`);
-            return parsed.data;
-          }
+      if (!isFinancialKey) {
+        // Non-financial: stale cache is acceptable fallback
+        const staleCache = cache.get(key);
+        if (staleCache) {
+          console.log(`[getCached] Returning stale cache for ${key}`);
+          return staleCache.data;
         }
-      } catch (_) {}
+        try {
+          const localCached = localStorage.getItem(localCacheKey);
+          if (localCached) {
+            const parsed = JSON.parse(localCached);
+            if (parsed?.data) return parsed.data;
+          }
+        } catch (_) {}
+      }
       
       throw error;
     } finally {
