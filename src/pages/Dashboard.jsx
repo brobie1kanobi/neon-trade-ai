@@ -1780,18 +1780,14 @@ export default function Dashboard() {
     }
   }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
   
-  // CRITICAL: Safety valve - after 15s, stop showing loading even if REST hasn't returned
-  // WebSocket data should be available by then
+  // Safety valve - after 15s, stop showing loading even if REST hasn't returned
   const [forceShowBalance, setForceShowBalance] = React.useState(false);
   React.useEffect(() => {
-    if (!isSimMode && providerLoading) {
-      const timer = setTimeout(() => {
-        console.log('[Dashboard] Safety valve: forcing balance display after 15s');
-        setForceShowBalance(true);
-      }, 15000);
+    if (!isSimMode && !hasKrakenData) {
+      const timer = setTimeout(() => setForceShowBalance(true), 15000);
       return () => clearTimeout(timer);
     }
-  }, [isSimMode, providerLoading]);
+  }, [isSimMode]);
   
   // Cash Wallet = USD balance from Kraken
   // CRITICAL: In LIVE mode, ONLY use Kraken data sources (WS or REST). 
