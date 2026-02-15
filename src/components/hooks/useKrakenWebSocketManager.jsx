@@ -172,6 +172,10 @@ function connectPublicWebSocket(priceSymbols = []) {
     ws.onclose = () => {
       GLOBAL_WS_STATE.isPublicConnected = false;
       GLOBAL_WS_STATE.publicWs = null;
+      if (typeof window !== 'undefined' && !GLOBAL_WS_STATE.isPrivateBalancesConnected && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+        window.__krakenWsConnected = false;
+        window.dispatchEvent(new CustomEvent('kraken:disconnected'));
+      }
       emitEvent('publicDisconnected', {});
       
       // Auto-reconnect
