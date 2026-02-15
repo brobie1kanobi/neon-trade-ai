@@ -54,16 +54,22 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
   const availableCash = currentCashBalance !== undefined ? currentCashBalance : isSimMode ? wallet?.cash_balance || 0 : wallet?.real_cash_balance || 0;
 
   useEffect(() => {
+    let cancelled = false;
     const fetchSettings = async () => {
-      const userSettings = await UserSettings.list();
-      if (userSettings.length > 0) {
-        setSettingsData(userSettings[0]);
-        setGainMargin(userSettings[0].gain_margin || 10);
-        setLossMargin(userSettings[0].loss_margin || 5);
-        setInputMode(userSettings[0].default_input_mode || 'quantity');
+      try {
+        const userSettings = await UserSettings.list('-updated_date', 1);
+        if (!cancelled && userSettings.length > 0) {
+          setSettingsData(userSettings[0]);
+          setGainMargin(userSettings[0].gain_margin || 10);
+          setLossMargin(userSettings[0].loss_margin || 5);
+          setInputMode(userSettings[0].default_input_mode || 'quantity');
+        }
+      } catch (e) {
+        console.warn('[TradingInterface] Settings fetch failed:', e.message);
       }
     };
     fetchSettings();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
