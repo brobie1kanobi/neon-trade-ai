@@ -27,9 +27,13 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     refresh: wsRefresh
   } = useKrakenWebSocket();
 
-  // Provider already merges WS > REST – use its values directly
-  const displayCash = isSimMode ? (wallet?.cash_balance || 0) : (cashBalance > 0 ? cashBalance : wsUsdBalance);
-  const displayPortfolioValue = isSimMode ? portfolioMarketValue : (portfolioMarketValue > 0 ? portfolioMarketValue : wsCryptoHoldingsValue);
+  // Provider merges WS > REST – use its values, with fallbacks to props/wallet
+  const displayCash = isSimMode 
+    ? (wallet?.cash_balance || 0) 
+    : (cashBalance > 0 ? cashBalance : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0)));
+  const displayPortfolioValue = isSimMode 
+    ? portfolioMarketValue 
+    : (portfolioMarketValue > 0 ? portfolioMarketValue : wsCryptoHoldingsValue);
   const totalBalance = displayCash + displayPortfolioValue;
   const totalAssets = isSimMode ? 0 : wsTotalAssets;
 
