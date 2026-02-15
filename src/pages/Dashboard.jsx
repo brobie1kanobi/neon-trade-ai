@@ -1668,20 +1668,14 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // CRITICAL: Use REST API as PRIMARY source in LIVE mode (most reliable)
-  // WebSocket can return stale/zero data, REST API from getKrakenBalance is authoritative
-  // Priority: REST API (if loaded) > WebSocket (if has data) > Wallet DB > Cache
-  
-  // CRITICAL: In LIVE mode, fetch Kraken data if not loaded yet
-  // This ensures balance cards show actual data instead of grey boxes
+  // Trigger initial REST fetch if provider hasn't loaded yet
   React.useEffect(() => {
-    if (!isSimMode && !krakenApiBalances.loaded && !providerLoading && fetchKrakenData) {
-      console.log('[Dashboard] LIVE mode - triggering Kraken data fetch');
+    if (!isSimMode && !providerHasData && !providerLoading && fetchKrakenData) {
       fetchKrakenData(true);
     }
-  }, [isSimMode, krakenApiBalances.loaded, providerLoading, fetchKrakenData]);
-  
-  // Safety valve - after 15s, stop showing loading even if data hasn't arrived
+  }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
+
+  // Safety valve - stop showing loading after 15s
   const [forceShowBalance, setForceShowBalance] = React.useState(false);
   React.useEffect(() => {
     if (!isSimMode) {
@@ -1689,37 +1683,11 @@ export default function Dashboard() {
       return () => clearTimeout(timer);
     }
   }, [isSimMode]);
-  
-  // Cash Wallet = USD balance from Kraken
-  // CRITICAL: In LIVE mode, ONLY use Kraken data sources (WS or REST). 
-  // NEVER fall back to wallet.real_cash_balance - it's a stale local ledger.
-  const rawCashBalance = isSimMode
-    ? (wallet?.cash_balance || 0)
-    : (
-        // WebSocket first (real-time, always fresh)
-        (wsConnected && wsUsdBalance > 0) ? wsUsdBalance
-        // REST snapshot fallback (from getKrakenBalance)
-        : (krakenApiBalances.loaded && krakenApiBalances.usdBalance > 0) ? krakenApiBalances.usdBalance
-        // No data yet - show 0, loading indicator will display
-        : 0
-      );
-  
-  // Portfolio = ONLY crypto holdings (NOT including cash)
-  const rawPortfolioValue = isSimMode
-    ? portfolioMarketValue
-    : (
-        (wsConnected && wsCryptoValue > 0) ? wsCryptoValue
-        : (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue
-        : 0
-      );
-  
-  // CRITICAL: Always show values - use 0 as fallback, loading indicator shown separately
-  const currentCashBalance = rawCashBalance;
-  const currentPortfolioValue = rawPortfolioValue;
-  
-  // CRITICAL: Show loading in LIVE mode until we have real Kraken data
-  const hasKrakenData = krakenApiBalances.loaded || (wsConnected && (wsUsdBalance > 0 || wsCryptoValue > 0));
-  const showBalanceLoading = !isSimMode && !hasKrakenData && !forceShowBalance;
+
+  // Provider already exposes best-available merged values (WS > REST)
+  const currentCashBalance = isSimMode ? (wallet?.cash_balance || 0) : wsUsdBalance;
+  const currentPortfolioValue = isSimMode ? portfolioMarketValue : wsCryptoValue;
+  const showBalanceLoading = !isSimMode && !providerHasData && !forceShowBalance;
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
