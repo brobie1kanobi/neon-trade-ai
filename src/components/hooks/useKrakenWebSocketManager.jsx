@@ -294,16 +294,28 @@ function subscribeToTicker(symbols) {
   const ws = GLOBAL_WS_STATE.publicWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+  // CRITICAL: Kraken V2 requires pairs in "XRP/USD" format, not bare symbols
+  const normalizedSymbols = symbols.map(s => {
+    if (typeof s !== 'string') return null;
+    s = s.trim().toUpperCase();
+    if (s.includes('/')) return s; // Already a pair
+    if (s === 'USD' || s === 'ZUSD') return null; // Skip USD itself
+    return `${s}/USD`;
+  }).filter(Boolean);
+
+  if (normalizedSymbols.length === 0) return;
+
   const subscription = {
     method: 'subscribe',
     params: {
       channel: 'ticker',
-      symbol: symbols
+      symbol: normalizedSymbols
     }
   };
 
+  console.log('[KrakenWS] Subscribing to ticker:', normalizedSymbols.join(', '));
   ws.send(JSON.stringify(subscription));
-  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols }));
+  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: normalizedSymbols }));
 }
 
 /**
