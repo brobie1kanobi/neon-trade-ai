@@ -1630,7 +1630,7 @@ export default function Dashboard() {
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
 
     setChange24h({ value: totalDelta, percentage: pctChange });
-  }, [effectiveHoldings, wallet, settings, priceData, isSimMode, wsConnected, wsTotalValue, wsUsdBalance]);
+  }, [effectiveHoldings, wallet, settings, priceData, isSimMode, wsConnected, wsTotalValue, wsUsdBalance, krakenApiBalances]);
 
   useEffect(() => {
     if (effectiveHoldings.length > 0 && (priceData?.length > 0 || (wsConnected && wsTotalValue >= 0)) || effectiveHoldings.length === 0) {
