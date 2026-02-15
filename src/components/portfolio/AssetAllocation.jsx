@@ -24,7 +24,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const previousPrices = usePrevious(allocations);
 
   const { settings } = useSettings();
-  const isSimMode = settings?.sim_trading_mode !== false;
+  // CRITICAL: Must match parent (Portfolio page) logic exactly
+  const isSimMode = settings ? (settings.sim_trading_mode !== false) : true;
 
   // CRITICAL: Use global WebSocket connection for real-time Kraken data
   const {
