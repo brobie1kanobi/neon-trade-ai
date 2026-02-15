@@ -1554,9 +1554,7 @@ export default function Dashboard() {
       // Lifetime PnL = realized + unrealized from Kraken
       const lifetimePnLValue = krakenPnL.pnl_lifetime || 0;
       // Calculate percentage based on current portfolio value
-      const currentValue = (wsConnected && wsCryptoValue > 0) ? wsCryptoValue :
-        (krakenApiBalances.loaded && krakenApiBalances.cryptoValue > 0) ? krakenApiBalances.cryptoValue :
-        portfolioMarketValue;
+      const currentValue = wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue;
       const costBasis = currentValue - lifetimePnLValue;
       const lifetimePct = costBasis > 0 ? (lifetimePnLValue / costBasis) * 100 : 0;
       
