@@ -1538,10 +1538,8 @@ export default function Dashboard() {
   }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance]);
 
   useEffect(() => {
-    if (effectiveHoldings.length > 0 && (priceData?.length > 0 || (wsConnected && wsTotalValue >= 0)) || effectiveHoldings.length === 0) {
-      compute24hChange();
-    }
-  }, [compute24hChange, effectiveHoldings, priceData, wsConnected, wsTotalValue]);
+    compute24hChange();
+  }, [compute24hChange]);
 
   useEffect(() => {
     const isSimModeLocal = settings?.sim_trading_mode !== false;
