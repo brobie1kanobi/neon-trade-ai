@@ -131,7 +131,6 @@ export const SettingsProvider = ({ children }) => {
         await UserSettings.create({
           ...settings,
           [key]: value,
-          sim_trading_mode: (key === 'sim_trading_mode') ? value : true,
           created_by: me.email
         });
       }
@@ -139,8 +138,7 @@ export const SettingsProvider = ({ children }) => {
       // Update local state immediately for responsive UI
       const newSettings = {
         ...settings,
-        [key]: value,
-        ...(key !== 'sim_trading_mode' ? { sim_trading_mode: settings?.sim_trading_mode ?? true } : {})
+        [key]: value
       };
       setSettings(newSettings);
       
@@ -149,17 +147,23 @@ export const SettingsProvider = ({ children }) => {
         localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings));
       } catch (_e) {}
 
-      // Invalidate cache and refresh
+      // CRITICAL: When sim_trading_mode changes, invalidate ALL data caches
+      // This ensures no stale sim/live data bleeds across modes
+      if (key === 'sim_trading_mode') {
+        console.log('[SettingsContext] sim_trading_mode changed to', value, '- invalidating all caches');
+        invalidateCache(); // Invalidate ALL caches
+      }
+
+      // Invalidate settings cache
       if (user?.email) {
         invalidateCache(`settings:${user.email}`);
       }
-      setTimeout(() => loadSettings(true), 1500);
 
     } catch (error) {
       console.error("Error updating setting:", error);
       throw error;
     }
-  }, [settings, user, loadSettings]);
+  }, [settings, user]);
 
   useEffect(() => {
     if (user) {
