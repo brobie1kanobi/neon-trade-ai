@@ -576,6 +576,61 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           if (shouldSell) {
             console.log('[AutoTrader] ⚡ SELL TRIGGERED for', symU, '-', tradeType, '- qty:', sellQuantity, '@ $', currentPrice);
 
+            // CRITICAL: Pre-trade balance verification - fetch ACTUAL Kraken balance for this asset
+            // This prevents "insufficient funds" errors by confirming we actually hold the asset
+            if (!isSimMode) {
+              try {
+                const verifyRes = await Promise.race([
+                  base44.functions.invoke('getKrakenBalance', {}),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Balance verify timeout')), 10000))
+                ]);
+                const verifyData = verifyRes?.data || verifyRes;
+                if (verifyData?.success && verifyData?.holdings) {
+                  const actualHoldingOnKraken = verifyData.holdings.find(h => 
+                    (h.symbol || '').toUpperCase() === symU
+                  );
+                  const actualQtyOnKraken = actualHoldingOnKraken?.quantity || 0;
+                  
+                  if (actualQtyOnKraken < 0.00001) {
+                    console.log(`[AutoTrader] ⚠️ Skipping ${symU} sell - Kraken reports 0 balance`);
+                    if (order.id) {
+                      await ConditionalOrder.update(order.id, { 
+                        status: "cancelled",
+                        closure_reason: `Cancelled: Kraken reports 0 balance for ${symU}`
+                      });
+                    }
+                    continue;
+                  }
+                  
+                  // CRITICAL: Adjust sell quantity to actual available balance (minus small buffer for fees)
+                  if (sellQuantity > actualQtyOnKraken) {
+                    console.log(`[AutoTrader] Adjusting sell qty from ${sellQuantity} to ${actualQtyOnKraken} (actual Kraken balance)`);
+                    sellQuantity = actualQtyOnKraken;
+                  }
+                  
+                  // Check minimum order size
+                  const MIN_ORDER_SIZES = {
+                    'BTC': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+                    'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
+                    'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+                    'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7,
+                    'BABY': 50.0, 'FLOKI': 105000.0, 'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0,
+                    'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0,
+                    'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0, 'GRASS': 13.0, 'GOAT': 5.0,
+                    'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'SUI': 3.0
+                  };
+                  const minQty = MIN_ORDER_SIZES[symU] || 0.00001;
+                  if (sellQuantity < minQty) {
+                    console.log(`[AutoTrader] ⚠️ Skipping ${symU} sell - qty ${sellQuantity} below Kraken minimum ${minQty}`);
+                    continue;
+                  }
+                }
+              } catch (verifyErr) {
+                console.warn(`[AutoTrader] Balance verification failed for ${symU}:`, verifyErr.message);
+                // Continue with sell anyway - Kraken will reject if insufficient
+              }
+            }
+
             const tradeDetails = { symbol: symU, type: "sell", asset_type: order.asset_type || "crypto", quantity: sellQuantity, price: currentPrice, total_value: sellQuantity * currentPrice, is_auto_trade: true };
 
             // CRITICAL: In LIVE mode, ALL sells MUST go through Kraken - no local-only orders
