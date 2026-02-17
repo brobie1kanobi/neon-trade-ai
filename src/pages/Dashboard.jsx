@@ -1090,8 +1090,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     console.log('[AutoTrader] Hook initialized - running first trade cycle');
     performRuleBasedTrade();
 
-    // Run every 120 seconds to avoid rate limiting (429 errors)
-    const interval = setInterval(performRuleBasedTrade, 120000);
+    // Run every 180 seconds to reduce rate limiting pressure (was 120s)
+    const interval = setInterval(performRuleBasedTrade, 180000);
     const flushCheckInterval = setInterval(checkAndFlushBatch, 30000);
     return () => {
       if (interval) clearInterval(interval);
