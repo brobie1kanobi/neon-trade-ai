@@ -1736,14 +1736,15 @@ export default function Dashboard() {
     }
   }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
 
-  // CRITICAL: In LIVE mode, ONLY show WebSocket/provider values - never fall back to stale cached wallet data
-  // This prevents blips of old cached numbers during refreshes
+  // CRITICAL: In LIVE mode, use provider's best-available values (WS > REST > 0)
+  // The provider already merges WS real-time + REST snapshot, so we just consume its output
+  // This prevents $0 blips when WS disconnects while still showing accurate data
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 ? wsUsdBalance : 0);
+    : wsUsdBalance;
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoValue > 0 ? wsCryptoValue : 0);
+    : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
