@@ -41,11 +41,25 @@ async function evaluateRisk(base44, userId, proposedTrade, userSettings, portfol
     is_simulation
   } = proposedTrade;
   
-  // Get user's risk parameters (or use defaults)
+  // Get user's risk parameters from UserSettings fields (or use defaults)
+  // CRITICAL: Read dedicated UserSettings fields first, then fall back to risk_params JSON, then defaults
+  const riskParamsFromJson = (() => {
+    try {
+      return userSettings?.risk_params ? JSON.parse(userSettings.risk_params) : {};
+    } catch (_) { return {}; }
+  })();
+  
   const riskParams = {
     ...DEFAULT_RISK_PARAMS,
-    ...(userSettings?.risk_params || {})
+    ...riskParamsFromJson,
+    // Dedicated UserSettings fields override everything
+    ...(typeof userSettings?.max_asset_exposure_percent === 'number' ? { maxAssetExposurePercent: userSettings.max_asset_exposure_percent } : {}),
+    ...(typeof userSettings?.max_single_trade_percent === 'number' ? { maxSingleTradePercent: userSettings.max_single_trade_percent } : {}),
+    ...(typeof userSettings?.daily_loss_cap_percent === 'number' ? { dailyLossCapPercent: userSettings.daily_loss_cap_percent } : {}),
+    ...(typeof userSettings?.max_drawdown_percent === 'number' ? { maxDrawdownPercent: userSettings.max_drawdown_percent } : {})
   };
+  
+  console.log(`[riskEngine] Using risk params: maxExposure=${riskParams.maxAssetExposurePercent}%, maxTrade=${riskParams.maxSingleTradePercent}%, dailyLoss=${riskParams.dailyLossCapPercent}%, maxDrawdown=${riskParams.maxDrawdownPercent}%`);
   
   // Calculate current portfolio metrics
   const cashKey = is_simulation ? 'cash_balance' : 'real_cash_balance';
