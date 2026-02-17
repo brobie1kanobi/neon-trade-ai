@@ -54,11 +54,11 @@ function computeMetricsFromGlobal() {
   let totalAssets = 0;
 
   if (balances && Object.keys(balances).length > 0) {
-    usdBalance = balances['USD']?.available || balances['ZUSD']?.available || 0;
+    usdBalance = balances['USD']?.balance || balances['USD']?.available || balances['ZUSD']?.balance || balances['ZUSD']?.available || 0;
 
     Object.entries(balances).forEach(([asset, balance]) => {
       if (asset === 'USD' || asset === 'ZUSD') return;
-      const quantity = balance.available || balance.balance || 0;
+      const quantity = balance.balance || balance.available || 0;
       if (quantity <= 0.00001) return;
       const pair = `${asset}/USD`;
       const price = prices[pair]?.price || 0;
