@@ -1736,12 +1736,11 @@ export default function Dashboard() {
     }
   }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
 
-  // CRITICAL: In LIVE mode, use provider's best-available values (WS > REST > 0)
-  // The provider already merges WS real-time + REST snapshot, so we just consume its output
-  // This prevents $0 blips when WS disconnects while still showing accurate data
+  // CRITICAL: In LIVE mode, use provider's best-available values (REST > WS > 0)
+  // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : wsUsdBalance;
+    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
     : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
