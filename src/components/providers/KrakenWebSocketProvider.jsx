@@ -146,8 +146,8 @@ export function KrakenWebSocketProvider({ children }) {
     window.addEventListener('kraken:connected', handleUpdate);
     window.addEventListener('kraken:disconnected', handleUpdate);
 
-    // Fallback interval at 5s for connection-state changes
-    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 5000);
+    // Fallback interval at 10s for connection-state changes (reduced from 5s to lower overhead)
+    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 10000);
 
     return () => {
       window.removeEventListener('kraken:balance-update', handleUpdate);
