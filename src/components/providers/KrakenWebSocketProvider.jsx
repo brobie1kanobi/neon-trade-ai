@@ -105,7 +105,7 @@ export function KrakenWebSocketProvider({ children }) {
 
   const lastRestCallRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
-  const MIN_REST_INTERVAL = 30000;
+  const MIN_REST_INTERVAL = 60000; // Increased from 30s to 60s to reduce rate limits
 
   // ── Merged state: WS real-time + REST snapshot ──
   const [state, setState] = useState({
