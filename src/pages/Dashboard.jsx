@@ -1159,10 +1159,10 @@ export default function Dashboard() {
   // Provider now exposes merged best-available data (WS > REST).
   // No local krakenApiBalances state needed – derive directly from provider.
 
-  // effectiveHoldings: provider already merges WS > REST > DB
+  // effectiveHoldings: provider merges REST > WS > DB (REST is authoritative)
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) return holdings;
-    // LIVE: Provider has already merged WS + REST into bestHoldings
+    // LIVE: Provider has merged REST (authoritative) + WS (fallback) into bestHoldings
     if (providerBestHoldings && providerBestHoldings.length > 0) {
       return providerBestHoldings;
     }
