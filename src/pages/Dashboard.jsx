@@ -1749,7 +1749,7 @@ export default function Dashboard() {
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  // (showZerosInLive removed - live mode now shows $0 naturally when WS has no data)
+  // Live mode uses provider's best-available data (WS > REST), no special zero-handling needed
 
   // CRITICAL: Don't render with wrong mode - wait for settings
   if (isSimMode === null || settingsLoading) {
