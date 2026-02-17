@@ -357,35 +357,37 @@ export function KrakenWebSocketProvider({ children }) {
   const restHasBalance = restData.krakenBalance?.success;
   
   // CRITICAL: Best-available balance logic
-  // WS is preferred when it has MEANINGFUL data, otherwise fall back to REST snapshot
-  // This prevents showing $0 when WS reconnects but hasn't received balance data yet
-  const wsHasMeaningfulBalances = wsHasBalances && (state.usdBalance > 0 || state.cryptoHoldingsValue > 0);
+  // REST API (getKrakenBalance) is AUTHORITATIVE because it returns accurate prices + cost basis
+  // WS balances only have quantities (no prices until ticker data arrives)
+  // So: REST first (accurate), then WS only if REST is unavailable
   
-  const bestUsdBalance = wsHasMeaningfulBalances
-    ? state.usdBalance
-    : restHasBalance ? (restData.krakenBalance.usd_balance || 0)
-    : state.usdBalance; // Final fallback: WS value even if 0
+  const bestUsdBalance = restHasBalance 
+    ? (restData.krakenBalance.usd_balance || 0)
+    : wsHasBalances ? state.usdBalance
+    : 0;
 
-  const bestCryptoValue = wsHasMeaningfulBalances
-    ? state.cryptoHoldingsValue
-    : restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : state.cryptoHoldingsValue;
+  const bestCryptoValue = restHasBalance 
+    ? (restData.krakenBalance.total_crypto_value_usd || 0)
+    : wsHasBalances ? state.cryptoHoldingsValue
+    : 0;
 
-  const bestHoldings = wsHasMeaningfulBalances
-    ? Object.entries(state.balances)
-        .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
-        .filter(([_, b]) => (b.balance || 0) > 0.00001)
-        .map(([asset, bal]) => ({
-          symbol: asset,
-          quantity: bal.balance || 0,
-          asset_type: 'crypto',
-          current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
-          total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
-          is_simulation: false
-        }))
-    : (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }));
+  const bestHoldings = restHasBalance
+    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
+    : wsHasBalances
+      ? Object.entries(state.balances)
+          .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
+          .filter(([_, b]) => (b.balance || 0) > 0.00001)
+          .map(([asset, bal]) => ({
+            symbol: asset,
+            quantity: bal.balance || 0,
+            asset_type: 'crypto',
+            current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
+            total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
+            is_simulation: false
+          }))
+      : [];
 
-  const hasData = wsHasMeaningfulBalances || restHasBalance;
+  const hasData = restHasBalance || wsHasBalances;
 
   const value = {
     ...state,
