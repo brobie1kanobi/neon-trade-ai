@@ -436,31 +436,17 @@ export default function Portfolio() {
     }
   };
 
-  // CRITICAL: WebSocket is PRIMARY for live balances
-  // REST snapshot is fallback for initial load / WS disconnect
+  // CRITICAL: Use provider's best-available values (WS > REST > DB)
+  // The provider already merges WS real-time + REST snapshot, so no manual fallback needed
   const currentCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : (
-        // WebSocket first (real-time)
-        wsConnected && typeof wsUsdBalance === 'number' && wsUsdBalance > 0
-          ? wsUsdBalance
-          // REST snapshot fallback
-          : (typeof krakenData?.usd_balance === 'number'
-              ? krakenData.usd_balance
-              : (wallet?.real_cash_balance || 0))
-      );
+    : wsUsdBalance; // Provider already falls back: WS > REST > 0
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
-    : (
-        // WebSocket first (real-time)
-        wsConnected && typeof wsCryptoValue === 'number' && wsCryptoValue > 0
-          ? wsCryptoValue
-          // REST snapshot fallback
-          : (typeof krakenData?.total_crypto_value_usd === 'number'
-              ? krakenData.total_crypto_value_usd
-              : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0))
-      );
+    : (wsCryptoValue > 0
+        ? wsCryptoValue
+        : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
 
   if (isSimMode === null || ctxSettingsLoading || (isLoading && !wallet && !user)) {
     return (
