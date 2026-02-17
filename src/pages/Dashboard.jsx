@@ -1736,8 +1736,6 @@ export default function Dashboard() {
     }
   }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
 
-  // (Safety valve removed - live mode now shows WS-only data without loading states)
-
   // CRITICAL: In LIVE mode, ONLY show WebSocket/provider values - never fall back to stale cached wallet data
   // This prevents blips of old cached numbers during refreshes
   const currentCashBalance = isSimMode 
