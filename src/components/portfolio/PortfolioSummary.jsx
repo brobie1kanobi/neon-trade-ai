@@ -36,18 +36,17 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   }, [isSimMode, refreshWebSocket]);
 
   // CRITICAL: In LIVE mode, prioritize krakenData prop (REST API data) > WebSocket > wallet DB
-  // REST API is the most reliable source - WebSocket can return stale/zero data
-  // This logic MUST match Dashboard exactly for consistency!
+  // REST API is the most reliable source - it returns accurate prices + cost basis
+  // WebSocket only has raw quantities without accurate USD valuations
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
-    // Check for BOTH usd_balance AND total_portfolio_value_usd
-    if (krakenData?.usd_balance > 0) {
+    if (krakenData?.success && typeof krakenData?.usd_balance === 'number') {
       return krakenData.usd_balance;
     }
-    // WebSocket fallback - only if has positive balance
+    // WebSocket fallback
     if (wsConnected && wsUsdBalance > 0) {
       return wsUsdBalance;
     }
@@ -55,21 +54,19 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
 
   // CRITICAL: Portfolio value = crypto holdings only (not including cash)
-  // REST API is authoritative - WebSocket can be unreliable
+  // REST API is authoritative - it returns actual prices from Kraken
   const effectivePortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
-    // Use total_crypto_value_usd field from getKrakenBalance
-    if (krakenData?.total_crypto_value_usd > 0) {
+    if (krakenData?.success && krakenData?.total_crypto_value_usd > 0) {
       return krakenData.total_crypto_value_usd;
     }
-    // Fallback to old field name
-    if (krakenData?.total_crypto_value > 0) {
+    if (krakenData?.success && krakenData?.total_crypto_value > 0) {
       return krakenData.total_crypto_value;
     }
-    // WebSocket fallback - only if has positive value
+    // WebSocket fallback
     if (wsConnected && wsCryptoValue > 0) {
       return wsCryptoValue;
     }
