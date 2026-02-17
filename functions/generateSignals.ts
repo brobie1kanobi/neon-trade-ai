@@ -123,15 +123,21 @@ Deno.serve(async (req) => {
       console.error('[generateSignals] Market data fetch failed:', e.message);
     }
     
-    // Run AI analysis
+    // Run AI analysis with broader market context
     let aiRecommendations = [];
     try {
       const aiResponse = await base44.asServiceRole.functions.invoke('analyzeSmallGains', {
         symbols: assetsNeedingAnalysis.map(a => a.symbol),
-        includeMarketIntelligence: true
+        includeMarketIntelligence: true,
+        includeMarketContext: true // Enhanced: ask AI to factor overall market sentiment
       });
       const aiData = aiResponse?.data || aiResponse;
       aiRecommendations = aiData?.recommendations || [];
+      
+      // Log market context if provided
+      if (aiData?.market_context) {
+        console.log('[generateSignals] Market context:', aiData.market_context);
+      }
     } catch (e) {
       console.error('[generateSignals] AI analysis failed:', e.message);
     }
