@@ -334,10 +334,10 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [shouldConnect]);
 
-  // ── PnL polling (only thing not available via WS) ──
+  // ── PnL polling (only thing not available via WS) - every 5 min ──
   useEffect(() => {
     if (!shouldConnect) return;
-    const id = setInterval(fetchPnL, 120000);
+    const id = setInterval(fetchPnL, 300000);
     return () => clearInterval(id);
   }, [shouldConnect, fetchPnL]);
 
