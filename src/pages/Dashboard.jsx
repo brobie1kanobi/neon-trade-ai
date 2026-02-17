@@ -1690,15 +1690,14 @@ export default function Dashboard() {
     }
   }, [isSimMode]);
 
-  // Provider exposes best-available merged values (WS > REST > 0)
-  // CRITICAL: In live mode, prefer provider values but fall back to local calculations
+  // CRITICAL: In LIVE mode, ONLY show WebSocket/provider values - never fall back to stale cached wallet data
+  // This prevents blips of old cached numbers during refreshes
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+    : (wsUsdBalance > 0 ? wsUsdBalance : 0);
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
-  const showBalanceLoading = !isSimMode && !providerHasData && !forceShowBalance && !wallet;
+    : (wsCryptoValue > 0 ? wsCryptoValue : 0);
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
@@ -1760,14 +1759,13 @@ export default function Dashboard() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <BalanceCard
             title="Total Balance"
-            amount={balanceVisible ? (showZerosInLive ? 0 : (totalBalance ?? 0)) : null}
-            change={showZerosInLive ? { value: 0, percentage: 0 } : lifetimeChange}
+            amount={balanceVisible ? (totalBalance ?? 0) : null}
+            change={lifetimeChange}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
-            isLoading={showBalanceLoading}
           />
         </motion.div>
 
@@ -1775,26 +1773,24 @@ export default function Dashboard() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
             <BalanceCard
               title="Cash Wallet"
-              amount={balanceVisible ? (showZerosInLive ? 0 : (currentCashBalance ?? 0)) : null}
+              amount={balanceVisible ? (currentCashBalance ?? 0) : null}
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
-              isLoading={showBalanceLoading}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
             <BalanceCard
               title="Portfolio"
-              amount={balanceVisible ? (showZerosInLive ? 0 : (currentPortfolioValue ?? 0)) : null}
-              change={showZerosInLive ? { value: 0, percentage: 0 } : lifetimeChange}
+              amount={balanceVisible ? (currentPortfolioValue ?? 0) : null}
+              change={lifetimeChange}
               icon={Activity}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
-              isLoading={showBalanceLoading}
             />
           </motion.div>
         </div>
