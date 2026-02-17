@@ -436,11 +436,11 @@ export default function Portfolio() {
     }
   };
 
-  // CRITICAL: Use provider's best-available values (WS > REST > DB)
-  // The provider already merges WS real-time + REST snapshot, so no manual fallback needed
+  // CRITICAL: Provider priority is REST > WS > DB
+  // REST API (getKrakenBalance) returns accurate prices+balances, WS only has raw quantities
   const currentCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : wsUsdBalance; // Provider already falls back: WS > REST > 0
+    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
