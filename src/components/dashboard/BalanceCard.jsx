@@ -76,11 +76,7 @@ export default function BalanceCard({
         </div>
         
         <div className="space-y-1">
-          {isLoading ? (
-            <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse">
-              <span className="sr-only">Loading balance...</span>
-            </div>
-          ) : isVisible ? (
+          {isVisible ? (
             <NumberDisplay
               value={typeof amount === 'number' ? amount : 0}
               prefix="$"
@@ -96,7 +92,7 @@ export default function BalanceCard({
             </p>
           )}
           
-          {isVisible && !isLoading && amount !== null &&
+          {isVisible && amount !== null &&
             <div className="flex items-center gap-1 flex-wrap">
               {isPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
