@@ -356,15 +356,20 @@ export function KrakenWebSocketProvider({ children }) {
   const wsHasBalances = wsActuallyConnected && Object.keys(state.balances).length > 0;
   const restHasBalance = restData.krakenBalance?.success;
   
-  const bestUsdBalance = wsHasBalances && state.usdBalance > 0
+  // CRITICAL: Best-available balance logic
+  // WS is preferred when it has MEANINGFUL data, otherwise fall back to REST snapshot
+  // This prevents showing $0 when WS reconnects but hasn't received balance data yet
+  const wsHasMeaningfulBalances = wsHasBalances && (state.usdBalance > 0 || state.cryptoHoldingsValue > 0);
+  
+  const bestUsdBalance = wsHasMeaningfulBalances
     ? state.usdBalance
     : restHasBalance ? (restData.krakenBalance.usd_balance || 0)
-    : state.usdBalance || 0; // Last resort: whatever WS has even if 0
+    : state.usdBalance; // Final fallback: WS value even if 0
 
-  const bestCryptoValue = wsHasBalances && state.cryptoHoldingsValue > 0
+  const bestCryptoValue = wsHasMeaningfulBalances
     ? state.cryptoHoldingsValue
     : restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : state.cryptoHoldingsValue || 0;
+    : state.cryptoHoldingsValue;
 
   const bestHoldings = wsHasBalances
     ? Object.entries(state.balances)
