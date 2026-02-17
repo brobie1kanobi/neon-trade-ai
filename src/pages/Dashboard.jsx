@@ -1681,14 +1681,7 @@ export default function Dashboard() {
     }
   }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
 
-  // Safety valve - stop showing loading after 15s
-  const [forceShowBalance, setForceShowBalance] = React.useState(false);
-  React.useEffect(() => {
-    if (!isSimMode) {
-      const timer = setTimeout(() => setForceShowBalance(true), 15000);
-      return () => clearTimeout(timer);
-    }
-  }, [isSimMode]);
+  // (Safety valve removed - live mode now shows WS-only data without loading states)
 
   // CRITICAL: In LIVE mode, ONLY show WebSocket/provider values - never fall back to stale cached wallet data
   // This prevents blips of old cached numbers during refreshes
@@ -1702,8 +1695,7 @@ export default function Dashboard() {
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
 
-  // Only show zeros if we truly have nothing - no provider data, no wallet, no holdings
-  const showZerosInLive = !isSimMode && !providerHasData && !effectiveHoldings.length && !wallet?.real_cash_balance;
+  // (showZerosInLive removed - live mode now shows $0 naturally when WS has no data)
 
   // CRITICAL: Don't render with wrong mode - wait for settings
   if (isSimMode === null || settingsLoading) {
