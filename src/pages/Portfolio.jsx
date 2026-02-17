@@ -163,14 +163,31 @@ export default function Portfolio() {
     }
   }, [loadData]);
 
-  // CRITICAL: Build holdings - WebSocket is PRIMARY in LIVE mode
+  // CRITICAL: Build holdings - REST API is PRIMARY in LIVE mode (has accurate prices + cost basis)
+  // WebSocket only has raw quantities without prices - not useful for display
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
       return holdings;
     } else {
-      // LIVE MODE: WebSocket balances are PRIMARY (real-time)
+      // LIVE MODE: REST snapshot is PRIMARY (has accurate prices from Kraken Ticker API)
+      if (krakenData?.success && krakenData?.holdings && krakenData.holdings.length > 0) {
+        console.log('[Portfolio] Using REST snapshot holdings (authoritative)');
+        return krakenData.holdings.map(kh => ({
+          symbol: kh.symbol,
+          quantity: kh.quantity,
+          average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
+          asset_type: 'crypto',
+          currentPrice: kh.current_price_usd,
+          costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
+          currentValue: kh.total_value_usd,
+          gainLoss: kh.unrealized_pnl || 0,
+          gainLossPercent: kh.pnl_percent || 0,
+          is_simulation: false
+        }));
+      }
+      // Fallback to WebSocket (only has quantities, prices may be 0 or stale)
       if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-        console.log('[Portfolio] Using WebSocket balances (real-time)');
+        console.log('[Portfolio] Using WebSocket balances (fallback - no REST data yet)');
         return Object.entries(wsBalances)
           .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
           .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
@@ -194,24 +211,7 @@ export default function Portfolio() {
             };
           });
       }
-      // Fallback to REST snapshot (initial load or WS disconnected)
-      if (krakenData?.holdings && krakenData.holdings.length > 0) {
-        console.log('[Portfolio] Using REST snapshot holdings');
-        return krakenData.holdings.map(kh => ({
-          symbol: kh.symbol,
-          quantity: kh.quantity,
-          average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
-          asset_type: 'crypto',
-          currentPrice: kh.current_price_usd,
-          costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
-          currentValue: kh.total_value_usd,
-          gainLoss: kh.unrealized_pnl || 0,
-          gainLossPercent: kh.pnl_percent || 0,
-          is_simulation: false
-        }));
-      }
-      // CRITICAL: Only return DB holdings if they are LIVE mode holdings
-      // Never return SIM holdings in LIVE mode
+      // Final fallback: DB holdings for LIVE mode only
       return holdings.filter(h => h.is_simulation === false);
     }
   }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
