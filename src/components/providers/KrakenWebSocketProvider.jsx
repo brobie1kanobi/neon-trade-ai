@@ -371,7 +371,7 @@ export function KrakenWebSocketProvider({ children }) {
     : restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0)
     : state.cryptoHoldingsValue;
 
-  const bestHoldings = wsHasBalances
+  const bestHoldings = wsHasMeaningfulBalances
     ? Object.entries(state.balances)
         .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
         .filter(([_, b]) => (b.balance || 0) > 0.00001)
@@ -385,7 +385,7 @@ export function KrakenWebSocketProvider({ children }) {
         }))
     : (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }));
 
-  const hasData = wsHasBalances || restHasBalance;
+  const hasData = wsHasMeaningfulBalances || restHasBalance;
 
   const value = {
     ...state,
