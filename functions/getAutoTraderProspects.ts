@@ -128,8 +128,10 @@ Deno.serve(async (req) => {
         }
       }
     } catch (e) {
-      console.error('[Prospects] Kraken balance fetch failed:', e);
+      console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
     }
+    
+    console.log('[Prospects] Cash available after Kraken:', cashAvailable);
     
     const isSimMode = false; // Force LIVE mode for prospects
 
