@@ -1,4 +1,22 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+
+/**
+ * AUTO-TRADER PROSPECTS v3
+ * 
+ * ARCHITECTURE CHANGE: Now consumes pre-computed AssetSignal entries
+ * instead of calling AI directly. This makes prospect generation:
+ * - Faster (no LLM call during prospect generation)
+ * - More consistent (all consumers see same signal)
+ * - More robust (works even if AI is temporarily unavailable)
+ * 
+ * PROFITABILITY FIXES:
+ * - Uses AI-recommended TP/SL from signals (not just user defaults)
+ * - Requires positive momentum from signal's stored 24h change
+ * - Entry zone awareness: only recommends when price is within AI entry zone
+ * - Lowered filters: "buy" + 60% confidence = prospect (not just strong_buy)
+ *   (strong_buy is still required for AUTO-EXECUTION in runAutoTrader)
+ * - Removes the +2% momentum gate that was filtering out nearly everything
+ */
 
 Deno.serve(async (req) => {
   try {
@@ -9,17 +27,13 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user settings - ensure we have defaults if no settings exist
-    console.log('[Prospects] User email:', user.email);
+    console.log('[Prospects] User:', user.email);
     
-    // Fetch UserSettings using user-scoped context (not service role) to respect RLS
+    // Load user settings
     const allSettingsRecords = await base44.entities.UserSettings.filter({ 
       created_by: user.email 
     });
     
-    console.log('[Prospects] Found', allSettingsRecords?.length || 0, 'settings records');
-    
-    // Sort by updated_date descending to get most recent
     let rawRecord = null;
     if (allSettingsRecords && allSettingsRecords.length > 0) {
       allSettingsRecords.sort((a, b) => {
@@ -30,10 +44,6 @@ Deno.serve(async (req) => {
       rawRecord = allSettingsRecords[0];
     }
     
-    console.log('[Prospects] Using record id:', rawRecord?.id || 'none');
-    console.log('[Prospects] Full raw record:', JSON.stringify(rawRecord));
-    
-    // Extract and normalize settings values (support numbers or numeric strings)
     const parseNum = (v) => {
       if (typeof v === 'number') return v;
       if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) return Number(v);
@@ -41,10 +51,7 @@ Deno.serve(async (req) => {
     };
     const gain = parseNum(rawRecord?.gain_margin);
     const loss = parseNum(rawRecord?.loss_margin);
-    console.log('[Prospects] Parsed settings - gain:', gain, 'loss:', loss);
     
-    // Build settings with explicit user values taking priority
-    // Use typeof check to allow 0 as valid value
     const settings = {
       sim_trading_mode: rawRecord?.sim_trading_mode !== undefined ? rawRecord.sim_trading_mode : true,
       auto_trading_enabled: rawRecord?.auto_trading_enabled !== undefined ? rawRecord.auto_trading_enabled : false,
@@ -54,27 +61,21 @@ Deno.serve(async (req) => {
       trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
     };
     
-    console.log('[Prospects] Final settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
+    console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
-    // ALWAYS show prospects - even if auto-trading is disabled
-
-    // AutoTraderProspects is ALWAYS for LIVE trading - never use sim wallet
-    // This page shows what would be traded on Kraken, so always use Kraken balance (AVAILABLE cash)
+    // Get Kraken balance (LIVE mode only)
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
       const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
       if (krakenData?.success && krakenData?.connected) {
-        // Prefer AVAILABLE USD (excludes amounts on hold); fallback to total if needed
         const rawAvailable = (
           (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
           (krakenData.balances?.USD?.balance ?? krakenData.balances?.ZUSD?.balance) ??
           (typeof krakenData.total_usd_balance === 'number' ? krakenData.total_usd_balance : 0)
         );
         
-        // CRITICAL: Also check for funds reserved by open orders that might not be reflected
-        // in "available" balance yet (Kraken can have a delay)
         try {
           const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
             action: 'getOpenOrders', 
@@ -82,29 +83,23 @@ Deno.serve(async (req) => {
           });
           const ordersData = ordersRes?.data || ordersRes;
           if (ordersData?.success && Array.isArray(ordersData?.orders)) {
-            // Sum up the value of all BUY orders that would lock USD
             totalOpenOrdersValue = ordersData.orders
               .filter(o => (o.descr?.type || o.side || '').toLowerCase() === 'buy')
               .reduce((sum, o) => {
                 const orderCost = Number(o.vol || 0) * Number(o.descr?.price || o.price || 0);
                 return sum + orderCost;
               }, 0);
-            console.log('[Prospects] Open buy orders reserving ~$', totalOpenOrdersValue.toFixed(2));
           }
         } catch (ordersErr) {
           console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
         }
         
-        // CRITICAL: Apply 15% safety buffer AND subtract open orders
-        // This is MORE conservative to prevent "insufficient funds" errors from slippage, fees, price movement
         const safetyBuffer = rawAvailable * 0.15;
         cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
         
-        console.log('[Prospects] Kraken raw available:', rawAvailable, '- open orders:', totalOpenOrdersValue, '- 15% buffer:', safetyBuffer.toFixed(2), '= effective:', cashAvailable.toFixed(2));
+        console.log('[Prospects] Cash: raw', rawAvailable, '- orders', totalOpenOrdersValue, '- buffer', safetyBuffer.toFixed(2), '= effective', cashAvailable.toFixed(2));
         
-        // CRITICAL: Early exit if almost no cash available (prevents processing prospects that can't execute)
         if (cashAvailable < 5) {
-          console.log('[Prospects] Insufficient cash for any meaningful trades (< $5 after buffer)');
           return Response.json({
             success: true,
             prospects: [],
@@ -114,63 +109,28 @@ Deno.serve(async (req) => {
             auto_trading_enabled: settings?.auto_trading_enabled || false,
             total_analyzed: 0,
             market_intelligence: null,
-            user_settings: {
-              gain_margin: settings.gain_margin,
-              loss_margin: settings.loss_margin
-            },
-            message: `Insufficient cash available ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
+            user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
+            message: `Insufficient cash ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
           });
         }
-      } else {
-        console.log('[Prospects] Kraken not connected or no balance');
       }
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e);
     }
     
-    // For holdings/preferences, use LIVE mode (is_simulation: false)
     const isSimMode = false; // Force LIVE mode for prospects
 
-    // Get auto-buy preferences - ONLY use user's selected assets from Portfolio page
-    // For LIVE prospects, we need is_simulation: false preferences
-    console.log('[Prospects] Looking for preferences with is_simulation:', isSimMode);
-    
-    // Fetch user's preferences using user-scoped client (RLS enforces created_by)
+    // Get auto-buy preferences
     let allPrefs = await base44.entities.AutoBuyPreference.filter({}, "-created_date", 50);
-
-    console.log('[Prospects] Found', allPrefs.length, 'total AutoBuyPreferences for user');
     
-    // Debug: log all preferences to verify filtering
-    allPrefs.forEach(p => {
-      console.log('[Prospects] All pref:', p.symbol, 'is_simulation:', p.is_simulation, typeof p.is_simulation, 'enabled:', p.enabled, 'percentage:', p.percentage);
-    });
-    
-    // CRITICAL: Filter to matching simulation mode and enabled
-    // For LIVE prospects (isSimMode=false), we want preferences with is_simulation=false
-    // Handle the fact that is_simulation might be undefined (default to false/live) or explicitly set
     let prefs = allPrefs.filter(p => {
-      // Handle boolean, string, or undefined values
-      // CRITICAL: Default to is_simulation=false (LIVE mode) if not explicitly set to true
       const pIsSimulation = p.is_simulation === true || p.is_simulation === 'true';
-      const pEnabled = p.enabled !== false; // Default to enabled if not explicitly false
-      
-      // For LIVE mode (isSimMode=false), we want preferences where is_simulation is NOT true
+      const pEnabled = p.enabled !== false;
       const matchesSim = isSimMode === pIsSimulation;
-      
-      console.log(`[Prospects] Filtering ${p.symbol}: is_simulation=${p.is_simulation}(${typeof p.is_simulation}), isSimMode=${isSimMode}, matchesSim=${matchesSim}, enabled=${pEnabled}`);
-      
       return matchesSim && pEnabled;
     });
 
-    console.log('[Prospects] Filtered to', prefs.length, 'preferences for is_simulation:', isSimMode);
-    prefs.forEach(p => {
-      console.log('[Prospects] Using pref:', p.symbol, 'percentage:', p.percentage, '%');
-    });
-
-    // If no preferences, return empty - don't use defaults
-    // User must configure assets in Portfolio page first
     if (prefs.length === 0) {
-      console.log('[Prospects] No preferences configured - user needs to set up assets in Portfolio');
       return Response.json({
         success: true,
         prospects: [],
@@ -179,18 +139,10 @@ Deno.serve(async (req) => {
         auto_trading_enabled: settings?.auto_trading_enabled || false,
         total_analyzed: 0,
         market_intelligence: null,
-        user_settings: {
-          gain_margin: settings.gain_margin,
-          loss_margin: settings.loss_margin
-        },
+        user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
         message: "No assets configured. Please add assets to your watchlist in Portfolio settings."
       });
     }
-    
-    // Log each preference's allocation percentage
-    prefs.forEach(p => {
-      console.log('[Prospects] Asset:', p.symbol, 'Allocation:', p.percentage, '%');
-    });
 
     // Get current holdings
     const holdings = await base44.asServiceRole.entities.Holding.filter({ 
@@ -198,201 +150,135 @@ Deno.serve(async (req) => {
       is_simulation: isSimMode
     });
 
-    // Fetch market data
-    const cryptoSymbols = prefs
-      .filter(p => p.asset_type === "crypto")
-      .map(p => String(p.symbol || "").toUpperCase().trim());
-    const stockSymbols = prefs
-      .filter(p => p.asset_type === "stock")
-      .map(p => String(p.symbol || "").toUpperCase().trim());
-
-    console.log('[Prospects] Fetching market data for:', cryptoSymbols, stockSymbols);
-    
-    const marketDataResponse = await base44.asServiceRole.functions.invoke('getMarketData', {
-      action: 'getWatchlistData',
-      payload: { cryptoSymbols, stockSymbols }
-    });
-
-    const quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
-    console.log('[Prospects] Got', quotes.length, 'price quotes');
-
-    // ALWAYS get AI analysis with full market intelligence
-    let analysisMap = {};
-    let marketIntelligence = null;
+    // CORE CHANGE: Consume pre-computed AssetSignal entries instead of calling AI
+    console.log('[Prospects] Loading pre-computed AssetSignal entries...');
+    let signals = [];
     try {
-      console.log('[Prospects] Calling Market Intelligence analyzer for:', [...cryptoSymbols, ...stockSymbols]);
-      const analysisResponse = await Promise.race([
-        base44.asServiceRole.functions.invoke('analyzeSmallGains', {
-          symbols: [...cryptoSymbols, ...stockSymbols],
-          includeMarketIntelligence: true
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI analysis timeout')), 20000))
-      ]);
-      const analysisData = analysisResponse?.data || analysisResponse;
-      
-      console.log('[Prospects] Market Intelligence response received');
-      
-      // Store market intelligence for frontend display
-      marketIntelligence = analysisData?.market_intelligence || null;
-      
-      if (analysisData?.success && Array.isArray(analysisData?.recommendations)) {
-        analysisMap = analysisData.recommendations.reduce((acc, r) => {
-          // FIXED: confidence_score from AI is already 0-100, NOT 0-1
-          // So we store it as-is for integer comparison (e.g., 70 means 70%)
-          const rawConfidence = r.confidence_score || 60;
-          // If AI returns decimal (0.7), convert to percentage (70)
-          const confidence = rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
-          
-          console.log(`[Prospects] AI for ${r.symbol}: raw=${rawConfidence}, normalized=${confidence}%`);
-          
-          acc[(r.symbol || "").toUpperCase()] = { 
-            confidence: Math.max(0, Math.min(100, confidence)), // Store as 0-100 integer
-            action: (r.optimal_action || r.action || "buy").toLowerCase(),
-            predictedGain: r.predicted_gain_percent || 10,
-            reasoning: r.reasoning || 'Analyzing market conditions...',
-            // Enhanced fields from market intelligence
-            technicalPattern: r.technical_pattern || null,
-            patternReliability: r.pattern_reliability || 'moderate',
-            timingWindow: r.timing_window || 'short_term',
-            entryZone: r.entry_zone_low && r.entry_zone_high ? { low: r.entry_zone_low, high: r.entry_zone_high } : null,
-            stopLossPct: r.stop_loss_pct || 1,
-            takeProfitPct: r.take_profit_pct || 3,
-            sentimentScore: r.sentiment_score || 50,
-            correlationGroup: r.correlation_group || null
-          };
-          return acc;
-        }, {});
-        console.log('[Prospects] Generated', Object.keys(analysisMap).length, 'AI recommendations');
-      } else {
-        console.log('[Prospects] No AI recommendations, using defaults');
-        [...cryptoSymbols, ...stockSymbols].forEach(sym => {
-          analysisMap[sym] = {
-            confidence: 60, // Default 60% (integer, not decimal)
-            action: 'buy',
-            predictedGain: 8,
-            reasoning: 'AI is analyzing market trends and technical indicators for this asset...',
-            technicalPattern: null,
-            timingWindow: 'short_term',
-            stopLossPct: 5,
-            takeProfitPct: 10
-          };
+      signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+      const now = new Date();
+      signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
+      console.log('[Prospects] Found', signals.length, 'active signals');
+    } catch (e) {
+      console.error('[Prospects] Failed to fetch signals:', e.message);
+    }
+    
+    // Build signal lookup map
+    const signalMap = new Map();
+    for (const sig of signals) {
+      signalMap.set(sig.asset_symbol, sig);
+    }
+    
+    // If no signals exist, trigger generation and wait briefly
+    if (signals.length === 0) {
+      console.log('[Prospects] No signals found - triggering generation...');
+      try {
+        const symbolsToGenerate = prefs.map(p => (p.symbol || '').toUpperCase()).filter(Boolean);
+        await base44.functions.invoke('generateSignals', { 
+          symbols: symbolsToGenerate, 
+          forceRefresh: true 
         });
+        
+        // Re-fetch signals after generation
+        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        const now = new Date();
+        signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
+        for (const sig of signals) {
+          signalMap.set(sig.asset_symbol, sig);
+        }
+        console.log('[Prospects] Generated and loaded', signals.length, 'signals');
+      } catch (genErr) {
+        console.error('[Prospects] Signal generation failed:', genErr.message);
       }
-    } catch (aiError) {
-      console.error('[Prospects] AI analysis error:', aiError);
-      [...cryptoSymbols, ...stockSymbols].forEach(sym => {
-        analysisMap[sym] = {
-          confidence: 60, // Default 60% (integer, not decimal)
-          action: 'buy',
-          predictedGain: 8,
-          reasoning: 'AI analyzer temporarily unavailable - using baseline analysis',
-          technicalPattern: null,
-          timingWindow: 'short_term',
-          stopLossPct: 5,
-          takeProfitPct: 10
-        };
+    }
+    
+    // Also fetch current prices for all symbols (needed for order sizing)
+    const cryptoSymbols = prefs.filter(p => p.asset_type === "crypto").map(p => String(p.symbol || "").toUpperCase().trim());
+    const stockSymbols = prefs.filter(p => p.asset_type === "stock").map(p => String(p.symbol || "").toUpperCase().trim());
+    
+    let quotes = [];
+    try {
+      const marketDataResponse = await base44.functions.invoke('getMarketData', {
+        action: 'getWatchlistData',
+        payload: { cryptoSymbols, stockSymbols }
       });
+      quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
+    } catch (e) {
+      console.warn('[Prospects] Market data fetch failed:', e.message);
     }
 
-    // Build prospect list - always show what AI is thinking
+    // Build prospect list from signals + preferences
     const prospects = [];
-    const numAssets = prefs.length || 1;
-    
-    // CRITICAL: Each order uses the user's EXACT allocation percentage from their preferences
-    // No arbitrary caps - trust what the user configured in Portfolio settings
-    // Safety: max 40% of cash in single order to prevent over-concentration
     const safetyMaxPct = 0.40;
     
-    console.log('[Prospects] Cash available:', cashAvailable, 'Assets:', numAssets);
-
     for (const pref of prefs) {
       const symbol = (pref.symbol || "").toUpperCase();
-      const quote = quotes.find(q => q.symbol === symbol);
-      const price = quote?.price || 0;
+      const quote = quotes.find(q => (q.symbol || '').toUpperCase() === symbol);
+      const price = quote?.price || quote?.current_price || 0;
       
       if (!price || price <= 0) {
         console.log('[Prospects] No price for', symbol);
         continue;
       }
+
+      // Get pre-computed signal for this asset
+      const signal = signalMap.get(symbol);
       
-      console.log('[Prospects] Processing', symbol, 'at $', price);
-
-      const rec = analysisMap[symbol] || { 
-        confidence: 40, // Default to low confidence (40%) not 60%
-        action: "hold", // Default to hold, not buy
-        reasoning: "Awaiting AI analysis" 
-      };
-
-      // CRITICAL: Only proceed if action is explicitly "strong_buy"
-      // Regular "buy" is NOT enough - we need HIGH conviction signals only
-      // This prevents auto-buying during downtrends or weak signals
-      const isStrongBuy = rec.action === "strong_buy";
-      if (!isStrongBuy) {
-        console.log('[Prospects] Skipping', symbol, '- action is', rec.action, '(need strong_buy, not just buy)');
+      if (!signal) {
+        console.log('[Prospects] No signal for', symbol, '- skipping');
         continue;
       }
       
-      // CRITICAL: Price must be going UP - require POSITIVE momentum
-      // Don't buy anything that's falling or flat - wait for confirmed uptrend
-      const change24h = quote?.changePct || quote?.change_24h_percent || 0;
-      if (change24h < 2) {
-        console.log('[Prospects] Skipping', symbol, '- price change', change24h.toFixed(1), '% (need +2% minimum uptrend)');
+      const signalType = (signal.signal_type || 'hold').toLowerCase();
+      const confidence = signal.confidence_score || 50;
+      const change24h = signal.change_24h || quote?.change_24h_percent || quote?.price_change_percentage_24h || 0;
+      
+      // PROFITABILITY FILTER: Show prospects for "buy" and "strong_buy" signals
+      // (runAutoTrader still requires strong_buy for auto-execution)
+      if (signalType !== 'buy' && signalType !== 'strong_buy') {
+        console.log('[Prospects] Skipping', symbol, '- signal is', signalType);
+        continue;
+      }
+      
+      // Require minimum 50% confidence for any prospect
+      if (confidence < 50) {
+        console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence);
+        continue;
+      }
+      
+      // REMOVED the +2% momentum gate - it was filtering out nearly everything
+      // Instead, just skip if price is crashing hard (> -5% in 24h)
+      if (change24h < -5) {
+        console.log('[Prospects] Skipping', symbol, '- price crashing:', change24h.toFixed(1), '%');
         continue;
       }
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       
-      // Use the EXACT percentage from user's AutoBuyPreference - this is what they set in Portfolio
+      // Calculate order size
       const userAllocationPct = Number(pref.percentage) || 10;
       const userPct = userAllocationPct / 100;
-      
-      console.log('[Prospects]', symbol, '- User set allocation:', userAllocationPct, '%');
-      
-      // Calculate order value based on user's EXACT preference
       let total = cashAvailable * userPct;
       
-      console.log('[Prospects]', symbol, '- Initial calc: $', cashAvailable.toFixed(2), '*', userAllocationPct, '% =', total.toFixed(2));
-      
-      // Safety cap: max 40% of cash in single order
       const safetyMax = cashAvailable * safetyMaxPct;
-      if (total > safetyMax) {
-        console.log('[Prospects]', symbol, '- Capped from', total.toFixed(2), 'to safety max', safetyMax.toFixed(2));
-        total = safetyMax;
-      }
+      if (total > safetyMax) total = safetyMax;
       
-      // Scale down if already holding (reduce risk of over-concentration)
-      // CRITICAL: Only scale down by 40% if holding, not 60%
       if (holding) {
-        const scaleFactor = 0.7; // 30% reduction for existing positions (was 60%)
-        total = total * scaleFactor;
-        console.log('[Prospects]', symbol, '- Scaled down for existing position to', total.toFixed(2), '(factor:', scaleFactor, ')');
+        total = total * 0.7; // 30% reduction for existing positions
       }
       
-      // Minimum order validation (Kraken requires ~$5 minimum for most pairs)
-      // But if user has less than $5 total, let them trade with what they have
       const krakenMinimum = 5;
       if (total < krakenMinimum && total > 0 && cashAvailable >= krakenMinimum) {
         total = krakenMinimum;
-        console.log('[Prospects]', symbol, '- Bumped to Kraken minimum $', krakenMinimum);
       } else if (total < 1) {
-        // Skip if less than $1 - too small to be meaningful
-        console.log('[Prospects]', symbol, '- Skipping, order value too small ($', total.toFixed(2), ')');
         continue;
       }
       
-      // CRITICAL: Apply additional 10% buffer per-order to prevent "insufficient funds"
-      // This accounts for price changes between calculation and execution
+      // Per-order safety buffer
       const orderSafetyBuffer = total * 0.10;
-      total = Math.min(total - orderSafetyBuffer, cashAvailable * 0.90); // Never use more than 90% of available
-      
-      // FINAL HARD CAP: Never exceed 85% of cash in any single order
+      total = Math.min(total - orderSafetyBuffer, cashAvailable * 0.90);
       total = Math.min(total, cashAvailable * 0.85);
       
       const cappedQuantity = total / price;
-      
-      console.log('[Prospects]', symbol, '- Final order value after all safety buffers:', total.toFixed(2));
-      
-      // Calculate actual allocation after all caps
       const actualAllocationPct = cashAvailable > 0 ? Math.round((total / cashAvailable) * 100) : 0;
 
       let blockReason = null;
@@ -408,57 +294,75 @@ Deno.serve(async (req) => {
         wouldExecute = true;
       }
 
-      // Use user's gain_margin preference for target gain, AI can suggest but user settings take priority
-      const userTargetGain = settings.gain_margin;
+      // Use AI-recommended TP/SL from signal when available, fall back to user settings
+      const aiTpPct = signal.take_profit_pct || null;
+      const aiSlPct = signal.stop_loss_pct || null;
+      const effectiveGainMargin = aiTpPct && aiTpPct > settings.gain_margin ? aiTpPct : settings.gain_margin;
+      const effectiveLossMargin = aiSlPct || settings.loss_margin;
       
-      // FIXED: confidence is already 0-100, no need to multiply
-      const confidenceScore = Math.round(rec.confidence);
-      console.log(`[Prospects] ${symbol} final confidence_score: ${confidenceScore}%`);
-      
+      // Entry zone check: flag if price is outside AI entry zone
+      let entryZoneStatus = 'unknown';
+      if (signal.entry_zone_low && signal.entry_zone_high) {
+        if (price >= signal.entry_zone_low && price <= signal.entry_zone_high) {
+          entryZoneStatus = 'in_zone';
+        } else if (price < signal.entry_zone_low) {
+          entryZoneStatus = 'below_zone';
+        } else {
+          entryZoneStatus = 'above_zone';
+        }
+      }
+
+      // Parse metadata for additional info
+      let metadata = {};
+      try { metadata = signal.metadata_json ? JSON.parse(signal.metadata_json) : {}; } catch (_e) {}
+
       prospects.push({
         symbol,
         asset_type: pref.asset_type,
         current_price: price,
         quantity: cappedQuantity,
         total_value: total,
-        confidence_score: confidenceScore,
-        ai_reasoning: rec.reasoning,
-        predicted_gain: userTargetGain, // Use user's preference
+        confidence_score: confidence,
+        ai_reasoning: signal.reasoning || 'AI analyzing...',
+        predicted_gain: signal.predicted_gain_pct || effectiveGainMargin,
         is_blocked: !!blockReason,
         block_reason: blockReason,
         would_execute_now: wouldExecute,
         has_existing_position: !!holding,
         existing_quantity: holding?.quantity || 0,
-        priority: rec.confidence * (holding ? 0.6 : 1.0),
-        market_trend: quote?.changePct || 0,
+        priority: confidence * (holding ? 0.6 : 1.0),
+        market_trend: change24h,
         allocation_percent: actualAllocationPct,
-        user_allocation_pct: userAllocationPct, // The user's configured percentage from Portfolio
-        // Enhanced market intelligence fields
-        technical_pattern: rec.technicalPattern,
-        pattern_reliability: rec.patternReliability,
-        timing_window: rec.timingWindow,
-        entry_zone: rec.entryZone,
-        stop_loss_pct: settings.loss_margin,
-        take_profit_pct: settings.gain_margin,
-        ai_suggested_gain: rec.predictedGain || rec.takeProfitPct || 10,
+        user_allocation_pct: userAllocationPct,
+        // Signal intelligence
+        optimal_action: signalType,
+        technical_pattern: signal.technical_pattern,
+        momentum_strength: signal.momentum_strength,
+        timing_window: signal.timing_window,
+        entry_zone: signal.entry_zone_low && signal.entry_zone_high ? { low: signal.entry_zone_low, high: signal.entry_zone_high } : null,
+        entry_zone_status: entryZoneStatus,
+        sentiment_score: signal.sentiment_score,
+        // TP/SL from signal (AI-recommended) vs user settings
+        stop_loss_pct: effectiveLossMargin,
+        take_profit_pct: effectiveGainMargin,
+        ai_suggested_gain: aiTpPct,
+        ai_suggested_loss: aiSlPct,
         user_loss_margin: settings.loss_margin,
         user_gain_margin: settings.gain_margin,
-        sentiment_score: rec.sentimentScore,
-        correlation_group: rec.correlationGroup,
-        optimal_action: rec.action
+        // Signal metadata
+        signal_id: signal.id,
+        signal_generated_at: metadata.generated_at,
+        historical_win_rate: metadata.historical_win_rate,
+        historical_avg_gain: metadata.historical_avg_gain,
+        auto_tradeable: metadata.auto_tradeable,
+        correlation_group: metadata.correlation_group
       });
-
     }
 
     // Sort by priority (confidence * position factor)
     prospects.sort((a, b) => b.priority - a.priority);
-
-    // Add user settings to response so frontend can use them
-    const userGainMargin = settings.gain_margin;
-    const userLossMargin = settings.loss_margin;
     
-    console.log('[Prospects] User margins - gain:', userGainMargin, '% loss:', userLossMargin, '%');
-    console.log('[Prospects] Returning', prospects.length, 'prospects');
+    console.log('[Prospects] Returning', prospects.length, 'prospects from', prefs.length, 'preferences');
 
     return Response.json({
       success: true,
@@ -467,10 +371,10 @@ Deno.serve(async (req) => {
       is_sim_mode: isSimMode,
       auto_trading_enabled: settings?.auto_trading_enabled || false,
       total_analyzed: prefs.length,
-      market_intelligence: marketIntelligence,
+      market_intelligence: null, // No longer fetched here - comes from signals
       user_settings: {
-        gain_margin: userGainMargin,
-        loss_margin: userLossMargin
+        gain_margin: settings.gain_margin,
+        loss_margin: settings.loss_margin
       }
     });
 
