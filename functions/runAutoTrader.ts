@@ -600,7 +600,7 @@ Deno.serve(async (req) => {
       
       return Response.json({ 
         success: true, 
-        message: `No prospects meet ${AUTO_EXECUTE_THRESHOLD}% confidence threshold or are in downtrend`, 
+        message: `No prospects meet ${AUTO_EXECUTE_THRESHOLD}% confidence threshold`, 
         trades_count: 0,
         mode: isSimMode ? 'sim' : 'live',
         total_prospects: prospects.length,
