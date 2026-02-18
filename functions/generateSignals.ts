@@ -97,32 +97,103 @@ Deno.serve(async (req) => {
       });
     }
     
-    // FIX: Use user-scoped invoke (not asServiceRole) for market data to avoid 403
+    // Fetch market data - use Kraken public API directly (no auth needed, avoids 403)
     const cryptoSymbols = assetsNeedingAnalysis.filter(a => a.asset_type === 'crypto').map(a => a.symbol);
     const stockSymbols = assetsNeedingAnalysis.filter(a => a.asset_type === 'stock').map(a => a.symbol);
     
     let marketData = [];
     try {
-      const mdResponse = await base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      });
-      marketData = Array.isArray(mdResponse?.data) ? mdResponse.data : [];
-      console.log('[generateSignals] Got market data for', marketData.length, 'symbols');
+      // Use Kraken public Ticker API directly - no auth required
+      const krakenPairMap = {
+        'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+        'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+        'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+        'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+        'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
+      };
+      
+      const pairs = cryptoSymbols.map(s => krakenPairMap[s]).filter(Boolean);
+      if (pairs.length > 0) {
+        const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.result) {
+            for (const sym of cryptoSymbols) {
+              const pair = krakenPairMap[sym];
+              const ticker = data.result[pair];
+              if (ticker) {
+                const price = parseFloat(ticker.c?.[0] || '0');
+                const open24h = parseFloat(ticker.o || '0');
+                const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
+                marketData.push({
+                  symbol: sym,
+                  price,
+                  current_price: price,
+                  change_24h_percent: change24h,
+                  price_change_percentage_24h: change24h
+                });
+              }
+            }
+          }
+        }
+      }
+      console.log('[generateSignals] Got market data for', marketData.length, 'symbols via Kraken public API');
     } catch (e) {
       console.error('[generateSignals] Market data fetch failed:', e.message);
     }
     
-    // FIX: Use user-scoped invoke for AI analysis too
+    // Build market context string for direct LLM call
+    const assetsSection = marketData.length > 0 
+      ? marketData.map(a => `- ${a.symbol}: Price: $${a.price}, 24h Change: ${(a.change_24h_percent || 0).toFixed(2)}%`).join('\n')
+      : cryptoSymbols.map(s => `- ${s}: (analyze based on your current knowledge)`).join('\n');
+    
+    // Call LLM directly instead of going through analyzeSmallGains (avoids 403)
     let aiRecommendations = [];
     try {
-      const aiResponse = await base44.functions.invoke('analyzeSmallGains', {
-        symbols: assetsNeedingAnalysis.map(a => a.symbol),
-        includeMarketIntelligence: true,
-        includeTradeHistory: true
+      console.log('[generateSignals] Calling LLM for analysis...');
+      const llmResponse = await base44.integrations.Core.InvokeLLM({
+        prompt: `You are an elite quantitative trading analyst. Analyze these assets for SHORT-TERM (1-6 hour) trading opportunities.
+
+ASSETS:
+${assetsSection}
+
+For each asset provide: optimal_action (strong_buy/buy/hold/sell/strong_sell), confidence_score (0-100, only 70%+ for strong signals), 
+entry_zone_low, entry_zone_high, stop_loss_pct (1-3%), take_profit_pct (2-5%), momentum_strength (strong/moderate/weak), 
+timing_window (1h/2h/4h/6h), predicted_gain_percent, sentiment_score (0-100), reasoning, technical_pattern.
+
+Be CONSERVATIVE with strong_buy - only when momentum is clearly positive and multiple indicators align.`,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            recommendations: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  symbol: { type: "string" },
+                  optimal_action: { type: "string" },
+                  confidence_score: { type: "number" },
+                  entry_zone_low: { type: "number" },
+                  entry_zone_high: { type: "number" },
+                  stop_loss_pct: { type: "number" },
+                  take_profit_pct: { type: "number" },
+                  momentum_strength: { type: "string" },
+                  timing_window: { type: "string" },
+                  predicted_gain_percent: { type: "number" },
+                  sentiment_score: { type: "number" },
+                  reasoning: { type: "string" },
+                  technical_pattern: { type: "string" },
+                  volume_profile: { type: "string" },
+                  correlation_group: { type: "string" }
+                }
+              }
+            }
+          }
+        }
       });
-      const aiData = aiResponse?.data || aiResponse;
-      aiRecommendations = aiData?.recommendations || [];
+      
+      aiRecommendations = llmResponse?.recommendations || [];
       console.log('[generateSignals] Got', aiRecommendations.length, 'AI recommendations');
     } catch (e) {
       console.error('[generateSignals] AI analysis failed:', e.message);
