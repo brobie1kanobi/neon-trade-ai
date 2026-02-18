@@ -191,19 +191,62 @@ Deno.serve(async (req) => {
       }
     }
     
-    // Also fetch current prices for all symbols (needed for order sizing)
+    // Fetch current prices - use Kraken public API directly (no auth needed)
     const cryptoSymbols = prefs.filter(p => p.asset_type === "crypto").map(p => String(p.symbol || "").toUpperCase().trim());
     const stockSymbols = prefs.filter(p => p.asset_type === "stock").map(p => String(p.symbol || "").toUpperCase().trim());
     
     let quotes = [];
+    
+    // Primary: Kraken public Ticker (no auth, no rate limit issues)
     try {
-      const marketDataResponse = await base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      });
-      quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
+      const krakenPairMap = {
+        'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+        'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+        'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+        'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+        'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
+      };
+      const pairs = cryptoSymbols.map(s => krakenPairMap[s]).filter(Boolean);
+      if (pairs.length > 0) {
+        const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.result) {
+            for (const sym of cryptoSymbols) {
+              const pair = krakenPairMap[sym];
+              const ticker = data.result[pair];
+              if (ticker) {
+                const price = parseFloat(ticker.c?.[0] || '0');
+                const open24h = parseFloat(ticker.o || '0');
+                const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
+                quotes.push({
+                  symbol: sym,
+                  price,
+                  current_price: price,
+                  change_24h_percent: change24h,
+                  price_change_percentage_24h: change24h
+                });
+              }
+            }
+          }
+        }
+      }
+      console.log('[Prospects] Got', quotes.length, 'prices via Kraken public API');
     } catch (e) {
-      console.warn('[Prospects] Market data fetch failed:', e.message);
+      console.warn('[Prospects] Kraken public API failed:', e.message);
+    }
+    
+    // Fallback: try getMarketData if Kraken public didn't work
+    if (quotes.length === 0) {
+      try {
+        const marketDataResponse = await base44.functions.invoke('getMarketData', {
+          action: 'getWatchlistData',
+          payload: { cryptoSymbols, stockSymbols }
+        });
+        quotes = Array.isArray(marketDataResponse?.data) ? marketDataResponse.data : [];
+      } catch (e) {
+        console.warn('[Prospects] getMarketData fallback failed:', e.message);
+      }
     }
 
     // Build prospect list from signals + preferences
