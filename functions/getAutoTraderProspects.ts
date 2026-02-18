@@ -80,24 +80,38 @@ Deno.serve(async (req) => {
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
-      console.log('[Prospects] Fetching Kraken extended balance...');
+      console.log('[Prospects] Fetching Kraken extended balance directly...');
       
-      // CRITICAL: Use base44.functions.invoke (NOT asServiceRole) to forward user's auth token
-      // krakenApi needs user.email to look up KrakenConnection
-      const extBalRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
-      const extBalData = extBalRes?.data || extBalRes;
+      // DIRECT Kraken API call: look up user's KrakenConnection and call Kraken BalanceEx ourselves
+      // This avoids function-to-function invocation auth issues entirely
+      const krakenConns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
       
-      if (extBalData?.success && extBalData?.balance) {
-        const bal = extBalData.balance;
-        const rawAvailable = parseFloat(bal?.USD?.balance ?? bal?.ZUSD?.balance ?? bal?.USD ?? bal?.ZUSD ?? 0);
-        console.log('[Prospects] Kraken raw USD available:', rawAvailable);
+      if (krakenConns.length > 0) {
+        const conn = krakenConns[0];
+        const balKey = (conn.balance_api_key || conn.api_key || '').trim();
+        const balSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
         
-        // Also check open orders to deduct reserved capital
-        try {
-          const ordersRes = await base44.functions.invoke('krakenApi', { 
-            action: 'getOpenOrders', 
-            payload: {} 
-          });
+        if (balKey && balSecret) {
+          // Call Kraken BalanceEx API directly
+          const extBalData = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
+          console.log('[Prospects] Kraken BalanceEx success:', !!extBalData?.result);
+          
+          if (extBalData?.result) {
+            const rawBalances = extBalData.result;
+            // Find USD balance
+            const usdEntry = rawBalances['ZUSD'] || rawBalances['USD'];
+            const rawAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+            console.log('[Prospects] Kraken raw USD available:', rawAvailable);
+            
+            // Also check open orders to deduct reserved capital
+            try {
+              const ordersResult = await callKrakenDirect(balKey, balSecret, '/0/private/OpenOrders', { trades: true });
+              const openOrders = [];
+              if (ordersResult?.result?.open) {
+                for (const [, order] of Object.entries(ordersResult.result.open)) {
+                  openOrders.push(order);
+                }
+              }
           const ordersData = ordersRes?.data || ordersRes;
           if (ordersData?.success && Array.isArray(ordersData?.orders)) {
             totalOpenOrdersValue = ordersData.orders
