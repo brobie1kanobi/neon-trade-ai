@@ -541,10 +541,10 @@ Deno.serve(async (req) => {
       }
     }
     
-    // Auto-execution threshold lowered to 70% - the signal quality gates in 
-    // generateSignals + analyzeSmallGains already filter aggressively.
-    // 85% was too high and blocked nearly all trades including profitable ones.
-    const AUTO_EXECUTE_THRESHOLD = 70;
+    // AUTO-EXECUTION THRESHOLD: 80% confidence minimum
+    // v4 signal generator already applies strict multi-timeframe validation,
+    // so 80% here means the signal passed ALL hard data filters
+    const AUTO_EXECUTE_THRESHOLD = 80;
     
     // Build signal map for quick lookup
     const signalMap = new Map();
