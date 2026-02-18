@@ -1,7 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
- * AUTO-TRADER v2 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
+ * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
  * 
  * Architecture:
  * 1. Acquires distributed lock (one run per user)
