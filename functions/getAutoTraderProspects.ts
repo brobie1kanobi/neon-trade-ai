@@ -76,8 +76,10 @@ Deno.serve(async (req) => {
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
+      console.log('[Prospects] Fetching Kraken balance...');
       const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
+      console.log('[Prospects] Kraken balance response:', krakenData?.success, 'connected:', krakenData?.connected, 'usd:', krakenData?.available_usd_balance);
       if (krakenData?.success && krakenData?.connected) {
         const rawAvailable = (
           (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
