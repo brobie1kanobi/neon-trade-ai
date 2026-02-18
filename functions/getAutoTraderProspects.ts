@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
         );
         
         try {
-          const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
+          const ordersRes = await base44.functions.invoke('krakenApi', { 
             action: 'getOpenOrders', 
             payload: {} 
           });
@@ -208,21 +208,14 @@ Deno.serve(async (req) => {
     
     // Primary: Kraken public Ticker (no auth, no rate limit issues)
     try {
-      const krakenPairMap = {
-        'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
-        'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
-        'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
-        'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
-        'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
-      };
-      const pairs = cryptoSymbols.map(s => krakenPairMap[s]).filter(Boolean);
+      const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
       if (pairs.length > 0) {
         const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
         if (resp.ok) {
           const data = await resp.json();
           if (data?.result) {
             for (const sym of cryptoSymbols) {
-              const pair = krakenPairMap[sym];
+              const pair = KRAKEN_PAIR_MAP[sym];
               const ticker = data.result[pair];
               if (ticker) {
                 const price = parseFloat(ticker.c?.[0] || '0');
