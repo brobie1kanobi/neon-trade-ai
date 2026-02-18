@@ -350,13 +350,15 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      if (confidence < 50) {
+      // Require minimum 55% confidence for display
+      if (confidence < 55) {
         console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence);
         continue;
       }
       
-      if (change24h < -5) {
-        console.log('[Prospects] Skipping', symbol, '- price crashing:', change24h.toFixed(1), '%');
+      // TREND-FOLLOWING: Skip if 24h change is negative (don't buy falling assets)
+      if (change24h < 0) {
+        console.log('[Prospects] Skipping', symbol, '- negative 24h trend:', change24h.toFixed(1), '%');
         continue;
       }
 
