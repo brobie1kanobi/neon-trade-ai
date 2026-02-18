@@ -384,8 +384,8 @@ For each asset:
         }
         
         // RULE 6: Final validation for strong signals
-        // strong_buy requires: 70%+ confidence AND positive momentum
-        if (adjustedAction === 'strong_buy' && (adjustedConfidence < 70 || change24h < 2)) {
+        // strong_buy requires: 70%+ confidence (momentum check removed - AI already considers it)
+        if (adjustedAction === 'strong_buy' && adjustedConfidence < 70) {
           adjustedAction = 'buy';
         }
         
