@@ -75,20 +75,23 @@ Deno.serve(async (req) => {
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
     // Get Kraken balance (LIVE mode only)
+    // CRITICAL: Use the Kraken API directly via krakenApi function (which handles auth internally)
+    // getKrakenBalance wraps krakenApi and needs user context, so invoke it with the user's own token
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
-      console.log('[Prospects] Fetching Kraken balance...');
-      const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
-      const krakenData = krakenResponse?.data || krakenResponse;
-      console.log('[Prospects] Kraken balance response:', krakenData?.success, 'connected:', krakenData?.connected, 'usd:', krakenData?.available_usd_balance);
-      if (krakenData?.success && krakenData?.connected) {
-        const rawAvailable = (
-          (typeof krakenData.available_usd_balance === 'number' ? krakenData.available_usd_balance : undefined) ??
-          (krakenData.balances?.USD?.balance ?? krakenData.balances?.ZUSD?.balance) ??
-          (typeof krakenData.total_usd_balance === 'number' ? krakenData.total_usd_balance : 0)
-        );
+      console.log('[Prospects] Fetching Kraken extended balance...');
+      
+      // Use krakenApi directly - it uses asServiceRole internally with KrakenConnection lookup by created_by
+      const extBalRes = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+      const extBalData = extBalRes?.data || extBalRes;
+      
+      if (extBalData?.success && extBalData?.balance) {
+        const bal = extBalData.balance;
+        const rawAvailable = parseFloat(bal?.USD?.balance ?? bal?.ZUSD?.balance ?? bal?.USD ?? bal?.ZUSD ?? 0);
+        console.log('[Prospects] Kraken raw USD available:', rawAvailable);
         
+        // Also check open orders to deduct reserved capital
         try {
           const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
             action: 'getOpenOrders', 
@@ -126,6 +129,8 @@ Deno.serve(async (req) => {
             message: `Insufficient cash ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
           });
         }
+      } else {
+        console.warn('[Prospects] Kraken extended balance failed or not connected:', extBalData?.error);
       }
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
