@@ -29,10 +29,12 @@ const KRAKEN_PAIR_MAP = {
 
 Deno.serve(async (req) => {
   try {
+    console.log('[Prospects] START');
     const base44 = createClientFromRequest(req);
     
     const user = await base44.auth.me();
     if (!user) {
+      console.log('[Prospects] No user found - unauthorized');
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
