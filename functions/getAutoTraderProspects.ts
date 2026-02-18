@@ -9,22 +9,74 @@ const KRAKEN_PAIR_MAP = {
   'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
 };
 
+// Nonce counter for Kraken API
+let lastNonce = 0;
+
+function generateNonce() {
+  const now = Date.now() * 1000;
+  if (now <= lastNonce) {
+    lastNonce++;
+  } else {
+    lastNonce = now;
+  }
+  return lastNonce.toString();
+}
+
+/**
+ * Direct Kraken private API call - avoids function-to-function invocation issues
+ */
+async function callKrakenDirect(apiKey, apiSecret, endpoint, data = {}) {
+  const cleanKey = apiKey.trim().replace(/\s+/g, '');
+  const cleanSecret = apiSecret.trim().replace(/\s+/g, '');
+  const nonce = generateNonce();
+  const postData = new URLSearchParams({ nonce, ...data }).toString();
+  
+  const message = nonce + postData;
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+  const hmacKey = await crypto.subtle.importKey(
+    'raw',
+    Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)),
+    { name: 'HMAC', hash: 'SHA-512' },
+    false,
+    ['sign']
+  );
+  
+  const pathBytes = new TextEncoder().encode(endpoint);
+  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(hash), pathBytes.length);
+  
+  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
+  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  
+  try {
+    const response = await fetch(`https://api.kraken.com${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'API-Key': cleanKey,
+        'API-Sign': apiSign,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'NeonTrade-AI/1.0'
+      },
+      body: postData,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await response.json();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw e;
+  }
+}
+
 /**
  * AUTO-TRADER PROSPECTS v3
  * 
- * ARCHITECTURE CHANGE: Now consumes pre-computed AssetSignal entries
- * instead of calling AI directly. This makes prospect generation:
- * - Faster (no LLM call during prospect generation)
- * - More consistent (all consumers see same signal)
- * - More robust (works even if AI is temporarily unavailable)
- * 
- * PROFITABILITY FIXES:
- * - Uses AI-recommended TP/SL from signals (not just user defaults)
- * - Requires positive momentum from signal's stored 24h change
- * - Entry zone awareness: only recommends when price is within AI entry zone
- * - Lowered filters: "buy" + 60% confidence = prospect (not just strong_buy)
- *   (strong_buy is still required for AUTO-EXECUTION in runAutoTrader)
- * - Removes the +2% momentum gate that was filtering out nearly everything
+ * Consumes pre-computed AssetSignal entries instead of calling AI directly.
+ * Calls Kraken APIs directly (not via function invocation) to avoid auth issues.
  */
 
 Deno.serve(async (req) => {
@@ -34,7 +86,6 @@ Deno.serve(async (req) => {
     
     const user = await base44.auth.me();
     if (!user) {
-      console.log('[Prospects] No user found - unauthorized');
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -74,16 +125,13 @@ Deno.serve(async (req) => {
     
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
-    // Get Kraken balance (LIVE mode only)
-    // CRITICAL: Use the Kraken API directly via krakenApi function (which handles auth internally)
-    // getKrakenBalance wraps krakenApi and needs user context, so invoke it with the user's own token
+    // ── Get Kraken balance (LIVE mode) ──
+    // DIRECT Kraken API calls to avoid function-to-function auth issues
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
-      console.log('[Prospects] Fetching Kraken extended balance directly...');
+      console.log('[Prospects] Fetching Kraken balance directly...');
       
-      // DIRECT Kraken API call: look up user's KrakenConnection and call Kraken BalanceEx ourselves
-      // This avoids function-to-function invocation auth issues entirely
       const krakenConns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
       
       if (krakenConns.length > 0) {
@@ -93,65 +141,63 @@ Deno.serve(async (req) => {
         
         if (balKey && balSecret) {
           // Call Kraken BalanceEx API directly
-          const extBalData = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
-          console.log('[Prospects] Kraken BalanceEx success:', !!extBalData?.result);
+          const extBalResult = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
           
-          if (extBalData?.result) {
-            const rawBalances = extBalData.result;
-            // Find USD balance
+          if (extBalResult?.error?.length > 0) {
+            console.warn('[Prospects] Kraken BalanceEx error:', extBalResult.error.join(', '));
+          } else if (extBalResult?.result) {
+            const rawBalances = extBalResult.result;
             const usdEntry = rawBalances['ZUSD'] || rawBalances['USD'];
             const rawAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
             console.log('[Prospects] Kraken raw USD available:', rawAvailable);
             
-            // Also check open orders to deduct reserved capital
+            // Check open orders to deduct reserved capital
             try {
-              const ordersResult = await callKrakenDirect(balKey, balSecret, '/0/private/OpenOrders', { trades: true });
-              const openOrders = [];
+              const ordersResult = await callKrakenDirect(balKey, balSecret, '/0/private/OpenOrders', { trades: 'true' });
               if (ordersResult?.result?.open) {
                 for (const [, order] of Object.entries(ordersResult.result.open)) {
-                  openOrders.push(order);
+                  const side = (order.descr?.type || '').toLowerCase();
+                  if (side === 'buy') {
+                    const orderCost = Number(order.vol || 0) * Number(order.descr?.price || 0);
+                    totalOpenOrdersValue += orderCost;
+                  }
                 }
               }
-          const ordersData = ordersRes?.data || ordersRes;
-          if (ordersData?.success && Array.isArray(ordersData?.orders)) {
-            totalOpenOrdersValue = ordersData.orders
-              .filter(o => (o.descr?.type || o.side || '').toLowerCase() === 'buy')
-              .reduce((sum, o) => {
-                const orderCost = Number(o.vol || 0) * Number(o.descr?.price || o.price || 0);
-                return sum + orderCost;
-              }, 0);
+            } catch (ordersErr) {
+              console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
+            }
+            
+            const safetyBuffer = rawAvailable * 0.15;
+            cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
+            
+            console.log('[Prospects] Cash: raw', rawAvailable, '- orders', totalOpenOrdersValue, '- buffer', safetyBuffer.toFixed(2), '= effective', cashAvailable.toFixed(2));
+            
+            if (cashAvailable < 5) {
+              return Response.json({
+                success: true,
+                prospects: [],
+                cash_available: cashAvailable,
+                raw_kraken_balance: rawAvailable,
+                is_sim_mode: false,
+                auto_trading_enabled: settings?.auto_trading_enabled || false,
+                total_analyzed: 0,
+                market_intelligence: null,
+                user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
+                message: `Insufficient cash ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
+              });
+            }
           }
-        } catch (ordersErr) {
-          console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
-        }
-        
-        const safetyBuffer = rawAvailable * 0.15;
-        cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
-        
-        console.log('[Prospects] Cash: raw', rawAvailable, '- orders', totalOpenOrdersValue, '- buffer', safetyBuffer.toFixed(2), '= effective', cashAvailable.toFixed(2));
-        
-        if (cashAvailable < 5) {
-          return Response.json({
-            success: true,
-            prospects: [],
-            cash_available: cashAvailable,
-            raw_kraken_balance: rawAvailable,
-            is_sim_mode: false,
-            auto_trading_enabled: settings?.auto_trading_enabled || false,
-            total_analyzed: 0,
-            market_intelligence: null,
-            user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
-            message: `Insufficient cash ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
-          });
+        } else {
+          console.warn('[Prospects] No Kraken API keys found on connection');
         }
       } else {
-        console.warn('[Prospects] Kraken extended balance failed or not connected:', extBalData?.error);
+        console.warn('[Prospects] No Kraken connection found for user');
       }
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
     }
     
-    console.log('[Prospects] Cash available after Kraken:', cashAvailable);
+    console.log('[Prospects] Cash available:', cashAvailable);
     
     const isSimMode = false; // Force LIVE mode for prospects
 
@@ -184,7 +230,7 @@ Deno.serve(async (req) => {
       is_simulation: isSimMode
     });
 
-    // CORE CHANGE: Consume pre-computed AssetSignal entries instead of calling AI
+    // Load pre-computed AssetSignal entries
     console.log('[Prospects] Loading pre-computed AssetSignal entries...');
     let signals = [];
     try {
@@ -202,7 +248,7 @@ Deno.serve(async (req) => {
       signalMap.set(sig.asset_symbol, sig);
     }
     
-    // If no signals exist, trigger generation and wait briefly
+    // If no signals exist, trigger generation
     if (signals.length === 0) {
       console.log('[Prospects] No signals found - triggering generation...');
       try {
@@ -212,7 +258,6 @@ Deno.serve(async (req) => {
           forceRefresh: true 
         });
         
-        // Re-fetch signals after generation
         signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
         const now = new Date();
         signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
@@ -225,13 +270,12 @@ Deno.serve(async (req) => {
       }
     }
     
-    // Fetch current prices - use Kraken public API directly (no auth needed)
+    // Fetch current prices via Kraken public API (no auth needed)
     const cryptoSymbols = prefs.filter(p => p.asset_type === "crypto").map(p => String(p.symbol || "").toUpperCase().trim());
     const stockSymbols = prefs.filter(p => p.asset_type === "stock").map(p => String(p.symbol || "").toUpperCase().trim());
     
     let quotes = [];
     
-    // Primary: Kraken public Ticker (no auth, no rate limit issues)
     try {
       const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
       if (pairs.length > 0) {
@@ -276,7 +320,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build prospect list from signals + preferences
+    // ── Build prospect list from signals + preferences ──
     const prospects = [];
     const safetyMaxPct = 0.40;
     
@@ -290,7 +334,6 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Get pre-computed signal for this asset
       const signal = signalMap.get(symbol);
       
       if (!signal) {
@@ -302,21 +345,16 @@ Deno.serve(async (req) => {
       const confidence = signal.confidence_score || 50;
       const change24h = signal.change_24h || quote?.change_24h_percent || quote?.price_change_percentage_24h || 0;
       
-      // PROFITABILITY FILTER: Show prospects for "buy" and "strong_buy" signals
-      // (runAutoTrader still requires strong_buy for auto-execution)
       if (signalType !== 'buy' && signalType !== 'strong_buy') {
         console.log('[Prospects] Skipping', symbol, '- signal is', signalType);
         continue;
       }
       
-      // Require minimum 50% confidence for any prospect
       if (confidence < 50) {
         console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence);
         continue;
       }
       
-      // REMOVED the +2% momentum gate - it was filtering out nearly everything
-      // Instead, just skip if price is crashing hard (> -5% in 24h)
       if (change24h < -5) {
         console.log('[Prospects] Skipping', symbol, '- price crashing:', change24h.toFixed(1), '%');
         continue;
@@ -333,7 +371,7 @@ Deno.serve(async (req) => {
       if (total > safetyMax) total = safetyMax;
       
       if (holding) {
-        total = total * 0.7; // 30% reduction for existing positions
+        total = total * 0.7;
       }
       
       const krakenMinimum = 5;
@@ -343,7 +381,6 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // Per-order safety buffer
       const orderSafetyBuffer = total * 0.10;
       total = Math.min(total - orderSafetyBuffer, cashAvailable * 0.90);
       total = Math.min(total, cashAvailable * 0.85);
@@ -364,13 +401,11 @@ Deno.serve(async (req) => {
         wouldExecute = true;
       }
 
-      // Use AI-recommended TP/SL from signal when available, fall back to user settings
       const aiTpPct = signal.take_profit_pct || null;
       const aiSlPct = signal.stop_loss_pct || null;
       const effectiveGainMargin = aiTpPct && aiTpPct > settings.gain_margin ? aiTpPct : settings.gain_margin;
       const effectiveLossMargin = aiSlPct || settings.loss_margin;
       
-      // Entry zone check: flag if price is outside AI entry zone
       let entryZoneStatus = 'unknown';
       if (signal.entry_zone_low && signal.entry_zone_high) {
         if (price >= signal.entry_zone_low && price <= signal.entry_zone_high) {
@@ -382,7 +417,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Parse metadata for additional info
       let metadata = {};
       try { metadata = signal.metadata_json ? JSON.parse(signal.metadata_json) : {}; } catch (_e) {}
 
@@ -404,7 +438,6 @@ Deno.serve(async (req) => {
         market_trend: change24h,
         allocation_percent: actualAllocationPct,
         user_allocation_pct: userAllocationPct,
-        // Signal intelligence
         optimal_action: signalType,
         technical_pattern: signal.technical_pattern,
         momentum_strength: signal.momentum_strength,
@@ -412,14 +445,12 @@ Deno.serve(async (req) => {
         entry_zone: signal.entry_zone_low && signal.entry_zone_high ? { low: signal.entry_zone_low, high: signal.entry_zone_high } : null,
         entry_zone_status: entryZoneStatus,
         sentiment_score: signal.sentiment_score,
-        // TP/SL from signal (AI-recommended) vs user settings
         stop_loss_pct: effectiveLossMargin,
         take_profit_pct: effectiveGainMargin,
         ai_suggested_gain: aiTpPct,
         ai_suggested_loss: aiSlPct,
         user_loss_margin: settings.loss_margin,
         user_gain_margin: settings.gain_margin,
-        // Signal metadata
         signal_id: signal.id,
         signal_generated_at: metadata.generated_at,
         historical_win_rate: metadata.historical_win_rate,
@@ -429,7 +460,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Sort by priority (confidence * position factor)
     prospects.sort((a, b) => b.priority - a.priority);
     
     console.log('[Prospects] Returning', prospects.length, 'prospects from', prefs.length, 'preferences');
@@ -441,7 +471,7 @@ Deno.serve(async (req) => {
       is_sim_mode: isSimMode,
       auto_trading_enabled: settings?.auto_trading_enabled || false,
       total_analyzed: prefs.length,
-      market_intelligence: null, // No longer fetched here - comes from signals
+      market_intelligence: null,
       user_settings: {
         gain_margin: settings.gain_margin,
         loss_margin: settings.loss_margin
