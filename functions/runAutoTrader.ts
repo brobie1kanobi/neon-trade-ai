@@ -552,29 +552,43 @@ Deno.serve(async (req) => {
       signalMap.set(sig.asset_symbol, sig);
     }
     
-    // Filter prospects that qualify for auto-execution:
-    // 1. Has a pre-computed signal with confidence >= threshold
-    // 2. Signal type MUST be "strong_buy" OR "buy" with very high confidence
-    // 3. Not blocked
-    // 4. Would execute (has sufficient funds)
-    // 5. Price must NOT be crashing (> -5% in 24h) - removed the +2% gate
+    // HIGH WIN-RATE FILTER: Only auto-execute trades that passed ALL validation layers:
+    // 1. generateSignals v4 multi-timeframe + data validation (hard filters)
+    // 2. Signal type MUST be "strong_buy" (no "buy" auto-execution)
+    // 3. Confidence >= 80% (already validated by signal generator)
+    // 4. 24h trend positive (NEVER buy into falling price)
+    // 5. Not blocked + sufficient funds
     const eligibleProspects = prospects.filter(p => {
       const signal = signalMap.get(p.symbol);
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
       const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
       
-      // "strong_buy" always qualifies; "buy" qualifies only at 80%+ confidence
-      const isActionable = signalType === 'strong_buy' || 
-        (signalType === 'buy' && confidenceScore >= 80);
+      // STRICT: Only strong_buy signals auto-execute. "buy" is display-only.
+      const isActionable = signalType === 'strong_buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // Don't buy into a crash, but don't require +2% uptrend either
+      // STRICT: 24h change must be positive (trend-following only)
       const change24h = Number(p.market_trend || 0);
-      const notCrashing = change24h > -5;
+      const trendPositive = change24h > 0;
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
-      const eligible = meetsConfidence && isActionable && notBlocked && wouldExecute && notCrashing;
+      
+      // Also check signal metadata for additional validation
+      let metadataValid = true;
+      try {
+        const meta = signal?.metadata_json ? JSON.parse(signal.metadata_json) : {};
+        // If signal generator marked it as NOT auto-tradeable, skip
+        if (meta.auto_tradeable === false) {
+          metadataValid = false;
+        }
+        // If trend alignment shows mixed or bearish, skip
+        if (meta.trend_alignment === 'all_bearish' || meta.trend_alignment === 'mixed') {
+          metadataValid = false;
+        }
+      } catch (_e) {}
+      
+      const eligible = meetsConfidence && isActionable && notBlocked && wouldExecute && trendPositive && metadataValid;
       
       log(`Evaluating ${p.symbol}`, {
         confidence: confidenceScore,
@@ -582,6 +596,8 @@ Deno.serve(async (req) => {
         change24h: change24h.toFixed(1),
         blocked: p.is_blocked,
         wouldExecute,
+        trendPositive,
+        metadataValid,
         eligible
       });
       
