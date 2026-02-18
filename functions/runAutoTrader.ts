@@ -541,9 +541,10 @@ Deno.serve(async (req) => {
       }
     }
     
-    // CRITICAL: Auto-execution threshold - 85% confidence (raised from 75% to be MUCH more selective)
-    // Only execute trades with VERY HIGH confidence to avoid buying into downtrends
-    const AUTO_EXECUTE_THRESHOLD = 85;
+    // Auto-execution threshold lowered to 70% - the signal quality gates in 
+    // generateSignals + analyzeSmallGains already filter aggressively.
+    // 85% was too high and blocked nearly all trades including profitable ones.
+    const AUTO_EXECUTE_THRESHOLD = 70;
     
     // Build signal map for quick lookup
     const signalMap = new Map();
