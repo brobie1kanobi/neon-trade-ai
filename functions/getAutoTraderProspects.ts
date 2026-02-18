@@ -82,8 +82,9 @@ Deno.serve(async (req) => {
     try {
       console.log('[Prospects] Fetching Kraken extended balance...');
       
-      // Use krakenApi directly - it uses asServiceRole internally with KrakenConnection lookup by created_by
-      const extBalRes = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+      // CRITICAL: Use base44.functions.invoke (NOT asServiceRole) to forward user's auth token
+      // krakenApi needs user.email to look up KrakenConnection
+      const extBalRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
       const extBalData = extBalRes?.data || extBalRes;
       
       if (extBalData?.success && extBalData?.balance) {
