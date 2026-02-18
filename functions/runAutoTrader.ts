@@ -553,27 +553,28 @@ Deno.serve(async (req) => {
     }
     
     // Filter prospects that qualify for auto-execution:
-    // 1. Has a pre-computed signal with confidence >= 85%
-    // 2. Signal type MUST be "strong_buy"
+    // 1. Has a pre-computed signal with confidence >= threshold
+    // 2. Signal type MUST be "strong_buy" OR "buy" with very high confidence
     // 3. Not blocked
     // 4. Would execute (has sufficient funds)
-    // 5. Price must be UP at least 2% in 24h (confirmed uptrend)
+    // 5. Price must NOT be crashing (> -5% in 24h) - removed the +2% gate
     const eligibleProspects = prospects.filter(p => {
       const signal = signalMap.get(p.symbol);
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
       const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
       
-      // CRITICAL: ONLY "strong_buy" qualifies
-      const isStrongBuy = signalType === 'strong_buy';
+      // "strong_buy" always qualifies; "buy" qualifies only at 80%+ confidence
+      const isActionable = signalType === 'strong_buy' || 
+        (signalType === 'buy' && confidenceScore >= 80);
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // CRITICAL: Require POSITIVE momentum
-      const change24h = Number(p.market_trend || p.current_24h_change || 0);
-      const hasUpwardMomentum = change24h >= 2;
+      // Don't buy into a crash, but don't require +2% uptrend either
+      const change24h = Number(p.market_trend || 0);
+      const notCrashing = change24h > -5;
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
-      const eligible = meetsConfidence && isStrongBuy && notBlocked && wouldExecute && hasUpwardMomentum;
+      const eligible = meetsConfidence && isActionable && notBlocked && wouldExecute && notCrashing;
       
       log(`Evaluating ${p.symbol}`, {
         confidence: confidenceScore,
