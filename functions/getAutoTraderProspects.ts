@@ -154,8 +154,7 @@ Deno.serve(async (req) => {
     }
 
     // Get current holdings
-    const holdings = await base44.asServiceRole.entities.Holding.filter({ 
-      created_by: user.email,
+    const holdings = await base44.entities.Holding.filter({ 
       is_simulation: isSimMode
     });
 
