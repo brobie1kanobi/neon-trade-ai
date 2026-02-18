@@ -405,8 +405,11 @@ Deno.serve(async (req) => {
 
       const aiTpPct = signal.take_profit_pct || null;
       const aiSlPct = signal.stop_loss_pct || null;
-      const effectiveGainMargin = aiTpPct && aiTpPct > settings.gain_margin ? aiTpPct : settings.gain_margin;
-      const effectiveLossMargin = aiSlPct || settings.loss_margin;
+      // Enforce minimum TP 4%, SL 2% for high win rate
+      const rawGainMargin = aiTpPct && aiTpPct > settings.gain_margin ? aiTpPct : settings.gain_margin;
+      const rawLossMargin = aiSlPct || settings.loss_margin;
+      const effectiveGainMargin = Math.max(rawGainMargin, 4);
+      const effectiveLossMargin = Math.max(rawLossMargin, 2);
       
       let entryZoneStatus = 'unknown';
       if (signal.entry_zone_low && signal.entry_zone_high) {
