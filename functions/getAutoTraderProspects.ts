@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
         
         // Also check open orders to deduct reserved capital
         try {
-          const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
+          const ordersRes = await base44.functions.invoke('krakenApi', { 
             action: 'getOpenOrders', 
             payload: {} 
           });
