@@ -338,19 +338,19 @@ For each asset:
         let adjustedConfidence = r.confidence_score;
         let adjustedAction = r.optimal_action || r.action || 'hold';
         
-        // RULE 1: For "strong_buy" signals - MUST have positive momentum
-        if (adjustedAction === 'strong_buy') {
-          if (change24h < 2) {
-            // Downgrade strong_buy to buy if momentum isn't clearly positive
-            adjustedAction = 'buy';
-            adjustedConfidence = Math.min(adjustedConfidence, 65);
-            console.log(`[MarketIntelligence] ${r.symbol}: Downgraded strong_buy to buy - 24h change ${change24h.toFixed(1)}% (need +2%)`);
-          }
+        // RULE 1: For "strong_buy" signals - allow if not crashing
+        // REMOVED the +2% gate that was filtering out nearly everything
+        // The LLM already factors in momentum when deciding strong_buy
+        if (adjustedAction === 'strong_buy' && change24h < -3) {
+          // Only downgrade if actually falling significantly
+          adjustedAction = 'buy';
+          adjustedConfidence = Math.min(adjustedConfidence, 65);
+          console.log(`[MarketIntelligence] ${r.symbol}: Downgraded strong_buy to buy - 24h change ${change24h.toFixed(1)}% (falling)`);
         }
         
-        // RULE 2: For "buy" signals - cap confidence if falling
-        if (change24h < -2 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
-          console.log(`[MarketIntelligence] ${r.symbol}: Price down ${change24h.toFixed(1)}%, reducing to hold`);
+        // RULE 2: For "buy" signals - cap confidence only if crashing hard
+        if (change24h < -5 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
+          console.log(`[MarketIntelligence] ${r.symbol}: Price crashing ${change24h.toFixed(1)}%, reducing to hold`);
           adjustedConfidence = Math.min(adjustedConfidence, 45);
           adjustedAction = 'hold';
         }
