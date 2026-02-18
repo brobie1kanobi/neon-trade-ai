@@ -72,11 +72,11 @@ Deno.serve(async (req) => {
     
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
-    // Get Kraken balance (LIVE mode only) - use user-scoped invoke to avoid 403
+    // Get Kraken balance (LIVE mode only)
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
     try {
-      const krakenResponse = await base44.functions.invoke('getKrakenBalance', {});
+      const krakenResponse = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
       const krakenData = krakenResponse?.data || krakenResponse;
       if (krakenData?.success && krakenData?.connected) {
         const rawAvailable = (
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
         );
         
         try {
-          const ordersRes = await base44.functions.invoke('krakenApi', { 
+          const ordersRes = await base44.asServiceRole.functions.invoke('krakenApi', { 
             action: 'getOpenOrders', 
             payload: {} 
           });
