@@ -43,6 +43,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
 
   const [gainMargin, setGainMargin] = useState(10);
   const [lossMargin, setLossMargin] = useState(5);
+  const [autoExecuteThreshold, setAutoExecuteThreshold] = useState(80);
+  const [minSignalConfidence, setMinSignalConfidence] = useState(55);
   const [settings, setSettingsData] = useState(null);
 
   const [inputMode, setInputMode] = useState('quantity');
