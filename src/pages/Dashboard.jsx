@@ -1231,14 +1231,35 @@ export default function Dashboard() {
       }, 500);
     };
 
+    // CRITICAL: Also listen for Kraken order fill/cancel events from WebSocket
+    // These fire when TP/SL orders execute on Kraken, even if the app didn't initiate them
+    const handleKrakenOrderEvent = () => {
+      console.log('[Dashboard] Kraken order event – refreshing all data');
+      invalidateCache();
+      setTimeout(() => {
+        refreshWallet();
+        refreshHoldings();
+        refreshPrices();
+        if (!isSimMode && fetchKrakenData) {
+          fetchKrakenData(true);
+        }
+      }, 2000);
+    };
+
     window.addEventListener('kraken:synced', handleDataRefresh);
     window.addEventListener('trade:completed', handleDataRefresh);
+    window.addEventListener('kraken:order-filled', handleKrakenOrderEvent);
+    window.addEventListener('kraken:order-canceled', handleKrakenOrderEvent);
+    window.addEventListener('kraken:balance-update', handleDataRefresh);
     
     return () => {
       window.removeEventListener('kraken:synced', handleDataRefresh);
       window.removeEventListener('trade:completed', handleDataRefresh);
+      window.removeEventListener('kraken:order-filled', handleKrakenOrderEvent);
+      window.removeEventListener('kraken:order-canceled', handleKrakenOrderEvent);
+      window.removeEventListener('kraken:balance-update', handleDataRefresh);
     };
-  }, [refreshWallet, refreshHoldings, refreshPrices]);
+  }, [refreshWallet, refreshHoldings, refreshPrices, isSimMode, fetchKrakenData]);
 
   const handleTouchStart = (e) => setStartY(e.touches[0].clientY);
 
