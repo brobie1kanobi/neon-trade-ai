@@ -171,42 +171,44 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [wsManager]);
 
+  // Refs to hold latest callback references (avoids "before initialization" errors)
+  const fetchRestDataRef = useRef(null);
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   // ── Trade / sync events: aggressive invalidation ──
   useEffect(() => {
     const handleTradeCompleted = () => {
       console.log('[KrakenWSProvider] Trade completed – invalidating caches');
       lastExecutionTimestamp = new Date().toISOString();
-      // Nuke ALL financial caches so no stale data survives
       invalidateCache();
-      // Force REST re-fetch: first at 2s (Kraken settle), then again at 5s (confirmation)
       setTimeout(() => {
-        fetchRestData(true);
-        refresh();
+        fetchRestDataRef.current?.(true);
+        refreshRef.current?.();
       }, 2000);
       setTimeout(() => {
-        fetchRestData(true);
+        fetchRestDataRef.current?.(true);
       }, 5000);
     };
 
     const handleSync = () => {
       invalidateCache();
       setTimeout(() => {
-        fetchRestData(true);
-        refresh();
+        fetchRestDataRef.current?.(true);
+        refreshRef.current?.();
       }, 1500);
     };
 
     const handleOrderPlaced = () => {
-      setTimeout(() => fetchRestData(true), 2000);
+      setTimeout(() => fetchRestDataRef.current?.(true), 2000);
     };
 
-    // Listen for Kraken order fill events (from WebSocket executions channel)
     const handleOrderFilled = () => {
       console.log('[KrakenWSProvider] Order filled on Kraken – refreshing balances');
       invalidateCache();
       setTimeout(() => {
-        fetchRestData(true);
-        refresh();
+        fetchRestDataRef.current?.(true);
+        refreshRef.current?.();
       }, 1500);
     };
 
@@ -223,7 +225,7 @@ export function KrakenWebSocketProvider({ children }) {
       window.removeEventListener('kraken:order-filled', handleOrderFilled);
       window.removeEventListener('kraken:order-canceled', handleOrderFilled);
     };
-  }, [refresh, fetchRestData]);
+  }, []);
 
   // ── WebSocket reconnect recovery ──
   useEffect(() => {
