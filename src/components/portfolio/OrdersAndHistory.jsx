@@ -491,9 +491,25 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     }
   }, [user?.email, isSimMode, wsConnected, krakenOrders, fetchKrakenData]);
 
-  useEffect(() => {
-    loadOrders();
+  // CRITICAL: Debounce loadOrders to prevent rapid successive calls
+  const loadOrdersDebounced = useCallback(() => {
+    if (loadOrdersDebounced._timer) clearTimeout(loadOrdersDebounced._timer);
+    loadOrdersDebounced._timer = setTimeout(() => {
+      loadOrders();
+    }, 2000); // 2 second debounce
   }, [loadOrders]);
+
+  // CRITICAL: Only run loadOrders ONCE on mount + when sim mode changes
+  // Use a ref to prevent re-triggering from loadOrders identity changes
+  const hasLoadedRef = React.useRef(false);
+  const lastSimModeRef = React.useRef(isSimMode);
+  useEffect(() => {
+    if (!hasLoadedRef.current || lastSimModeRef.current !== isSimMode) {
+      hasLoadedRef.current = true;
+      lastSimModeRef.current = isSimMode;
+      loadOrders();
+    }
+  }, [isSimMode, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // CRITICAL: Auto-refresh removed - provider handles periodic refresh
   // This prevents duplicate API calls and rate limit issues
@@ -555,11 +571,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // CRITICAL: Removed auto-refresh on tab switch to prevent rate limits
   // Provider already keeps data updated, no need to spam refresh
 
-  // Listen for trade events (failed or completed) to refresh list immediately
+  // Listen for trade events (failed or completed) to refresh list with debounce
   useEffect(() => {
     const handleRefresh = () => {
-      console.log('[OrdersAndHistory] Trade event received, refreshing...');
-      loadOrders();
+      console.log('[OrdersAndHistory] Trade event received, refreshing (debounced)...');
+      loadOrdersDebounced();
     };
     window.addEventListener('trade:failed', handleRefresh);
     window.addEventListener('trade:completed', handleRefresh);
@@ -567,7 +583,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       window.removeEventListener('trade:failed', handleRefresh);
       window.removeEventListener('trade:completed', handleRefresh);
     };
-  }, [loadOrders]);
+  }, [loadOrdersDebounced]);
 
   // Dismiss a failed order from the list (delete from database)
   const handleDismissFailedOrder = async (orderId) => {
