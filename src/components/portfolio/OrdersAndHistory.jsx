@@ -489,12 +489,13 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       setIsLoading(false); // no UI spinner rendered; used only to disable the manual refresh button
       console.log('[OrdersAndHistory] Finished loadOrders');
     }
-  }, [user?.email, isSimMode, wsConnected, krakenOrders, fetchKrakenData]);
+  }, [user?.email, isSimMode, fetchKrakenData]); // Removed wsConnected/krakenOrders to prevent re-creation loops
 
   // CRITICAL: Debounce loadOrders to prevent rapid successive calls
+  const debounceTimerRef = React.useRef(null);
   const loadOrdersDebounced = useCallback(() => {
-    if (loadOrdersDebounced._timer) clearTimeout(loadOrdersDebounced._timer);
-    loadOrdersDebounced._timer = setTimeout(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
       loadOrders();
     }, 2000); // 2 second debounce
   }, [loadOrders]);
