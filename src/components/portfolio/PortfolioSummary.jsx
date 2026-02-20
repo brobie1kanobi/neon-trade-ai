@@ -17,7 +17,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     refresh: refreshWebSocket
   } = useKrakenWebSocket();
 
-  // CRITICAL: Refresh data when trades complete
+  // CRITICAL: Refresh data when trades complete OR Kraken orders fill/cancel
   React.useEffect(() => {
     const handleTradeCompleted = () => {
       console.log('[PortfolioSummary] Trade completed, refreshing WebSocket data');
@@ -26,12 +26,25 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
       }
     };
 
+    const handleKrakenOrderEvent = () => {
+      console.log('[PortfolioSummary] Kraken order event, refreshing data');
+      if (!isSimMode && refreshWebSocket) {
+        setTimeout(() => refreshWebSocket(), 1500);
+      }
+    };
+
     window.addEventListener('trade:completed', handleTradeCompleted);
     window.addEventListener('kraken:synced', handleTradeCompleted);
+    window.addEventListener('kraken:order-filled', handleKrakenOrderEvent);
+    window.addEventListener('kraken:order-canceled', handleKrakenOrderEvent);
+    window.addEventListener('kraken:balance-update', handleTradeCompleted);
 
     return () => {
       window.removeEventListener('trade:completed', handleTradeCompleted);
       window.removeEventListener('kraken:synced', handleTradeCompleted);
+      window.removeEventListener('kraken:order-filled', handleKrakenOrderEvent);
+      window.removeEventListener('kraken:order-canceled', handleKrakenOrderEvent);
+      window.removeEventListener('kraken:balance-update', handleTradeCompleted);
     };
   }, [isSimMode, refreshWebSocket]);
 
