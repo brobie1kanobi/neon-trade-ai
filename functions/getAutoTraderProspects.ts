@@ -121,6 +121,7 @@ Deno.serve(async (req) => {
       loss_margin: typeof loss === 'number' ? Math.abs(loss) : 1,
       trailing_takeprofit_enabled: rawRecord?.trailing_takeprofit_enabled !== undefined ? rawRecord.trailing_takeprofit_enabled : true,
       trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
+      min_signal_confidence: typeof rawRecord?.min_signal_confidence === 'number' ? rawRecord.min_signal_confidence : 55,
     };
     
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
