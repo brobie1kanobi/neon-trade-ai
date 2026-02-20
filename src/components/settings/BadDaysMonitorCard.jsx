@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { 
   AlertDialog, 
   AlertDialogAction, 
@@ -13,7 +15,7 @@ import {
   AlertDialogTitle, 
   AlertDialogTrigger 
 } from "@/components/ui/alert-dialog";
-import { ShieldAlert, ShieldCheck, Play, Eye, Clock } from "lucide-react";
+import { ShieldAlert, ShieldCheck, Eye, Clock, RotateCcw } from "lucide-react";
 import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function BadDaysMonitorCard() {
@@ -39,7 +41,45 @@ export default function BadDaysMonitorCard() {
     } catch { return d.toLocaleString(); }
   };
 
-  const handleResume = async () => {
+  // Calculate how long bad days has been active
+  const durationText = useMemo(() => {
+    if (!triggeredAt) return null;
+    const triggeredTime = new Date(triggeredAt).getTime();
+    if (isNaN(triggeredTime)) return null;
+    const diff = Date.now() - triggeredTime;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h`;
+    }
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  }, [triggeredAt]);
+
+  // Toggle bad days mode manually
+  const handleToggleBadDays = async (checked) => {
+    setResuming(true);
+    try {
+      if (checked) {
+        // Manually activate "bad days" pause
+        await updateSetting("bad_days_active", true);
+        await updateSetting("bad_days_reason", "Manually paused by user");
+        await updateSetting("bad_days_triggered_at", new Date().toISOString());
+        await updateSetting("bad_days_override_enabled", false);
+      } else {
+        // Manually deactivate
+        await updateSetting("bad_days_active", false);
+        await updateSetting("bad_days_override_enabled", false);
+        await updateSetting("bad_days_reason", "");
+        await updateSetting("bad_days_triggered_at", "");
+      }
+    } finally {
+      setResuming(false);
+    }
+  };
+
+  const handleOverrideResume = async () => {
     setResuming(true);
     try {
       await updateSetting("bad_days_override_enabled", true);
@@ -48,7 +88,7 @@ export default function BadDaysMonitorCard() {
     }
   };
 
-  const handleReset = async () => {
+  const handleFullReset = async () => {
     setResuming(true);
     try {
       await updateSetting("bad_days_active", false);
@@ -82,49 +122,76 @@ export default function BadDaysMonitorCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Manual On/Off Switch */}
+        <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: "var(--secondary-bg)" }}>
+          <div className="flex-1">
+            <Label className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+              Bad Days Pause
+            </Label>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
+              {isActive 
+                ? "Trading is paused — no new auto-trades will execute"
+                : "Trading is active — auto-trader can execute normally"}
+            </p>
+          </div>
+          <Switch
+            checked={isActive}
+            onCheckedChange={handleToggleBadDays}
+            disabled={resuming}
+          />
+        </div>
+
         {isActive && !isOverridden ? (
           <>
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
               <ShieldAlert className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-red-700 dark:text-red-400">
                   Auto-trading paused
                 </p>
                 <p className="text-xs text-red-600 dark:text-red-300 mt-1">{reason}</p>
-                {triggeredAt && (
-                  <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                    <Clock className="w-3 h-3" /> Triggered: {formatTime(triggeredAt)}
-                  </p>
-                )}
+                <div className="flex flex-wrap items-center gap-3 mt-2">
+                  {triggeredAt && (
+                    <p className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+                      <Clock className="w-3 h-3" /> Since: {formatTime(triggeredAt)}
+                    </p>
+                  )}
+                  {durationText && (
+                    <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Duration: {durationText}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button size="sm" className="flex-1 gap-1 bg-yellow-600 hover:bg-yellow-700 text-white">
-                    <Play className="w-3 h-3" /> Resume Trading
+                    Override & Resume
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Resume Trading?</AlertDialogTitle>
+                    <AlertDialogTitle>Override Trading Pause?</AlertDialogTitle>
                     <AlertDialogDescription>
                       Trading was paused because: <strong>{reason}</strong>
+                      {durationText && <><br />Paused for: <strong>{durationText}</strong></>}
                       <br /><br />
-                      Resuming will allow the auto-trader to execute trades again despite the risk limit being hit. 
-                      This override lasts until the end of the day or until you manually reset it.
+                      Overriding will allow the auto-trader to execute trades again despite the risk limit. 
+                      The pause will remain recorded but trading will continue.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleResume} disabled={resuming}>
-                      {resuming ? "Resuming..." : "Yes, Resume Trading"}
+                    <AlertDialogAction onClick={handleOverrideResume} disabled={resuming}>
+                      {resuming ? "Resuming..." : "Yes, Override & Resume"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-              <Button size="sm" variant="outline" onClick={handleReset} disabled={resuming} className="gap-1">
-                Reset
+              <Button size="sm" variant="outline" onClick={handleFullReset} disabled={resuming} className="gap-1">
+                <RotateCcw className="w-3 h-3" /> Reset
               </Button>
             </div>
           </>
@@ -132,22 +199,29 @@ export default function BadDaysMonitorCard() {
           <>
             <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
               <ShieldAlert className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
                   Override active — trading resumed
                 </p>
                 <p className="text-xs text-yellow-600 dark:text-yellow-300 mt-1">
                   Original reason: {reason}
                 </p>
-                {triggeredAt && (
-                  <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                    <Clock className="w-3 h-3" /> Triggered: {formatTime(triggeredAt)}
-                  </p>
-                )}
+                <div className="flex flex-wrap items-center gap-3 mt-2">
+                  {triggeredAt && (
+                    <p className="text-xs flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+                      <Clock className="w-3 h-3" /> Triggered: {formatTime(triggeredAt)}
+                    </p>
+                  )}
+                  {durationText && (
+                    <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      Pause was active for: {durationText}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-            <Button size="sm" variant="outline" onClick={handleReset} disabled={resuming} className="w-full gap-1">
-              Clear & Reset to Normal
+            <Button size="sm" variant="outline" onClick={handleFullReset} disabled={resuming} className="w-full gap-1">
+              <RotateCcw className="w-3 h-3" /> Clear & Reset to Normal
             </Button>
           </>
         ) : (
@@ -156,7 +230,7 @@ export default function BadDaysMonitorCard() {
             <div>
               <p className="text-sm" style={{ color: "var(--text-primary)" }}>All clear</p>
               <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                No risk limits triggered. Trading operating normally.
+                No risk limits triggered. Auto-trading can execute normally. Toggle the switch above to manually pause trading on "bad days."
               </p>
             </div>
           </div>
