@@ -261,6 +261,9 @@ export default function SystemHealthPanel() {
             Last activity: {formatTimeAgo(health.last_trade_time)}
           </p>
         )}
+
+        {/* Bad Days Monitor */}
+        <BadDaysMonitorCard />
       </CardContent>
     </Card>
   );
