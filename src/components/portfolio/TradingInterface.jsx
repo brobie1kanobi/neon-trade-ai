@@ -958,6 +958,44 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
                 </p>
               </div>
             </div>
+
+            {/* Auto-Execute Threshold Slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Auto-Execute Threshold</Label>
+                <span className="text-sm font-mono font-bold neon-text">{autoExecuteThreshold}%</span>
+              </div>
+              <Slider
+                value={[autoExecuteThreshold]}
+                onValueChange={([v]) => setAutoExecuteThreshold(v)}
+                min={50}
+                max={100}
+                step={5}
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500">
+                AI only auto-executes trades when confidence is ≥ {autoExecuteThreshold}%
+              </p>
+            </div>
+
+            {/* Min Signal Confidence Slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Min Signal Confidence</Label>
+                <span className="text-sm font-mono font-bold neon-text">{minSignalConfidence}%</span>
+              </div>
+              <Slider
+                value={[minSignalConfidence]}
+                onValueChange={([v]) => setMinSignalConfidence(v)}
+                min={30}
+                max={90}
+                step={5}
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500">
+                Only show signals with confidence ≥ {minSignalConfidence}%
+              </p>
+            </div>
             
             <Button 
               onClick={handleSaveMargins} 
