@@ -178,11 +178,14 @@ export function KrakenWebSocketProvider({ children }) {
       lastExecutionTimestamp = new Date().toISOString();
       // Nuke ALL financial caches so no stale data survives
       invalidateCache();
-      // Force REST re-fetch (Kraken needs ~2s to settle)
+      // Force REST re-fetch: first at 2s (Kraken settle), then again at 5s (confirmation)
       setTimeout(() => {
         fetchRestData(true);
         refresh();
       }, 2000);
+      setTimeout(() => {
+        fetchRestData(true);
+      }, 5000);
     };
 
     const handleSync = () => {
@@ -193,15 +196,34 @@ export function KrakenWebSocketProvider({ children }) {
       }, 1500);
     };
 
+    const handleOrderPlaced = () => {
+      setTimeout(() => fetchRestData(true), 2000);
+    };
+
+    // Listen for Kraken order fill events (from WebSocket executions channel)
+    const handleOrderFilled = () => {
+      console.log('[KrakenWSProvider] Order filled on Kraken – refreshing balances');
+      invalidateCache();
+      setTimeout(() => {
+        fetchRestData(true);
+        refresh();
+      }, 1500);
+    };
+
     window.addEventListener('trade:completed', handleTradeCompleted);
     window.addEventListener('kraken:synced', handleSync);
-    window.addEventListener('kraken:order-placed', () => setTimeout(() => fetchRestData(true), 2000));
+    window.addEventListener('kraken:order-placed', handleOrderPlaced);
+    window.addEventListener('kraken:order-filled', handleOrderFilled);
+    window.addEventListener('kraken:order-canceled', handleOrderFilled);
 
     return () => {
       window.removeEventListener('trade:completed', handleTradeCompleted);
       window.removeEventListener('kraken:synced', handleSync);
+      window.removeEventListener('kraken:order-placed', handleOrderPlaced);
+      window.removeEventListener('kraken:order-filled', handleOrderFilled);
+      window.removeEventListener('kraken:order-canceled', handleOrderFilled);
     };
-  }, [refresh]); // fetchRestData added below
+  }, [refresh, fetchRestData]);
 
   // ── WebSocket reconnect recovery ──
   useEffect(() => {
