@@ -32,6 +32,23 @@ async function evaluateRisk(base44, userId, proposedTrade, userSettings, portfol
   const rejections = [];
   const warnings = [];
   
+  // CRITICAL: Check "bad days" mode first — if active and not overridden, block all trades
+  if (userSettings?.bad_days_active === true && userSettings?.bad_days_override_enabled !== true) {
+    rejections.push({
+      rule: 'bad_days_active',
+      message: `Trading paused: ${userSettings?.bad_days_reason || 'Risk limit triggered'}`,
+      severity: 'critical'
+    });
+    return {
+      approved: false,
+      rejections,
+      warnings,
+      risk_score: 100,
+      portfolio_metrics: { total_value: 0, cash_available: 0, holdings_count: 0 },
+      bad_days_active: true
+    };
+  }
+  
   const {
     symbol,
     type,
