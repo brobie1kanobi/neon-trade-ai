@@ -320,6 +320,9 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode, state.isConnected]);
 
+  // Keep ref in sync so event handlers always call the latest version
+  useEffect(() => { fetchRestDataRef.current = fetchRestData; }, [fetchRestData]);
+
   // ── PnL fetcher (separate, less frequent) ──
   const fetchPnL = useCallback(async () => {
     if (isSimMode) return;
