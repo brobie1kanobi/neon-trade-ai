@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
+import BadDaysMonitorCard from "./BadDaysMonitorCard";
 
 export default function SystemHealthPanel() {
   const [health, setHealth] = useState(null);
