@@ -90,11 +90,32 @@ export default function SystemHealthPanel() {
       }
 
       // Conditional orders / risk management
-      const activeOrders = ordersRes.length;
+      // Count BOTH local conditional orders AND Kraken open orders
+      const activeLocalOrders = ordersRes.length;
+      
+      // Also fetch Kraken open orders count if in LIVE mode
+      let krakenOpenOrdersCount = 0;
+      if (!isSimMode) {
+        try {
+          const krakenOrdersRes = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders' });
+          const krakenData = krakenOrdersRes?.data || krakenOrdersRes;
+          if (krakenData?.orders) {
+            krakenOpenOrdersCount = krakenData.orders.length;
+          }
+        } catch (_e) {
+          // Silently fail - just use local count
+        }
+      }
+      
+      const totalActiveOrders = Math.max(activeLocalOrders, krakenOpenOrdersCount);
+      const isMonitoring = settingsData?.auto_trading_enabled || totalActiveOrders > 0;
+      
       components.risk_management = {
-        status: activeOrders > 0 ? 'healthy' : 'idle',
+        status: isMonitoring ? 'healthy' : 'idle',
         label: 'Risk Management',
-        detail: `${activeOrders} active conditional orders`,
+        detail: !isSimMode && krakenOpenOrdersCount > 0
+          ? `${krakenOpenOrdersCount} Kraken open orders, ${activeLocalOrders} local conditional orders`
+          : `${activeLocalOrders} active conditional orders`,
         icon: ShieldCheck,
         last_activity: ordersRes[0] ? new Date(ordersRes[0].created_date) : null
       };
