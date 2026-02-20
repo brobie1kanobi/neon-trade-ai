@@ -184,6 +184,8 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
     const updatedSettings = {
       gain_margin: parseFloat(gainMargin),
       loss_margin: parseFloat(lossMargin),
+      auto_execute_threshold: autoExecuteThreshold,
+      min_signal_confidence: minSignalConfidence,
       default_input_mode: inputMode,
       auto_trading_enabled: true
     };
