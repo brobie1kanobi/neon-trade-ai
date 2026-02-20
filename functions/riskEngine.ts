@@ -194,6 +194,34 @@ async function evaluateRisk(base44, userId, proposedTrade, userSettings, portfol
         message: `Daily loss of ${dailyLossPercent.toFixed(1)}% exceeds ${riskParams.dailyLossCapPercent}% cap. Trading paused.`,
         severity: 'critical'
       });
+      
+      // CRITICAL: Activate "bad days" mode on user settings
+      try {
+        const badDaysOverride = userSettings?.bad_days_override_enabled === true;
+        if (!badDaysOverride) {
+          const settingsRecords = await base44.entities.UserSettings.filter({ created_by: userId });
+          if (settingsRecords.length > 0) {
+            await base44.entities.UserSettings.update(settingsRecords[0].id, {
+              bad_days_active: true,
+              bad_days_triggered_at: new Date().toISOString(),
+              bad_days_reason: `Daily loss cap exceeded (${dailyLossPercent.toFixed(1)}% >= ${riskParams.dailyLossCapPercent}%)`
+            });
+            console.log(`[riskEngine] BAD DAYS activated for user ${userId}`);
+          }
+        } else {
+          console.log(`[riskEngine] Daily loss cap hit but user has override enabled - proceeding`);
+          // Remove rejection if override is active
+          const idx = rejections.findIndex(r => r.rule === 'daily_loss_cap');
+          if (idx !== -1) rejections.splice(idx, 1);
+          warnings.push({
+            rule: 'daily_loss_cap_override',
+            message: `Daily loss of ${dailyLossPercent.toFixed(1)}% exceeds cap but override is active`,
+            severity: 'medium'
+          });
+        }
+      } catch (badDaysErr) {
+        console.warn('[riskEngine] Failed to update bad_days state:', badDaysErr.message);
+      }
     }
   } catch (e) {
     console.warn('[riskEngine] Could not check daily loss:', e.message);

@@ -350,9 +350,10 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // Require minimum 55% confidence for display
-      if (confidence < 55) {
-        console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence);
+      // Require minimum confidence for display (user-configurable, default 55%)
+      const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 55;
+      if (confidence < minConfidence) {
+        console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence, '< min:', minConfidence);
         continue;
       }
       

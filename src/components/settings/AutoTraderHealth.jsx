@@ -202,7 +202,7 @@ export default function AutoTraderHealth() {
       // Build list of operational issues - ONLY show real issues, NOT rate limit false negatives
       const issues = [];
       
-      // CRITICAL: NEVER say "not connected" if we have WebSocket/balance data
+      // CRITICAL: NEVER say "not connected" if we have WebSocket/balance data OR credentials exist
       // Only say "not connected" if we truly have NO data, NO credentials, AND didn't get rate limited
       if (!isConnected && !alreadyProvenConnected && !hasKrakenCredentials && !krakenFetchFailed && !hasBalanceData) {
         issues.push({ type: 'connection', message: 'Kraken not connected' });
@@ -212,8 +212,14 @@ export default function AutoTraderHealth() {
         issues.push({ type: 'config', message: 'No auto-buy assets configured' });
       }
       // Only show balance issue if Kraken is connected and balance is actually low (< $1)
-      if (isConnected && effectiveBalance < 1 && effectiveBalance >= 0) {
+      // AND we didn't just get rate limited (which returns 0 balance)
+      if (isConnected && effectiveBalance < 1 && effectiveBalance >= 0 && !krakenFetchFailed) {
         issues.push({ type: 'balance', message: 'Insufficient balance to trade' });
+      }
+      
+      // CRITICAL: Check bad_days_active state
+      if (settings?.bad_days_active && !settings?.bad_days_override_enabled) {
+        issues.push({ type: 'bad_days', message: `Trading paused: ${settings?.bad_days_reason || 'Risk limit hit'}` });
       }
       
       setOperationalIssues(issues);

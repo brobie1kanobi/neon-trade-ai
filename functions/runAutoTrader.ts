@@ -541,10 +541,28 @@ Deno.serve(async (req) => {
       }
     }
     
-    // AUTO-EXECUTION THRESHOLD: 80% confidence minimum
-    // v4 signal generator already applies strict multi-timeframe validation,
-    // so 80% here means the signal passed ALL hard data filters
-    const AUTO_EXECUTE_THRESHOLD = 80;
+    // CRITICAL: Check "bad days" mode - if active and not overridden, block all trades
+    if (settings.bad_days_active === true && settings.bad_days_override_enabled !== true) {
+      log('BAD DAYS mode active - trading paused', { 
+        reason: settings.bad_days_reason,
+        triggered_at: settings.bad_days_triggered_at
+      });
+      await releaseLock(base44, autoTraderRunId, 'canceled', {
+        error_message: `Trading paused: ${settings.bad_days_reason || 'Bad days mode active'}`,
+        logs_json: JSON.stringify(runLogs)
+      });
+      return Response.json({
+        success: false,
+        message: `Trading paused: ${settings.bad_days_reason || 'Bad days mode active'}`,
+        trades_count: 0,
+        bad_days_active: true
+      });
+    }
+
+    // AUTO-EXECUTION THRESHOLD: Use user setting or default to 80%
+    const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number' 
+      ? settings.auto_execute_threshold 
+      : 80;
     
     // Build signal map for quick lookup
     const signalMap = new Map();
