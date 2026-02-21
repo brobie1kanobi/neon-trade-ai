@@ -213,8 +213,6 @@ Deno.serve(async (req) => {
     } // end else (LIVE mode)
     
     console.log('[Prospects] Cash available:', cashAvailable);
-    
-    const isSimMode = settings.sim_trading_mode;
     console.log('[Prospects] Mode:', isSimMode ? 'SIMULATION' : 'LIVE');
 
     // Get auto-buy preferences for current user and mode
