@@ -380,7 +380,7 @@ Deno.serve(async (req) => {
     // Fallback: try getMarketData if Kraken public didn't work
     if (quotes.length === 0) {
       try {
-        const marketDataResponse = await base44.functions.invoke('getMarketData', {
+        const marketDataResponse = await base44.asServiceRole.functions.invoke('getMarketData', {
           action: 'getWatchlistData',
           payload: { cryptoSymbols, stockSymbols }
         });
