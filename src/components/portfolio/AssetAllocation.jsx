@@ -32,7 +32,11 @@ export default function AssetAllocation({ allocations, isLoading }) {
     balances: wsBalances,
     prices: wsPrices,
     cryptoHoldingsValue: wsCryptoValue,
-    refresh: refreshWebSocket
+    refresh: refreshWebSocket,
+    // REST snapshot has ALL assets with prices immediately on load
+    bestHoldings: restHoldings,
+    krakenBalance: krakenData,
+    hasData: hasKrakenData
   } = useKrakenWebSocket();
 
   // CRITICAL: Refresh WebSocket data when trades complete
