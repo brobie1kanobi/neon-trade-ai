@@ -131,8 +131,8 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   // ── Reactive WS state updates via window events ──
-  // CRITICAL: Uses computeMetricsFromGlobal() which reads window globals directly
-  // This avoids stale closure issues with wsManager React state
+  // CRITICAL: Only runs in LIVE mode (shouldConnect = !isSimMode && !!user)
+  // SIM mode should NEVER listen for Kraken WS events
   useEffect(() => {
     if (!shouldConnect) return;
 
@@ -146,7 +146,7 @@ export function KrakenWebSocketProvider({ children }) {
     window.addEventListener('kraken:connected', handleUpdate);
     window.addEventListener('kraken:disconnected', handleUpdate);
 
-    // Fallback interval at 10s for connection-state changes (reduced from 5s to lower overhead)
+    // Fallback interval at 10s for connection-state changes
     const interval = setInterval(() => setState(computeMetricsFromGlobal()), 10000);
 
     return () => {
@@ -370,6 +370,7 @@ export function KrakenWebSocketProvider({ children }) {
   }, [shouldConnect, fetchPnL]);
 
   // ── Recovery mode: poll REST while WS is down (conservative, 5 min) ──
+  // CRITICAL: Only in LIVE mode (shouldConnect already gates on !isSimMode)
   useEffect(() => {
     if (!shouldConnect || state.isConnected || !hasInitialSnapshotRef.current) return;
     console.log('[KrakenWSProvider] WS down – entering recovery polling (every 5 min)');
