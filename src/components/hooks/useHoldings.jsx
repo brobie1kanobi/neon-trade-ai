@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { getCached, invalidateCache, fetchWithRetry } from './useDataFetching';
+import { getRecent, setRecent } from './useGlobalDataStore';
 
 /**
  * useHoldings Hook
@@ -15,6 +16,18 @@ export function useHoldings(isSimMode = true) {
   const [error, setError] = useState(null);
 
   const fetchHoldings = useCallback(async (useCache = true) => {
+    // CROSS-PAGE CHECK: Reuse if another page just loaded holdings
+    const storeKey = `holdings_${isSimMode ? 'sim' : 'real'}`;
+    if (useCache) {
+      const recent = getRecent(storeKey);
+      if (recent) {
+        console.log('[useHoldings] Using cross-page cached holdings (< 15s old)');
+        setHoldings(recent);
+        setLoading(false);
+        return recent;
+      }
+    }
+
     setLoading(true);
     setError(null);
     
@@ -51,6 +64,7 @@ export function useHoldings(isSimMode = true) {
       }
       
       setHoldings(data || []);
+      setRecent(storeKey, data || []); // Store for cross-page reuse
       setError(null); // Clear error on success
       return data || [];
     } catch (err) {

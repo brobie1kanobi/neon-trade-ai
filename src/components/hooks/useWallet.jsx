@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { getCached, invalidateCache, fetchWithRetry } from './useDataFetching';
+import { getRecent, setRecent } from './useGlobalDataStore';
 
 /**
  * useWallet Hook
@@ -14,6 +15,17 @@ export function useWallet() {
   const [error, setError] = useState(null);
 
   const fetchWallet = useCallback(async (useCache = true) => {
+    // CROSS-PAGE CHECK: If another page just loaded wallet data, reuse it
+    if (useCache) {
+      const recent = getRecent('wallet');
+      if (recent) {
+        console.log('[useWallet] Using cross-page cached wallet (< 15s old)');
+        setWallet(recent);
+        setLoading(false);
+        return recent;
+      }
+    }
+
     setLoading(true);
     setError(null);
     
@@ -68,6 +80,7 @@ export function useWallet() {
       }
       
       setWallet(data);
+      setRecent('wallet', data); // Store for cross-page reuse
       setError(null); // Clear error on success
       return data;
     } catch (err) {

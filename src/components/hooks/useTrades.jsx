@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { getCached, invalidateCache, fetchWithRetry } from './useDataFetching';
+import { getRecent, setRecent } from './useGlobalDataStore';
 
 /**
  * useTrades Hook
@@ -15,6 +16,18 @@ export function useTrades(isSimMode = true) {
   const [error, setError] = useState(null);
 
   const fetchTrades = useCallback(async (useCache = true) => {
+    // CROSS-PAGE CHECK: Reuse if another page just loaded trades
+    const storeKey = `trades_${isSimMode ? 'sim' : 'real'}`;
+    if (useCache) {
+      const recent = getRecent(storeKey);
+      if (recent) {
+        console.log('[useTrades] Using cross-page cached trades (< 15s old)');
+        setTrades(recent);
+        setLoading(false);
+        return recent;
+      }
+    }
+
     setLoading(true);
     setError(null);
     
@@ -51,6 +64,7 @@ export function useTrades(isSimMode = true) {
       }
       
       setTrades(data || []);
+      setRecent(storeKey, data || []); // Store for cross-page reuse
       setError(null); // Clear error on success
       return data || [];
     } catch (err) {
