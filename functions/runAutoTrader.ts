@@ -460,7 +460,7 @@ Deno.serve(async (req) => {
     // Fetch trade history for dynamic TP/SL calculation
     try {
     log('Fetching trade history for dynamic levels...');
-    const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
+    const historyResponse = await base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
       includeKrakenHistory: false,
       analyzePatterns: false
     });
