@@ -13,6 +13,7 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { getRecentAnalysis, setRecentAnalysis } from "@/components/hooks/useGlobalDataStore";
 
 function SignalCard({ signal, onSendToTrader, onManualTrade }) {
   const isStrongBuy = signal.optimal_action === 'strong_buy';
@@ -281,8 +282,20 @@ export default function MarketAnalysis() {
   
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  const fetchAnalysis = useCallback(async () => {
+  const fetchAnalysis = useCallback(async (force = false) => {
     if (!user?.email) return;
+    
+    // CROSS-PAGE CHECK: If QuickActions (or earlier visit) already loaded analysis, reuse it
+    if (!force) {
+      const recent = getRecentAnalysis();
+      if (recent) {
+        console.log('[MarketAnalysis] Using cross-page cached analysis');
+        setAnalysisData(recent);
+        setLoading(false);
+        setAnalyzing(false);
+        return;
+      }
+    }
     
     setAnalyzing(true);
     setError(null);
@@ -315,6 +328,7 @@ export default function MarketAnalysis() {
       
       if (data?.success) {
         setAnalysisData(data);
+        setRecentAnalysis(data); // Store for cross-page reuse
       } else {
         throw new Error(data?.error || 'Analysis failed');
       }
@@ -412,6 +426,14 @@ export default function MarketAnalysis() {
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
           {analyzing ? 'Analyzing...' : 'Refresh'}
+        </Button>
+        <Button
+          onClick={() => fetchAnalysis(true)}
+          disabled={analyzing}
+          variant="outline"
+          size="sm"
+          style={{ display: 'none' }}
+        >
         </Button>
       </motion.div>
 
