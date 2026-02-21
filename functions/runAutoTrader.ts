@@ -764,7 +764,7 @@ Deno.serve(async (req) => {
       // This is the MOST IMPORTANT check - prevents "insufficient funds" errors
       if (!isSimMode) {
         try {
-          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+          const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
           const freshData = freshBalanceRes?.data || freshBalanceRes;
           if (freshData?.success && freshData?.connected) {
             // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
