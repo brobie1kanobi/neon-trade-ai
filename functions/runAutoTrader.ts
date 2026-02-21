@@ -1019,7 +1019,7 @@ Deno.serve(async (req) => {
           
           // Record health error
           try {
-            await base44.functions.invoke('systemHealthMonitor', {
+            await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
               action: 'recordError',
               component: 'kraken_api',
               error_message: krakenError.message
