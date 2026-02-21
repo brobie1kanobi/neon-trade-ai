@@ -21,7 +21,7 @@ const globalPriceCache = {
   subscribers: new Set()
 };
 
-const CACHE_TTL = 60000; // 1 minute cache for REST API
+const CACHE_TTL = 30000; // 30 seconds cache for REST API (SIM mode) - tighter for better accuracy
 
 export function usePriceData(symbols = []) {
   const { settings } = useSettings();

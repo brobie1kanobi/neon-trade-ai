@@ -57,8 +57,8 @@ export default function CryptoMarketOverview() {
     const cache = window.__marketDataCache;
     const now = Date.now();
     
-    // CRITICAL: Extend cache to 60 seconds (was 15s) to reduce API calls
-    if (!force && cache.data && (now - cache.timestamp) < 60000) {
+    // 30-second client cache for watchlist prices (balanced freshness vs rate limits)
+    if (!force && cache.data && (now - cache.timestamp) < 30000) {
       setCryptoAssets(cache.data.crypto || []);
       setStockAssets(cache.data.stocks || []);
       setIsLoading(false);
@@ -208,13 +208,13 @@ export default function CryptoMarketOverview() {
     return () => clearTimeout(timer);
   }, [settings]);
 
-  // Periodic refresh (2 minutes instead of 30s to reduce API calls)
+  // Periodic refresh: 60 seconds (server-side cache absorbs duplicate upstream calls)
   useEffect(() => {
     if (!settings) return;
     
     const interval = setInterval(() => {
       fetchWatchlistData(false);
-    }, 120000); // Changed from 30s to 2 minutes
+    }, 60000); // 60 seconds - server cache prevents upstream API abuse
 
     return () => clearInterval(interval);
   }, [settings]);
