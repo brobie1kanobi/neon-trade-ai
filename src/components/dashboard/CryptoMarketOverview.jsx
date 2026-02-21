@@ -7,6 +7,7 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { base44 } from "@/api/base44Client";
 import StockLogo from "../common/StockLogo";
 import { Loader2 } from "lucide-react";
+import { setRecent } from "@/components/hooks/useGlobalDataStore";
 
 // GLOBAL DEDUPLICATION: Only ONE request at a time across ALL component instances
 if (typeof window !== 'undefined') {
@@ -155,6 +156,9 @@ export default function CryptoMarketOverview() {
         cache.data = result;
         cache.timestamp = Date.now();
         cache.inFlight = null;
+
+        // Also store raw price data in global cross-page store
+        setRecent('market_prices', data);
 
         return result;
       } catch (error) {
