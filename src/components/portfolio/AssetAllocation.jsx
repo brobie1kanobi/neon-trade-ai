@@ -57,36 +57,71 @@ export default function AssetAllocation({ allocations, isLoading }) {
     };
   }, [isSimMode, refreshWebSocket]);
 
-  // CRITICAL: In LIVE mode with WebSocket, build allocations from real-time data
+  // CRITICAL: In LIVE mode, build allocations from Kraken data
+  // PRIORITY 1: REST snapshot (bestHoldings) — available immediately with ALL assets and prices
+  // PRIORITY 2: WebSocket balances+prices — arrives piecemeal (ticker-by-ticker), may show partial data
   const wsAllocations = React.useMemo(() => {
-    if (isSimMode || !wsConnected || !wsBalances) return null;
+    if (isSimMode) return null;
     
-    const wsAssets = Object.entries(wsBalances)
-      .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
-      .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
-      .map(([asset, balance]) => {
-        const pair = `${asset}/USD`;
-        const priceInfo = wsPrices?.[pair];
-        const qty = balance.balance || 0;
-        const price = priceInfo?.price || 0;
+    // PRIORITY 1: REST snapshot from provider (has ALL assets with accurate prices from Kraken Ticker API)
+    if (restHoldings && restHoldings.length > 0) {
+      console.log('[AssetAllocation] Using REST snapshot holdings:', restHoldings.length, 'assets');
+      const mapped = restHoldings.map(h => {
+        // Overlay real-time WS price if available (more current than REST)
+        const pair = `${h.symbol}/USD`;
+        const wsPrice = wsPrices?.[pair]?.price;
+        const price = wsPrice || h.current_price_usd || 0;
+        const qty = h.quantity || 0;
         const value = qty * price;
         
         return {
-          symbol: asset,
+          symbol: h.symbol,
           quantity: qty,
           currentPrice: price,
           currentValue: value,
-          costBasis: value, // Use current value as cost basis if not available
-          average_cost_price: price,
+          costBasis: (h.avg_cost || price) * qty,
+          average_cost_price: h.avg_cost || price,
           asset_type: 'crypto',
           is_simulation: false
         };
-      })
-      .filter(a => a.currentValue > 0.01)
-      .sort((a, b) => b.currentValue - a.currentValue);
+      }).filter(a => a.currentValue > 0.01)
+        .sort((a, b) => b.currentValue - a.currentValue);
+      
+      return mapped.length > 0 ? mapped : null;
+    }
     
-    return wsAssets.length > 0 ? wsAssets : null;
-  }, [isSimMode, wsConnected, wsBalances, wsPrices]);
+    // PRIORITY 2: WebSocket balances (fallback if REST hasn't loaded yet)
+    if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
+      console.log('[AssetAllocation] Using WebSocket balances (REST not yet available)');
+      const wsAssets = Object.entries(wsBalances)
+        .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+        .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
+        .map(([asset, balance]) => {
+          const pair = `${asset}/USD`;
+          const priceInfo = wsPrices?.[pair];
+          const qty = balance.balance || 0;
+          const price = priceInfo?.price || 0;
+          const value = qty * price;
+          
+          return {
+            symbol: asset,
+            quantity: qty,
+            currentPrice: price,
+            currentValue: value,
+            costBasis: value,
+            average_cost_price: price,
+            asset_type: 'crypto',
+            is_simulation: false
+          };
+        })
+        .filter(a => a.currentValue > 0.01)
+        .sort((a, b) => b.currentValue - a.currentValue);
+      
+      return wsAssets.length > 0 ? wsAssets : null;
+    }
+    
+    return null;
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
