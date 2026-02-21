@@ -9,7 +9,7 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import LossCapHaltStatus from "@/components/portfolio/LossCapHaltStatus";
+import LossCapHaltStatus from "../portfolio/LossCapHaltStatus";
 
 const DEFAULTS = {
   max_asset_exposure_percent: 25,
