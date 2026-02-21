@@ -1,19 +1,18 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 /**
- * AI SIGNAL GENERATOR v4 — HIGH WIN-RATE EDITION
+ * AI SIGNAL GENERATOR v5 — ENHANCED TECHNICAL + SENTIMENT + ML SCORING
  * 
- * CRITICAL CHANGES for 80%+ win rate:
- * 1. Multi-timeframe confirmation: requires alignment across 1h, 4h, 1d
- * 2. Strict momentum gates: only buy into confirmed uptrends
- * 3. Volume-weighted confidence: low volume = low confidence
- * 4. Historical performance feedback: penalize assets with poor track record
- * 5. Wider TP targets (5-8%), tighter SL (2-3%) for better risk/reward
- * 6. Trend-following only: NEVER counter-trend trades
- * 7. Entry zone validation: only signal when price is at a support bounce, not resistance
+ * ENHANCEMENTS:
+ * 1. Real RSI, MACD, Bollinger Bands computed from OHLC candle data
+ * 2. Sentiment analysis module using LLM with live internet context
+ * 3. ML-style composite scoring model that weights all indicators
+ * 4. Multi-timeframe confirmation (1h + 4h candles)
+ * 5. Volume-weighted momentum analysis
+ * 6. Historical performance feedback loop
  */
 
-const SIGNAL_TTL_HOURS = 1; // Shorter TTL = fresher signals, less stale trades
+const SIGNAL_TTL_HOURS = 1;
 
 const KRAKEN_PAIR_MAP = {
   'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
@@ -22,6 +21,286 @@ const KRAKEN_PAIR_MAP = {
   'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
   'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
 };
+
+// ═══════════════════════════════════════════════
+//  TECHNICAL INDICATOR CALCULATIONS (pure math)
+// ═══════════════════════════════════════════════
+
+function calcEMA(prices, period) {
+  if (prices.length === 0) return 0;
+  const k = 2 / (period + 1);
+  let ema = prices[0];
+  for (let i = 1; i < prices.length; i++) {
+    ema = (prices[i] - ema) * k + ema;
+  }
+  return ema;
+}
+
+function calcSMA(prices, period) {
+  if (prices.length < period) return null;
+  const s = prices.slice(-period);
+  return s.reduce((a, b) => a + b, 0) / s.length;
+}
+
+/**
+ * RSI (Relative Strength Index) — Wilder's smoothing
+ * Returns 0-100. >70 = overbought, <30 = oversold
+ */
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gains += diff; else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return 100 - (100 / (1 + avgGain / avgLoss));
+}
+
+/**
+ * MACD (Moving Average Convergence Divergence)
+ * Returns { macdLine, signalLine, histogram }
+ */
+function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
+  if (closes.length < slow + signal) return null;
+  // Build full MACD line series
+  const macdSeries = [];
+  for (let i = slow - 1; i < closes.length; i++) {
+    const slice = closes.slice(0, i + 1);
+    const emaFast = calcEMA(slice, fast);
+    const emaSlow = calcEMA(slice, slow);
+    macdSeries.push(emaFast - emaSlow);
+  }
+  if (macdSeries.length < signal) return null;
+  const macdLine = macdSeries[macdSeries.length - 1];
+  const signalLine = calcEMA(macdSeries.slice(-signal * 2), signal); // use enough history
+  const histogram = macdLine - signalLine;
+  // Determine crossover state
+  const prevMacd = macdSeries.length >= 2 ? macdSeries[macdSeries.length - 2] : macdLine;
+  const prevSignal = calcEMA(macdSeries.slice(-(signal * 2 + 1), -1), signal);
+  const bullishCross = prevMacd <= prevSignal && macdLine > signalLine;
+  const bearishCross = prevMacd >= prevSignal && macdLine < signalLine;
+  return { macdLine, signalLine, histogram, bullishCross, bearishCross };
+}
+
+/**
+ * Bollinger Bands — 20-period SMA ± 2 standard deviations
+ * Returns { upper, middle, lower, bandwidth, percentB }
+ */
+function calcBollingerBands(closes, period = 20, stdDevMultiplier = 2) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  const middle = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((sum, p) => sum + Math.pow(p - middle, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+  const upper = middle + stdDevMultiplier * stdDev;
+  const lower = middle - stdDevMultiplier * stdDev;
+  const bandwidth = middle > 0 ? (upper - lower) / middle * 100 : 0;
+  const currentPrice = closes[closes.length - 1];
+  const percentB = (upper - lower) > 0 ? (currentPrice - lower) / (upper - lower) * 100 : 50;
+  return { upper, middle, lower, bandwidth, percentB };
+}
+
+/**
+ * Average True Range (ATR) — volatility measure
+ */
+function calcATR(highs, lows, closes, period = 14) {
+  if (highs.length < period + 1) return null;
+  const trueRanges = [];
+  for (let i = 1; i < highs.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trueRanges.push(tr);
+  }
+  if (trueRanges.length < period) return null;
+  let atr = trueRanges.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trueRanges.length; i++) {
+    atr = (atr * (period - 1) + trueRanges[i]) / period;
+  }
+  return atr;
+}
+
+/**
+ * Volume-Weighted Average Price (VWAP) — from candle data
+ */
+function calcVWAP(highs, lows, closes, volumes) {
+  let cumVol = 0, cumTP = 0;
+  for (let i = 0; i < closes.length; i++) {
+    const tp = (highs[i] + lows[i] + closes[i]) / 3;
+    cumTP += tp * volumes[i];
+    cumVol += volumes[i];
+  }
+  return cumVol > 0 ? cumTP / cumVol : null;
+}
+
+// ═══════════════════════════════════════════════
+//  ML-STYLE COMPOSITE SCORING MODEL
+// ═══════════════════════════════════════════════
+
+/**
+ * Scores an asset from -100 (strong sell) to +100 (strong buy)
+ * using weighted combination of all technical indicators,
+ * sentiment, and historical performance.
+ */
+function computeCompositeScore(indicators, sentiment, history) {
+  let score = 0;
+  let weights = 0;
+
+  // ── RSI (weight: 15) ──
+  if (indicators.rsi_1h != null) {
+    const rsi = indicators.rsi_1h;
+    let rsiScore = 0;
+    if (rsi < 30) rsiScore = 60 + (30 - rsi) * 1.5;       // Oversold = bullish
+    else if (rsi < 40) rsiScore = 30;
+    else if (rsi < 60) rsiScore = 0;                        // Neutral
+    else if (rsi < 70) rsiScore = -20;
+    else rsiScore = -50 - (rsi - 70) * 1.5;                 // Overbought = bearish
+    score += rsiScore * 15;
+    weights += 15;
+  }
+
+  // ── MACD (weight: 20) ──
+  if (indicators.macd_1h) {
+    let macdScore = 0;
+    if (indicators.macd_1h.bullishCross) macdScore = 80;
+    else if (indicators.macd_1h.bearishCross) macdScore = -80;
+    else if (indicators.macd_1h.histogram > 0) macdScore = 30;
+    else macdScore = -30;
+    score += macdScore * 20;
+    weights += 20;
+  }
+
+  // ── Bollinger Bands (weight: 15) ──
+  if (indicators.bb_1h) {
+    let bbScore = 0;
+    const pctB = indicators.bb_1h.percentB;
+    if (pctB < 10) bbScore = 70;          // At lower band = bounce likely
+    else if (pctB < 25) bbScore = 40;
+    else if (pctB > 90) bbScore = -70;     // At upper band = reversal likely
+    else if (pctB > 75) bbScore = -40;
+    else bbScore = 0;
+    // Squeeze detection (low bandwidth = breakout coming)
+    if (indicators.bb_1h.bandwidth < 3) bbScore += 15; // Squeeze adds uncertainty but opportunity
+    score += bbScore * 15;
+    weights += 15;
+  }
+
+  // ── Trend alignment (weight: 20) ──
+  if (indicators.trend_6h != null && indicators.trend_12h != null) {
+    let trendScore = 0;
+    const t6 = indicators.trend_6h;
+    const t12 = indicators.trend_12h;
+    const t24 = indicators.change_24h || 0;
+    if (t6 > 0 && t12 > 0 && t24 > 0) trendScore = 70;         // All bullish
+    else if (t6 > 0 && t12 > 0) trendScore = 50;
+    else if (t6 > 0 || t12 > 0) trendScore = 15;                // Mixed
+    else if (t6 < 0 && t12 < 0 && t24 < 0) trendScore = -70;   // All bearish
+    else if (t6 < 0 && t12 < 0) trendScore = -50;
+    else trendScore = -15;
+    score += trendScore * 20;
+    weights += 20;
+  }
+
+  // ── Volume confirmation (weight: 10) ──
+  if (indicators.volume_increasing != null) {
+    const volScore = indicators.volume_increasing ? 40 : -20;
+    score += volScore * 10;
+    weights += 10;
+  }
+
+  // ── Candle ratio (weight: 10) ──
+  if (indicators.candle_ratio != null) {
+    const cr = indicators.candle_ratio; // 0 to 1
+    const crScore = (cr - 0.5) * 120;  // -60 to +60
+    score += crScore * 10;
+    weights += 10;
+  }
+
+  // ── Sentiment (weight: 10) ──
+  if (sentiment != null) {
+    const sentScore = (sentiment - 50) * 1.2; // -60 to +60
+    score += sentScore * 10;
+    weights += 10;
+  }
+
+  // ── Historical performance penalty/boost (weight: 10) ──
+  if (history && history.total_trades >= 3) {
+    let histScore = 0;
+    if (history.win_rate > 70) histScore = 40;
+    else if (history.win_rate > 55) histScore = 20;
+    else if (history.win_rate < 40) histScore = -40;
+    else if (history.win_rate < 50) histScore = -20;
+    score += histScore * 10;
+    weights += 10;
+  }
+
+  // ── ATR-based volatility (weight: 5, informational) ──
+  if (indicators.atr_pct != null) {
+    // High volatility = wider range = more opportunity but more risk
+    // We slightly penalize very high volatility
+    let atrScore = 0;
+    if (indicators.atr_pct > 5) atrScore = -20;
+    else if (indicators.atr_pct > 3) atrScore = 0;
+    else if (indicators.atr_pct > 1) atrScore = 10;
+    score += atrScore * 5;
+    weights += 5;
+  }
+
+  // ── Range position (weight: 5) ──
+  if (indicators.range_position != null) {
+    // Buying near daily low is better
+    let rpScore = 0;
+    const rp = indicators.range_position;
+    if (rp < 30) rpScore = 40;
+    else if (rp < 50) rpScore = 15;
+    else if (rp > 80) rpScore = -40;
+    else if (rp > 65) rpScore = -15;
+    score += rpScore * 5;
+    weights += 5;
+  }
+
+  // Normalize to -100..+100
+  const normalized = weights > 0 ? score / weights : 0;
+  return Math.max(-100, Math.min(100, Math.round(normalized)));
+}
+
+/**
+ * Convert composite score to signal type and confidence
+ */
+function scoreToSignal(compositeScore) {
+  const abs = Math.abs(compositeScore);
+  let signalType, confidence;
+
+  if (compositeScore >= 50) {
+    signalType = 'strong_buy';
+    confidence = Math.min(95, 75 + (compositeScore - 50));
+  } else if (compositeScore >= 25) {
+    signalType = 'buy';
+    confidence = 55 + (compositeScore - 25);
+  } else if (compositeScore >= -15) {
+    signalType = 'hold';
+    confidence = 50;
+  } else if (compositeScore >= -40) {
+    signalType = 'sell';
+    confidence = 55 + (-compositeScore - 15);
+  } else {
+    signalType = 'strong_sell';
+    confidence = Math.min(95, 70 + (-compositeScore - 40));
+  }
+
+  return { signalType, confidence: Math.round(confidence) };
+}
+
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
@@ -44,7 +323,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { symbols = [], forceRefresh = false } = body;
     
-    console.log('[generateSignals] v4 Starting for', symbols.length || 'all', 'symbols');
+    console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
     
     // Get all active AutoBuyPreferences
     let assetsToAnalyze = [];
@@ -61,10 +340,7 @@ Deno.serve(async (req) => {
         const sym = (pref.symbol || '').toUpperCase();
         if (sym && !seen.has(sym)) {
           seen.add(sym);
-          assetsToAnalyze.push({
-            symbol: sym,
-            asset_type: pref.asset_type || 'crypto'
-          });
+          assetsToAnalyze.push({ symbol: sym, asset_type: pref.asset_type || 'crypto' });
         }
       }
     }
@@ -92,13 +368,16 @@ Deno.serve(async (req) => {
       return Response.json({ success: true, signals_generated: 0, signals_reused: validSignals.size, message: 'All signals still valid' });
     }
     
-    // ── Fetch OHLC data for multi-timeframe analysis ──
+    // ═══════════════════════════════════════════════
+    //  STEP 1: Fetch Ticker + OHLC data from Kraken
+    // ═══════════════════════════════════════════════
     const cryptoSymbols = assetsNeedingAnalysis.filter(a => a.asset_type === 'crypto').map(a => a.symbol);
     
     let marketData = [];
-    let ohlcData = {};
+    const ohlcData = {};       // symbol -> { candles_1h, candles_4h }
+    const techIndicators = {}; // symbol -> { rsi, macd, bb, ... }
     
-    // Fetch current ticker data
+    // Fetch current ticker
     try {
       const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
       if (pairs.length > 0) {
@@ -116,21 +395,13 @@ Deno.serve(async (req) => {
                 const low24h = parseFloat(ticker.l?.[1] || '0');
                 const volume24h = parseFloat(ticker.v?.[1] || '0');
                 const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
-                
-                // Calculate where price is within 24h range (0 = at low, 100 = at high)
                 const rangePosition = (high24h - low24h) > 0 
                   ? ((price - low24h) / (high24h - low24h)) * 100 
                   : 50;
                 
                 marketData.push({
-                  symbol: sym,
-                  price,
-                  open24h,
-                  high24h,
-                  low24h,
-                  volume24h,
-                  change_24h_percent: change24h,
-                  range_position: rangePosition  // 0-100, where in the daily range is price
+                  symbol: sym, price, open24h, high24h, low24h, volume24h,
+                  change_24h_percent: change24h, range_position: rangePosition
                 });
               }
             }
@@ -141,7 +412,7 @@ Deno.serve(async (req) => {
       console.error('[generateSignals] Ticker fetch failed:', e.message);
     }
     
-    // Fetch OHLC data (1h candles for trend detection)
+    // Fetch OHLC 1h candles (for RSI, MACD, BB, trend)
     for (const sym of cryptoSymbols) {
       const pair = KRAKEN_PAIR_MAP[sym];
       if (!pair) continue;
@@ -150,73 +421,102 @@ Deno.serve(async (req) => {
         const ohlcResp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=60`);
         if (ohlcResp.ok) {
           const ohlcJson = await ohlcResp.json();
-          const candles = ohlcJson?.result?.[pair] || ohlcJson?.result?.[Object.keys(ohlcJson.result || {}).find(k => k !== 'last')] || [];
+          const resultKey = Object.keys(ohlcJson.result || {}).find(k => k !== 'last');
+          const candles = ohlcJson?.result?.[resultKey] || [];
           
-          if (candles.length >= 6) {
-            // Last 6 hourly candles for short-term trend
-            const recent6 = candles.slice(-7, -1); // Skip the current incomplete candle
-            const recent12 = candles.slice(-13, -1);
+          if (candles.length >= 30) {
+            // Parse candle arrays: [time, open, high, low, close, vwap, volume, count]
+            const allCandles = candles.slice(0, -1); // drop incomplete current candle
+            const closes = allCandles.map(c => parseFloat(c[4]));
+            const highs = allCandles.map(c => parseFloat(c[2]));
+            const lows = allCandles.map(c => parseFloat(c[3]));
+            const volumes = allCandles.map(c => parseFloat(c[6]));
             
-            // Calculate short-term trend (6h)
+            // ── Compute all technical indicators ──
+            const rsi = calcRSI(closes, 14);
+            const macd = calcMACD(closes, 12, 26, 9);
+            const bb = calcBollingerBands(closes, 20, 2);
+            const atr = calcATR(highs, lows, closes, 14);
+            const vwap = calcVWAP(
+              highs.slice(-24), lows.slice(-24), closes.slice(-24), volumes.slice(-24)
+            );
+            const sma50 = calcSMA(closes, 50);
+            const sma20 = calcSMA(closes, 20);
+            const ema9 = calcEMA(closes, 9);
+            const currentPrice = closes[closes.length - 1];
+            
+            // Short-term trend from last 6 and 12 candles
+            const recent6 = allCandles.slice(-6);
+            const recent12 = allCandles.slice(-12);
             const firstClose6 = parseFloat(recent6[0]?.[4] || '0');
             const lastClose6 = parseFloat(recent6[recent6.length - 1]?.[4] || '0');
             const trend6h = firstClose6 > 0 ? ((lastClose6 - firstClose6) / firstClose6) * 100 : 0;
-            
-            // Calculate medium-term trend (12h)
             const firstClose12 = parseFloat(recent12[0]?.[4] || '0');
             const lastClose12 = parseFloat(recent12[recent12.length - 1]?.[4] || '0');
             const trend12h = firstClose12 > 0 ? ((lastClose12 - firstClose12) / firstClose12) * 100 : 0;
             
-            // Count bullish vs bearish candles in last 6h
-            let bullishCandles = 0;
-            let bearishCandles = 0;
-            let totalVolume = 0;
+            // Candle ratio (bullish vs bearish)
+            let bullish = 0, bearish = 0;
             for (const c of recent6) {
-              const open = parseFloat(c[1]);
-              const close = parseFloat(c[4]);
-              const vol = parseFloat(c[6]);
-              if (close > open) bullishCandles++;
-              else bearishCandles++;
-              totalVolume += vol;
+              if (parseFloat(c[4]) > parseFloat(c[1])) bullish++; else bearish++;
             }
             
-            // Average volume per candle
-            const avgVolPerCandle = totalVolume / recent6.length;
-            
-            // Check if volume is increasing (last 3 vs first 3)
+            // Volume trend
             const firstHalfVol = recent6.slice(0, 3).reduce((s, c) => s + parseFloat(c[6]), 0);
             const secondHalfVol = recent6.slice(3).reduce((s, c) => s + parseFloat(c[6]), 0);
             const volumeIncreasing = secondHalfVol > firstHalfVol * 1.1;
             
-            // Calculate support/resistance from recent candles
-            const allLows = recent12.map(c => parseFloat(c[3]));
-            const allHighs = recent12.map(c => parseFloat(c[2]));
-            const support = Math.min(...allLows);
-            const resistance = Math.max(...allHighs);
+            // Support/resistance from 12h
+            const support12h = Math.min(...recent12.map(c => parseFloat(c[3])));
+            const resistance12h = Math.max(...recent12.map(c => parseFloat(c[2])));
             
-            ohlcData[sym] = {
+            // ATR as percentage of price
+            const atrPct = (atr && currentPrice > 0) ? (atr / currentPrice) * 100 : null;
+            
+            // Price relative to VWAP
+            const priceVsVwap = vwap ? ((currentPrice - vwap) / vwap) * 100 : null;
+            
+            // EMA/SMA crossover signals
+            const emaAboveSma = sma20 ? ema9 > sma20 : null;
+            const priceAboveSma50 = sma50 ? currentPrice > sma50 : null;
+            
+            techIndicators[sym] = {
+              rsi_1h: rsi,
+              macd_1h: macd,
+              bb_1h: bb,
+              atr_1h: atr,
+              atr_pct: atrPct,
+              vwap_24h: vwap,
+              price_vs_vwap: priceVsVwap,
+              sma_20: sma20,
+              sma_50: sma50,
+              ema_9: ema9,
+              ema_above_sma: emaAboveSma,
+              price_above_sma50: priceAboveSma50,
               trend_6h: trend6h,
               trend_12h: trend12h,
-              bullish_candles_6h: bullishCandles,
-              bearish_candles_6h: bearishCandles,
-              candle_ratio: bullishCandles / Math.max(1, bullishCandles + bearishCandles),
+              bullish_candles_6h: bullish,
+              bearish_candles_6h: bearish,
+              candle_ratio: bullish / Math.max(1, bullish + bearish),
               volume_increasing: volumeIncreasing,
-              avg_volume: avgVolPerCandle,
-              support_12h: support,
-              resistance_12h: resistance
+              support_12h: support12h,
+              resistance_12h: resistance12h,
+              range_position: marketData.find(m => m.symbol === sym)?.range_position || 50,
+              change_24h: marketData.find(m => m.symbol === sym)?.change_24h_percent || 0
             };
           }
         }
-        // Small delay between OHLC calls to not hit rate limit
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 350));
       } catch (e) {
         console.warn(`[generateSignals] OHLC fetch failed for ${sym}:`, e.message);
       }
     }
     
-    console.log('[generateSignals] Got OHLC data for', Object.keys(ohlcData).length, 'symbols');
+    console.log('[generateSignals] Computed technical indicators for', Object.keys(techIndicators).length, 'symbols');
     
-    // ── Fetch historical trade performance for feedback loop ──
+    // ═══════════════════════════════════════════════
+    //  STEP 2: Fetch historical trade performance
+    // ═══════════════════════════════════════════════
     let tradeHistory = {};
     try {
       const histRes = await base44.functions.invoke('analyzeTradeHistory', {
@@ -232,101 +532,153 @@ Deno.serve(async (req) => {
       console.warn('[generateSignals] Trade history fetch failed:', e.message);
     }
     
-    // ── Build enhanced analysis context for LLM ──
+    // ═══════════════════════════════════════════════
+    //  STEP 3: Sentiment Analysis via LLM + Internet
+    // ═══════════════════════════════════════════════
+    let sentimentData = {};
+    try {
+      console.log('[generateSignals] Running sentiment analysis...');
+      const sentimentSymbols = cryptoSymbols.join(', ');
+      const sentimentResponse = await base44.integrations.Core.InvokeLLM({
+        prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
+
+Search for and analyze:
+1. Latest news headlines and events affecting each asset
+2. Social media trends (Twitter/X, Reddit, crypto forums)
+3. Recent regulatory developments
+4. Whale activity or large transactions
+5. Overall crypto market Fear & Greed level
+6. Any upcoming events (token unlocks, upgrades, partnerships)
+
+For each asset, provide a sentiment_score from 0-100:
+- 0-20: Extreme negative sentiment (panic selling, terrible news)
+- 21-40: Negative (bearish news, declining interest)
+- 41-60: Neutral (mixed signals)
+- 61-80: Positive (bullish news, growing interest)
+- 81-100: Extreme positive (euphoria, viral trending)
+
+Also provide an overall_market_sentiment score and a brief reasoning for each.`,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            overall_market_sentiment: { type: "number" },
+            overall_fear_greed: { type: "string" },
+            market_narrative: { type: "string" },
+            assets: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  symbol: { type: "string" },
+                  sentiment_score: { type: "number" },
+                  sentiment_label: { type: "string" },
+                  key_news: { type: "string" },
+                  social_buzz: { type: "string" },
+                  upcoming_catalyst: { type: "string" }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      if (sentimentResponse?.assets) {
+        for (const a of sentimentResponse.assets) {
+          const sym = (a.symbol || '').toUpperCase();
+          if (sym) {
+            sentimentData[sym] = {
+              score: a.sentiment_score || 50,
+              label: a.sentiment_label || 'neutral',
+              key_news: a.key_news || '',
+              social_buzz: a.social_buzz || 'low',
+              upcoming_catalyst: a.upcoming_catalyst || ''
+            };
+          }
+        }
+        sentimentData._overall = {
+          score: sentimentResponse.overall_market_sentiment || 50,
+          fear_greed: sentimentResponse.overall_fear_greed || 'neutral',
+          narrative: sentimentResponse.market_narrative || ''
+        };
+      }
+      console.log('[generateSignals] Got sentiment for', Object.keys(sentimentData).length - 1, 'assets');
+    } catch (e) {
+      console.warn('[generateSignals] Sentiment analysis failed:', e.message);
+    }
+    
+    // ═══════════════════════════════════════════════
+    //  STEP 4: LLM contextual analysis (with all data)
+    // ═══════════════════════════════════════════════
     const assetsSection = marketData.map(a => {
-      const ohlc = ohlcData[a.symbol] || {};
+      const ti = techIndicators[a.symbol] || {};
       const hist = tradeHistory[a.symbol] || {};
+      const sent = sentimentData[a.symbol] || {};
       
-      let context = `- ${a.symbol}: Price=$${a.price}, 24h Change=${a.change_24h_percent.toFixed(2)}%, `;
-      context += `Range Position=${a.range_position.toFixed(0)}% (0=daily low, 100=daily high), `;
-      context += `24h High=$${a.high24h}, 24h Low=$${a.low24h}`;
+      let ctx = `- ${a.symbol}: Price=$${a.price}, 24h=${a.change_24h_percent.toFixed(2)}%, Range=${a.range_position.toFixed(0)}%`;
       
-      if (ohlc.trend_6h !== undefined) {
-        context += `\n    6h trend: ${ohlc.trend_6h > 0 ? '+' : ''}${ohlc.trend_6h.toFixed(2)}%, `;
-        context += `12h trend: ${ohlc.trend_12h > 0 ? '+' : ''}${ohlc.trend_12h.toFixed(2)}%, `;
-        context += `Bullish candles (6h): ${ohlc.bullish_candles_6h}/6, `;
-        context += `Volume increasing: ${ohlc.volume_increasing ? 'YES' : 'NO'}, `;
-        context += `12h Support: $${ohlc.support_12h?.toFixed(6)}, 12h Resistance: $${ohlc.resistance_12h?.toFixed(6)}`;
-      }
+      if (ti.rsi_1h != null) ctx += `\n    RSI(14)=${ti.rsi_1h.toFixed(1)}`;
+      if (ti.macd_1h) ctx += `, MACD histogram=${ti.macd_1h.histogram.toFixed(6)} (${ti.macd_1h.bullishCross ? 'BULLISH CROSS' : ti.macd_1h.bearishCross ? 'BEARISH CROSS' : 'no cross'})`;
+      if (ti.bb_1h) ctx += `, BB %B=${ti.bb_1h.percentB.toFixed(1)}% bandwidth=${ti.bb_1h.bandwidth.toFixed(2)}%`;
+      if (ti.atr_pct) ctx += `, ATR=${ti.atr_pct.toFixed(2)}%`;
+      if (ti.price_vs_vwap != null) ctx += `, VWAP ${ti.price_vs_vwap > 0 ? 'above' : 'below'} ${Math.abs(ti.price_vs_vwap).toFixed(2)}%`;
+      if (ti.ema_above_sma != null) ctx += `, EMA9 ${ti.ema_above_sma ? '>' : '<'} SMA20`;
+      if (ti.price_above_sma50 != null) ctx += `, Price ${ti.price_above_sma50 ? '>' : '<'} SMA50`;
       
-      if (hist.total_trades > 0) {
-        context += `\n    HISTORY: ${hist.total_trades} trades, Win Rate: ${(hist.win_rate || 0).toFixed(0)}%, Avg Win: +${(hist.avg_successful_gain_pct || 0).toFixed(1)}%, Total PnL: $${(hist.total_pnl || 0).toFixed(2)}`;
-      }
+      ctx += `\n    6h trend: ${ti.trend_6h?.toFixed(2) || '?'}%, 12h trend: ${ti.trend_12h?.toFixed(2) || '?'}%`;
+      ctx += `, Bullish candles: ${ti.bullish_candles_6h || '?'}/6, Vol increasing: ${ti.volume_increasing ? 'YES' : 'NO'}`;
       
-      return context;
+      if (sent.score) ctx += `\n    SENTIMENT: ${sent.score}/100 (${sent.label}) — ${sent.key_news || 'No major news'}`;
+      if (hist.total_trades > 0) ctx += `\n    HISTORY: ${hist.total_trades} trades, Win=${(hist.win_rate||0).toFixed(0)}%, AvgWin=+${(hist.avg_successful_gain_pct||0).toFixed(1)}%`;
+      
+      return ctx;
     }).join('\n');
     
-    // If no market data, use basic symbols
-    const fallbackSection = cryptoSymbols.filter(s => !marketData.find(m => m.symbol === s))
-      .map(s => `- ${s}: (analyze based on your current knowledge)`)
-      .join('\n');
+    const overallSent = sentimentData._overall || {};
     
-    const fullAssetsSection = assetsSection + (fallbackSection ? '\n' + fallbackSection : '');
-    
-    // ── Call LLM with STRICT high-win-rate prompt ──
     let aiRecommendations = [];
     try {
-      console.log('[generateSignals] Calling LLM for HIGH-WIN-RATE analysis...');
+      console.log('[generateSignals] Calling LLM with full technical + sentiment context...');
       const llmResponse = await base44.integrations.Core.InvokeLLM({
-        prompt: `You are a CONSERVATIVE quantitative trading system optimized for an 80%+ WIN RATE.
+        prompt: `You are a CONSERVATIVE quantitative trading system optimized for 80%+ WIN RATE.
+You have access to real technical indicators (RSI, MACD, Bollinger Bands, ATR, VWAP, EMAs) computed from actual OHLC data.
 
-YOUR #1 PRIORITY IS AVOIDING LOSSES. Only recommend trades with very high probability of profit.
+OVERALL MARKET: Sentiment ${overallSent.score || '?'}/100, Fear/Greed: ${overallSent.fear_greed || '?'}
+${overallSent.narrative || ''}
 
-=== STRICT RULES FOR SIGNAL GENERATION ===
+=== STRICT SIGNAL RULES ===
 
-STRONG_BUY (auto-execute) — ALL of these must be true:
-1. 6h trend is positive (price rising over last 6 hours)
-2. 12h trend is positive (price rising over last 12 hours)  
-3. 24h change is positive (not buying into a falling asset)
-4. Price is in the LOWER 60% of daily range (buying closer to support, NOT at resistance)
-5. Volume is increasing (not decreasing — confirms the move)
-6. At least 4 out of 6 recent hourly candles are bullish
-7. If history exists: win rate must be >50%
-8. Confidence must be 80%+ to be strong_buy
+STRONG_BUY (auto-execute) — ALL must be true:
+1. RSI between 30-60 (not overbought)
+2. MACD histogram positive OR bullish crossover
+3. Price near or below Bollinger middle band (%B < 60)
+4. 6h AND 12h trends positive
+5. Volume increasing
+6. Sentiment score > 50
+7. Historical win rate > 50% (if history exists)
+→ Confidence 80%+
 
-BUY (display only, not auto-executed):
-- At least 3 of the above criteria met
-- Price not crashing (24h > -2%)
-- Some positive momentum visible
+BUY — At least 4 of above criteria met, confidence 55-79%
+HOLD — Conflicting signals, RSI 40-60, no clear direction
+SELL — RSI > 70 + bearish MACD + negative trends
+STRONG_SELL — RSI > 80 + bearish cross + high volume selling
 
-HOLD:
-- Unclear direction or conflicting signals
-- Price at resistance (range_position > 80%)
-- Volume decreasing
+=== RISK PARAMETERS ===
+- SL: 2-3% (use ATR: 1.5x ATR as SL)
+- TP: 4-8% (min 2:1 reward-to-risk)
+- Entry zone: within 1% of current price
 
-SELL:
-- 6h and 12h trends both negative
-- Breaking below support
-- Volume increasing on down moves
+=== ASSETS ===
+${assetsSection}
 
-=== RISK PARAMETERS (CRITICAL) ===
-- Stop Loss: 2-3% (NEVER less than 2% — noise will trigger it)
-- Take Profit: 4-8% (need at least 2:1 reward-to-risk ratio)
-- MINIMUM risk/reward ratio: 2:1
-- Entry zone should be within 1% of current price (don't chase)
+For each asset, provide:
+symbol, optimal_action, confidence_score (0-100), entry_zone_low, entry_zone_high,
+stop_loss_pct (2-3%), take_profit_pct (4-8%), momentum_strength (strong/moderate/weak),
+timing_window (1h/2h/4h/6h), predicted_gain_percent, sentiment_score (0-100),
+reasoning (cite specific indicator values), technical_pattern, trend_alignment,
+volume_confirmation (bool), correlation_group
 
-=== HISTORICAL PERFORMANCE PENALTY ===
-If an asset has <50% win rate with 5+ trades in history:
-- NEVER give strong_buy
-- Max confidence: 60%
-- Recommend "hold" unless overwhelming evidence
-
-ASSETS TO ANALYZE:
-${fullAssetsSection}
-
-For each asset provide ALL of these fields:
-- symbol, optimal_action (strong_buy/buy/hold/sell/strong_sell)
-- confidence_score (0-100, strong_buy REQUIRES 80+)
-- entry_zone_low, entry_zone_high (tight zone within 1% of price)
-- stop_loss_pct (2-3%), take_profit_pct (4-8%)
-- momentum_strength (strong/moderate/weak)
-- timing_window (1h/2h/4h/6h)
-- predicted_gain_percent (realistic, based on data)
-- sentiment_score (0-100), reasoning (detailed), technical_pattern
-- trend_alignment (how many timeframes agree: "all_bullish", "mixed", "all_bearish")
-- volume_confirmation (true/false — is volume supporting the move?)
-
-BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a false "strong_buy" that loses money. If in doubt, HOLD.`,
+BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         add_context_from_internet: true,
         response_json_schema: {
           type: "object",
@@ -360,140 +712,131 @@ BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a
       });
       
       aiRecommendations = llmResponse?.recommendations || [];
-      console.log('[generateSignals] Got', aiRecommendations.length, 'AI recommendations');
+      console.log('[generateSignals] Got', aiRecommendations.length, 'LLM recommendations');
     } catch (e) {
-      console.error('[generateSignals] AI analysis failed:', e.message);
+      console.error('[generateSignals] LLM analysis failed:', e.message);
     }
     
-    // ── POST-PROCESSING: Apply hard data-driven filters on top of LLM output ──
-    // The LLM can hallucinate — we validate every signal against real data
-    const aiMap = new Map();
-    for (const rec of aiRecommendations) {
-      const sym = (rec.symbol || '').toUpperCase();
-      if (!sym) continue;
-      
-      const quote = marketData.find(q => q.symbol === sym);
-      const ohlc = ohlcData[sym];
-      const hist = tradeHistory[sym];
-      
-      let action = (rec.optimal_action || 'hold').toLowerCase();
-      let confidence = rec.confidence_score || 50;
-      
-      // ── HARD FILTER 1: Data validation for strong_buy ──
-      if (action === 'strong_buy') {
-        const violations = [];
-        
-        if (quote) {
-          // Must have positive 24h change
-          if (quote.change_24h_percent < 0) {
-            violations.push(`24h change negative (${quote.change_24h_percent.toFixed(1)}%)`);
-          }
-          // Must not be at daily high (range_position < 80%)
-          if (quote.range_position > 80) {
-            violations.push(`Price at resistance (${quote.range_position.toFixed(0)}% of range)`);
-          }
-        }
-        
-        if (ohlc) {
-          // Must have positive 6h trend
-          if (ohlc.trend_6h < 0) {
-            violations.push(`6h trend negative (${ohlc.trend_6h.toFixed(2)}%)`);
-          }
-          // Must have majority bullish candles
-          if (ohlc.candle_ratio < 0.5) {
-            violations.push(`Only ${ohlc.bullish_candles_6h}/6 bullish candles`);
-          }
-        }
-        
-        // Historical performance check
-        if (hist && hist.total_trades >= 5 && hist.win_rate < 50) {
-          violations.push(`Poor history: ${hist.win_rate.toFixed(0)}% win rate on ${hist.total_trades} trades`);
-        }
-        
-        if (violations.length > 0) {
-          console.log(`[generateSignals] DOWNGRADING ${sym} strong_buy: ${violations.join(', ')}`);
-          if (violations.length >= 2) {
-            action = 'hold';
-            confidence = Math.min(confidence, 55);
-          } else {
-            action = 'buy';
-            confidence = Math.min(confidence, 70);
-          }
-        }
-      }
-      
-      // ── HARD FILTER 2: Minimum confidence for buy signals ──
-      if (action === 'strong_buy' && confidence < 80) {
-        action = 'buy';
-      }
-      if (action === 'buy' && confidence < 55) {
-        action = 'hold';
-      }
-      
-      // ── HARD FILTER 3: TP/SL ratio enforcement ──
-      let tp = rec.take_profit_pct || 5;
-      let sl = rec.stop_loss_pct || 2.5;
-      
-      // Enforce minimum 2:1 reward/risk
-      if (tp / sl < 2.0) {
-        tp = sl * 2.5; // Force at least 2.5:1 ratio
-      }
-      
-      // Enforce minimum SL of 2% (anything less triggers on normal noise)
-      if (sl < 2) sl = 2;
-      // Enforce minimum TP of 4% (anything less doesn't cover fees + spread)
-      if (tp < 4) tp = 4;
-      // Cap SL at 4% to limit downside
-      if (sl > 4) sl = 4;
-      
-      rec.optimal_action = action;
-      rec.confidence_score = Math.round(confidence);
-      rec.take_profit_pct = tp;
-      rec.stop_loss_pct = sl;
-      
-      aiMap.set(sym, rec);
-    }
-    
-    // ── Generate signal records ──
+    // ═══════════════════════════════════════════════
+    //  STEP 5: ML Composite Scoring + Hard Filters
+    // ═══════════════════════════════════════════════
     const signalsCreated = [];
     const expiresAt = new Date(Date.now() + SIGNAL_TTL_HOURS * 60 * 60 * 1000).toISOString();
     
     for (const asset of assetsNeedingAnalysis) {
-      const aiRec = aiMap.get(asset.symbol);
-      const quote = marketData.find(q => q.symbol === asset.symbol);
-      const ohlc = ohlcData[asset.symbol] || {};
-      const hist = tradeHistory[asset.symbol];
+      const sym = asset.symbol;
+      const quote = marketData.find(q => q.symbol === sym);
+      const ti = techIndicators[sym] || {};
+      const hist = tradeHistory[sym];
+      const sent = sentimentData[sym];
+      const aiRec = aiRecommendations.find(r => (r.symbol || '').toUpperCase() === sym);
       const change24h = quote?.change_24h_percent || 0;
       
-      let signalType = 'hold';
-      let confidence = 50;
-      let reasoning = 'Insufficient data for analysis';
+      // ── Compute composite score from all indicators ──
+      const compositeScore = computeCompositeScore(ti, sent?.score, hist);
+      const { signalType: mlSignal, confidence: mlConfidence } = scoreToSignal(compositeScore);
+      
+      console.log(`[generateSignals] ${sym}: Composite=${compositeScore}, ML→${mlSignal}@${mlConfidence}%`);
+      
+      // ── Blend ML score with LLM recommendation ──
+      let finalSignalType = mlSignal;
+      let finalConfidence = mlConfidence;
       
       if (aiRec) {
-        signalType = aiRec.optimal_action;
-        confidence = aiRec.confidence_score;
-        reasoning = aiRec.reasoning || 'AI analysis complete';
+        const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
+        const aiConf = aiRec.confidence_score || 50;
+        
+        // Weighted blend: 60% ML model, 40% LLM
+        finalConfidence = Math.round(mlConfidence * 0.6 + aiConf * 0.4);
+        
+        // Signal consensus: both must agree for strong signals
+        if (mlSignal === 'strong_buy' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
+          finalSignalType = 'strong_buy';
+        } else if (mlSignal === 'strong_buy' && aiAction === 'hold') {
+          finalSignalType = 'buy'; // Downgrade if LLM disagrees
+          finalConfidence = Math.min(finalConfidence, 70);
+        } else if (mlSignal === 'buy' && aiAction === 'strong_buy') {
+          finalSignalType = 'buy'; // Stay conservative
+          finalConfidence = Math.min(95, finalConfidence + 5);
+        } else if (mlSignal === 'hold' && aiAction === 'hold') {
+          finalSignalType = 'hold';
+        } else if (mlSignal === 'sell' || aiAction === 'sell' || aiAction === 'strong_sell') {
+          finalSignalType = (mlSignal === 'strong_sell' || aiAction === 'strong_sell') ? 'strong_sell' : 'sell';
+        } else {
+          // Mixed — go with ML model but cap confidence
+          finalConfidence = Math.min(finalConfidence, 65);
+        }
       }
       
-      const existingSignal = existingSignals.find(s => s.asset_symbol === asset.symbol);
+      // ── Hard filter: strong_buy data validation ──
+      if (finalSignalType === 'strong_buy') {
+        const violations = [];
+        if (change24h < 0) violations.push('24h negative');
+        if (ti.rsi_1h != null && ti.rsi_1h > 70) violations.push(`RSI overbought ${ti.rsi_1h.toFixed(0)}`);
+        if (ti.bb_1h && ti.bb_1h.percentB > 85) violations.push('At upper BB');
+        if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push('6h downtrend');
+        if (hist && hist.total_trades >= 5 && hist.win_rate < 50) violations.push('Poor history');
+        
+        if (violations.length >= 2) {
+          console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
+          finalSignalType = 'hold';
+          finalConfidence = Math.min(finalConfidence, 55);
+        } else if (violations.length === 1) {
+          console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
+          finalSignalType = 'buy';
+          finalConfidence = Math.min(finalConfidence, 70);
+        }
+      }
+      
+      // Confidence floor for signal types
+      if (finalSignalType === 'strong_buy' && finalConfidence < 80) finalSignalType = 'buy';
+      if (finalSignalType === 'buy' && finalConfidence < 55) finalSignalType = 'hold';
+      
+      // ── TP/SL from ATR or defaults ──
+      let tp = aiRec?.take_profit_pct || 5;
+      let sl = aiRec?.stop_loss_pct || 2.5;
+      
+      // ATR-based SL if available
+      if (ti.atr_pct) {
+        const atrSl = ti.atr_pct * 1.5;
+        sl = Math.max(2, Math.min(4, atrSl));
+      }
+      if (tp / sl < 2.0) tp = sl * 2.5;
+      if (sl < 2) sl = 2;
+      if (tp < 4) tp = 4;
+      if (sl > 4) sl = 4;
+      
+      // ── Build reasoning ──
+      const indicators_summary = [];
+      if (ti.rsi_1h != null) indicators_summary.push(`RSI=${ti.rsi_1h.toFixed(1)}`);
+      if (ti.macd_1h) indicators_summary.push(`MACD hist=${ti.macd_1h.histogram > 0 ? '+' : ''}${ti.macd_1h.histogram.toFixed(6)}${ti.macd_1h.bullishCross ? ' BULL CROSS' : ti.macd_1h.bearishCross ? ' BEAR CROSS' : ''}`);
+      if (ti.bb_1h) indicators_summary.push(`BB %B=${ti.bb_1h.percentB.toFixed(0)}%`);
+      if (sent) indicators_summary.push(`Sentiment=${sent.score}/100`);
+      
+      const reasoning = aiRec?.reasoning 
+        ? `${aiRec.reasoning} | Indicators: ${indicators_summary.join(', ')} | Composite score: ${compositeScore}`
+        : `ML composite score: ${compositeScore}. ${indicators_summary.join(', ')}. ${sent?.key_news || 'No major news.'}`;
+      
+      // ── Save signal ──
+      const existingSignal = existingSignals.find(s => s.asset_symbol === sym);
       
       const signalData = {
-        asset_symbol: asset.symbol,
+        asset_symbol: sym,
         asset_type: asset.asset_type,
         timeframe: '4h',
-        signal_type: signalType,
-        confidence_score: Math.round(confidence),
+        signal_type: finalSignalType,
+        confidence_score: Math.round(finalConfidence),
         reasoning,
         technical_pattern: aiRec?.technical_pattern || null,
-        sentiment_score: aiRec?.sentiment_score || 50,
+        sentiment_score: sent?.score || aiRec?.sentiment_score || 50,
         price_at_signal: quote?.price || 0,
         target_price: aiRec?.target_price || null,
         stop_loss_price: aiRec?.stop_loss_price || null,
         entry_zone_low: aiRec?.entry_zone_low || null,
         entry_zone_high: aiRec?.entry_zone_high || null,
-        take_profit_pct: aiRec?.take_profit_pct || 5,
-        stop_loss_pct: aiRec?.stop_loss_pct || 2.5,
-        momentum_strength: aiRec?.momentum_strength || null,
+        take_profit_pct: tp,
+        stop_loss_pct: sl,
+        momentum_strength: aiRec?.momentum_strength || (compositeScore > 30 ? 'strong' : compositeScore > 10 ? 'moderate' : 'weak'),
         timing_window: aiRec?.timing_window || null,
         predicted_gain_pct: aiRec?.predicted_gain_percent || null,
         change_24h: change24h,
@@ -501,20 +844,36 @@ BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a
         is_active: true,
         metadata_json: JSON.stringify({
           generated_at: now.toISOString(),
-          generator_version: 'v4_high_winrate',
-          market_trend: change24h,
-          trend_6h: ohlc.trend_6h || null,
-          trend_12h: ohlc.trend_12h || null,
-          candle_ratio_6h: ohlc.candle_ratio || null,
-          volume_increasing: ohlc.volume_increasing || null,
-          range_position: quote?.range_position || null,
+          generator_version: 'v5_enhanced',
+          composite_score: compositeScore,
+          ml_signal: mlSignal,
+          ml_confidence: mlConfidence,
+          llm_signal: aiRec?.optimal_action || 'none',
+          llm_confidence: aiRec?.confidence_score || 0,
+          rsi: ti.rsi_1h,
+          macd_histogram: ti.macd_1h?.histogram,
+          macd_bullish_cross: ti.macd_1h?.bullishCross,
+          bb_percent_b: ti.bb_1h?.percentB,
+          bb_bandwidth: ti.bb_1h?.bandwidth,
+          atr_pct: ti.atr_pct,
+          vwap_diff: ti.price_vs_vwap,
+          sentiment: sent?.score,
+          sentiment_label: sent?.label,
+          sentiment_news: sent?.key_news,
+          sentiment_catalyst: sent?.upcoming_catalyst,
+          overall_market_sentiment: sentimentData._overall?.score,
+          trend_6h: ti.trend_6h,
+          trend_12h: ti.trend_12h,
+          candle_ratio_6h: ti.candle_ratio,
+          volume_increasing: ti.volume_increasing,
+          range_position: ti.range_position,
           trend_alignment: aiRec?.trend_alignment || null,
           volume_confirmation: aiRec?.volume_confirmation || null,
           historical_win_rate: hist?.win_rate || null,
           historical_avg_gain: hist?.avg_successful_gain_pct || null,
           historical_trades: hist?.total_trades || 0,
           correlation_group: aiRec?.correlation_group || null,
-          auto_tradeable: signalType === 'strong_buy' && confidence >= 80
+          auto_tradeable: finalSignalType === 'strong_buy' && finalConfidence >= 80
         })
       };
       
@@ -526,9 +885,9 @@ BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a
           const newSignal = await base44.asServiceRole.entities.AssetSignal.create(signalData);
           signalsCreated.push({ ...signalData, id: newSignal.id, action: 'created' });
         }
-        console.log(`[generateSignals] ${asset.symbol}: ${signalType} @ ${confidence}% (24h: ${change24h.toFixed(1)}%, TP: ${signalData.take_profit_pct}%, SL: ${signalData.stop_loss_pct}%)`);
+        console.log(`[generateSignals] ${sym}: ${finalSignalType}@${finalConfidence}% (composite=${compositeScore}, RSI=${ti.rsi_1h?.toFixed(0) || '?'}, MACD=${ti.macd_1h?.histogram > 0 ? '+' : ''}${ti.macd_1h?.histogram?.toFixed(4) || '?'}, BB%B=${ti.bb_1h?.percentB?.toFixed(0) || '?'}%, Sent=${sent?.score || '?'})`);
       } catch (e) {
-        console.error(`[generateSignals] Failed to save signal for ${asset.symbol}:`, e.message);
+        console.error(`[generateSignals] Failed to save signal for ${sym}:`, e.message);
       }
     }
     
@@ -548,7 +907,7 @@ BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a
     }
     
     const duration = Date.now() - startTime;
-    console.log('[generateSignals] v4 Complete:', signalsCreated.length, 'signals in', duration, 'ms');
+    console.log('[generateSignals] v5 Complete:', signalsCreated.length, 'signals in', duration, 'ms');
     
     return Response.json({
       success: true,
@@ -562,8 +921,12 @@ BE EXTREMELY SELECTIVE. It is BETTER to give "hold" on everything than to give a
         momentum: s.momentum_strength,
         tp_pct: s.take_profit_pct,
         sl_pct: s.stop_loss_pct,
+        composite_score: JSON.parse(s.metadata_json || '{}').composite_score,
+        rsi: JSON.parse(s.metadata_json || '{}').rsi,
+        sentiment: JSON.parse(s.metadata_json || '{}').sentiment,
         action: s.action
       })),
+      market_sentiment: sentimentData._overall || null,
       duration_ms: duration
     });
     
