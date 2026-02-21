@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useKrakenWebSocket } from '@/components/providers/KrakenWebSocketProvider';
 import { useSettings } from '../utils/SettingsContext';
+import { setRecent as setRecentGlobal } from './useGlobalDataStore';
 
 /**
  * Centralized price data hook - ARCHITECTURE COMPLIANT
@@ -29,16 +30,6 @@ export function usePriceData(symbols = []) {
   const [priceData, setPriceData] = useState(globalPriceCache.data || []);
   const [loading, setLoading] = useState(false);
   const subscriberIdRef = useRef(Symbol());
-  
-  // Import lazily to avoid circular deps
-  const globalStoreRef = useRef(null);
-  if (!globalStoreRef.current) {
-    try {
-      globalStoreRef.current = require('./useGlobalDataStore');
-    } catch (_) {
-      globalStoreRef.current = { setRecent: () => {}, getRecent: () => null };
-    }
-  }
 
   // WebSocket for LIVE mode - use SHARED provider (no args, no duplicate connections)
   const { 
@@ -108,9 +99,7 @@ export function usePriceData(symbols = []) {
         
         console.log('[usePriceData] Fetched', data.length, 'REST prices');
         // Store in global cross-page store
-        if (globalStoreRef.current?.setRecent) {
-          globalStoreRef.current.setRecent('market_prices', data);
-        }
+        setRecentGlobal('market_prices', data);
         return data;
       }).catch(error => {
         console.error('[usePriceData] REST Error:', error);
