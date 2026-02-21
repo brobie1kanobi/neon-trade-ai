@@ -427,9 +427,10 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // TREND-FOLLOWING: Skip if 24h change is negative (don't buy falling assets)
-      if (change24h < 0) {
-        console.log('[Prospects] Skipping', symbol, '- negative 24h trend:', change24h.toFixed(1), '%');
+      // TREND-FOLLOWING: Only skip if falling hard (>3%)
+      // Minor dips (-3% or less) are OK if the signal says strong_buy
+      if (change24h < -3) {
+        console.log('[Prospects] Skipping', symbol, '- steep negative trend:', change24h.toFixed(1), '%');
         continue;
       }
 

@@ -459,11 +459,11 @@ Deno.serve(async (req) => {
     
     // Fetch trade history for dynamic TP/SL calculation
     try {
-      log('Fetching trade history for dynamic levels...');
-      const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
-        includeKrakenHistory: true,
-        analyzePatterns: false
-      });
+    log('Fetching trade history for dynamic levels...');
+    const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
+      includeKrakenHistory: false,
+      analyzePatterns: false
+    });
       tradeHistoryData = historyResponse?.data || historyResponse;
       if (tradeHistoryData?.success) {
         log(`Got history for ${Object.keys(tradeHistoryData.asset_analytics || {}).length} assets`);
@@ -588,9 +588,9 @@ Deno.serve(async (req) => {
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // STRICT: 24h change must be positive (trend-following only)
+      // Trend check: only block steep drops (>3%). Minor dips are OK if signal is strong_buy.
       const change24h = Number(p.market_trend || 0);
-      const trendPositive = change24h > 0;
+      const trendPositive = change24h > -3; // Allow minor dips up to -3%
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
       
