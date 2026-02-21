@@ -30,7 +30,9 @@ export default function AutoTraderProspects() {
   const [executing, setExecuting] = useState(false);
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [serverCash, setServerCash] = useState(0);
+  const [serverCash, setServerCash] = useState(null);
+  const [totalAnalyzed, setTotalAnalyzed] = useState(0);
+  const [backendMessage, setBackendMessage] = useState('');
   // Initialize margins from settings context, fall back to defaults
   const [userMargins, setUserMargins] = useState({
     gain_margin: settings?.gain_margin ?? 10,
@@ -54,8 +56,8 @@ export default function AutoTraderProspects() {
   // Balance display is authoritative from backend prospects (eliminates WS/REST flicker)
   // No separate REST balance polling here.
 
-  // Display cash from backend prospects only (authoritative, stable)
-  const cashAvailable = isSimMode ? (wallet?.cash_balance || 0) : (serverCash ?? 0);
+  // Display cash from backend prospects — serverCash is authoritative for both modes
+  const cashAvailable = serverCash ?? (isSimMode ? (wallet?.cash_balance || 0) : 0);
 
   const fetchProspects = async (isManualRefresh = false) => {
     try {
@@ -72,6 +74,8 @@ export default function AutoTraderProspects() {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
         setServerCash(typeof data.cash_available === 'number' ? data.cash_available : 0);
+        setTotalAnalyzed(data.total_analyzed || 0);
+        setBackendMessage(data.message || '');
         // Update margins from backend response (authoritative source)
         if (data.user_settings) {
           console.log('[Prospects UI] Got margins from backend:', data.user_settings);
@@ -258,20 +262,41 @@ export default function AutoTraderProspects() {
       <Card className="border-yellow-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-yellow-400" />
-            <p className="text-gray-500 font-semibold">No Assets Configured</p>
-            <p className="text-sm text-gray-400 mt-2">
-              You need to set up your auto-trading preferences in the Portfolio page first.
-            </p>
-            <p className="text-xs text-gray-400 mt-2">
-              Go to Portfolio → Auto-Buy Preferences to add assets with your desired allocation percentages.
-            </p>
-            <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => navigate('/Portfolio')}>
-
-              Go to Portfolio Settings
-            </Button>
+            {totalAnalyzed > 0 ? (
+              <>
+                <p className="text-gray-500 font-semibold">No Actionable Signals</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  {totalAnalyzed} asset{totalAnalyzed !== 1 ? 's' : ''} analyzed, but none have buy signals right now.
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  {backendMessage || "The AI is waiting for favorable market conditions. Signals refresh automatically."}
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => fetchProspects(true)}
+                  disabled={isRefreshing}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  Refresh Signals
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 font-semibold">No Assets Configured</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  You need to set up your auto-trading preferences in the Portfolio page first.
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Go to Portfolio → Auto-Buy Preferences to add assets with your desired allocation percentages.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => navigate('/Portfolio')}>
+                  Go to Portfolio Settings
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card> :
 
