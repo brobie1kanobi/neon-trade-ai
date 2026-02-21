@@ -157,7 +157,8 @@ export default function WalletPage() {
         is_simulation: isSimMode 
       }, '-created_date', 100);
       
-      // CRITICAL: In LIVE mode, fetch Kraken trades for display
+      // CRITICAL: In LIVE mode ONLY, fetch Kraken trades for display
+      // SIM mode NEVER calls Kraken APIs - it has no API keys
       if (!isSimMode) {
         try {
           const response = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });

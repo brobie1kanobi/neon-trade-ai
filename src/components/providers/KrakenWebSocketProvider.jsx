@@ -252,9 +252,9 @@ export function KrakenWebSocketProvider({ children }) {
     return () => window.removeEventListener('kraken:ws-reconnected', handleReconnect);
   }, [shouldConnect]);
 
-  // ── REST fetcher ──
+  // ── REST fetcher (LIVE mode ONLY - never fires in SIM mode) ──
   const fetchRestData = useCallback(async (force = false) => {
-    if (isSimMode) return null;
+    if (isSimMode || !shouldConnect) return null;
 
     const now = Date.now();
     const timeSinceLastFetch = now - lastRestCallRef.current;
@@ -323,9 +323,9 @@ export function KrakenWebSocketProvider({ children }) {
   // Keep ref in sync so event handlers always call the latest version
   useEffect(() => { fetchRestDataRef.current = fetchRestData; }, [fetchRestData]);
 
-  // ── PnL fetcher (separate, less frequent) ──
+  // ── PnL fetcher (LIVE mode ONLY) ──
   const fetchPnL = useCallback(async () => {
-    if (isSimMode) return;
+    if (isSimMode || !shouldConnect) return;
     try {
       const response = await base44.functions.invoke('getKrakenPnL', {});
       const data = response?.data || response;
