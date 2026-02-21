@@ -431,7 +431,7 @@ Deno.serve(async (req) => {
     let marketIntelligence = null;
     
     try {
-      const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
+      const prospectsResponse = await base44.asServiceRole.functions.invoke('getAutoTraderProspects', {});
       const prospectsData = prospectsResponse?.data || prospectsResponse;
       
       if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
