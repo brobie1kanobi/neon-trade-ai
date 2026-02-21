@@ -84,7 +84,23 @@ Deno.serve(async (req) => {
     console.log('[Prospects] START');
     const base44 = createClientFromRequest(req);
     
-    const user = await base44.auth.me();
+    // Support both direct user calls and service-role calls from runAutoTrader
+    let user;
+    const body = await req.json().catch(() => ({}));
+    
+    try {
+      user = await base44.auth.me();
+    } catch (_authErr) {
+      // If called via asServiceRole from runAutoTrader, auth.me() may fail
+      // In that case, the caller must pass userEmail in the body
+      if (body?.userEmail) {
+        user = { email: body.userEmail };
+        console.log('[Prospects] Using provided userEmail (service-role call):', user.email);
+      } else {
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    }
+    
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
