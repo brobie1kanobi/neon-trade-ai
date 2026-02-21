@@ -373,7 +373,7 @@ Deno.serve(async (req) => {
     
     // Check system health before proceeding
     try {
-      const healthRes = await base44.asServiceRole.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
+      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
       const health = healthRes?.data || healthRes;
       
       if (health?.trading_allowed === false) {
@@ -461,8 +461,8 @@ Deno.serve(async (req) => {
     try {
     log('Fetching trade history for dynamic levels...');
     const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
-    includeKrakenHistory: false,
-    analyzePatterns: false
+      includeKrakenHistory: false,
+      analyzePatterns: false
     });
       tradeHistoryData = historyResponse?.data || historyResponse;
       if (tradeHistoryData?.success) {
@@ -1019,7 +1019,7 @@ Deno.serve(async (req) => {
           
           // Record health error
           try {
-            await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
+            await base44.functions.invoke('systemHealthMonitor', {
               action: 'recordError',
               component: 'kraken_api',
               error_message: krakenError.message
@@ -1283,7 +1283,7 @@ Deno.serve(async (req) => {
     
     // Record success with health monitor
     try {
-      await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
+      await base44.functions.invoke('systemHealthMonitor', {
         action: 'recordSuccess',
         component: 'auto_trader'
       });

@@ -323,7 +323,7 @@ Deno.serve(async (req) => {
       console.log('[Prospects] No signals found - triggering generation...');
       try {
         const symbolsToGenerate = prefs.map(p => (p.symbol || '').toUpperCase()).filter(Boolean);
-        await base44.asServiceRole.functions.invoke('generateSignals', { 
+        await base44.functions.invoke('generateSignals', { 
           symbols: symbolsToGenerate, 
           forceRefresh: true 
         });
@@ -380,7 +380,7 @@ Deno.serve(async (req) => {
     // Fallback: try getMarketData if Kraken public didn't work
     if (quotes.length === 0) {
       try {
-        const marketDataResponse = await base44.asServiceRole.functions.invoke('getMarketData', {
+        const marketDataResponse = await base44.functions.invoke('getMarketData', {
           action: 'getWatchlistData',
           payload: { cryptoSymbols, stockSymbols }
         });
