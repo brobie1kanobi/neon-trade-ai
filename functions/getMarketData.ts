@@ -8,6 +8,42 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 const FETCH_TIMEOUT = 4000;
 const AUTH_TIMEOUT = 2000;
 
+// ── Server-side response cache ──
+// Prevents duplicate upstream API calls when multiple users/pages hit this function
+// within the same window. Keyed by action + normalized payload.
+const serverCache = new Map();
+const SERVER_CACHE_TTL = 30000; // 30 seconds
+
+function getCacheKey(action, payload) {
+  // Build a stable, minimal key
+  const p = payload || {};
+  const crypto = (p.cryptoSymbols || []).map(s => String(s).toUpperCase()).sort().join(',');
+  const stock = (p.stockSymbols || []).map(s => String(s).toUpperCase()).sort().join(',');
+  const extra = p.symbol ? `_${p.symbol}_${p.assetType}_${p.days}` : '';
+  return `${action}:${crypto}:${stock}${extra}`;
+}
+
+function getServerCached(key) {
+  const entry = serverCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > SERVER_CACHE_TTL) {
+    serverCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setServerCached(key, data) {
+  serverCache.set(key, { data, ts: Date.now() });
+  // Evict stale entries periodically (keep map from growing unbounded)
+  if (serverCache.size > 50) {
+    const now = Date.now();
+    for (const [k, v] of serverCache) {
+      if (now - v.ts > SERVER_CACHE_TTL) serverCache.delete(k);
+    }
+  }
+}
+
 // Helper: Proper timeout with AbortController
 async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -87,6 +123,14 @@ async function handleRequest(req, startTime) {
       if (!Array.isArray(cryptoSymbols) && !Array.isArray(stockSymbols)) {
         return Response.json([], { status: 200 });
       }
+
+      // Check server cache first
+      const cacheKey = getCacheKey(action, payload);
+      const cached = getServerCached(cacheKey);
+      if (cached) {
+        console.log(`[getMarketData] ✅ CACHE HIT (${cached.length} results) in ${Date.now() - startTime}ms`);
+        return Response.json(cached, { status: 200 });
+      }
       
       const [cryptoData, stockData] = await Promise.all([
         Array.isArray(cryptoSymbols) && cryptoSymbols.length > 0 
@@ -98,6 +142,7 @@ async function handleRequest(req, startTime) {
       ]);
 
       const results = [...cryptoData, ...stockData];
+      setServerCached(cacheKey, results);
       console.log(`[getMarketData] ✅ ${results.length} results in ${Date.now() - startTime}ms`);
       
       return Response.json(results, { status: 200 });
@@ -113,7 +158,15 @@ async function handleRequest(req, startTime) {
         return Response.json([], { status: 200 });
       }
 
+      const cacheKey = getCacheKey(action, payload);
+      const cached = getServerCached(cacheKey);
+      if (cached) {
+        console.log(`[getMarketData] ✅ CACHE HIT (chart ${symbol}) in ${Date.now() - startTime}ms`);
+        return Response.json(cached, { status: 200 });
+      }
+
       const chartData = await getChartData(symbol, assetType, days);
+      setServerCached(cacheKey, chartData);
       return Response.json(chartData, { status: 200 });
     }
 
@@ -121,7 +174,14 @@ async function handleRequest(req, startTime) {
     // GET TOP MOVERS
     // ============================================
     if (action === 'getTopMovers') {
+      const cacheKey = getCacheKey(action, payload);
+      const cached = getServerCached(cacheKey);
+      if (cached) {
+        console.log(`[getMarketData] ✅ CACHE HIT (topMovers) in ${Date.now() - startTime}ms`);
+        return Response.json(cached, { status: 200 });
+      }
       const movers = await getTopMovers();
+      setServerCached(cacheKey, movers);
       return Response.json(movers, { status: 200 });
     }
 
@@ -147,7 +207,14 @@ async function handleRequest(req, startTime) {
     // GET TOP STOCK MOVERS
     // ============================================
     if (action === 'getTopStockMovers') {
+      const cacheKey = getCacheKey(action, payload);
+      const cached = getServerCached(cacheKey);
+      if (cached) {
+        console.log(`[getMarketData] ✅ CACHE HIT (stockMovers) in ${Date.now() - startTime}ms`);
+        return Response.json(cached, { status: 200 });
+      }
       const stockMovers = await getTopStockMovers();
+      setServerCached(cacheKey, stockMovers);
       return Response.json(stockMovers, { status: 200 });
     }
 
