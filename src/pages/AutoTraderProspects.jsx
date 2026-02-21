@@ -31,6 +31,8 @@ export default function AutoTraderProspects() {
   const [marketIntelligence, setMarketIntelligence] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [serverCash, setServerCash] = useState(null);
+  const [assetsValue, setAssetsValue] = useState(0);
+  const [totalPortfolioValue, setTotalPortfolioValue] = useState(0);
   const [totalAnalyzed, setTotalAnalyzed] = useState(0);
   const [backendMessage, setBackendMessage] = useState('');
   // Initialize margins from settings context, fall back to defaults
@@ -74,6 +76,8 @@ export default function AutoTraderProspects() {
         setProspects(data.prospects || []);
         setMarketIntelligence(data.market_intelligence || null);
         setServerCash(typeof data.cash_available === 'number' ? data.cash_available : 0);
+        setAssetsValue(typeof data.assets_value === 'number' ? data.assets_value : 0);
+        setTotalPortfolioValue(typeof data.total_portfolio_value === 'number' ? data.total_portfolio_value : 0);
         setTotalAnalyzed(data.total_analyzed || 0);
         setBackendMessage(data.message || '');
         // Update margins from backend response (authoritative source)
@@ -237,23 +241,33 @@ export default function AutoTraderProspects() {
       </div>
 
       <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Available Cash</span>
-            <div className="text-right">
-              <p className="font-semibold text-lg">${cashAvailable.toFixed(2)}</p>
-              <div className="flex items-center gap-2 justify-end">
-                <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
-                  {isSimMode ? "💎 Demo" : "🟢 LIVE"}
-                </Badge>
-                {!isSimMode && wsConnected &&
-                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
-                    <Wifi className="w-3 h-3" />
-                    Live
-                  </Badge>
-                }
-              </div>
+        <CardContent className="pt-4 space-y-3">
+          {!isSimMode && totalPortfolioValue > 0 && (
+            <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
+              <span className="text-sm font-medium">Total Portfolio</span>
+              <p className="font-bold text-lg">${totalPortfolioValue.toFixed(2)}</p>
             </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Cash</span>
+            <p className="font-semibold">${cashAvailable.toFixed(2)}</p>
+          </div>
+          {!isSimMode && assetsValue > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Assets Value</span>
+              <p className="font-semibold">${assetsValue.toFixed(2)}</p>
+            </div>
+          )}
+          <div className="flex items-center gap-2 justify-end pt-1">
+            <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
+              {isSimMode ? "💎 Demo" : "🟢 LIVE"}
+            </Badge>
+            {!isSimMode && wsConnected &&
+              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
+                <Wifi className="w-3 h-3" />
+                Live
+              </Badge>
+            }
           </div>
         </CardContent>
       </Card>
