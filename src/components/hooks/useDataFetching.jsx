@@ -171,6 +171,29 @@ export function invalidateCache(key = null) {
       });
     } catch (_) {}
   }
+  
+  // Also invalidate global cross-page data store
+  try {
+    if (typeof window !== 'undefined' && window.__ntDataStore) {
+      if (key) {
+        // Map useDataFetching keys to global store keys
+        const storeKey = key === 'wallet' ? 'wallet'
+          : key === 'trades:sim' ? 'trades_sim'
+          : key === 'trades:real' ? 'trades_real'
+          : key === 'holdings:sim' ? 'holdings_sim'
+          : key === 'holdings:real' ? 'holdings_real'
+          : null;
+        if (storeKey && window.__ntDataStore[storeKey]) {
+          window.__ntDataStore[storeKey] = { data: null, ts: 0 };
+        }
+      } else {
+        // Invalidate all
+        Object.keys(window.__ntDataStore).forEach(k => {
+          window.__ntDataStore[k] = { data: null, ts: 0 };
+        });
+      }
+    }
+  } catch (_) {}
 }
 
 /**
