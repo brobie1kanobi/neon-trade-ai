@@ -130,6 +130,19 @@ Deno.serve(async (req) => {
     // DIRECT Kraken API calls to avoid function-to-function auth issues
     let cashAvailable = 0;
     let totalOpenOrdersValue = 0;
+    
+    const isSimMode = settings.sim_trading_mode;
+    
+    if (isSimMode) {
+      // SIM mode: get cash from Wallet entity
+      console.log('[Prospects] Fetching Wallet balance (SIM mode)...');
+      const wallets = await base44.entities.Wallet.filter({ created_by: user.email }, '-updated_date', 1);
+      if (wallets.length > 0) {
+        cashAvailable = wallets[0].cash_balance || 0;
+      }
+      console.log('[Prospects] SIM cash available:', cashAvailable);
+    } else {
+    // LIVE mode: fetch from Kraken directly
     try {
       console.log('[Prospects] Fetching Kraken balance directly...');
       
@@ -168,7 +181,7 @@ Deno.serve(async (req) => {
               console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
             }
             
-            const safetyBuffer = rawAvailable * 0.15;
+            const safetyBuffer = rawAvailable * 0.02; // 2% buffer for fees/slippage
             cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
             
             console.log('[Prospects] Cash: raw', rawAvailable, '- orders', totalOpenOrdersValue, '- buffer', safetyBuffer.toFixed(2), '= effective', cashAvailable.toFixed(2));
@@ -197,20 +210,23 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
     }
+    } // end else (LIVE mode)
     
     console.log('[Prospects] Cash available:', cashAvailable);
     
-    const isSimMode = false; // Force LIVE mode for prospects
+    const isSimMode = settings.sim_trading_mode;
+    console.log('[Prospects] Mode:', isSimMode ? 'SIMULATION' : 'LIVE');
 
-    // Get auto-buy preferences
-    let allPrefs = await base44.entities.AutoBuyPreference.filter({}, "-created_date", 50);
+    // Get auto-buy preferences for current user and mode
+    let allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, "-created_date", 50);
     
     let prefs = allPrefs.filter(p => {
       const pIsSimulation = p.is_simulation === true || p.is_simulation === 'true';
       const pEnabled = p.enabled !== false;
-      const matchesSim = isSimMode === pIsSimulation;
-      return matchesSim && pEnabled;
+      return pEnabled && (isSimMode ? pIsSimulation : !pIsSimulation);
     });
+    
+    console.log('[Prospects] Found', prefs.length, 'enabled preferences for', isSimMode ? 'SIM' : 'LIVE', 'mode (from', allPrefs.length, 'total)');
 
     if (prefs.length === 0) {
       return Response.json({
