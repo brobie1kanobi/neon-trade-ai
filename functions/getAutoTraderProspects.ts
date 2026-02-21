@@ -323,7 +323,7 @@ Deno.serve(async (req) => {
       console.log('[Prospects] No signals found - triggering generation...');
       try {
         const symbolsToGenerate = prefs.map(p => (p.symbol || '').toUpperCase()).filter(Boolean);
-        await base44.functions.invoke('generateSignals', { 
+        await base44.asServiceRole.functions.invoke('generateSignals', { 
           symbols: symbolsToGenerate, 
           forceRefresh: true 
         });
