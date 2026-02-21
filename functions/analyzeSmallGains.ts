@@ -44,23 +44,46 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch current market data for target symbols
-    // Known crypto symbols - everything else assumed to be stock
-    const knownCrypto = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'LINK', 'AVAX', 'MATIC', 'UNI', 'ATOM', 'XLM', 'PEPE', 'HBAR', 'SHIB', 'LTC', 'BCH'];
-    const knownStocks = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'META', 'NVDA', 'AMD', 'NFLX', 'DIS'];
+    // Fetch current market data from Kraken public API directly (avoids function-to-function 403)
+    const KRAKEN_PAIR_MAP = {
+      'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+      'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+      'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+      'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+      'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
+    };
     
     let marketData = [];
     try {
-      const cryptoSymbols = targetSymbols.filter(s => knownCrypto.includes(s.toUpperCase()));
-      const stockSymbols = targetSymbols.filter(s => knownStocks.includes(s.toUpperCase()));
+      const cryptoSymbols = targetSymbols.filter(s => KRAKEN_PAIR_MAP[s.toUpperCase()]);
+      const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s.toUpperCase()]).filter(Boolean);
       
-      console.log('[MarketIntelligence] Fetching crypto:', cryptoSymbols, 'stocks:', stockSymbols);
+      console.log('[MarketIntelligence] Fetching prices from Kraken public API for:', cryptoSymbols);
       
-      const marketResponse = await base44.functions.invoke('getMarketData', {
-        action: 'getWatchlistData',
-        payload: { cryptoSymbols, stockSymbols }
-      });
-      marketData = Array.isArray(marketResponse?.data) ? marketResponse.data : [];
+      if (pairs.length > 0) {
+        const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.result) {
+            for (const sym of cryptoSymbols) {
+              const pair = KRAKEN_PAIR_MAP[sym.toUpperCase()];
+              const ticker = data.result[pair];
+              if (ticker) {
+                const price = parseFloat(ticker.c?.[0] || '0');
+                const open24h = parseFloat(ticker.o || '0');
+                const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
+                marketData.push({
+                  symbol: sym.toUpperCase(),
+                  price,
+                  current_price: price,
+                  change_24h_percent: change24h,
+                  price_change_percentage_24h: change24h
+                });
+              }
+            }
+          }
+        }
+      }
       console.log('[MarketIntelligence] Got market data for', marketData.length, 'symbols');
     } catch (err) {
       console.error('[MarketIntelligence] Market data error:', err);
