@@ -282,7 +282,7 @@ export default function WalletPage() {
       setPortfolioMarketValue(0);
       setKrakenTrades([]);
       setLastLoadTime(0); // Reset cooldown to allow immediate reload
-      loadData();
+      loadData(true);
     }
   }, [isSimMode, loadData]);
 
@@ -292,7 +292,7 @@ export default function WalletPage() {
       console.log('[Wallet] Kraken sync event detected, refreshing...');
       setTimeout(() => {
         fetchKrakenData(true);
-        loadData();
+        loadData(true);
       }, 500);
     };
 
@@ -366,7 +366,7 @@ export default function WalletPage() {
         await WalletEntity.create(newWalletData);
       }
       
-      await loadData();
+      await loadData(true);
       setActiveAction(null);
 
       window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'transaction', source: 'wallet' } }));
