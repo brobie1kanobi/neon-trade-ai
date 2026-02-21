@@ -373,7 +373,7 @@ Deno.serve(async (req) => {
     
     // Check system health before proceeding
     try {
-      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
+      const healthRes = await base44.asServiceRole.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
       const health = healthRes?.data || healthRes;
       
       if (health?.trading_allowed === false) {
