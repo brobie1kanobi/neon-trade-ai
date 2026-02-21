@@ -1261,7 +1261,7 @@ Deno.serve(async (req) => {
 
     // Reconcile wallet
     try {
-      await base44.asServiceRole.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
+      await base44.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
     } catch (e) {
       console.error('[runAutoTrader] Reconcile error:', e.message);
     }
