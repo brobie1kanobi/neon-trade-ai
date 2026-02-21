@@ -126,20 +126,21 @@ Deno.serve(async (req) => {
     
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
 
-    // ── Get Kraken balance (LIVE mode) ──
-    // DIRECT Kraken API calls to avoid function-to-function auth issues
-    let cashAvailable = 0;
+    // ── Get balance ──
+    let cashAvailable = 0;       // Exact USD cash (no buffer) — for display
+    let tradingCash = 0;         // Cash minus buffer — for order sizing only
+    let assetsValue = 0;         // Total value of non-USD holdings
     let totalOpenOrdersValue = 0;
     
     const isSimMode = settings.sim_trading_mode;
     
     if (isSimMode) {
-      // SIM mode: get cash from Wallet entity
       console.log('[Prospects] Fetching Wallet balance (SIM mode)...');
       const wallets = await base44.entities.Wallet.filter({ created_by: user.email }, '-updated_date', 1);
       if (wallets.length > 0) {
         cashAvailable = wallets[0].cash_balance || 0;
       }
+      tradingCash = cashAvailable;
       console.log('[Prospects] SIM cash available:', cashAvailable);
     } else {
     // LIVE mode: fetch from Kraken directly
@@ -154,18 +155,68 @@ Deno.serve(async (req) => {
         const balSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
         
         if (balKey && balSecret) {
-          // Call Kraken BalanceEx API directly
           const extBalResult = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
           
           if (extBalResult?.error?.length > 0) {
             console.warn('[Prospects] Kraken BalanceEx error:', extBalResult.error.join(', '));
           } else if (extBalResult?.result) {
             const rawBalances = extBalResult.result;
-            const usdEntry = rawBalances['ZUSD'] || rawBalances['USD'];
-            const rawAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-            console.log('[Prospects] Kraken raw USD available:', rawAvailable);
             
-            // Check open orders to deduct reserved capital
+            // Get exact USD balance (no buffer)
+            const usdEntry = rawBalances['ZUSD'] || rawBalances['USD'];
+            const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+            cashAvailable = rawUsd; // EXACT — no buffer for display
+            console.log('[Prospects] Kraken exact USD:', rawUsd);
+            
+            // Collect non-USD crypto holdings for assets value calculation
+            const cryptoHoldings = [];
+            const KRAKEN_ASSET_TO_SYMBOL = {
+              'XXBT': 'BTC', 'XETH': 'ETH', 'SOL': 'SOL', 'XXRP': 'XRP',
+              'ADA': 'ADA', 'XXDG': 'DOGE', 'DOT': 'DOT', 'LINK': 'LINK',
+              'MATIC': 'MATIC', 'AVAX': 'AVAX', 'UNI': 'UNI', 'ATOM': 'ATOM',
+              'XLTC': 'LTC', 'BCH': 'BCH', 'XXLM': 'XLM', 'TRX': 'TRX',
+              'SHIB': 'SHIB', 'PEPE': 'PEPE', 'HBAR': 'HBAR',
+              'XBT': 'BTC', 'ETH': 'ETH', 'XRP': 'XRP', 'XLM': 'XLM',
+              'XDG': 'DOGE', 'LTC': 'LTC'
+            };
+            
+            for (const [asset, entry] of Object.entries(rawBalances)) {
+              if (asset === 'ZUSD' || asset === 'USD') continue;
+              const bal = parseFloat(typeof entry === 'object' ? entry.balance : (entry || 0));
+              if (bal <= 0) continue;
+              const sym = KRAKEN_ASSET_TO_SYMBOL[asset] || asset.replace(/^[XZ]/, '');
+              if (KRAKEN_PAIR_MAP[sym]) {
+                cryptoHoldings.push({ symbol: sym, quantity: bal });
+              }
+            }
+            
+            // Fetch current prices for all holdings to calculate assets value
+            if (cryptoHoldings.length > 0) {
+              const holdingPairs = cryptoHoldings.map(h => KRAKEN_PAIR_MAP[h.symbol]).filter(Boolean);
+              try {
+                const tickerResp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${holdingPairs.join(',')}`);
+                if (tickerResp.ok) {
+                  const tickerData = await tickerResp.json();
+                  if (tickerData?.result) {
+                    for (const h of cryptoHoldings) {
+                      const pair = KRAKEN_PAIR_MAP[h.symbol];
+                      const ticker = tickerData.result[pair];
+                      if (ticker) {
+                        const price = parseFloat(ticker.c?.[0] || '0');
+                        const value = h.quantity * price;
+                        assetsValue += value;
+                      }
+                    }
+                  }
+                }
+              } catch (priceErr) {
+                console.warn('[Prospects] Could not fetch prices for assets value:', priceErr.message);
+              }
+            }
+            
+            console.log('[Prospects] Assets value: $' + assetsValue.toFixed(2));
+            
+            // Check open orders to deduct reserved capital from TRADING cash only
             try {
               const ordersResult = await callKrakenDirect(balKey, balSecret, '/0/private/OpenOrders', { trades: 'true' });
               if (ordersResult?.result?.open) {
@@ -181,23 +232,25 @@ Deno.serve(async (req) => {
               console.warn('[Prospects] Could not fetch open orders:', ordersErr.message);
             }
             
-            const safetyBuffer = rawAvailable * 0.02; // 2% buffer for fees/slippage
-            cashAvailable = Math.max(0, rawAvailable - totalOpenOrdersValue - safetyBuffer);
+            // Trading cash has buffer for order sizing, but display cash is exact
+            const safetyBuffer = rawUsd * 0.02;
+            tradingCash = Math.max(0, rawUsd - totalOpenOrdersValue - safetyBuffer);
             
-            console.log('[Prospects] Cash: raw', rawAvailable, '- orders', totalOpenOrdersValue, '- buffer', safetyBuffer.toFixed(2), '= effective', cashAvailable.toFixed(2));
+            console.log('[Prospects] Display cash: $' + cashAvailable.toFixed(2) + ', Trading cash: $' + tradingCash.toFixed(2));
             
-            if (cashAvailable < 5) {
+            if (tradingCash < 5) {
               return Response.json({
                 success: true,
                 prospects: [],
                 cash_available: cashAvailable,
-                raw_kraken_balance: rawAvailable,
+                assets_value: assetsValue,
+                total_portfolio_value: cashAvailable + assetsValue,
                 is_sim_mode: false,
                 auto_trading_enabled: settings?.auto_trading_enabled || false,
                 total_analyzed: 0,
                 market_intelligence: null,
                 user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
-                message: `Insufficient cash ($${cashAvailable.toFixed(2)} after fees/buffer). Need at least $5.`
+                message: `Insufficient trading cash ($${tradingCash.toFixed(2)} after reserves). Need at least $5.`
               });
             }
           }
@@ -212,7 +265,9 @@ Deno.serve(async (req) => {
     }
     } // end else (LIVE mode)
     
-    console.log('[Prospects] Cash available:', cashAvailable);
+    if (!tradingCash) tradingCash = cashAvailable;
+    
+    console.log('[Prospects] Cash available:', cashAvailable, 'Trading cash:', tradingCash);
     console.log('[Prospects] Mode:', isSimMode ? 'SIMULATION' : 'LIVE');
 
     // Get auto-buy preferences for current user and mode
