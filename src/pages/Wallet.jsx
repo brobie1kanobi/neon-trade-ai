@@ -12,7 +12,7 @@ import BankConnection from "../components/wallet/BankConnection";
 import TransactionForm from "../components/wallet/TransactionForm";
 import TransactionHistory from "../components/wallet/TransactionHistory";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
-import { getRecent, setRecent, getTimestamp } from "@/components/hooks/useGlobalDataStore";
+import { getRecent, setRecent } from "@/components/hooks/useGlobalDataStore";
 
 export default function WalletPage() {
   const [wallet, setWallet] = useState(null);
