@@ -30,7 +30,8 @@ export default function RiskManagementSettings() {
       max_asset_exposure_percent: settings.max_asset_exposure_percent ?? DEFAULTS.max_asset_exposure_percent,
       max_single_trade_percent: settings.max_single_trade_percent ?? DEFAULTS.max_single_trade_percent,
       daily_loss_cap_percent: settings.daily_loss_cap_percent ?? DEFAULTS.daily_loss_cap_percent,
-      max_drawdown_percent: settings.max_drawdown_percent ?? DEFAULTS.max_drawdown_percent
+      max_drawdown_percent: settings.max_drawdown_percent ?? DEFAULTS.max_drawdown_percent,
+      loss_cap_halt_hours: settings.loss_cap_halt_hours ?? DEFAULTS.loss_cap_halt_hours
     });
   }, [settings]);
 
@@ -113,6 +114,9 @@ export default function RiskManagementSettings() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Loss Cap Halt Status Banner */}
+        <LossCapHaltStatus />
+
         {fields.map(({ key, label, desc, suffix }) => (
           <div key={key} className="space-y-1">
             <Label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
@@ -138,6 +142,35 @@ export default function RiskManagementSettings() {
             </div>
           </div>
         ))}
+
+        {/* Loss Cap Halt Duration Slider */}
+        <div className="space-y-1 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+          <Label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+            <Clock className="w-4 h-4" style={{ color: "var(--neon-green)" }} />
+            Loss Cap Halt Duration
+          </Label>
+          <p className="text-xs mb-2" style={{ color: "var(--text-secondary)" }}>
+            How long to pause trading after the daily loss cap is hit. Trading auto-resumes after this period.
+          </p>
+          <div className="flex items-center gap-3">
+            <Slider
+              value={[values.loss_cap_halt_hours]}
+              onValueChange={([val]) => setValues(prev => ({ ...prev, loss_cap_halt_hours: val }))}
+              min={6}
+              max={24}
+              step={1}
+              className="flex-1"
+            />
+            <span className="text-sm font-bold w-16 text-center px-2 py-1 rounded" style={{ backgroundColor: "var(--secondary-bg)", color: "var(--neon-green)" }}>
+              {values.loss_cap_halt_hours}h
+            </span>
+          </div>
+          <div className="flex justify-between text-xs" style={{ color: "var(--text-secondary)" }}>
+            <span>6 hours</span>
+            <span>Default: {DEFAULTS.loss_cap_halt_hours}h</span>
+            <span>24 hours</span>
+          </div>
+        </div>
 
         <div className="flex gap-2 pt-2">
           <Button
