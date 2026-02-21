@@ -419,21 +419,13 @@ export default function MarketAnalysis() {
           </p>
         </div>
         <Button
-          onClick={fetchAnalysis}
+          onClick={() => fetchAnalysis(true)}
           disabled={analyzing}
           variant="outline"
           size="sm"
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
           {analyzing ? 'Analyzing...' : 'Refresh'}
-        </Button>
-        <Button
-          onClick={() => fetchAnalysis(true)}
-          disabled={analyzing}
-          variant="outline"
-          size="sm"
-          style={{ display: 'none' }}
-        >
         </Button>
       </motion.div>
 
