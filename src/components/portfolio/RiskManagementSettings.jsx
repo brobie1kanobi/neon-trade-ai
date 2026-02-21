@@ -4,16 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Shield, Save, RotateCcw, Info } from "lucide-react";
+import { Shield, Save, RotateCcw, Info, AlertTriangle, Clock } from "lucide-react";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import LossCapHaltStatus from "@/components/portfolio/LossCapHaltStatus";
 
 const DEFAULTS = {
   max_asset_exposure_percent: 25,
   max_single_trade_percent: 20,
   daily_loss_cap_percent: 5,
-  max_drawdown_percent: 15
+  max_drawdown_percent: 15,
+  loss_cap_halt_hours: 12
 };
 
 export default function RiskManagementSettings() {

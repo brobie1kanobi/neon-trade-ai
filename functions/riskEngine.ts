@@ -32,21 +32,45 @@ async function evaluateRisk(base44, userId, proposedTrade, userSettings, portfol
   const rejections = [];
   const warnings = [];
   
-  // CRITICAL: Check "bad days" mode first — if active and not overridden, block all trades
+  // CRITICAL: Check "bad days" mode first — if active and not overridden, check if halt duration has expired
   if (userSettings?.bad_days_active === true && userSettings?.bad_days_override_enabled !== true) {
-    rejections.push({
-      rule: 'bad_days_active',
-      message: `Trading paused: ${userSettings?.bad_days_reason || 'Risk limit triggered'}`,
-      severity: 'critical'
-    });
-    return {
-      approved: false,
-      rejections,
-      warnings,
-      risk_score: 100,
-      portfolio_metrics: { total_value: 0, cash_available: 0, holdings_count: 0 },
-      bad_days_active: true
-    };
+    const triggeredAt = userSettings?.bad_days_triggered_at ? new Date(userSettings.bad_days_triggered_at).getTime() : 0;
+    const haltHours = Math.min(24, Math.max(6, userSettings?.loss_cap_halt_hours || 12));
+    const haltDurationMs = haltHours * 60 * 60 * 1000;
+    const now = Date.now();
+    
+    if (triggeredAt > 0 && (now - triggeredAt) >= haltDurationMs) {
+      // Halt duration expired — auto-resume trading
+      console.log(`[riskEngine] Bad days halt expired (${haltHours}h since ${userSettings.bad_days_triggered_at}). Auto-resuming trading.`);
+      try {
+        const settingsRecords = await base44.entities.UserSettings.filter({ created_by: userId });
+        if (settingsRecords.length > 0) {
+          await base44.entities.UserSettings.update(settingsRecords[0].id, {
+            bad_days_active: false,
+            bad_days_override_enabled: false
+          });
+        }
+      } catch (resumeErr) {
+        console.warn('[riskEngine] Failed to auto-resume trading:', resumeErr.message);
+      }
+      // Don't block — fall through to normal risk checks
+    } else {
+      // Still within halt window — block trading
+      const resumeAt = triggeredAt > 0 ? new Date(triggeredAt + haltDurationMs).toISOString() : 'unknown';
+      rejections.push({
+        rule: 'bad_days_active',
+        message: `Trading paused: ${userSettings?.bad_days_reason || 'Risk limit triggered'}. Resumes at ${resumeAt}`,
+        severity: 'critical'
+      });
+      return {
+        approved: false,
+        rejections,
+        warnings,
+        risk_score: 100,
+        portfolio_metrics: { total_value: 0, cash_available: 0, holdings_count: 0 },
+        bad_days_active: true
+      };
+    }
   }
   
   const {
