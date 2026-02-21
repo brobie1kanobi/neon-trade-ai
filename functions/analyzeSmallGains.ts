@@ -68,12 +68,11 @@ Deno.serve(async (req) => {
     }
 
     // CRITICAL: Fetch historical trade data for smarter recommendations
-    // Use service role to avoid auth issues with function-to-function calls
     let tradeHistoryData = null;
     if (includeTradeHistory) {
       try {
         console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
-        const historyResponse = await base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
+        const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
           symbols: targetSymbols,
           includeKrakenHistory: true,
           analyzePatterns: false // AI analysis done here instead
