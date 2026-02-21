@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
         console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
         const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
           symbols: targetSymbols,
-          includeKrakenHistory: true,
+          includeKrakenHistory: false, // Avoid 403 from Kraken API - use local trades only
           analyzePatterns: false // AI analysis done here instead
         });
         const historyData = historyResponse?.data || historyResponse;

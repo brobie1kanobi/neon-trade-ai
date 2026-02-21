@@ -559,10 +559,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // AUTO-EXECUTION THRESHOLD: Use user setting or default to 80%
+    // AUTO-EXECUTION THRESHOLD: Use user's slider setting, default to 80%
     const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number' 
       ? settings.auto_execute_threshold 
       : 80;
+    
+    log('Auto-execute threshold from user settings', { threshold: AUTO_EXECUTE_THRESHOLD });
     
     // Build signal map for quick lookup
     const signalMap = new Map();
@@ -596,10 +598,8 @@ Deno.serve(async (req) => {
       let metadataValid = true;
       try {
         const meta = signal?.metadata_json ? JSON.parse(signal.metadata_json) : {};
-        // If signal generator marked it as NOT auto-tradeable, skip
-        if (meta.auto_tradeable === false) {
-          metadataValid = false;
-        }
+        // NOTE: auto_tradeable flag is no longer checked here — the user's auto_execute_threshold
+        // setting (via meetsConfidence check above) is the sole gate for auto-execution.
         // If trend alignment shows mixed or bearish, skip
         if (meta.trend_alignment === 'all_bearish' || meta.trend_alignment === 'mixed') {
           metadataValid = false;

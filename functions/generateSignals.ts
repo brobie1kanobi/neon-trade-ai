@@ -520,7 +520,7 @@ Deno.serve(async (req) => {
     let tradeHistory = {};
     try {
       const histRes = await base44.functions.invoke('analyzeTradeHistory', {
-        includeKrakenHistory: true,
+        includeKrakenHistory: false,
         analyzePatterns: false
       });
       const histData = histRes?.data || histRes;
@@ -873,7 +873,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
           historical_avg_gain: hist?.avg_successful_gain_pct || null,
           historical_trades: hist?.total_trades || 0,
           correlation_group: aiRec?.correlation_group || null,
-          auto_tradeable: finalSignalType === 'strong_buy' && finalConfidence >= 80
+          auto_tradeable: finalSignalType === 'strong_buy'
         })
       };
       
