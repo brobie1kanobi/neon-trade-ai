@@ -27,11 +27,10 @@ Deno.serve(async (req) => {
 
     console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence, 'trade history:', includeTradeHistory);
 
-    // Get user's auto-buy preferences
+    // Get user's auto-buy preferences (check both sim and live)
     const autoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
       created_by: user.email,
-      enabled: true,
-      is_simulation: false
+      enabled: true
     }).catch(() => []);
 
     const targetSymbols = symbols.length > 0 ? symbols : autoBuyPrefs.map(p => p.symbol);
