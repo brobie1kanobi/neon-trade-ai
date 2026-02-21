@@ -19,6 +19,7 @@ import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { getRecent, setRecent } from "@/components/hooks/useGlobalDataStore";
 
 
 
@@ -69,6 +70,31 @@ export default function Portfolio() {
   const loadData = useCallback(async (force = false) => {
     // CRITICAL: Don't load data until we know the mode
     if (isSimMode === null) return;
+
+    // CROSS-PAGE CHECK: If Dashboard just loaded everything, reuse it
+    const walletKey = 'wallet';
+    const tradeKey = `trades_${isSimMode ? 'sim' : 'real'}`;
+    const holdingKey = `holdings_${isSimMode ? 'sim' : 'real'}`;
+    
+    if (!force) {
+      const recentWallet = getRecent(walletKey);
+      const recentTrades = getRecent(tradeKey);
+      const recentHoldings = getRecent(holdingKey);
+      
+      if (recentWallet && recentTrades && recentHoldings) {
+        console.log('[Portfolio] Using cross-page cached data (< 15s old)');
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+        setSettings(ctxSettings);
+        setWallet(recentWallet);
+        setTrades(recentTrades);
+        setHoldings(recentHoldings);
+        setShowDataSync(isSimMode && recentTrades.length > 0 && recentHoldings.length === 0);
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
+    }
     
     setIsLoading(true);
     console.log('[Portfolio] Fetching fresh data, isSimMode:', isSimMode);
@@ -134,6 +160,10 @@ export default function Portfolio() {
       setWallet(currentWallet);
       setTrades(userTradesArr);
       setHoldings(userHoldingsArr);
+      // Store for cross-page reuse
+      setRecent('wallet', currentWallet);
+      setRecent(`trades_${isSimMode ? 'sim' : 'real'}`, userTradesArr);
+      setRecent(`holdings_${isSimMode ? 'sim' : 'real'}`, userHoldingsArr);
       setShowDataSync(effectiveSimMode && userTradesArr.length > 0 && userHoldingsArr.length === 0);
       setError(null);
     } catch (err) {
