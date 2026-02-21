@@ -435,12 +435,12 @@ Deno.serve(async (req) => {
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       
-      // Calculate order size
+      // Calculate order size using tradingCash (has buffer baked in)
       const userAllocationPct = Number(pref.percentage) || 10;
       const userPct = userAllocationPct / 100;
-      let total = cashAvailable * userPct;
+      let total = tradingCash * userPct;
       
-      const safetyMax = cashAvailable * safetyMaxPct;
+      const safetyMax = tradingCash * safetyMaxPct;
       if (total > safetyMax) total = safetyMax;
       
       if (holding) {
@@ -448,28 +448,26 @@ Deno.serve(async (req) => {
       }
       
       const krakenMinimum = 5;
-      if (total < krakenMinimum && total > 0 && cashAvailable >= krakenMinimum) {
+      if (total < krakenMinimum && total > 0 && tradingCash >= krakenMinimum) {
         total = krakenMinimum;
       } else if (total < 1) {
         continue;
       }
       
-      const orderSafetyBuffer = total * 0.10;
-      total = Math.min(total - orderSafetyBuffer, cashAvailable * 0.90);
-      total = Math.min(total, cashAvailable * 0.85);
+      total = Math.min(total, tradingCash * 0.90);
       
       const cappedQuantity = total / price;
-      const actualAllocationPct = cashAvailable > 0 ? Math.round((total / cashAvailable) * 100) : 0;
+      const actualAllocationPct = tradingCash > 0 ? Math.round((total / tradingCash) * 100) : 0;
 
       let blockReason = null;
       let wouldExecute = false;
       
-      if (cashAvailable < 1) {
-        blockReason = `No cash available ($${cashAvailable.toFixed(2)})`;
+      if (tradingCash < 1) {
+        blockReason = `No trading cash available ($${tradingCash.toFixed(2)})`;
       } else if (total < 1) {
         blockReason = "Order value too small (minimum $1)";
-      } else if (total > cashAvailable) {
-        blockReason = `Exceeds wallet balance ($${cashAvailable.toFixed(2)})`;
+      } else if (total > tradingCash) {
+        blockReason = `Exceeds available trading cash ($${tradingCash.toFixed(2)})`;
       } else {
         wouldExecute = true;
       }
@@ -544,6 +542,8 @@ Deno.serve(async (req) => {
       success: true,
       prospects,
       cash_available: cashAvailable,
+      assets_value: assetsValue,
+      total_portfolio_value: cashAvailable + assetsValue,
       is_sim_mode: isSimMode,
       auto_trading_enabled: settings?.auto_trading_enabled || false,
       total_analyzed: prefs.length,
