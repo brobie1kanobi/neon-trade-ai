@@ -418,7 +418,7 @@ Deno.serve(async (req) => {
     if (signals.length === 0) {
       log('No pre-computed signals, generating on-demand...');
       try {
-        await base44.functions.invoke('generateSignals', {});
+        await base44.asServiceRole.functions.invoke('generateSignals', {});
         signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
         log(`Generated ${signals.length} signals`);
       } catch (e) {
