@@ -519,7 +519,7 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════
     let tradeHistory = {};
     try {
-      const histRes = await base44.functions.invoke('analyzeTradeHistory', {
+      const histRes = await base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
         includeKrakenHistory: false,
         analyzePatterns: false
       });
