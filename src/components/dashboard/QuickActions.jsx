@@ -6,6 +6,7 @@ import { BarChart3, TrendingUp, TrendingDown, Loader2, Flame, AlertTriangle } fr
 import { Badge } from "@/components/ui/badge";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { getRecentAnalysis, setRecentAnalysis } from "@/components/hooks/useGlobalDataStore";
 
 function FearGreedGauge({ score }) {
   const label = score <= 20 ? 'Extreme Fear' :
@@ -53,7 +54,16 @@ export default function QuickActions() {
   useEffect(() => {
     if (!user?.email) return;
 
-    // Check sessionStorage cache first (5 min TTL)
+    // CROSS-PAGE CHECK: Reuse if MarketAnalysis (or a previous load) already fetched this
+    const recentAnalysis = getRecentAnalysis();
+    if (recentAnalysis) {
+      console.log('[QuickActions] Using cross-page cached analysis (< 5min old)');
+      setData(recentAnalysis);
+      setLoading(false);
+      return;
+    }
+
+    // Check sessionStorage cache (5 min TTL)
     const cacheKey = 'dashboard_market_intel';
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
@@ -61,6 +71,7 @@ export default function QuickActions() {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed._ts < 5 * 60 * 1000) {
           setData(parsed);
+          setRecentAnalysis(parsed); // Populate global store too
           setLoading(false);
           return;
         }
@@ -87,6 +98,7 @@ export default function QuickActions() {
         if (!cancelled && result?.success) {
           result._ts = Date.now();
           setData(result);
+          setRecentAnalysis(result); // Store in global cross-page store
           sessionStorage.setItem(cacheKey, JSON.stringify(result));
         }
       } catch (err) {
