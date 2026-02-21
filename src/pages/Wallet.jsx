@@ -12,6 +12,7 @@ import BankConnection from "../components/wallet/BankConnection";
 import TransactionForm from "../components/wallet/TransactionForm";
 import TransactionHistory from "../components/wallet/TransactionHistory";
 import EmergencyRepair from "../components/wallet/EmergencyRepair";
+import { getRecent, setRecent, getTimestamp } from "@/components/hooks/useGlobalDataStore";
 
 export default function WalletPage() {
   const [wallet, setWallet] = useState(null);
@@ -94,9 +95,30 @@ export default function WalletPage() {
     return 0;
   }, [isSimMode, krakenData, wsConnected, wsUsdBalance]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (force = false) => {
     // CRITICAL: Don't load data until we know the mode from SettingsContext
     if (isSimMode === null) return;
+
+    // CROSS-PAGE CHECK: If Dashboard/Portfolio just loaded everything, reuse it
+    if (!force) {
+      const recentWallet = getRecent('wallet');
+      const tradeKey = `trades_${isSimMode ? 'sim' : 'real'}`;
+      const recentTrades = getRecent(tradeKey);
+      if (recentWallet && recentTrades) {
+        console.log('[Wallet] Using cross-page cached wallet + trades (< 15s old)');
+        setWallet(recentWallet);
+        setTrades(recentTrades);
+        setIsLoading(false);
+        // Still need user and transactions, but wallet/trades are the expensive calls
+        try {
+          const currentUser = await User.me();
+          setUser(currentUser);
+          const userTransactions = await Transaction.filter({ created_by: currentUser.email }, '-created_date');
+          setTransactions(userTransactions);
+        } catch (_) {}
+        return;
+      }
+    }
     
     if (typeof window !== "undefined") {
       if (window.__entityCooldownUntil && Date.now() < window.__entityCooldownUntil) {
@@ -112,7 +134,7 @@ export default function WalletPage() {
     }
 
     const now = Date.now();
-    if (lastLoadTime && (now - lastLoadTime) < 30000) {
+    if (!force && lastLoadTime && (now - lastLoadTime) < 30000) {
       if (typeof window !== "undefined") window.__entityCallInFlight = false;
       return;
     }
@@ -148,17 +170,20 @@ export default function WalletPage() {
         }
       }
       
-      setWallet(userWallet[0] || { 
+      const walletData = userWallet[0] || { 
         cash_balance: 0, 
         total_deposits: 0, 
         total_withdrawals: 0,
         real_cash_balance: 0, 
         real_total_deposits: 0,
         real_total_withdrawals: 0
-      });
+      };
       
+      setWallet(walletData);
+      setRecent('wallet', walletData); // Store for cross-page reuse
       setTransactions(userTransactions);
       setTrades(userTrades);
+      setRecent(`trades_${isSimMode ? 'sim' : 'real'}`, userTrades);
 
       // Compute portfolio value (SIM from DB, LIVE from Kraken)
       if (isSimMode) {
