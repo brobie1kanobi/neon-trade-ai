@@ -252,6 +252,30 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                             </span>
                           </div>
                       }
+                        {details.total_value &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Total Value:</span>
+                            <span className="font-medium text-gray-300">${parseFloat(details.total_value).toFixed(2)}</span>
+                          </div>
+                      }
+                        {details.cost && !details.total_value &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Cost:</span>
+                            <span className="font-medium text-gray-300">${parseFloat(details.cost).toFixed(2)}</span>
+                          </div>
+                      }
+                        {details.proceeds &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Proceeds:</span>
+                            <span className="font-medium text-green-400">${parseFloat(details.proceeds).toFixed(2)}</span>
+                          </div>
+                      }
+                        {details.fee &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Fee:</span>
+                            <span className="font-medium text-orange-400">-${parseFloat(details.fee).toFixed(2)}</span>
+                          </div>
+                      }
                         {details.trade && !details.symbol &&
                       <div className="space-y-1">
                             <div className="flex justify-between text-sm">
