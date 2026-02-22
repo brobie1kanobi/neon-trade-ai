@@ -1217,14 +1217,7 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
                       ${availableCash.toFixed(2)}
                     </span>
                   </div>
-                  {!isSimMode && orderType === 'buy' &&
-                  <div className="flex justify-between items-center">
-                    <span style={{ color: 'var(--text-secondary)' }}>Credits Cost:</span>
-                    <span style={{ color: 'var(--text-primary)' }}>
-                      1 credit ($0.01)
-                    </span>
-                  </div>
-                  }
+
                 </div>
               </div>
               }

@@ -323,6 +323,18 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { symbols = [], forceRefresh = false } = body;
     
+    // Load user's auto_execute_threshold to use as the strong_buy confidence floor
+    let userAutoExecuteThreshold = 80; // default fallback
+    try {
+      const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
+      if (userSettingsList.length > 0 && typeof userSettingsList[0].auto_execute_threshold === 'number') {
+        userAutoExecuteThreshold = userSettingsList[0].auto_execute_threshold;
+      }
+      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold);
+    } catch (e) {
+      console.warn('[generateSignals] Could not load user settings, using default threshold 80');
+    }
+    
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
     
     // Get all active AutoBuyPreferences
@@ -788,8 +800,8 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         }
       }
       
-      // Confidence floor for signal types
-      if (finalSignalType === 'strong_buy' && finalConfidence < 80) finalSignalType = 'buy';
+      // Confidence floor for signal types — uses user's auto_execute_threshold
+      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) finalSignalType = 'buy';
       if (finalSignalType === 'buy' && finalConfidence < 55) finalSignalType = 'hold';
       
       // ── TP/SL from ATR or defaults ──
