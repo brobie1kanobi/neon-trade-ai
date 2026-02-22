@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     const { symbols = [], forceRefresh = false } = body;
     
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
-    let userAutoExecuteThreshold = 80; // default fallback
+    let userAutoExecuteThreshold = 70; // default fallback
     try {
       const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
       if (userSettingsList.length > 0 && typeof userSettingsList[0].auto_execute_threshold === 'number') {
@@ -660,7 +660,7 @@ ${overallSent.narrative || ''}
 
 === STRICT SIGNAL RULES ===
 
-STRONG_BUY (auto-execute) — ALL must be true:
+STRONG_BUY (auto-execute) — AT LEAST 5 must be true:
 1. RSI between 30-60 (not overbought)
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
@@ -668,7 +668,7 @@ STRONG_BUY (auto-execute) — ALL must be true:
 5. Volume increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
-→ Confidence 80%+
+→ Confidence 70%+
 
 BUY — At least 4 of above criteria met, confidence 55-79%
 HOLD — Conflicting signals, RSI 40-60, no clear direction
