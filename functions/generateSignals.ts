@@ -660,7 +660,7 @@ ${overallSent.narrative || ''}
 
 === STRICT SIGNAL RULES ===
 
-STRONG_BUY (auto-execute) — ALL must be true:
+STRONG_BUY (auto-execute) — At LEAST 5 must be true:
 1. RSI between 30-60 (not overbought)
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
@@ -668,12 +668,12 @@ STRONG_BUY (auto-execute) — ALL must be true:
 5. Volume increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
-→ Confidence 80%+
+→ Confidence 70%+
 
 BUY — At least 4 of above criteria met, confidence 55-79%
 HOLD — Conflicting signals, RSI 40-60, no clear direction
-SELL — RSI > 70 + bearish MACD + negative trends
-STRONG_SELL — RSI > 80 + bearish cross + high volume selling
+SELL — RSI > 65 + bearish MACD + negative trends
+STRONG_SELL — RSI > 70 + bearish cross + high volume selling
 
 === RISK PARAMETERS ===
 - SL: 2-3% (use ATR: 1.5x ATR as SL)
