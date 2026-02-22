@@ -420,16 +420,16 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // Require minimum confidence for display (user-configurable, default 55%)
-      const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 55;
+      // Require minimum confidence for display (user-configurable, default 50%)
+      const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
       if (confidence < minConfidence) {
         console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence, '< min:', minConfidence);
         continue;
       }
       
-      // TREND-FOLLOWING: Only skip if falling hard (>3%)
-      // Minor dips (-3% or less) are OK if the signal says strong_buy
-      if (change24h < -3) {
+      // TREND-FOLLOWING: Only skip if falling hard (>5%)
+      // Minor dips (-5% or less) are OK if the signal is actionable
+      if (change24h < -5) {
         console.log('[Prospects] Skipping', symbol, '- steep negative trend:', change24h.toFixed(1), '%');
         continue;
       }

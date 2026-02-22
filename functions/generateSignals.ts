@@ -781,6 +781,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       }
       
       // ── Hard filter: strong_buy data validation ──
+      // Relaxed: allow up to 3 violations before downgrading (5 of 7 checks must pass)
       if (finalSignalType === 'strong_buy') {
         const violations = [];
         if (change24h < 0) violations.push('24h negative');
@@ -789,15 +790,16 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push('6h downtrend');
         if (hist && hist.total_trades >= 5 && hist.win_rate < 50) violations.push('Poor history');
         
-        if (violations.length >= 2) {
+        if (violations.length >= 4) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
           finalSignalType = 'hold';
           finalConfidence = Math.min(finalConfidence, 55);
-        } else if (violations.length === 1) {
+        } else if (violations.length >= 2) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
           finalSignalType = 'buy';
           finalConfidence = Math.min(finalConfidence, 70);
         }
+        // 0-1 violations = stays strong_buy
       }
       
       // Confidence floor for signal types — uses user's auto_execute_threshold

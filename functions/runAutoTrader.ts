@@ -583,28 +583,19 @@ Deno.serve(async (req) => {
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
       const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
       
-      // STRICT: Only strong_buy signals auto-execute. "buy" is display-only.
-      const isActionable = signalType === 'strong_buy';
+      // Allow strong_buy AND buy signals to auto-execute (relaxed from strong_buy only)
+      const isActionable = signalType === 'strong_buy' || signalType === 'buy';
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
       
-      // Trend check: only block steep drops (>3%). Minor dips are OK if signal is strong_buy.
+      // Trend check: allow dips up to -5% if signal is actionable
       const change24h = Number(p.market_trend || 0);
-      const trendPositive = change24h > -3; // Allow minor dips up to -3%
+      const trendPositive = change24h > -5;
       
       const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
       
-      // Also check signal metadata for additional validation
-      let metadataValid = true;
-      try {
-        const meta = signal?.metadata_json ? JSON.parse(signal.metadata_json) : {};
-        // NOTE: auto_tradeable flag is no longer checked here — the user's auto_execute_threshold
-        // setting (via meetsConfidence check above) is the sole gate for auto-execution.
-        // If trend alignment shows mixed or bearish, skip
-        if (meta.trend_alignment === 'all_bearish' || meta.trend_alignment === 'mixed') {
-          metadataValid = false;
-        }
-      } catch (_e) {}
+      // Metadata validation removed — signal confidence is the sole gate
+      const metadataValid = true;
       
       const eligible = meetsConfidence && isActionable && notBlocked && wouldExecute && trendPositive && metadataValid;
       
