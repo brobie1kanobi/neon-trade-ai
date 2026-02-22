@@ -201,105 +201,88 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                 {(() => {
                 try {
                   const details = JSON.parse(selectedNotification.details_json);
-                  // Format details in a user-friendly way
+                  const sym = details.symbol || details.trade?.symbol;
+                  const action = details.action || details.side || details.orderType || details.trade?.type;
+                  const qty = details.quantity || details.trade?.quantity;
+                  const px = details.price || details.fillPrice || details.purchasePrice || details.trade?.price;
+                  const total = details.total_value || details.cost || details.trade?.total_value;
+                  
                   return (
                     <div className="space-y-1.5">
-                        {details.symbol &&
+                        {sym &&
                       <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Asset:</span>
-                            <span className="font-medium text-gray-300">{details.symbol}</span>
+                            <span className="font-medium text-gray-300">{sym}</span>
                           </div>
                       }
-                        {details.orderType &&
+                        {action &&
                       <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Order Type:</span>
-                            <span className={`font-medium ${details.orderType === 'take-profit' ? 'text-green-400' : 'text-red-400'}`}>
-                              {details.orderType === 'take-profit' ? 'Take Profit' : 'Stop Loss'}
+                            <span className="text-gray-500">Action:</span>
+                            <span className={`font-medium ${
+                              action === 'buy' ? 'text-green-400' : 
+                              action === 'sell' ? 'text-red-400' : 
+                              action === 'take-profit' ? 'text-green-400' : 
+                              action === 'stop-loss' ? 'text-red-400' : 'text-gray-300'
+                            }`}>
+                              {action === 'take-profit' ? 'Take Profit' : action === 'stop-loss' ? 'Stop Loss' : String(action).toUpperCase()}
                             </span>
                           </div>
                       }
-                        {details.quantity &&
+                        {qty != null &&
                       <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Quantity:</span>
-                            <span className="font-medium text-gray-300">{details.quantity}</span>
+                            <span className="font-medium text-gray-300">{typeof qty === 'number' ? qty.toFixed(6) : qty}</span>
                           </div>
                       }
-                        {details.purchasePrice &&
+                        {px != null &&
                       <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Purchase Price:</span>
-                            <span className="font-medium text-gray-300">${details.purchasePrice}</span>
+                            <span className="text-gray-500">Price:</span>
+                            <span className="font-medium text-gray-300">${typeof px === 'number' ? px.toFixed(2) : parseFloat(px).toFixed(2)}</span>
                           </div>
                       }
-                        {details.fillPrice &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Fill Price:</span>
-                            <span className="font-medium text-gray-300">${details.fillPrice}</span>
+                        {total != null &&
+                      <div className="flex justify-between text-sm border-t border-gray-700 pt-1.5 mt-1.5">
+                            <span className="text-gray-500 font-medium">Total Spent:</span>
+                            <span className="font-semibold text-lime-400">${typeof total === 'number' ? total.toFixed(2) : parseFloat(total).toFixed(2)}</span>
                           </div>
                       }
-                        {details.pnl &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Profit/Loss:</span>
-                            <span className={`font-medium ${parseFloat(details.pnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {parseFloat(details.pnl) >= 0 ? '+' : ''}${details.pnl}
+                        {details.pnl != null &&
+                      <div className="flex justify-between text-sm border-t border-gray-700 pt-1.5 mt-1.5">
+                            <span className="text-gray-500 font-medium">Profit/Loss:</span>
+                            <span className={`font-semibold ${parseFloat(details.pnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {parseFloat(details.pnl) >= 0 ? '+' : ''}${parseFloat(details.pnl).toFixed(2)}
+                              {details.pnlPct ? ` (${parseFloat(details.pnlPct) >= 0 ? '+' : ''}${details.pnlPct}%)` : ''}
                             </span>
                           </div>
                       }
-                        {details.pnlPct &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Change:</span>
-                            <span className={`font-medium ${parseFloat(details.pnlPct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {parseFloat(details.pnlPct) >= 0 ? '+' : ''}{details.pnlPct}%
-                            </span>
-                          </div>
-                      }
-                        {details.total_value &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Total Value:</span>
-                            <span className="font-medium text-gray-300">${parseFloat(details.total_value).toFixed(2)}</span>
-                          </div>
-                      }
-                        {details.cost && !details.total_value &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Cost:</span>
-                            <span className="font-medium text-gray-300">${parseFloat(details.cost).toFixed(2)}</span>
-                          </div>
-                      }
-                        {details.proceeds &&
-                      <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Proceeds:</span>
-                            <span className="font-medium text-green-400">${parseFloat(details.proceeds).toFixed(2)}</span>
-                          </div>
-                      }
-                        {details.fee &&
+                        {details.fee != null &&
                       <div className="flex justify-between text-sm">
                             <span className="text-gray-500">Fee:</span>
                             <span className="font-medium text-orange-400">-${parseFloat(details.fee).toFixed(2)}</span>
                           </div>
                       }
-                        {details.trade && !details.symbol &&
-                      <div className="space-y-1">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Asset:</span>
-                              <span className="font-medium text-gray-300">{details.trade.symbol}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Action:</span>
-                              <span className={`font-medium ${details.trade.type === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
-                                {details.trade.type?.toUpperCase()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Quantity:</span>
-                              <span className="font-medium text-gray-300">{details.trade.quantity?.toFixed(4)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Price:</span>
-                              <span className="font-medium text-gray-300">${details.trade.price?.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Total:</span>
-                              <span className="font-medium text-gray-300">${details.trade.total_value?.toFixed(2)}</span>
-                            </div>
+                        {details.tp_price &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Take Profit:</span>
+                            <span className="font-medium text-green-400">${parseFloat(details.tp_price).toFixed(2)} (+{details.tp_pct || '?'}%)</span>
+                          </div>
+                      }
+                        {details.sl_pct &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Stop Loss:</span>
+                            <span className="font-medium text-red-400">-{details.sl_pct}%{details.trailing ? ' (trailing)' : ''}</span>
+                          </div>
+                      }
+                        {details.confidence &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">AI Confidence:</span>
+                            <span className="font-medium text-blue-400">{details.confidence}%</span>
+                          </div>
+                      }
+                        {details.mode &&
+                      <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Mode:</span>
+                            <span className={`font-medium ${details.mode === 'LIVE' ? 'text-green-400' : 'text-yellow-400'}`}>{details.mode}</span>
                           </div>
                       }
                         {details.error &&
