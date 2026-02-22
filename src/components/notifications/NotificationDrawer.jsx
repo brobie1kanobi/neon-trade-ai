@@ -197,7 +197,7 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
             </p>
             
             {selectedNotification?.details_json &&
-            <div className="bg-lime-500 p-3 rounded-md dark:bg-slate-900 border border-gray-100 dark:border-gray-800 space-y-2">
+            <div className="bg-gray-900 p-3 rounded-md dark:bg-slate-900 border border-gray-100 dark:border-gray-800 space-y-2">
                 {(() => {
                 try {
                   const details =
@@ -354,7 +354,7 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                       }
 
                         {!hasStructuredData &&
-                      <pre className="text-xs text-gray-400 overflow-auto whitespace-pre-wrap">
+                      <pre className="text-lime-400 text-xs overflow-auto whitespace-pre-wrap">
                             {JSON.stringify(details, null, 2)}
                           </pre>
                       }
