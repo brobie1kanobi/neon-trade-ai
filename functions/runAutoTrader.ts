@@ -1137,6 +1137,37 @@ Deno.serve(async (req) => {
       });
 
       log(`✅ Trade completed for ${sym}`);
+      
+      // Create notification for this AI trade with full financial details
+      try {
+        const modeLabel = isSimMode ? 'SIM' : 'LIVE';
+        const tpTarget = round2(price * (1 + gainMargin / 100));
+        await base44.entities.Notification.create({
+          title: `🤖 ${modeLabel} AI Buy: ${sym}`,
+          message: `Auto-traded ${qty.toFixed(6)} ${sym} at $${price.toFixed(2)} for $${total_value.toFixed(2)}`,
+          type: 'success',
+          read: false,
+          details_json: JSON.stringify({
+            symbol: sym,
+            action: 'buy',
+            quantity: qty,
+            price: price,
+            total_value: total_value,
+            tp_price: tpTarget,
+            tp_pct: gainMargin,
+            sl_pct: lossMargin,
+            trailing: trailingEnabled,
+            confidence: confidence,
+            mode: modeLabel,
+            auto_trade: true,
+            signal_id: signal?.id || null,
+            run_id: autoTraderRunId
+          }),
+          created_by: user.email
+        });
+      } catch (notifErr) {
+        log(`Failed to create notification for ${sym}`, { error: notifErr.message });
+      }
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
