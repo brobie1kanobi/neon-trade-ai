@@ -60,7 +60,7 @@ export const SettingsProvider = ({ children }) => {
           default_input_mode: "quantity",
           sim_trading_mode: true,
           has_seen_welcome: false,
-          credits_balance: 0,
+  
           tts_enabled: true,
           tts_voice_uri: '',
           biometrics_enabled: false,

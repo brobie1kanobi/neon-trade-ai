@@ -35,8 +35,6 @@ export default function PaymentSuccess() {
         setStatus('success');
         if (result.data.alreadyProcessed) {
           setMessage('This transaction has already been processed. Your account is up to date.');
-        } else if (result.data.type === 'subscription') {
-          setMessage(`Subscription successful! ${result.data.credits_added || 0} credits have been added to your account.`);
         } else {
           setMessage('Payment successful! Your account has been updated.');
         }
