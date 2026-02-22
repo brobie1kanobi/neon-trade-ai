@@ -794,7 +794,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
           finalSignalType = 'hold';
           finalConfidence = Math.min(finalConfidence, 55);
-        } else if (violations.length >= 2) {
+        } else if (violations.length >= 3) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
           finalSignalType = 'buy';
           finalConfidence = Math.min(finalConfidence, 70);
