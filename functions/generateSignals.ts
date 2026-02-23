@@ -160,9 +160,10 @@ function computeCompositeScore(indicators, sentiment, history) {
   if (indicators.rsi_1h != null) {
     const rsi = indicators.rsi_1h;
     let rsiScore = 0;
-    if (rsi < 30) rsiScore = 60 + (30 - rsi) * 1.5;       // Oversold = bullish
-    else if (rsi < 40) rsiScore = 30;
-    else if (rsi < 60) rsiScore = 0;                        // Neutral
+    if (rsi < 25) rsiScore = 70 + (25 - rsi) * 2;          // Deep oversold = strong buy signal
+    else if (rsi < 35) rsiScore = 50;                        // Oversold = bullish
+    else if (rsi < 45) rsiScore = 25;                        // Mildly oversold = slightly bullish
+    else if (rsi < 60) rsiScore = 5;                         // Neutral-ish (was 0, slightly positive)
     else if (rsi < 70) rsiScore = -20;
     else rsiScore = -50 - (rsi - 70) * 1.5;                 // Overbought = bearish
     score += rsiScore * 15;
@@ -185,17 +186,18 @@ function computeCompositeScore(indicators, sentiment, history) {
     let bbScore = 0;
     const pctB = indicators.bb_1h.percentB;
     if (pctB < 10) bbScore = 70;          // At lower band = bounce likely
-    else if (pctB < 25) bbScore = 40;
+    else if (pctB < 25) bbScore = 50;     // Near lower band = bullish (was 40)
+    else if (pctB < 40) bbScore = 25;     // Below middle = slight buy opportunity
     else if (pctB > 90) bbScore = -70;     // At upper band = reversal likely
     else if (pctB > 75) bbScore = -40;
     else bbScore = 0;
     // Squeeze detection (low bandwidth = breakout coming)
-    if (indicators.bb_1h.bandwidth < 3) bbScore += 15; // Squeeze adds uncertainty but opportunity
+    if (indicators.bb_1h.bandwidth < 3) bbScore += 20; // Squeeze adds opportunity
     score += bbScore * 15;
     weights += 15;
   }
 
-  // ── Trend alignment (weight: 20) ──
+  // ── Trend alignment (weight: 15, was 20 — reduced to avoid dominating score) ──
   if (indicators.trend_6h != null && indicators.trend_12h != null) {
     let trendScore = 0;
     const t6 = indicators.trend_6h;
@@ -204,11 +206,11 @@ function computeCompositeScore(indicators, sentiment, history) {
     if (t6 > 0 && t12 > 0 && t24 > 0) trendScore = 70;         // All bullish
     else if (t6 > 0 && t12 > 0) trendScore = 50;
     else if (t6 > 0 || t12 > 0) trendScore = 15;                // Mixed
-    else if (t6 < 0 && t12 < 0 && t24 < 0) trendScore = -70;   // All bearish
-    else if (t6 < 0 && t12 < 0) trendScore = -50;
-    else trendScore = -15;
-    score += trendScore * 20;
-    weights += 20;
+    else if (t6 < -3 && t12 < -3 && t24 < -3) trendScore = -60; // All strongly bearish (reduced from -70)
+    else if (t6 < 0 && t12 < 0) trendScore = -25;               // Mild bearish (was -50)
+    else trendScore = -10;                                        // Slightly negative (was -15)
+    score += trendScore * 15;
+    weights += 15;
   }
 
   // ── Volume confirmation (weight: 10) ──
@@ -278,24 +280,25 @@ function computeCompositeScore(indicators, sentiment, history) {
  * Convert composite score to signal type and confidence
  */
 function scoreToSignal(compositeScore) {
-  const abs = Math.abs(compositeScore);
   let signalType, confidence;
 
-  if (compositeScore >= 50) {
+  // Relaxed thresholds: buy at 10+ (was 25), strong_buy at 35+ (was 50)
+  // This allows signals to reach the Prospector in normal market conditions
+  if (compositeScore >= 35) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 75 + (compositeScore - 50));
-  } else if (compositeScore >= 25) {
+    confidence = Math.min(95, 70 + (compositeScore - 35));
+  } else if (compositeScore >= 10) {
     signalType = 'buy';
-    confidence = 55 + (compositeScore - 25);
-  } else if (compositeScore >= -15) {
+    confidence = 55 + Math.min(20, compositeScore - 10);
+  } else if (compositeScore >= -20) {
     signalType = 'hold';
     confidence = 50;
-  } else if (compositeScore >= -40) {
+  } else if (compositeScore >= -45) {
     signalType = 'sell';
-    confidence = 55 + (-compositeScore - 15);
+    confidence = 55 + (-compositeScore - 20);
   } else {
     signalType = 'strong_sell';
-    confidence = Math.min(95, 70 + (-compositeScore - 40));
+    confidence = Math.min(95, 70 + (-compositeScore - 45));
   }
 
   return { signalType, confidence: Math.round(confidence) };
@@ -758,24 +761,31 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
         
-        // Weighted blend: 60% ML model, 40% LLM
-        finalConfidence = Math.round(mlConfidence * 0.6 + aiConf * 0.4);
+        // Weighted blend: 50% ML model, 50% LLM (was 60/40 — gives LLM more say)
+        finalConfidence = Math.round(mlConfidence * 0.5 + aiConf * 0.5);
         
-        // Signal consensus: both must agree for strong signals
+        // Signal blending: EITHER source can promote the signal upward
         if (mlSignal === 'strong_buy' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
           finalSignalType = 'strong_buy';
         } else if (mlSignal === 'strong_buy' && aiAction === 'hold') {
-          finalSignalType = 'buy'; // Downgrade if LLM disagrees
+          finalSignalType = 'buy';
           finalConfidence = Math.min(finalConfidence, 70);
-        } else if (mlSignal === 'buy' && aiAction === 'strong_buy') {
-          finalSignalType = 'buy'; // Stay conservative
+        } else if (mlSignal === 'buy' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
+          // CRITICAL FIX: If both say buy-ish, promote to strong_buy if confidence is high enough
+          finalSignalType = aiAction === 'strong_buy' ? 'strong_buy' : 'buy';
           finalConfidence = Math.min(95, finalConfidence + 5);
+        } else if (mlSignal === 'buy' && aiAction === 'hold') {
+          finalSignalType = 'buy'; // ML says buy, keep it
+        } else if (mlSignal === 'hold' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
+          // CRITICAL FIX: LLM says buy but ML says hold — PROMOTE to buy (was stuck on hold)
+          finalSignalType = 'buy';
+          finalConfidence = Math.max(finalConfidence, aiConf);
         } else if (mlSignal === 'hold' && aiAction === 'hold') {
           finalSignalType = 'hold';
         } else if (mlSignal === 'sell' || aiAction === 'sell' || aiAction === 'strong_sell') {
           finalSignalType = (mlSignal === 'strong_sell' || aiAction === 'strong_sell') ? 'strong_sell' : 'sell';
         } else {
-          // Mixed — go with ML model but cap confidence
+          // Mixed — use the more bullish of the two
           finalConfidence = Math.min(finalConfidence, 65);
         }
       }
@@ -804,7 +814,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       
       // Confidence floor for signal types — uses user's auto_execute_threshold
       if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) finalSignalType = 'buy';
-      if (finalSignalType === 'buy' && finalConfidence < 55) finalSignalType = 'hold';
+      if (finalSignalType === 'buy' && finalConfidence < 45) finalSignalType = 'hold'; // Was 55 — too aggressive, blocked most buys
       
       // ── TP/SL from ATR or defaults ──
       let tp = aiRec?.take_profit_pct || 5;
