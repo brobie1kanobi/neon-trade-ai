@@ -170,15 +170,15 @@ function computeCompositeScore(indicators, sentiment, history) {
     weights += 15;
   }
 
-  // ── MACD (weight: 20) ──
+  // ── MACD (weight: 15, was 20 — reduced to prevent domination) ──
   if (indicators.macd_1h) {
     let macdScore = 0;
     if (indicators.macd_1h.bullishCross) macdScore = 80;
-    else if (indicators.macd_1h.bearishCross) macdScore = -80;
+    else if (indicators.macd_1h.bearishCross) macdScore = -60; // Reduced from -80
     else if (indicators.macd_1h.histogram > 0) macdScore = 30;
-    else macdScore = -30;
-    score += macdScore * 20;
-    weights += 20;
+    else macdScore = -10; // Only slightly negative for neg histogram (was -30)
+    score += macdScore * 15;
+    weights += 15;
   }
 
   // ── Bollinger Bands (weight: 15) ──
