@@ -416,9 +416,11 @@ Deno.serve(async (req) => {
       const change24h = signal.change_24h || quote?.change_24h_percent || quote?.price_change_percentage_24h || 0;
       
       if (signalType !== 'buy' && signalType !== 'strong_buy') {
-        console.log('[Prospects] Skipping', symbol, '- signal is', signalType);
+        console.log('[Prospects] Skipping', symbol, '- signal is', signalType, '(need buy or strong_buy)');
         continue;
       }
+      
+      console.log('[Prospects] ✅ ACTIONABLE signal found:', symbol, signalType, 'confidence:', confidence);
       
       // Require minimum confidence for display (user-configurable, default 50%)
       const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
