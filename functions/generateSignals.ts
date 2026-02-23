@@ -771,32 +771,35 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
         
-        // Weighted blend: 50% ML model, 50% LLM (was 60/40 — gives LLM more say)
-        finalConfidence = Math.round(mlConfidence * 0.5 + aiConf * 0.5);
+        // Weighted blend: 60% ML model, 40% LLM
+        finalConfidence = Math.round(mlConfidence * 0.6 + aiConf * 0.4);
         
-        // Signal blending: EITHER source can promote the signal upward
-        if (mlSignal === 'strong_buy' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
-          finalSignalType = 'strong_buy';
-        } else if (mlSignal === 'strong_buy' && aiAction === 'hold') {
-          finalSignalType = 'buy';
-          finalConfidence = Math.min(finalConfidence, 70);
-        } else if (mlSignal === 'buy' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
-          // CRITICAL FIX: If both say buy-ish, promote to strong_buy if confidence is high enough
-          finalSignalType = aiAction === 'strong_buy' ? 'strong_buy' : 'buy';
+        // CRITICAL: Use the MORE BULLISH of the two signals
+        // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
+        const signalRank = { 'strong_buy': 5, 'buy': 4, 'hold': 3, 'sell': 2, 'strong_sell': 1 };
+        const mlRank = signalRank[mlSignal] || 3;
+        const aiRank = signalRank[aiAction] || 3;
+        
+        // Take the HIGHER (more bullish) of the two signals
+        // Only let BOTH agreeing on sell/strong_sell produce a sell signal
+        if (mlRank >= 4 && aiRank >= 4) {
+          // Both say buy or strong_buy
+          finalSignalType = (mlRank === 5 || aiRank === 5) ? 'strong_buy' : 'buy';
           finalConfidence = Math.min(95, finalConfidence + 5);
-        } else if (mlSignal === 'buy' && aiAction === 'hold') {
-          finalSignalType = 'buy'; // ML says buy, keep it
-        } else if (mlSignal === 'hold' && (aiAction === 'strong_buy' || aiAction === 'buy')) {
-          // CRITICAL FIX: LLM says buy but ML says hold — PROMOTE to buy (was stuck on hold)
-          finalSignalType = 'buy';
-          finalConfidence = Math.max(finalConfidence, aiConf);
-        } else if (mlSignal === 'hold' && aiAction === 'hold') {
-          finalSignalType = 'hold';
-        } else if (mlSignal === 'sell' || aiAction === 'sell' || aiAction === 'strong_sell') {
-          finalSignalType = (mlSignal === 'strong_sell' || aiAction === 'strong_sell') ? 'strong_sell' : 'sell';
+        } else if (mlRank >= 4 || aiRank >= 4) {
+          // At least ONE says buy — respect it
+          finalSignalType = (mlRank >= 5 || aiRank >= 5) ? 'strong_buy' : 'buy';
+          // Cap confidence if the other disagrees
+          if (mlRank < 3 || aiRank < 3) {
+            finalConfidence = Math.min(finalConfidence, 65);
+          }
+        } else if (mlRank <= 2 && aiRank <= 2) {
+          // BOTH say sell — only then produce sell
+          finalSignalType = (mlRank === 1 || aiRank === 1) ? 'strong_sell' : 'sell';
         } else {
-          // Mixed — use the more bullish of the two
-          finalConfidence = Math.min(finalConfidence, 65);
+          // Mixed: one hold + one sell, or similar — default to hold
+          finalSignalType = mlRank >= aiRank ? mlSignal : aiAction;
+          finalConfidence = Math.min(finalConfidence, 60);
         }
       }
       
