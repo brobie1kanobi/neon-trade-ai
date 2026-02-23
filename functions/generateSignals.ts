@@ -327,15 +327,25 @@ Deno.serve(async (req) => {
     const { symbols = [], forceRefresh = false } = body;
     
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
-    let userAutoExecuteThreshold = 70; // default fallback
+    let userAutoExecuteThreshold = 65; // default fallback (matches typical user setting)
+    let userMinSignalConfidence = 50;
     try {
-      const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
-      if (userSettingsList.length > 0 && typeof userSettingsList[0].auto_execute_threshold === 'number') {
-        userAutoExecuteThreshold = userSettingsList[0].auto_execute_threshold;
+      // Fetch ALL settings for this user and pick the most recently updated one
+      const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email });
+      if (userSettingsList.length > 0) {
+        // Sort by updated_date descending to get the most current
+        userSettingsList.sort((a, b) => new Date(b.updated_date || 0) - new Date(a.updated_date || 0));
+        const latest = userSettingsList[0];
+        if (typeof latest.auto_execute_threshold === 'number') {
+          userAutoExecuteThreshold = latest.auto_execute_threshold;
+        }
+        if (typeof latest.min_signal_confidence === 'number') {
+          userMinSignalConfidence = latest.min_signal_confidence;
+        }
       }
-      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold);
+      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence);
     } catch (e) {
-      console.warn('[generateSignals] Could not load user settings, using default threshold 70');
+      console.warn('[generateSignals] Could not load user settings, using default threshold 65');
     }
     
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
@@ -812,9 +822,9 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         // 0-1 violations = stays strong_buy
       }
       
-      // Confidence floor for signal types — uses user's auto_execute_threshold
+      // Confidence floor for signal types — uses user's settings
       if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) finalSignalType = 'buy';
-      if (finalSignalType === 'buy' && finalConfidence < 45) finalSignalType = 'hold'; // Was 55 — too aggressive, blocked most buys
+      if (finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) finalSignalType = 'hold';
       
       // ── TP/SL from ATR or defaults ──
       let tp = aiRec?.take_profit_pct || 5;
