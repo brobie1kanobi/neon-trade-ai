@@ -406,13 +406,13 @@ For each asset:
         }
         
         // RULE 6: Final validation for strong signals
-        // strong_buy requires: 70%+ confidence (momentum check removed - AI already considers it)
-        if (adjustedAction === 'strong_buy' && adjustedConfidence < 70) {
+        // strong_buy requires: 60%+ confidence (momentum check removed - AI already considers it)
+        if (adjustedAction === 'strong_buy' && adjustedConfidence < 60) {
           adjustedAction = 'buy';
         }
         
         // Determine if this is auto-tradeable (strong signal with high confidence)
-        const isAutoTradeable = (adjustedAction === 'strong_buy' || adjustedAction === 'strong_sell') && adjustedConfidence >= 70;
+        const isAutoTradeable = (adjustedAction === 'strong_buy' || adjustedAction === 'strong_sell') && adjustedConfidence >= 60;
         const isShortTermSignal = r.timing_window === '1h' || r.timing_window === '2h' || r.timing_window === '4h' || r.timing_window === 'immediate';
         
         return {
