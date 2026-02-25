@@ -307,25 +307,25 @@ function scoreToSignal(compositeScore) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
-  
+
   try {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
-    
+
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
+
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
     const isCreator = !!user?.is_creator;
-    
+
     if (!isAdmin && !isCreator) {
       return Response.json({ error: 'Admin access required' }, { status: 403 });
     }
-    
+
     const body = await req.json().catch(() => ({}));
     const { symbols = [], forceRefresh = false } = body;
-    
+
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
     let userAutoExecuteThreshold = 65; // default fallback (matches typical user setting)
     let userMinSignalConfidence = 50;
@@ -347,19 +347,19 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.warn('[generateSignals] Could not load user settings, using default threshold 65');
     }
-    
+
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
-    
+
     // Get all active AutoBuyPreferences
     let assetsToAnalyze = [];
-    
+
     if (symbols.length > 0) {
       assetsToAnalyze = symbols.map(s => ({ symbol: s.toUpperCase(), asset_type: 'crypto' }));
     } else {
       const allPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
         enabled: true
       });
-      
+
       const seen = new Set();
       for (const pref of allPrefs) {
         const sym = (pref.symbol || '').toUpperCase();
@@ -369,39 +369,39 @@ Deno.serve(async (req) => {
         }
       }
     }
-    
+
     if (assetsToAnalyze.length === 0) {
       return Response.json({ success: true, signals_generated: 0, message: 'No assets to analyze' });
     }
-    
+
     console.log('[generateSignals] Analyzing', assetsToAnalyze.length, 'assets');
-    
+
     // Check for existing valid signals
     const now = new Date();
     const existingSignals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-    
+
     const validSignals = new Map();
     for (const sig of existingSignals) {
       if (!forceRefresh && sig.expires_at && new Date(sig.expires_at) > now) {
         validSignals.set(sig.asset_symbol, sig);
       }
     }
-    
+
     const assetsNeedingAnalysis = assetsToAnalyze.filter(a => !validSignals.has(a.symbol));
-    
+
     if (assetsNeedingAnalysis.length === 0) {
       return Response.json({ success: true, signals_generated: 0, signals_reused: validSignals.size, message: 'All signals still valid' });
     }
-    
+
     // ═══════════════════════════════════════════════
     //  STEP 1: Fetch Ticker + OHLC data from Kraken
     // ═══════════════════════════════════════════════
     const cryptoSymbols = assetsNeedingAnalysis.filter(a => a.asset_type === 'crypto').map(a => a.symbol);
-    
+
     let marketData = [];
     const ohlcData = {};       // symbol -> { candles_1h, candles_4h }
     const techIndicators = {}; // symbol -> { rsi, macd, bb, ... }
-    
+
     // Fetch current ticker
     try {
       const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
@@ -420,10 +420,10 @@ Deno.serve(async (req) => {
                 const low24h = parseFloat(ticker.l?.[1] || '0');
                 const volume24h = parseFloat(ticker.v?.[1] || '0');
                 const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
-                const rangePosition = (high24h - low24h) > 0 
-                  ? ((price - low24h) / (high24h - low24h)) * 100 
+                const rangePosition = (high24h - low24h) > 0
+                  ? ((price - low24h) / (high24h - low24h)) * 100
                   : 50;
-                
+
                 marketData.push({
                   symbol: sym, price, open24h, high24h, low24h, volume24h,
                   change_24h_percent: change24h, range_position: rangePosition
@@ -436,19 +436,19 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error('[generateSignals] Ticker fetch failed:', e.message);
     }
-    
+
     // Fetch OHLC 1h candles (for RSI, MACD, BB, trend)
     for (const sym of cryptoSymbols) {
       const pair = KRAKEN_PAIR_MAP[sym];
       if (!pair) continue;
-      
+
       try {
         const ohlcResp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=60`);
         if (ohlcResp.ok) {
           const ohlcJson = await ohlcResp.json();
           const resultKey = Object.keys(ohlcJson.result || {}).find(k => k !== 'last');
           const candles = ohlcJson?.result?.[resultKey] || [];
-          
+
           if (candles.length >= 30) {
             // Parse candle arrays: [time, open, high, low, close, vwap, volume, count]
             const allCandles = candles.slice(0, -1); // drop incomplete current candle
@@ -456,7 +456,7 @@ Deno.serve(async (req) => {
             const highs = allCandles.map(c => parseFloat(c[2]));
             const lows = allCandles.map(c => parseFloat(c[3]));
             const volumes = allCandles.map(c => parseFloat(c[6]));
-            
+
             // ── Compute all technical indicators ──
             const rsi = calcRSI(closes, 14);
             const macd = calcMACD(closes, 12, 26, 9);
@@ -469,7 +469,7 @@ Deno.serve(async (req) => {
             const sma20 = calcSMA(closes, 20);
             const ema9 = calcEMA(closes, 9);
             const currentPrice = closes[closes.length - 1];
-            
+
             // Short-term trend from last 6 and 12 candles
             const recent6 = allCandles.slice(-6);
             const recent12 = allCandles.slice(-12);
@@ -479,32 +479,32 @@ Deno.serve(async (req) => {
             const firstClose12 = parseFloat(recent12[0]?.[4] || '0');
             const lastClose12 = parseFloat(recent12[recent12.length - 1]?.[4] || '0');
             const trend12h = firstClose12 > 0 ? ((lastClose12 - firstClose12) / firstClose12) * 100 : 0;
-            
+
             // Candle ratio (bullish vs bearish)
             let bullish = 0, bearish = 0;
             for (const c of recent6) {
               if (parseFloat(c[4]) > parseFloat(c[1])) bullish++; else bearish++;
             }
-            
+
             // Volume trend
             const firstHalfVol = recent6.slice(0, 3).reduce((s, c) => s + parseFloat(c[6]), 0);
             const secondHalfVol = recent6.slice(3).reduce((s, c) => s + parseFloat(c[6]), 0);
             const volumeIncreasing = secondHalfVol > firstHalfVol * 1.1;
-            
+
             // Support/resistance from 12h
             const support12h = Math.min(...recent12.map(c => parseFloat(c[3])));
             const resistance12h = Math.max(...recent12.map(c => parseFloat(c[2])));
-            
+
             // ATR as percentage of price
             const atrPct = (atr && currentPrice > 0) ? (atr / currentPrice) * 100 : null;
-            
+
             // Price relative to VWAP
             const priceVsVwap = vwap ? ((currentPrice - vwap) / vwap) * 100 : null;
-            
+
             // EMA/SMA crossover signals
             const emaAboveSma = sma20 ? ema9 > sma20 : null;
             const priceAboveSma50 = sma50 ? currentPrice > sma50 : null;
-            
+
             techIndicators[sym] = {
               rsi_1h: rsi,
               macd_1h: macd,
@@ -536,9 +536,9 @@ Deno.serve(async (req) => {
         console.warn(`[generateSignals] OHLC fetch failed for ${sym}:`, e.message);
       }
     }
-    
+
     console.log('[generateSignals] Computed technical indicators for', Object.keys(techIndicators).length, 'symbols');
-    
+
     // ═══════════════════════════════════════════════
     //  STEP 2: Fetch historical trade performance
     // ═══════════════════════════════════════════════
@@ -556,7 +556,7 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.warn('[generateSignals] Trade history fetch failed:', e.message);
     }
-    
+
     // ═══════════════════════════════════════════════
     //  STEP 3: Sentiment Analysis via LLM + Internet
     // ═══════════════════════════════════════════════
@@ -607,7 +607,7 @@ Also provide an overall_market_sentiment score and a brief reasoning for each.`,
           }
         }
       });
-      
+
       if (sentimentResponse?.assets) {
         for (const a of sentimentResponse.assets) {
           const sym = (a.symbol || '').toUpperCase();
@@ -631,7 +631,7 @@ Also provide an overall_market_sentiment score and a brief reasoning for each.`,
     } catch (e) {
       console.warn('[generateSignals] Sentiment analysis failed:', e.message);
     }
-    
+
     // ═══════════════════════════════════════════════
     //  STEP 4: LLM contextual analysis (with all data)
     // ═══════════════════════════════════════════════
@@ -639,9 +639,9 @@ Also provide an overall_market_sentiment score and a brief reasoning for each.`,
       const ti = techIndicators[a.symbol] || {};
       const hist = tradeHistory[a.symbol] || {};
       const sent = sentimentData[a.symbol] || {};
-      
+
       let ctx = `- ${a.symbol}: Price=$${a.price}, 24h=${a.change_24h_percent.toFixed(2)}%, Range=${a.range_position.toFixed(0)}%`;
-      
+
       if (ti.rsi_1h != null) ctx += `\n    RSI(14)=${ti.rsi_1h.toFixed(1)}`;
       if (ti.macd_1h) ctx += `, MACD histogram=${ti.macd_1h.histogram.toFixed(6)} (${ti.macd_1h.bullishCross ? 'BULLISH CROSS' : ti.macd_1h.bearishCross ? 'BEARISH CROSS' : 'no cross'})`;
       if (ti.bb_1h) ctx += `, BB %B=${ti.bb_1h.percentB.toFixed(1)}% bandwidth=${ti.bb_1h.bandwidth.toFixed(2)}%`;
@@ -649,18 +649,18 @@ Also provide an overall_market_sentiment score and a brief reasoning for each.`,
       if (ti.price_vs_vwap != null) ctx += `, VWAP ${ti.price_vs_vwap > 0 ? 'above' : 'below'} ${Math.abs(ti.price_vs_vwap).toFixed(2)}%`;
       if (ti.ema_above_sma != null) ctx += `, EMA9 ${ti.ema_above_sma ? '>' : '<'} SMA20`;
       if (ti.price_above_sma50 != null) ctx += `, Price ${ti.price_above_sma50 ? '>' : '<'} SMA50`;
-      
+
       ctx += `\n    6h trend: ${ti.trend_6h?.toFixed(2) || '?'}%, 12h trend: ${ti.trend_12h?.toFixed(2) || '?'}%`;
       ctx += `, Bullish candles: ${ti.bullish_candles_6h || '?'}/6, Vol increasing: ${ti.volume_increasing ? 'YES' : 'NO'}`;
-      
+
       if (sent.score) ctx += `\n    SENTIMENT: ${sent.score}/100 (${sent.label}) — ${sent.key_news || 'No major news'}`;
-      if (hist.total_trades > 0) ctx += `\n    HISTORY: ${hist.total_trades} trades, Win=${(hist.win_rate||0).toFixed(0)}%, AvgWin=+${(hist.avg_successful_gain_pct||0).toFixed(1)}%`;
-      
+      if (hist.total_trades > 0) ctx += `\n    HISTORY: ${hist.total_trades} trades, Win=${(hist.win_rate || 0).toFixed(0)}%, AvgWin=+${(hist.avg_successful_gain_pct || 0).toFixed(1)}%`;
+
       return ctx;
     }).join('\n');
-    
+
     const overallSent = sentimentData._overall || {};
-    
+
     let aiRecommendations = [];
     try {
       console.log('[generateSignals] Calling LLM with full technical + sentiment context...');
@@ -735,19 +735,19 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
           }
         }
       });
-      
+
       aiRecommendations = llmResponse?.recommendations || [];
       console.log('[generateSignals] Got', aiRecommendations.length, 'LLM recommendations');
     } catch (e) {
       console.error('[generateSignals] LLM analysis failed:', e.message);
     }
-    
+
     // ═══════════════════════════════════════════════
     //  STEP 5: ML Composite Scoring + Hard Filters
     // ═══════════════════════════════════════════════
     const signalsCreated = [];
     const expiresAt = new Date(Date.now() + SIGNAL_TTL_HOURS * 60 * 60 * 1000).toISOString();
-    
+
     for (const asset of assetsNeedingAnalysis) {
       const sym = asset.symbol;
       const quote = marketData.find(q => q.symbol === sym);
@@ -756,30 +756,30 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       const sent = sentimentData[sym];
       const aiRec = aiRecommendations.find(r => (r.symbol || '').toUpperCase() === sym);
       const change24h = quote?.change_24h_percent || 0;
-      
+
       // ── Compute composite score from all indicators ──
       const compositeScore = computeCompositeScore(ti, sent?.score, hist);
       const { signalType: mlSignal, confidence: mlConfidence } = scoreToSignal(compositeScore);
-      
+
       console.log(`[generateSignals] ${sym}: Composite=${compositeScore}, ML→${mlSignal}@${mlConfidence}%`);
-      
+
       // ── Blend ML score with LLM recommendation ──
       let finalSignalType = mlSignal;
       let finalConfidence = mlConfidence;
-      
+
       if (aiRec) {
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
-        
+
         // Weighted blend: 75% ML model, 25% LLM
         finalConfidence = Math.round(mlConfidence * 0.75 + aiConf * 0.25);
-        
+
         // CRITICAL: Use the MORE BULLISH of the two signals
         // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
         const signalRank = { 'strong_buy': 5, 'buy': 4, 'hold': 3, 'sell': 2, 'strong_sell': 1 };
         const mlRank = signalRank[mlSignal] || 3;
         const aiRank = signalRank[aiAction] || 3;
-        
+
         // Take the HIGHER (more bullish) of the two signals
         // Only let BOTH agreeing on sell/strong_sell produce a sell signal
         if (mlRank >= 4 && aiRank >= 4) {
@@ -802,7 +802,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
           finalConfidence = Math.min(finalConfidence, 60);
         }
       }
-      
+
       // ── Hard filter: strong_buy data validation ──
       // Relaxed: allow up to 3 violations before downgrading (5 of 7 checks must pass)
       if (finalSignalType === 'strong_buy') {
@@ -812,7 +812,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         if (ti.bb_1h && ti.bb_1h.percentB > 85) violations.push('At upper BB');
         if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push('6h downtrend');
         if (hist && hist.total_trades >= 5 && hist.win_rate < 50) violations.push('Poor history');
-        
+
         if (violations.length >= 4) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
           finalSignalType = 'hold';
@@ -824,15 +824,22 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         }
         // 0-1 violations = stays strong_buy
       }
-      
+
       // Confidence floor for signal types — uses user's settings
-      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold - 5);
-      if (finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) finalSignalType = 'hold';
-      
+      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) {
+        finalSignalType = 'buy';
+        finalConfidence = Math.min(finalConfidence, userAutoExecuteThreshold - 1);
+      }
+
+      if (finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) {
+        finalSignalType = 'hold';
+        finalConfidence = Math.min(finalConfidence, userMinSignalConfidence - 1);
+      }
+
       // ── TP/SL from ATR or defaults ──
       let tp = aiRec?.take_profit_pct || 5;
       let sl = aiRec?.stop_loss_pct || 2.5;
-      
+
       // ATR-based SL if available
       if (ti.atr_pct) {
         const atrSl = ti.atr_pct * 1.5;
@@ -842,21 +849,21 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       if (sl < 2) sl = 2;
       if (tp < 4) tp = 4;
       if (sl > 4) sl = 4;
-      
+
       // ── Build reasoning ──
       const indicators_summary = [];
       if (ti.rsi_1h != null) indicators_summary.push(`RSI=${ti.rsi_1h.toFixed(1)}`);
       if (ti.macd_1h) indicators_summary.push(`MACD hist=${ti.macd_1h.histogram > 0 ? '+' : ''}${ti.macd_1h.histogram.toFixed(6)}${ti.macd_1h.bullishCross ? ' BULL CROSS' : ti.macd_1h.bearishCross ? ' BEAR CROSS' : ''}`);
       if (ti.bb_1h) indicators_summary.push(`BB %B=${ti.bb_1h.percentB.toFixed(0)}%`);
       if (sent) indicators_summary.push(`Sentiment=${sent.score}/100`);
-      
-      const reasoning = aiRec?.reasoning 
+
+      const reasoning = aiRec?.reasoning
         ? `${aiRec.reasoning} | Indicators: ${indicators_summary.join(', ')} | Composite score: ${compositeScore}`
         : `ML composite score: ${compositeScore}. ${indicators_summary.join(', ')}. ${sent?.key_news || 'No major news.'}`;
-      
+
       // ── Save signal ──
       const existingSignal = existingSignals.find(s => s.asset_symbol === sym);
-      
+
       const signalData = {
         asset_symbol: sym,
         asset_type: asset.asset_type,
@@ -913,7 +920,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
           auto_tradeable: finalSignalType === 'strong_buy'
         })
       };
-      
+
       try {
         if (existingSignal) {
           await base44.asServiceRole.entities.AssetSignal.update(existingSignal.id, signalData);
@@ -927,10 +934,10 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         console.error(`[generateSignals] Failed to save signal for ${sym}:`, e.message);
       }
     }
-    
+
     // Expire old signals
     try {
-      const expiredSignals = existingSignals.filter(s => 
+      const expiredSignals = existingSignals.filter(s =>
         s.expires_at && new Date(s.expires_at) <= now && s.is_active
       );
       for (const sig of expiredSignals) {
@@ -942,10 +949,10 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
     } catch (e) {
       console.warn('[generateSignals] Could not expire old signals:', e.message);
     }
-    
+
     const duration = Date.now() - startTime;
     console.log('[generateSignals] v5 Complete:', signalsCreated.length, 'signals in', duration, 'ms');
-    
+
     return Response.json({
       success: true,
       signals_generated: signalsCreated.length,
@@ -966,7 +973,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       market_sentiment: sentimentData._overall || null,
       duration_ms: duration
     });
-    
+
   } catch (error) {
     console.error('[generateSignals] Error:', error);
     return Response.json({ error: error.message }, { status: 500 });
