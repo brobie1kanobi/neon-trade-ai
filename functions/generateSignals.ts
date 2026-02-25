@@ -164,8 +164,8 @@ function computeCompositeScore(indicators, sentiment, history) {
     else if (rsi < 35) rsiScore = 50;                        // Oversold = bullish
     else if (rsi < 45) rsiScore = 25;                        // Mildly oversold = slightly bullish
     else if (rsi < 60) rsiScore = 5;                         // Neutral-ish (was 0, slightly positive)
-    else if (rsi < 70) rsiScore = -20;
-    else rsiScore = -50 - (rsi - 70) * 1.5;                 // Overbought = bearish
+    else if (rsi < 75) rsiScore = -20;
+    else rsiScore = -40;                 // Overbought = bearish
     score += rsiScore * 15;
     weights += 15;
   }
@@ -228,11 +228,11 @@ function computeCompositeScore(indicators, sentiment, history) {
     weights += 10;
   }
 
-  // ── Sentiment (weight: 10) ──
+  // ── Sentiment (weight: 5) ──
   if (sentiment != null) {
     const sentScore = (sentiment - 50) * 1.2; // -60 to +60
     score += sentScore * 10;
-    weights += 10;
+    weights += 5;
   }
 
   // ── Historical performance penalty/boost (weight: 10) ──
@@ -251,7 +251,7 @@ function computeCompositeScore(indicators, sentiment, history) {
     // High volatility = wider range = more opportunity but more risk
     // We slightly penalize very high volatility
     let atrScore = 0;
-    if (indicators.atr_pct > 5) atrScore = -20;
+    if (indicators.atr_pct > 5) atrScore = -5;
     else if (indicators.atr_pct > 3) atrScore = 0;
     else if (indicators.atr_pct > 1) atrScore = 10;
     score += atrScore * 5;
@@ -282,14 +282,14 @@ function computeCompositeScore(indicators, sentiment, history) {
 function scoreToSignal(compositeScore) {
   let signalType, confidence;
 
-  // Relaxed thresholds: buy at 10+ (was 25), strong_buy at 35+ (was 50)
+  // Relaxed thresholds: buy at 5+ (was 25), strong_buy at 25+ (was 50)
   // This allows signals to reach the Prospector in normal market conditions
-  if (compositeScore >= 35) {
+  if (compositeScore >= 25) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 70 + (compositeScore - 35));
-  } else if (compositeScore >= 10) {
+    confidence = Math.min(95, 70 + (compositeScore - 25));
+  } else if (compositeScore >= 5) {
     signalType = 'buy';
-    confidence = 55 + Math.min(20, compositeScore - 10);
+    confidence = 55 + Math.min(20, compositeScore - 5);
   } else if (compositeScore >= -20) {
     signalType = 'hold';
     confidence = 50;
@@ -771,8 +771,8 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
         
-        // Weighted blend: 60% ML model, 40% LLM
-        finalConfidence = Math.round(mlConfidence * 0.6 + aiConf * 0.4);
+        // Weighted blend: 75% ML model, 25% LLM
+        finalConfidence = Math.round(mlConfidence * 0.75 + aiConf * 0.25);
         
         // CRITICAL: Use the MORE BULLISH of the two signals
         // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
@@ -807,7 +807,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       // Relaxed: allow up to 3 violations before downgrading (5 of 7 checks must pass)
       if (finalSignalType === 'strong_buy') {
         const violations = [];
-        if (change24h < 0) violations.push('24h negative');
+
         if (ti.rsi_1h != null && ti.rsi_1h > 70) violations.push(`RSI overbought ${ti.rsi_1h.toFixed(0)}`);
         if (ti.bb_1h && ti.bb_1h.percentB > 85) violations.push('At upper BB');
         if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push('6h downtrend');
@@ -826,7 +826,7 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
       }
       
       // Confidence floor for signal types — uses user's settings
-      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) finalSignalType = 'buy';
+      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold - 5);
       if (finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) finalSignalType = 'hold';
       
       // ── TP/SL from ATR or defaults ──
