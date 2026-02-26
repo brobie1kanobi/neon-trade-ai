@@ -771,8 +771,8 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
 
-        // Weighted blend: 75% ML model, 25% LLM
-        finalConfidence = Math.round(mlConfidence * 0.75 + aiConf * 0.25);
+        // Weighted blend: 50% ML model, 50% LLM <--- This is where you change the LLM:ML ratio <---
+        finalConfidence = Math.round(mlConfidence * 0.5 + aiConf * 0.5);
 
         // CRITICAL: Use the MORE BULLISH of the two signals
         // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
