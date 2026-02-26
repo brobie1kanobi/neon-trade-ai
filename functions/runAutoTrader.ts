@@ -193,7 +193,7 @@ function calculateDynamicLevels(symbol, historyData, defaultGainMargin, defaultL
   let confidenceBoost = 0;
   if (winRate > 75) confidenceBoost = 10;
   else if (winRate > 65) confidenceBoost = 5;
-  else if (winRate < 40 && assetHistory.total_trades > 5) confidenceBoost = -10;
+  else if (winRate < 40 && assetHistory.total_trades > 5) confidenceBoost = -5;
   
   return {
     gainMargin: round2(dynamicGainMargin),
