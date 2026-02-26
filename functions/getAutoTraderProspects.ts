@@ -504,7 +504,7 @@ Deno.serve(async (req) => {
         quantity: cappedQuantity,
         total_value: total,
         confidence_score: confidence,
-        ai_reasoning: signal.reasoning || 'AI analyzing...',
+        ai_reasoning: signal.reasoning || 'Neon Trade AI is analyzing market trends and social media noise...',
         predicted_gain: signal.predicted_gain_pct || effectiveGainMargin,
         is_blocked: !!blockReason,
         block_reason: blockReason,
