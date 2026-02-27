@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
     const { symbols = [], forceRefresh = false } = body;
 
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
-    let userAutoExecuteThreshold = 65; // default fallback (matches typical user setting)
+    let userAutoExecuteThreshold = 60; // default fallback (matches typical user setting)
     let userMinSignalConfidence = 50;
     try {
       // Fetch ALL settings for this user and pick the most recently updated one
@@ -674,14 +674,14 @@ ${overallSent.narrative || ''}
 === STRICT SIGNAL RULES ===
 
 STRONG_BUY (auto-execute) — At LEAST 5 must be true:
-1. RSI between 30-60 (not overbought)
+1. RSI between 30-69 (not overbought)
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
 4. 6h AND 12h trends positive
 5. Volume increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
-→ Confidence 70%+
+→ Confidence 60%+
 
 BUY — At least 4 of above criteria met, confidence 55-79%
 HOLD — Conflicting signals, RSI 40-60, no clear direction
@@ -698,12 +698,12 @@ ${assetsSection}
 
 For each asset, provide:
 symbol, optimal_action, confidence_score (0-100), entry_zone_low, entry_zone_high,
-stop_loss_pct (2-3%), take_profit_pct (4-8%), momentum_strength (strong/moderate/weak),
+stop_loss_pct (2-3%), take_profit_pct (2-8%), momentum_strength (strong/moderate/weak),
 timing_window (1h/2h/4h/6h), predicted_gain_percent, sentiment_score (0-100),
 reasoning (cite specific indicator values), technical_pattern, trend_alignment,
 volume_confirmation (bool), correlation_group
 
-BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
+BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "strong_buy".`,
         add_context_from_internet: true,
         response_json_schema: {
           type: "object",
@@ -771,8 +771,8 @@ BE EXTREMELY SELECTIVE. "hold" is always better than a false "strong_buy".`,
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
 
-        // Weighted blend: 50% ML model, 50% LLM <--- This is where you change the LLM:ML ratio <---
-        finalConfidence = Math.round(mlConfidence * 0.5 + aiConf * 0.5);
+        // Weighted blend: 80% ML model, 20% LLM <--- This is where you change the LLM:ML ratio <---
+        finalConfidence = Math.round(mlConfidence * 0.8 + aiConf * 0.2);
 
         // CRITICAL: Use the MORE BULLISH of the two signals
         // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
