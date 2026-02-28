@@ -771,8 +771,8 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
 
-        // Weighted blend: 95% ML model, 5% LLM <--- This is where you change the LLM:ML ratio <---
-        finalConfidence = Math.round(mlConfidence * 0.95 + aiConf * 0.05);
+        // Weighted blend: 20% ML model, 80% LLM <--- This is where you change the LLM:ML ratio <---
+        finalConfidence = Math.round(mlConfidence * 0.2 + aiConf * 0.8);
 
         // CRITICAL: Use the MORE BULLISH of the two signals
         // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
