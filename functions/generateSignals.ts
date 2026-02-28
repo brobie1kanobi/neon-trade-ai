@@ -678,7 +678,7 @@ STRONG_BUY (auto-execute) — At LEAST 5 must be true:
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
 4. 6h AND 12h trends positive
-5. Volume increasing
+5. Volume increasing or expected to be increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
 → Confidence 60%+
@@ -689,8 +689,8 @@ SELL — RSI > 65 + bearish MACD + negative trends
 STRONG_SELL — RSI > 70 + bearish cross + high volume selling
 
 === RISK PARAMETERS ===
-- SL: 2-3% (use ATR: 1.5x ATR as SL)
-- TP: 4-8% (min 2:1 reward-to-risk)
+- SL: 1-3% (use ATR: 1.5x ATR as SL)
+- TP: 2-8% (min 2:1 reward-to-risk)
 - Entry zone: within 1% of current price
 
 === ASSETS ===
@@ -698,7 +698,7 @@ ${assetsSection}
 
 For each asset, provide:
 symbol, optimal_action, confidence_score (0-100), entry_zone_low, entry_zone_high,
-stop_loss_pct (2-3%), take_profit_pct (2-8%), momentum_strength (strong/moderate/weak),
+stop_loss_pct (1-3%), take_profit_pct (2-8%), momentum_strength (strong/moderate/weak),
 timing_window (1h/2h/4h/6h), predicted_gain_percent, sentiment_score (0-100),
 reasoning (cite specific indicator values), technical_pattern, trend_alignment,
 volume_confirmation (bool), correlation_group
