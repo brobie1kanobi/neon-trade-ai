@@ -282,11 +282,11 @@ function computeCompositeScore(indicators, sentiment, history) {
 function scoreToSignal(compositeScore) {
   let signalType, confidence;
 
-  // Relaxed thresholds: buy at 5+ (was 25), strong_buy at 25+ (was 50)
+  // Relaxed thresholds: buy at 5+ (was 25), strong_buy at 12+ (was 50)
   // This allows signals to reach the Prospector in normal market conditions
-  if (compositeScore >= 25) {
+  if (compositeScore >= 12) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 70 + (compositeScore - 25));
+    confidence = Math.min(95, 70 + (compositeScore - 12));
   } else if (compositeScore >= 5) {
     signalType = 'buy';
     confidence = 55 + Math.min(20, compositeScore - 5);
@@ -683,7 +683,7 @@ STRONG_BUY (auto-execute) — At LEAST 5 must be true:
 7. Historical win rate > 50% (if history exists)
 → Confidence 60%+
 
-BUY — At least 4 of above criteria met, confidence 55-79%
+BUY — At least 4 of above criteria met, confidence 55-59%
 HOLD — Conflicting signals, RSI 40-60, no clear direction
 SELL — RSI > 65 + bearish MACD + negative trends
 STRONG_SELL — RSI > 70 + bearish cross + high volume selling
