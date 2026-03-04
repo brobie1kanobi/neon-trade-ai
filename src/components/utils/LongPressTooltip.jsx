@@ -6,7 +6,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export const LongPressTooltip = ({ children, content, ...props }) => {
+export const LongPressTooltip = ({ children, content, id, ...props }) => {
   const [isOpen, setIsOpen] = useState(false);
   const timerRef = useRef(null);
   const isTouchDeviceRef = useRef(false);
