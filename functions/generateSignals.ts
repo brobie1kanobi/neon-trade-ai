@@ -164,8 +164,8 @@ function computeCompositeScore(indicators, sentiment, history) {
     else if (rsi < 35) rsiScore = 50;                        // Oversold = bullish
     else if (rsi < 45) rsiScore = 25;                        // Mildly oversold = slightly bullish
     else if (rsi < 60) rsiScore = 5;                         // Neutral-ish (was 0, slightly positive)
-    else if (rsi < 75) rsiScore = -20;
-    else rsiScore = -40;                 // Overbought = bearish
+    else if (rsi < 75) rsiScore = -10;
+    else rsiScore = -20;                 // Overbought = bearish
     score += rsiScore * 15;
     weights += 15;
   }
@@ -174,9 +174,9 @@ function computeCompositeScore(indicators, sentiment, history) {
   if (indicators.macd_1h) {
     let macdScore = 0;
     if (indicators.macd_1h.bullishCross) macdScore = 80;
-    else if (indicators.macd_1h.bearishCross) macdScore = -60; // Reduced from -80
+    else if (indicators.macd_1h.bearishCross) macdScore = -40; // Reduced penalty
     else if (indicators.macd_1h.histogram > 0) macdScore = 30;
-    else macdScore = -10; // Only slightly negative for neg histogram (was -30)
+    else macdScore = -5; // Minimal penalty for negative histogram
     score += macdScore * 15;
     weights += 15;
   }
@@ -206,9 +206,9 @@ function computeCompositeScore(indicators, sentiment, history) {
     if (t6 > 0 && t12 > 0 && t24 > 0) trendScore = 70;         // All bullish
     else if (t6 > 0 && t12 > 0) trendScore = 50;
     else if (t6 > 0 || t12 > 0) trendScore = 15;                // Mixed
-    else if (t6 < -3 && t12 < -3 && t24 < -3) trendScore = -60; // All strongly bearish (reduced from -70)
-    else if (t6 < 0 && t12 < 0) trendScore = -25;               // Mild bearish (was -50)
-    else trendScore = -10;                                        // Slightly negative (was -15)
+    else if (t6 < -3 && t12 < -3 && t24 < -3) trendScore = -40; // All strongly bearish
+    else if (t6 < 0 && t12 < 0) trendScore = -10;               // Mild bearish
+    else trendScore = 0;                                        // Neutral
     score += trendScore * 15;
     weights += 15;
   }
@@ -282,14 +282,14 @@ function computeCompositeScore(indicators, sentiment, history) {
 function scoreToSignal(compositeScore) {
   let signalType, confidence;
 
-  // Relaxed thresholds: buy at 5+ (was 25), strong_buy at 12+ (was 50)
-  // This allows signals to reach the Prospector in normal market conditions
-  if (compositeScore >= 12) {
+  // Highly relaxed thresholds: buy at 2+, strong_buy at 8+
+  // This allows signals to reach the Prospector even in mixed market conditions
+  if (compositeScore >= 8) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 70 + (compositeScore - 12));
-  } else if (compositeScore >= 5) {
+    confidence = Math.min(95, 70 + (compositeScore - 8));
+  } else if (compositeScore >= 2) {
     signalType = 'buy';
-    confidence = 55 + Math.min(20, compositeScore - 5);
+    confidence = 55 + Math.min(20, compositeScore - 2);
   } else if (compositeScore >= -20) {
     signalType = 'hold';
     confidence = 50;
@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
     const { symbols = [], forceRefresh = false } = body;
 
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
-    let userAutoExecuteThreshold = 60; // default fallback (matches typical user setting)
+    let userAutoExecuteThreshold = 55; // default fallback (matches typical user setting)
     let userMinSignalConfidence = 50;
     try {
       // Fetch ALL settings for this user and pick the most recently updated one
@@ -673,7 +673,7 @@ ${overallSent.narrative || ''}
 
 === STRICT SIGNAL RULES ===
 
-STRONG_BUY (auto-execute) — At LEAST 5 must be true:
+STRONG_BUY (auto-execute) — At LEAST 2 must be true (or strong momentum):
 1. RSI between 30-69 (not overbought)
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
@@ -681,9 +681,9 @@ STRONG_BUY (auto-execute) — At LEAST 5 must be true:
 5. Volume increasing or expected to be increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
-→ Confidence 60%+
+→ Confidence 50%+
 
-BUY — At least 4 of above criteria met, confidence 55-59%
+BUY — At least 1 of above criteria met, confidence 45-59%
 HOLD — Conflicting signals, RSI 40-60, no clear direction
 SELL — RSI > 65 + bearish MACD + negative trends
 STRONG_SELL — RSI > 70 + bearish cross + high volume selling
@@ -804,20 +804,20 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
       }
 
       // ── Hard filter: strong_buy data validation ──
-      // Relaxed: allow up to 3 violations before downgrading (5 of 7 checks must pass)
+      // Highly relaxed: only downgrade for critical, undeniable bearish conditions
       if (finalSignalType === 'strong_buy') {
         const violations = [];
 
-        if (ti.rsi_1h != null && ti.rsi_1h > 70) violations.push(`RSI overbought ${ti.rsi_1h.toFixed(0)}`);
-        if (ti.bb_1h && ti.bb_1h.percentB > 85) violations.push('At upper BB');
-        if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push('6h downtrend');
-        if (hist && hist.total_trades >= 5 && hist.win_rate < 50) violations.push('Poor history');
+        if (ti.rsi_1h != null && ti.rsi_1h > 80) violations.push(`RSI extremely overbought ${ti.rsi_1h.toFixed(0)}`);
+        if (ti.bb_1h && ti.bb_1h.percentB > 95) violations.push('At extreme upper BB');
+        if (ti.trend_6h != null && ti.trend_6h < -2.0) violations.push('Severe 6h downtrend');
+        if (hist && hist.total_trades >= 5 && hist.win_rate < 30) violations.push('Terrible history');
 
-        if (violations.length >= 4) {
+        if (violations.length >= 3) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
           finalSignalType = 'hold';
           finalConfidence = Math.min(finalConfidence, 55);
-        } else if (violations.length >= 3) {
+        } else if (violations.length >= 2) {
           console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
           finalSignalType = 'buy';
           finalConfidence = Math.min(finalConfidence, 70);
