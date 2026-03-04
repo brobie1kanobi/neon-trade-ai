@@ -327,8 +327,8 @@ Deno.serve(async (req) => {
     const { symbols = [], forceRefresh = false } = body;
 
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
-    let userAutoExecuteThreshold = 55; // default fallback (matches typical user setting)
-    let userMinSignalConfidence = 50;
+    let userAutoExecuteThreshold = null;
+    let userMinSignalConfidence = null;
     try {
       // Fetch ALL settings for this user and pick the most recently updated one
       const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email });
@@ -345,7 +345,7 @@ Deno.serve(async (req) => {
       }
       console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence);
     } catch (e) {
-      console.warn('[generateSignals] Could not load user settings, using default threshold 65');
+      console.warn('[generateSignals] Could not load user settings:', e.message);
     }
 
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
