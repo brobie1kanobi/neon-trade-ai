@@ -826,12 +826,12 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
       }
 
       // Confidence floor for signal types — uses user's settings
-      if (finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) {
+      if (userAutoExecuteThreshold !== null && finalSignalType === 'strong_buy' && finalConfidence < userAutoExecuteThreshold) {
         finalSignalType = 'buy';
         finalConfidence = Math.min(finalConfidence, userAutoExecuteThreshold - 1);
       }
 
-      if (finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) {
+      if (userMinSignalConfidence !== null && finalSignalType === 'buy' && finalConfidence < userMinSignalConfidence) {
         finalSignalType = 'hold';
         finalConfidence = Math.min(finalConfidence, userMinSignalConfidence - 1);
       }
