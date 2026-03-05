@@ -337,6 +337,7 @@ Deno.serve(async (req) => {
     // Load user's auto_execute_threshold to use as the strong_buy confidence floor
     let userAutoExecuteThreshold = null;
     let userMinSignalConfidence = null;
+    let userStrategies = {};
     try {
       // Fetch ALL settings for this user and pick the most recently updated one
       const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email });
@@ -350,6 +351,15 @@ Deno.serve(async (req) => {
         if (typeof latest.min_signal_confidence === 'number') {
           userMinSignalConfidence = latest.min_signal_confidence;
         }
+        userStrategies = {
+          strategy_rsi: latest.strategy_rsi,
+          strategy_macd: latest.strategy_macd,
+          strategy_bollinger: latest.strategy_bollinger,
+          strategy_trend: latest.strategy_trend,
+          strategy_volume: latest.strategy_volume,
+          strategy_sentiment: latest.strategy_sentiment,
+          strategy_history: latest.strategy_history
+        };
       }
       console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence);
     } catch (e) {
@@ -766,7 +776,7 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
       const change24h = quote?.change_24h_percent || 0;
 
       // ── Compute composite score from all indicators ──
-      const compositeScore = computeCompositeScore(ti, sent?.score, hist);
+      const compositeScore = computeCompositeScore(ti, sent?.score, hist, userStrategies);
       const { signalType: mlSignal, confidence: mlConfidence } = scoreToSignal(compositeScore);
 
       console.log(`[generateSignals] ${sym}: Composite=${compositeScore}, ML→${mlSignal}@${mlConfidence}%`);
@@ -925,7 +935,16 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
           historical_avg_gain: hist?.avg_successful_gain_pct || null,
           historical_trades: hist?.total_trades || 0,
           correlation_group: aiRec?.correlation_group || null,
-          auto_tradeable: finalSignalType === 'strong_buy'
+          auto_tradeable: finalSignalType === 'strong_buy',
+          debug: {
+            composite_score: compositeScore,
+            final_signal: finalSignalType,
+            auto_tradeable: finalSignalType === 'strong_buy',
+            ml_signal: mlSignal,
+            ml_confidence: mlConfidence,
+            llm_signal: aiRec?.optimal_action || null,
+            llm_confidence: aiRec?.confidence_score || null
+          }
         })
       };
 

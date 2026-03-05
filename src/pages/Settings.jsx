@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 
 import ThemeSettings from "../components/settings/ThemeSettings";
 import TradingSettings from "../components/settings/TradingSettings";
+import TradingStrategiesSettings from "../components/settings/TradingStrategiesSettings";
 import AccountSettings from "../components/settings/AccountSettings";
 import NotificationSettings from "../components/settings/NotificationSettings";
 import CurrencySettings from "../components/settings/CurrencySettings";
@@ -54,6 +55,14 @@ export default function Settings() {
           simTradingMode={settings?.sim_trading_mode ?? true}
           onToggleSimTrading={(value) => updateSetting('sim_trading_mode', value)}
           user={user}
+        />
+      </motion.div>
+
+      {/* 2a) Trading Strategies */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
+        <TradingStrategiesSettings
+          settings={settings}
+          onToggle={(key, value) => updateSetting(key, value)}
         />
       </motion.div>
 
