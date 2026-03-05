@@ -152,12 +152,20 @@ function calcVWAP(highs, lows, closes, volumes) {
  * using weighted combination of all technical indicators,
  * sentiment, and historical performance.
  */
-function computeCompositeScore(indicators, sentiment, history) {
+function computeCompositeScore(indicators, sentiment, history, strategies = {}) {
   let score = 0;
   let weights = 0;
 
+  const useRsi = strategies.strategy_rsi !== false;
+  const useMacd = strategies.strategy_macd !== false;
+  const useBollinger = strategies.strategy_bollinger !== false;
+  const useTrend = strategies.strategy_trend !== false;
+  const useVolume = strategies.strategy_volume !== false;
+  const useSentiment = strategies.strategy_sentiment !== false;
+  const useHistory = strategies.strategy_history !== false;
+
   // ── RSI (weight: 15) ──
-  if (indicators.rsi_1h != null) {
+  if (useRsi && indicators.rsi_1h != null) {
     const rsi = indicators.rsi_1h;
     let rsiScore = 0;
     if (rsi < 25) rsiScore = 70 + (25 - rsi) * 2;          // Deep oversold = strong buy signal
@@ -171,7 +179,7 @@ function computeCompositeScore(indicators, sentiment, history) {
   }
 
   // ── MACD (weight: 15, was 20 — reduced to prevent domination) ──
-  if (indicators.macd_1h) {
+  if (useMacd && indicators.macd_1h) {
     let macdScore = 0;
     if (indicators.macd_1h.bullishCross) macdScore = 80;
     else if (indicators.macd_1h.bearishCross) macdScore = -40; // Reduced penalty
@@ -182,7 +190,7 @@ function computeCompositeScore(indicators, sentiment, history) {
   }
 
   // ── Bollinger Bands (weight: 15) ──
-  if (indicators.bb_1h) {
+  if (useBollinger && indicators.bb_1h) {
     let bbScore = 0;
     const pctB = indicators.bb_1h.percentB;
     if (pctB < 10) bbScore = 70;          // At lower band = bounce likely
@@ -198,7 +206,7 @@ function computeCompositeScore(indicators, sentiment, history) {
   }
 
   // ── Trend alignment (weight: 15, was 20 — reduced to avoid dominating score) ──
-  if (indicators.trend_6h != null && indicators.trend_12h != null) {
+  if (useTrend && indicators.trend_6h != null && indicators.trend_12h != null) {
     let trendScore = 0;
     const t6 = indicators.trend_6h;
     const t12 = indicators.trend_12h;
@@ -214,7 +222,7 @@ function computeCompositeScore(indicators, sentiment, history) {
   }
 
   // ── Volume confirmation (weight: 10) ──
-  if (indicators.volume_increasing != null) {
+  if (useVolume && indicators.volume_increasing != null) {
     const volScore = indicators.volume_increasing ? 40 : -20;
     score += volScore * 10;
     weights += 10;
@@ -229,14 +237,14 @@ function computeCompositeScore(indicators, sentiment, history) {
   }
 
   // ── Sentiment (weight: 5) ──
-  if (sentiment != null) {
+  if (useSentiment && sentiment != null) {
     const sentScore = (sentiment - 50) * 1.2; // -60 to +60
     score += sentScore * 10;
     weights += 5;
   }
 
   // ── Historical performance penalty/boost (weight: 10) ──
-  if (history && history.total_trades >= 3) {
+  if (useHistory && history && history.total_trades >= 3) {
     let histScore = 0;
     if (history.win_rate > 70) histScore = 40;
     else if (history.win_rate > 55) histScore = 20;
@@ -674,10 +682,10 @@ ${overallSent.narrative || ''}
 === STRICT SIGNAL RULES ===
 
 STRONG_BUY (auto-execute) — At LEAST 2 must be true (or strong momentum):
-1. RSI between 30-69 (not overbought)
+1. RSI between 30-85 (not overbought)
 2. MACD histogram positive OR bullish crossover
 3. Price near or below Bollinger middle band (%B < 60)
-4. 6h AND 12h trends positive
+4. 6h AND 12h trends positive (even if the current pace is falling)
 5. Volume increasing or expected to be increasing
 6. Sentiment score > 50
 7. Historical win rate > 50% (if history exists)
