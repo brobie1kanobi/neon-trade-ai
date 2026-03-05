@@ -33,7 +33,8 @@ export default function RiskManagementSettings() {
       max_single_trade_percent: settings.max_single_trade_percent ?? DEFAULTS.max_single_trade_percent,
       daily_loss_cap_percent: settings.daily_loss_cap_percent ?? DEFAULTS.daily_loss_cap_percent,
       max_drawdown_percent: settings.max_drawdown_percent ?? DEFAULTS.max_drawdown_percent,
-      loss_cap_halt_hours: settings.loss_cap_halt_hours ?? DEFAULTS.loss_cap_halt_hours
+      loss_cap_halt_hours: settings.loss_cap_halt_hours ?? DEFAULTS.loss_cap_halt_hours,
+      bad_days_active: settings.bad_days_active ?? DEFAULTS.bad_days_active
     });
   }, [settings]);
 
