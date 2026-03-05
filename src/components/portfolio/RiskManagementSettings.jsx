@@ -9,6 +9,7 @@ import { useSettings } from "@/components/utils/SettingsContext";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import LossCapHaltStatus from "../portfolio/LossCapHaltStatus";
 
 const DEFAULTS = {
@@ -16,7 +17,8 @@ const DEFAULTS = {
   max_single_trade_percent: 20,
   daily_loss_cap_percent: 5,
   max_drawdown_percent: 15,
-  loss_cap_halt_hours: 12
+  loss_cap_halt_hours: 12,
+  bad_days_active: false
 };
 
 export default function RiskManagementSettings() {
