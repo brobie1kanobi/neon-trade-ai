@@ -120,6 +120,23 @@ export default function RiskManagementSettings() {
         {/* Loss Cap Halt Status Banner */}
         <LossCapHaltStatus />
 
+        {/* Bad Days Mode Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: "var(--border-color)", backgroundColor: "var(--secondary-bg)" }}>
+          <div className="space-y-0.5">
+            <Label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              Bad Days Mode
+            </Label>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              Manually toggle the trading halt. When active, auto-trading is paused.
+            </p>
+          </div>
+          <Switch
+            checked={values.bad_days_active}
+            onCheckedChange={(checked) => setValues(prev => ({ ...prev, bad_days_active: checked }))}
+          />
+        </div>
+
         {fields.map(({ key, label, desc, suffix }) => (
           <div key={key} className="space-y-1">
             <Label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
