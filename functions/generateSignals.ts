@@ -935,15 +935,18 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
           historical_avg_gain: hist?.avg_successful_gain_pct || null,
           historical_trades: hist?.total_trades || 0,
           correlation_group: aiRec?.correlation_group || null,
-          auto_tradeable: finalSignalType === 'strong_buy',
-          debug: {
+          auto_tradeable: finalSignalType === 'strong_buy' || finalSignalType === 'buy',
+          trade_debug: {
             composite_score: compositeScore,
-            final_signal: finalSignalType,
-            auto_tradeable: finalSignalType === 'strong_buy',
             ml_signal: mlSignal,
             ml_confidence: mlConfidence,
             llm_signal: aiRec?.optimal_action || null,
-            llm_confidence: aiRec?.confidence_score || null
+            llm_confidence: aiRec?.confidence_score || null,
+            final_signal: finalSignalType,
+            price_at_signal: quote?.price || null,
+            entry_zone_low: aiRec?.entry_zone_low || null,
+            entry_zone_high: aiRec?.entry_zone_high || null,
+            auto_tradeable: finalSignalType === 'strong_buy' || finalSignalType === 'buy'
           }
         })
       };
