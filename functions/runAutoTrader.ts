@@ -327,6 +327,10 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Load user settings to determine mode
     const settingsList = await base44.entities.UserSettings.filter({ created_by: user.email });
+    if (settingsList.length > 0) {
+      // Sort by updated_date descending to ensure we get the most recently saved settings
+      settingsList.sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0));
+    }
     const settings = settingsList[0] || {};
     
     if (!settings.auto_trading_enabled) {
