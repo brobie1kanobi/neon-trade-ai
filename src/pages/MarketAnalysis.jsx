@@ -446,13 +446,7 @@ export default function MarketAnalysis() {
   );
 
   if (loading && !analysisData) {
-    return (
-      <div className="p-4 space-y-4">
-        <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
   return (
