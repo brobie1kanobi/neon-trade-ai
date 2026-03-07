@@ -702,7 +702,6 @@ async function searchAssets(term, assetType) {
             }
             console.log(`[searchAssets] Found ${results.length} Kraken matches for "${term}"`);
           }
-        }
       } catch (e) {
         console.warn('[searchAssets] Kraken search failed:', e.message);
       }
