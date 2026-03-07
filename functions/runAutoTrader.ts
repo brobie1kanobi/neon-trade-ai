@@ -559,7 +559,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // AUTO-EXECUTION THRESHOLD: Use user's slider setting, default to 80%
+    // AUTO-EXECUTION THRESHOLD: Use user's slider setting, default to 70%
     const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number' 
       ? settings.auto_execute_threshold 
       : 70;
