@@ -427,22 +427,24 @@ async function getCryptoData(base44, cryptoSymbols) {
     if (stillMissing2.length > 0) {
       // Binance ticker price (USDT pairs) as final fallback
       const limited = stillMissing2.slice(0, 12);
-      const binanceResults = await Promise.all(
-        limited.map(async (sym) => {
-          try {
-            const resp = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`, 2500);
-            if (resp && resp.ok) {
-              const data = await resp.json();
-              const price = parseFloat(data?.price || '0');
-              if (price > 0) {
-                return { sym, price };
-              }
+      const binanceResults = [];
+      
+      for (const sym of limited) {
+        try {
+          const resp = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}USDT`, 2500);
+          if (resp && resp.ok) {
+            const data = await resp.json();
+            const price = parseFloat(data?.price || '0');
+            if (price > 0) {
+              binanceResults.push({ sym, price });
             }
-          } catch (_) {}
-          return null;
-        })
-      );
-      for (const item of binanceResults.filter(Boolean)) {
+          }
+        } catch (_) {}
+        // Yield to event loop to prevent CPU spikes
+        await new Promise(r => setTimeout(r, 5));
+      }
+      
+      for (const item of binanceResults) {
         if (!foundMap[item.sym]) {
           foundMap[item.sym] = { symbol: item.sym, name: item.sym, price: item.price, change: null, price_change_percentage_24h: null, percent_change: null, change_1h_percent: null, change_1h_value: null, icon_url: null };
         }
@@ -469,38 +471,34 @@ async function getStockData(stockSymbols) {
     if (!alphaKey) return [];
     
     const limited = stockSymbols.slice(0, 3);
+    const results = [];
     
-    const results = await Promise.all(
-      limited.map(async (symbol) => {
-        try {
-          const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaKey}`;
-          
-          const response = await fetchWithTimeout(url);
-          
-          if (!response || !response.ok) {
-            return null;
-          }
-          
+    for (const symbol of limited) {
+      try {
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaKey}`;
+        const response = await fetchWithTimeout(url);
+        
+        if (response && response.ok) {
           const data = await response.json();
           const quote = data['Global Quote'];
           
-          if (!quote || !quote['05. price']) return null;
-          
-          return {
-            symbol: symbol,
-            name: symbol,
-            price: parseFloat(quote['05. price']),
-            change: parseFloat(quote['10. change percent'].replace('%', '')),
-            percent_change: parseFloat(quote['10. change percent'].replace('%', '')),
-            change_value: parseFloat(quote['09. change'])
-          };
-        } catch (error) {
-          return null;
+          if (quote && quote['05. price']) {
+            results.push({
+              symbol: symbol,
+              name: symbol,
+              price: parseFloat(quote['05. price']),
+              change: parseFloat(quote['10. change percent'].replace('%', '')),
+              percent_change: parseFloat(quote['10. change percent'].replace('%', '')),
+              change_value: parseFloat(quote['09. change'])
+            });
+          }
         }
-      })
-    );
+      } catch (error) {}
+      // Yield to event loop to prevent CPU spikes
+      await new Promise(r => setTimeout(r, 5));
+    }
     
-    return results.filter(Boolean);
+    return results;
     
   } catch (error) {
     console.error('[getStockData] Error:', error.message);
@@ -647,12 +645,24 @@ async function searchAssets(term, assetType) {
     if (assetType === 'crypto') {
       // PRIORITY 1: Search Kraken's tradeable pairs first (most accurate for trading)
       try {
-        const krakenResp = await fetchWithTimeout('https://api.kraken.com/0/public/AssetPairs', 3000);
-        if (krakenResp && krakenResp.ok) {
-          const krakenData = await krakenResp.json();
-          if (krakenData && krakenData.result) {
-            // Filter USD pairs and match search term
-            const usdPairs = Object.entries(krakenData.result)
+        let krakenPairs = null;
+        if (globalKrakenPairsCache && (Date.now() - globalKrakenPairsCacheTs < KRAKEN_PAIRS_CACHE_TTL)) {
+          krakenPairs = globalKrakenPairsCache;
+        } else {
+          const krakenResp = await fetchWithTimeout('https://api.kraken.com/0/public/AssetPairs', 3000);
+          if (krakenResp && krakenResp.ok) {
+            const krakenData = await krakenResp.json();
+            if (krakenData && krakenData.result) {
+              krakenPairs = krakenData.result;
+              globalKrakenPairsCache = krakenPairs;
+              globalKrakenPairsCacheTs = Date.now();
+            }
+          }
+        }
+
+        if (krakenPairs) {
+          // Filter USD pairs and match search term
+          const usdPairs = Object.entries(krakenPairs)
               .filter(([pairName, pairInfo]) => {
                 // Only USD pairs (not USDT, not EUR, etc)
                 const isUsdPair = pairName.endsWith('USD') || pairName.endsWith('ZUSD');
