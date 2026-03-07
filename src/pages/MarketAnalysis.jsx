@@ -272,6 +272,60 @@ function MarketSentimentCard({ intelligence }) {
   );
 }
 
+const LOADING_MESSAGES = [
+  "Analyzing current markets and assets...",
+  "Searching the internet for funny cat pics, er.. I mean, buyable assets...",
+  "Consulting the crypto oracles...",
+  "Crunching the numbers and ignoring the noise...",
+  "Looking for the next moonshot...",
+  "Calculating optimal entry points...",
+  "Reading the tea leaves of the blockchain..."
+];
+
+function LoadingState() {
+  const [messageIndex, setMessageIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="p-4 space-y-8 min-h-[70vh] flex flex-col items-center justify-center">
+      <div className="flex flex-col items-center justify-center space-y-6 z-10 w-full max-w-md">
+        <div className="relative w-16 h-16">
+          <div className="absolute inset-0 rounded-full border-4 border-gray-200 dark:border-gray-800" />
+          <div className="absolute inset-0 rounded-full border-4 animate-spin" style={{ borderColor: 'var(--neon-green)', borderRightColor: 'transparent', borderTopColor: 'transparent' }} />
+          <Brain className="absolute inset-0 m-auto w-6 h-6 animate-pulse" style={{ color: 'var(--neon-green)' }} />
+        </div>
+        
+        <div className="h-16 flex items-center justify-center w-full">
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={messageIndex}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="text-center font-medium px-4"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {LOADING_MESSAGES[messageIndex]}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <div className="w-full space-y-4 opacity-20 pointer-events-none mt-8">
+        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export default function MarketAnalysis() {
   const { settings, user } = useSettings();
   const [loading, setLoading] = useState(true);
