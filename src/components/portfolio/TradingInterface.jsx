@@ -65,7 +65,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           setSettingsData(userSettings[0]);
           setGainMargin(userSettings[0].gain_margin || 10);
           setLossMargin(userSettings[0].loss_margin || 5);
-          setAutoExecuteThreshold(userSettings[0].auto_execute_threshold ?? 80);
+          setAutoExecuteThreshold(userSettings[0].auto_execute_threshold ?? 70);
           setMinSignalConfidence(userSettings[0].min_signal_confidence ?? 55);
           setInputMode(userSettings[0].default_input_mode || 'quantity');
         }
