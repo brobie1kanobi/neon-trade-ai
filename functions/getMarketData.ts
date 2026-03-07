@@ -8,6 +8,11 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
 const FETCH_TIMEOUT = 4000;
 const AUTH_TIMEOUT = 2000;
 
+// ── Global In-Memory Caches ──
+let globalKrakenPairsCache = null;
+let globalKrakenPairsCacheTs = 0;
+const KRAKEN_PAIRS_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
 // ── Server-side response cache ──
 // Prevents duplicate upstream API calls when multiple users/pages hit this function
 // within the same window. Keyed by action + normalized payload.
