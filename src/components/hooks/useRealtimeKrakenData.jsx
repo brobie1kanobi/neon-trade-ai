@@ -36,15 +36,28 @@ export function useRealtimeKrakenData(options = {}) {
     subscribeToExecutions: subscribeToExecutions && !isSimMode
   });
 
-  const [data, setData] = useState({
-    balances: {},
-    orders: {},
-    prices: {},
-    usdBalance: 0,
-    cryptoHoldingsValue: 0,
-    totalAssets: 0,
-    totalPortfolioValue: 0,
-    lastUpdated: null
+  const [data, setData] = useState(() => {
+    // Initialize with current WebSocket data if available to prevent flash of zeros
+    const usdBalance = wsBalances['USD']?.available || wsBalances['ZUSD']?.available || 0;
+    const cryptoHoldingsValue = calculateCryptoValue(wsBalances, wsPrices);
+    const totalAssets = Object.keys(wsBalances).filter(asset => {
+      if (asset === 'USD' || asset === 'ZUSD') return false;
+      const balanceObj = wsBalances[asset];
+      const totalBalance = balanceObj?.balance || balanceObj?.available || 0;
+      return totalBalance > 0.00001;
+    }).length;
+    const totalPortfolioValue = usdBalance + cryptoHoldingsValue;
+
+    return {
+      balances: wsBalances,
+      orders: wsOrders,
+      prices: wsPrices,
+      usdBalance,
+      cryptoHoldingsValue,
+      totalAssets,
+      totalPortfolioValue,
+      lastUpdated: new Date().toISOString()
+    };
   });
 
   const [loading, setLoading] = useState(true);
