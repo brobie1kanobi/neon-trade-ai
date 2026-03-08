@@ -720,7 +720,7 @@ Deno.serve(async (req) => {
       // Ensure portfolioState has FRESH cash before risk check (fixes $0.00 issue)
       try {
         if (!isSimMode) {
-          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+          const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
           const freshData = freshBalanceRes?.data || freshBalanceRes;
           if (freshData?.success) {
             const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
