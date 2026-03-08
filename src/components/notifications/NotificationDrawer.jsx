@@ -6,6 +6,7 @@ import { base44 } from "@/api/base44Client";
 import { Notification } from "@/entities/all";
 import { format } from "date-fns";
 import { useUser } from "@/components/hooks/useUser";
+import { useSettings } from "@/components/utils/SettingsContext";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,8 @@ import {
 
 export default function NotificationDrawer({ isOpen, onOpenChange }) {
   const { user } = useUser();
+  const { settings } = useSettings();
+  const tz = settings?.timezone || 'America/New_York';
   const [notifications, setNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -166,7 +169,9 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                         {notification.message}
                       </p>
                       <p className="text-[10px] text-gray-400 mt-2">
-                        {format(new Date(notification.created_date), 'MMM d, h:mm a')}
+                        {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: tz }).format(new Date(notification.created_date))}
+                        <span className="inline-block ml-1 mr-1">,</span>
+                        <span className="inline-block">{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).format(new Date(notification.created_date))}</span>
                       </p>
                     </div>
                     <button
@@ -376,8 +381,8 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
             <p className="text-xs text-gray-400 text-right">
               {selectedNotification && (
                 <>
-                  {format(new Date(selectedNotification.created_date), 'MMM d, yyyy')}
-                  <span className="inline-block ml-2">{format(new Date(selectedNotification.created_date), 'h:mm a')}</span>
+                  {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz }).format(new Date(selectedNotification.created_date))}
+                  <span className="inline-block ml-2">{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).format(new Date(selectedNotification.created_date))}</span>
                 </>
               )}
             </p>
