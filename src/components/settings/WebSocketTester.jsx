@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wifi, WifiOff, RefreshCw, CheckCircle, AlertCircle, Activity, FileCode } from 'lucide-react';
-import { useRealtimeKrakenData } from '@/components/hooks/useRealtimeKrakenData';
+import { useKrakenWebSocket } from '@/components/providers/KrakenWebSocketProvider';
 import { useSettings } from '@/components/utils/SettingsContext';
 
 export default function WebSocketTester() {
@@ -25,15 +25,18 @@ export default function WebSocketTester() {
     usdBalance,
     totalAssets,
     totalPortfolioValue,
-    lastUpdated,
-    refresh
-  } = useRealtimeKrakenData({
-    subscribeToPrices: true,
-    subscribeToBalances: true,
-    subscribeToOrders: true,
-    subscribeToExecutions: true,
-    isSimMode
-  });
+    refresh,
+    krakenOrders,
+    krakenBalance
+  } = useKrakenWebSocket();
+
+  const openOrdersCount = Object.keys(orders || {}).length > 0 
+    ? Object.keys(orders).length 
+    : (krakenOrders?.length || 0);
+
+  const displayAssetsCount = totalAssets > 0 
+    ? totalAssets 
+    : (krakenBalance?.holdings?.length || 0);
 
   useEffect(() => {
     if (isSimMode) {
