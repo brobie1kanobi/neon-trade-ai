@@ -53,8 +53,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
     const syncTimeout = setTimeout(() => {
       setIsSyncing(false);
-      setSyncError('Sync timeout - Kraken API may be slow, please try again');
-      toast.error('Sync timeout', { description: 'Kraken API may be slow. Try again in a moment.' });
+      // Do not block UI on timeout; rely on WebSocket to continue updating
+      setSyncError(null);
+      toast.info('Kraken is responding slowly. Live WebSocket will keep updating.');
+      try { wsRefresh(); } catch (_) {}
     }, 30000);
 
     try {
@@ -94,9 +96,17 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       clearTimeout(syncTimeout);
       console.error('[WalletBalance] Sync error:', error);
       const errMsg = error?.message || 'Unknown error';
-      setSyncError(`Failed to fetch balance: ${errMsg}`);
-      toast.error('Sync failed', { description: errMsg });
+      const isTimeout = /timeout/i.test(errMsg);
+      if (isTimeout) {
+        setSyncError(null); // don't scare users; WS continues updating
+        toast.info('Using live WebSocket balances while Kraken REST is slow');
+      } else {
+        setSyncError(`Failed to fetch balance: ${errMsg}`);
+        toast.error('Sync failed', { description: errMsg });
+      }
+      try { wsRefresh(); } catch (_) {}
     } finally {
+      try { wsRefresh(); } catch (_) {}
       setIsSyncing(false);
     }
   };
