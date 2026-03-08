@@ -756,6 +756,7 @@ Deno.serve(async (req) => {
               total_value: total_value,
               is_simulation: isSimMode
             },
+            // Pass the freshest wallet snapshot so riskEngine sees real cash
             portfolioState
           }
         });
