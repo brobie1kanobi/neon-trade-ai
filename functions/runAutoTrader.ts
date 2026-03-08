@@ -391,8 +391,16 @@ Deno.serve(async (req) => {
       return Response.json({ success: true, message: 'Auto-trading disabled', trades_count: 0 });
     }
 
-    // CRITICAL: Respect user's mode setting - NEVER force sim mode
-    const isSimMode = settings.sim_trading_mode !== false;
+    // Respect user's setting but enforce admin-only LIVE trading
+    let isSimMode = settings.sim_trading_mode !== false;
+    const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+    const isCreator = !!user?.is_creator;
+    if (!isAdmin && !isCreator) {
+      if (!isSimMode) {
+        log('LIVE mode requested but user is not admin/creator - forcing SIM mode');
+      }
+      isSimMode = true;
+    }
     
     // Generate idempotency key for this run
     const runIdempotencyKey = `run_${user.email}_${Date.now()}`;
