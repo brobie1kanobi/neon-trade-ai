@@ -512,7 +512,7 @@ Deno.serve(async (req) => {
     const runIdempotencyKey = `run_${user.email}_${Date.now()}`;
     
     // Create AutoTraderRun record
-    const autoTraderRun = await base44.entities.AutoTraderRun.create({
+    const autoTraderRun = await base44.asServiceRole.entities.AutoTraderRun.create({
       status: 'pending',
       idempotency_key: runIdempotencyKey,
       started_at: new Date().toISOString(),
