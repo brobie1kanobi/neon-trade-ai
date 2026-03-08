@@ -533,7 +533,7 @@ Deno.serve(async (req) => {
     if (!isSimMode) {
       // Refresh live cash once up front to avoid stale $0.00
       try {
-        const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+        const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
         const freshData = freshBalanceRes?.data || freshBalanceRes;
         if (freshData?.success) {
           const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? availableCash;
