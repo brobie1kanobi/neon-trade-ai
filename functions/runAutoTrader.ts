@@ -704,6 +704,30 @@ Deno.serve(async (req) => {
       
       log(`Processing ${sym}`, { price, qty, total_value: total_value.toFixed(2), userAllocationPct, gainMargin, lossMargin });
       
+      // Ensure portfolioState has FRESH cash before risk check (fixes $0.00 issue)
+      try {
+        if (!isSimMode) {
+          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+          const freshData = freshBalanceRes?.data || freshBalanceRes;
+          if (freshData?.success) {
+            const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
+            // Apply 10% safety buffer for spending calculations
+            availableCash = Math.max(0, freshAvailable * 0.90);
+            portfolioState = portfolioState || {};
+            portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
+            console.log(`[runAutoTrader] Using fresh cash for riskEngine: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+          }
+        } else {
+          const simWallet = await getLatestWallet(base44, user.email);
+          const simCash = simWallet?.cash_balance ?? availableCash ?? 0;
+          availableCash = simCash;
+          portfolioState = portfolioState || {};
+          portfolioState.wallet = { ...(portfolioState.wallet || {}), cash_balance: simCash };
+        }
+      } catch (e) {
+        console.warn('[runAutoTrader] Fresh balance fetch for riskEngine failed:', e.message);
+      }
+      
       if (price <= 0 || qty <= 0 || total_value <= 0) {
         log(`Skipping ${sym} - invalid values`, { price, qty, total_value });
         continue;
