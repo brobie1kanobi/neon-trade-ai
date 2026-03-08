@@ -277,7 +277,7 @@ function MarketSentimentCard({ intelligence }) {
 
 const LOADING_MESSAGES = [
 "This will take a few seconds to load the analysis...",
-"Analyzing current markets and assets...",
+"Analyzing current markets, trends and assets...",
 "Accessing the moral fabric of the timespace continuum...",
 "Questioning everything, leaving no stone unturned...",
 "Searching the internet for funny cat pics, er.. I mean, buyable assets...",
