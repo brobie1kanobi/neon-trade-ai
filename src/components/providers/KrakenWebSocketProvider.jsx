@@ -302,17 +302,11 @@ export function KrakenWebSocketProvider({ children }) {
 
     try {
       const [balanceRes, ordersRes] = await Promise.all([
-        Promise.race([
-          base44.functions.invoke('getKrakenBalance', {}),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Balance fetch timeout')), 25000))
-        ]).catch(e => {
+        base44.functions.invoke('getKrakenBalance', {}).catch(e => {
           console.warn('[KrakenWSProvider] Balance fetch failed:', e.message);
           return { error: e.message, success: false };
         }),
-        Promise.race([
-          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Orders fetch timeout')), 25000))
-        ]).catch(e => {
+        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }).catch(e => {
           console.warn('[KrakenWSProvider] Orders fetch failed:', e.message);
           return { error: e.message };
         })

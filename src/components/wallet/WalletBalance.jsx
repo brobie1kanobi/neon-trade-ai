@@ -24,7 +24,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     cryptoHoldingsValue: wsCryptoHoldingsValue,
     totalAssets: wsTotalAssets,
     hasData: providerHasData,
-    refresh: wsRefresh
+    refresh: wsRefresh,
+    krakenBalance
   } = useKrakenWebSocket();
 
   // CRITICAL: Also check global window state - provider React state can be stale
@@ -34,10 +35,14 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   // This prevents blips of old data showing during refreshes
   const displayCash = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 ? wsUsdBalance : 0);
+    : ((krakenBalance?.success && typeof krakenBalance.usd_balance === 'number')
+        ? krakenBalance.usd_balance
+        : (wsUsdBalance > 0 ? wsUsdBalance : 0));
   const displayPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoHoldingsValue > 0 ? wsCryptoHoldingsValue : 0);
+    : ((krakenBalance?.success && (krakenBalance.total_crypto_value_usd !== undefined || krakenBalance.total_crypto_value !== undefined))
+        ? (krakenBalance.total_crypto_value_usd ?? krakenBalance.total_crypto_value)
+        : (wsCryptoHoldingsValue > 0 ? wsCryptoHoldingsValue : 0));
   const totalBalance = displayCash + displayPortfolioValue;
   const totalAssets = isSimMode ? 0 : wsTotalAssets;
 
