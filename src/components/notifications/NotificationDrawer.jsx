@@ -20,6 +20,7 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
   const { user } = useUser();
   const { settings } = useSettings();
   const tz = settings?.timezone || 'America/New_York';
+  const is24h = (settings?.time_format || '12h') === '24h';
   const [notifications, setNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -169,9 +170,14 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
                         {notification.message}
                       </p>
                       <p className="text-[10px] text-gray-400 mt-2">
-                        {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: tz }).format(new Date(notification.created_date))}
-                        <span className="inline-block ml-1 mr-1">,</span>
-                        <span className="inline-block">{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).format(new Date(notification.created_date))}</span>
+                        {(() => {
+                          const raw = notification.created_date;
+                          const safe = (typeof raw === 'string' && raw.includes('T') && !raw.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(raw)) ? `${raw}Z` : raw;
+                          const d = new Date(safe);
+                          const dateStr = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: tz }).format(d);
+                          const timeStr = new Intl.DateTimeFormat('en-US', { hour: is24h ? '2-digit' : 'numeric', minute: '2-digit', hour12: !is24h, timeZone: tz }).format(d);
+                          return (<><span>{dateStr}</span><span className="inline-block ml-1 mr-1">,</span><span className="inline-block">{timeStr}</span></>);
+                        })()}
                       </p>
                     </div>
                     <button
@@ -379,12 +385,14 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
             }
             
             <p className="text-xs text-gray-400 text-right">
-              {selectedNotification && (
-                <>
-                  {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz }).format(new Date(selectedNotification.created_date))}
-                  <span className="inline-block ml-2">{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).format(new Date(selectedNotification.created_date))}</span>
-                </>
-              )}
+              {selectedNotification && (() => {
+                const raw = selectedNotification.created_date;
+                const safe = (typeof raw === 'string' && raw.includes('T') && !raw.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(raw)) ? `${raw}Z` : raw;
+                const d = new Date(safe);
+                const dateStr = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz }).format(d);
+                const timeStr = new Intl.DateTimeFormat('en-US', { hour: is24h ? '2-digit' : 'numeric', minute: '2-digit', hour12: !is24h, timeZone: tz }).format(d);
+                return (<><span>{dateStr}</span><span className="inline-block ml-2">{timeStr}</span></>);
+              })()}
             </p>
           </div>
           <DialogFooter>
