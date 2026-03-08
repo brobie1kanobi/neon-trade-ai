@@ -14,7 +14,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
-    refresh: refreshWebSocket
+    refresh: refreshWebSocket,
+    wsHasBalances
   } = useKrakenWebSocket();
 
   // CRITICAL: Refresh data when trades complete OR Kraken orders fill/cancel
@@ -48,45 +49,38 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     };
   }, [isSimMode, refreshWebSocket]);
 
-  // CRITICAL: In LIVE mode, prioritize krakenData prop (REST API data) > WebSocket > wallet DB
-  // REST API is the most reliable source - it returns accurate prices + cost basis
-  // WebSocket only has raw quantities without accurate USD valuations
+  // CRITICAL: In LIVE mode, prioritize WebSocket > REST fallback
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) {
       return wallet?.cash_balance || 0;
     }
-    // LIVE MODE: krakenData prop first (REST API is authoritative)
+    // LIVE MODE: WebSocket first
+    if (wsConnected && wsHasBalances && typeof wsUsdBalance === 'number') {
+      return Math.max(0, wsUsdBalance);
+    }
+    // Fallback to REST snapshot if available
     if (krakenData?.success && typeof krakenData?.usd_balance === 'number') {
       return Math.max(0, krakenData.usd_balance);
     }
-    // WebSocket fallback
-    if (wsConnected && wsUsdBalance > 0) {
-      return Math.max(0, wsUsdBalance);
-    }
-    // Live mode must never fall back to DB wallet values
     return 0;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance, wsHasBalances, krakenData]);
 
-  // CRITICAL: Portfolio value = crypto holdings only (not including cash)
-  // REST API is authoritative - it returns actual prices from Kraken
+  // CRITICAL: Portfolio value (crypto only): WebSocket first, REST fallback
   const effectivePortfolioValue = React.useMemo(() => {
     if (isSimMode) {
       return currentPortfolioValue || 0;
     }
-    // LIVE MODE: krakenData prop first (REST API is authoritative)
+    if (wsConnected && wsHasBalances && typeof wsCryptoValue === 'number') {
+      return Math.max(0, wsCryptoValue);
+    }
     if (krakenData?.success && krakenData?.total_crypto_value_usd > 0) {
       return Math.max(0, krakenData.total_crypto_value_usd);
     }
     if (krakenData?.success && krakenData?.total_crypto_value > 0) {
       return Math.max(0, krakenData.total_crypto_value);
     }
-    // WebSocket fallback
-    if (wsConnected && wsCryptoValue > 0) {
-      return Math.max(0, wsCryptoValue);
-    }
-    // In LIVE mode, if Kraken data is unavailable, show 0 instead of any DB-derived values
     return 0;
-  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
+  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, wsHasBalances, krakenData]);
 
   const totalValue = currentCashBalance + effectivePortfolioValue;
 

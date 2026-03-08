@@ -1767,12 +1767,19 @@ export default function Dashboard() {
   // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+    : (wsUsdBalance > 0 
+        ? wsUsdBalance 
+        : (((providerKrakenBalance?.usd_balance || 0) > 0) 
+            ? providerKrakenBalance.usd_balance 
+            : (wallet?.real_cash_balance || 0)));
+
 
   const liveBalancesLoading = !isSimMode && (!providerHasData || providerLoading);
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
+    : (wsCryptoValue > 0 
+        ? wsCryptoValue 
+        : ((providerKrakenBalance?.total_crypto_value_usd ?? providerKrakenBalance?.total_crypto_value ?? 0) || portfolioMarketValue));
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;

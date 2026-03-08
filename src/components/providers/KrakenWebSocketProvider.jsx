@@ -360,17 +360,16 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // ── Initial REST snapshot (one-time) ──
+  // ── Initial REST snapshot (one-time, fallback) ──
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
-      // Fetch REST data immediately - it's our AUTHORITATIVE source for accurate balances
-      // Don't wait for WS - REST has prices, WS only has raw quantities
+      // WebSocket is primary; kick a REST snapshot in the background as fallback
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
           setTimeout(() => fetchPnL(), 5000);
         }
-      }, 0); // Reduced from 2000ms to 500ms - REST is primary, not fallback
+      }, 1000);
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
@@ -409,33 +408,31 @@ export function KrakenWebSocketProvider({ children }) {
   const restHasBalance = restData.krakenBalance?.success;
   
   // CRITICAL: Best-available balance logic
-  // REST API (getKrakenBalance) is AUTHORITATIVE because it returns accurate prices + cost basis
-  // WS balances only have quantities (no prices until ticker data arrives)
-  // So: REST first (accurate), then WS only if REST is unavailable
+  // WS should be primary. If WS has balances, use them. Otherwise, fall back to REST snapshot.
   
-  const bestUsdBalance = Math.max(0, restHasBalance 
-    ? (restData.krakenBalance.usd_balance || 0)
-    : (wsHasBalances ? state.usdBalance : 0));
+  const bestUsdBalance = Math.max(0, wsHasBalances 
+    ? state.usdBalance 
+    : (restHasBalance ? (restData.krakenBalance.usd_balance || 0) : 0));
 
-  const bestCryptoValue = Math.max(0, restHasBalance 
-    ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : (wsHasBalances ? state.cryptoHoldingsValue : 0));
+  const bestCryptoValue = Math.max(0, wsHasBalances 
+    ? state.cryptoHoldingsValue 
+    : (restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0) : 0));
 
-  const bestHoldings = restHasBalance
-    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
-    : wsHasBalances
-      ? Object.entries(state.balances)
-          .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
-          .filter(([_, b]) => (b.balance || 0) > 0.00001)
-          .map(([asset, bal]) => ({
-            symbol: asset,
-            quantity: bal.balance || 0,
-            asset_type: 'crypto',
-            current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
-            total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
-            is_simulation: false
-          }))
-      : [];
+  const bestHoldings = wsHasBalances
+    ? Object.entries(state.balances)
+        .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
+        .filter(([_, b]) => (b.balance || 0) > 0.00001)
+        .map(([asset, bal]) => ({
+          symbol: asset,
+          quantity: bal.balance || 0,
+          asset_type: 'crypto',
+          current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
+          total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
+          is_simulation: false
+        }))
+    : (restHasBalance
+        ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
+        : []);
 
   const hasData = restHasBalance || wsHasBalances;
 
@@ -449,6 +446,7 @@ export function KrakenWebSocketProvider({ children }) {
     totalPortfolioValue: bestUsdBalance + bestCryptoValue,
     // Derived holdings for consumers
     bestHoldings,
+    wsHasBalances,
     hasData,
     refresh,
     wsManager,
