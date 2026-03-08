@@ -527,7 +527,7 @@ Deno.serve(async (req) => {
     const lockResult = await acquireLock(base44, user.email, autoTraderRunId);
     if (!lockResult.acquired) {
       log('Lock not acquired', lockResult);
-      await base44.entities.AutoTraderRun.update(autoTraderRunId, {
+      await base44.asServiceRole.entities.AutoTraderRun.update(autoTraderRunId, {
         status: 'canceled',
         error_message: lockResult.reason,
         completed_at: new Date().toISOString()
