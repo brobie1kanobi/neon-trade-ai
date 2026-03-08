@@ -623,20 +623,9 @@ Deno.serve(async (req) => {
     }
 
     
-    // Fetch trade history for dynamic TP/SL calculation
-    try {
-    log('Fetching trade history for dynamic levels...');
-    const historyResponse = await base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
-      includeKrakenHistory: false,
-      analyzePatterns: false
-    });
-      tradeHistoryData = historyResponse?.data || historyResponse;
-      if (tradeHistoryData?.success) {
-        log(`Got history for ${Object.keys(tradeHistoryData.asset_analytics || {}).length} assets`);
-      }
-    } catch (histErr) {
-      log('Trade history fetch failed (continuing with defaults)', { error: histErr.message });
-    }
+    // Skip external trade history function to avoid cross-function 403s; use defaults
+    tradeHistoryData = null;
+    log('Skipping external trade history (no cross-function), using defaults');
     
     // Update run with initial cash
     await base44.entities.AutoTraderRun.update(autoTraderRunId, {
