@@ -1347,7 +1347,7 @@ Deno.serve(async (req) => {
     
     // Record success with health monitor
     try {
-      await base44.functions.invoke('systemHealthMonitor', {
+      await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
         action: 'recordSuccess',
         component: 'auto_trader'
       });
