@@ -459,6 +459,8 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   const RUNTIME_BUDGET_MS = 9000; // Soft cap to avoid platform timeouts
   const SOFT_DEADLINE_MS = RUNTIME_BUDGET_MS - 500;
+  const timeLeft = () => SOFT_DEADLINE_MS - (Date.now() - startTime);
+  const overBudget = () => timeLeft() <= 0;
   const runLogs = [];
   let autoTraderRunId = null;
   
@@ -576,14 +578,7 @@ Deno.serve(async (req) => {
     
     // If no pre-computed signals, fall back to generating them
     if (signals.length === 0) {
-      log('No pre-computed signals, generating on-demand...');
-      try {
-        await base44.functions.invoke('generateSignals', {});
-        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-        log(`Generated ${signals.length} signals`);
-      } catch (e) {
-        log('Signal generation failed', { error: e.message });
-      }
+      log('No pre-computed signals; skipping generation to respect runtime budget');
     }
     
     // Build prospects in-line (avoid cross-function 403s)
@@ -684,9 +679,12 @@ Deno.serve(async (req) => {
       const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
       let quotes = [];
       try {
-        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
+        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean).slice(0, 6);
         if (pairs.length > 0) {
-          const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+          const ctl = new AbortController();
+          const to = setTimeout(() => ctl.abort(), 3000);
+          const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}` , { signal: ctl.signal });
+          clearTimeout(to);
           if (resp.ok) {
             const data = await resp.json();
             if (data?.result) {
@@ -1329,11 +1327,12 @@ Deno.serve(async (req) => {
           
           // Record health error
           try {
-            await base44.functions.invoke('systemHealthMonitor', {
-                      action: 'recordError',
-                      component: 'kraken_api',
-                      error_message: krakenError.message
-                    });
+            // fire-and-forget to avoid blocking runtime
+            base44.functions.invoke('systemHealthMonitor', {
+              action: 'recordError',
+              component: 'kraken_api',
+              error_message: krakenError.message
+            }).catch(() => {});
           } catch (e) {}
           
           continue;
@@ -1488,7 +1487,7 @@ Deno.serve(async (req) => {
 
     // Process emerging prospects (if enabled and we have capacity)
     let emergingTradesPlaced = [];
-    if (isSimMode && emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
+    if (false && isSimMode && emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
       for (const emerging of emergingOpportunities) {
@@ -1529,6 +1528,7 @@ Deno.serve(async (req) => {
         
         if (!isSimMode) {
           // LIVE: Execute via Kraken
+          if (overBudget()) { log('Runtime budget reached before live trade execution'); break; }
           try {
             await sleep(500);
             const emergingBuyData = await invokeKrakenTrade(base44, {
@@ -1603,7 +1603,8 @@ Deno.serve(async (req) => {
     // Reconcile wallet (SIM only here to avoid cross-function 403s in LIVE)
     try {
       if (isSimMode) {
-        await base44.functions.invoke('reconcileWallet', { mode: 'sim' });
+        // fire-and-forget to avoid blocking runtime
+        base44.functions.invoke('reconcileWallet', { mode: 'sim' }).catch(() => {});
       } else {
         // Skip live reconcile; a scheduled job handles live wallet sync
       }
@@ -1628,10 +1629,11 @@ Deno.serve(async (req) => {
     
     // Record success with health monitor
     try {
-      await base44.functions.invoke('systemHealthMonitor', {
-                action: 'recordSuccess',
-                component: 'auto_trader'
-              });
+      // fire-and-forget to avoid blocking runtime
+      base44.functions.invoke('systemHealthMonitor', {
+        action: 'recordSuccess',
+        component: 'auto_trader'
+      }).catch(() => {});
     } catch (e) {}
     
     // Summary of advanced orders placed
