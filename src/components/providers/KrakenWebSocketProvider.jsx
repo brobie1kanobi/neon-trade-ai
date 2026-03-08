@@ -167,6 +167,26 @@ export function KrakenWebSocketProvider({ children }) {
     };
   }, [shouldConnect]);
 
+  // Aggressive WS prime on mount (no REST dependency)
+  useEffect(() => {
+    if (!shouldConnect) return;
+    let canceled = false;
+    let attempts = 0;
+    const prime = async () => {
+      if (canceled) return;
+      attempts++;
+      try {
+        await wsManager.refreshBalances?.();
+        await wsManager.refreshOrders?.();
+      } catch (_) {}
+      setState(computeMetricsFromGlobal());
+      const hasBalances = typeof window !== 'undefined' && window.__krakenWsBalances && Object.keys(window.__krakenWsBalances).length > 0;
+      if (!hasBalances && attempts < 12) setTimeout(prime, 1500); // retry up to ~18s
+    };
+    prime();
+    return () => { canceled = true; };
+  }, [shouldConnect, wsManager]);
+
   // ── Manual refresh (WS re-subscribe + immediate state push) ──
   const refresh = useCallback(async () => {
     console.log('[KrakenWSProvider] Manual refresh');
