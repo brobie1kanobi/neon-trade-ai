@@ -339,6 +339,9 @@ export default function MarketAnalysis() {
   const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all'); // all, strong_signals, buy, sell
+  const [selectedSignal, setSelectedSignal] = useState(null);
+  const [tradeAmount, setTradeAmount] = useState("");
+  const [isExecuting, setIsExecuting] = useState(false);
   
   const isSimMode = settings?.sim_trading_mode !== false;
 
