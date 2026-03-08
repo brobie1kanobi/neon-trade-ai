@@ -437,9 +437,132 @@ export default function MarketAnalysis() {
   };
 
   const handleManualTrade = (signal) => {
-    // Navigate to Portfolio with pre-filled trade
-    const url = createPageUrl('Portfolio') + `?action=trade&symbol=${signal.symbol}&type=${signal.optimal_action?.includes('buy') ? 'buy' : 'sell'}`;
-    window.location.href = url;
+    setSelectedSignal(signal);
+    setTradeAmount("");
+  };
+
+  const executeTrade = async () => {
+    if (!tradeAmount || isNaN(tradeAmount) || Number(tradeAmount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setIsExecuting(true);
+    try {
+      const amount = Number(tradeAmount);
+      const price = selectedSignal.current_price;
+      const qty = amount / price;
+      const side = selectedSignal.optimal_action?.includes('buy') ? 'buy' : 'sell';
+
+      if (isSimMode) {
+        const walletRes = await base44.entities.Wallet.filter({ created_by: user.email });
+        let wallet = walletRes[0];
+        
+        if (side === 'buy') {
+          if (!wallet || wallet.cash_balance < amount) {
+            toast.error("Insufficient demo funds");
+            setIsExecuting(false);
+            return;
+          }
+          await base44.entities.Wallet.update(wallet.id, { cash_balance: wallet.cash_balance - amount });
+        } else {
+          const holdingsRes = await base44.entities.Holding.filter({ created_by: user.email, symbol: selectedSignal.symbol, is_simulation: true });
+          const holding = holdingsRes[0];
+          if (!holding || holding.quantity < qty) {
+            toast.error("Insufficient demo holdings");
+            setIsExecuting(false);
+            return;
+          }
+          await base44.entities.Wallet.update(wallet.id, { cash_balance: wallet.cash_balance + amount });
+          if (holding.quantity - qty <= 0.00001) {
+            await base44.entities.Holding.delete(holding.id);
+          } else {
+            await base44.entities.Holding.update(holding.id, { quantity: holding.quantity - qty });
+          }
+        }
+
+        if (side === 'buy') {
+          const holdingsRes = await base44.entities.Holding.filter({ created_by: user.email, symbol: selectedSignal.symbol, is_simulation: true });
+          const holding = holdingsRes[0];
+          if (holding) {
+            const newQty = holding.quantity + qty;
+            const newAvg = ((holding.quantity * holding.average_cost_price) + amount) / newQty;
+            await base44.entities.Holding.update(holding.id, { quantity: newQty, average_cost_price: newAvg });
+          } else {
+            await base44.entities.Holding.create({
+              symbol: selectedSignal.symbol,
+              asset_type: 'crypto',
+              quantity: qty,
+              average_cost_price: price,
+              is_simulation: true,
+              created_by: user.email
+            });
+          }
+        }
+
+        await base44.entities.Trade.create({
+          symbol: selectedSignal.symbol,
+          type: side,
+          asset_type: 'crypto',
+          quantity: qty,
+          price: price,
+          total_value: amount,
+          status: 'executed',
+          is_auto_trade: false,
+          is_simulation: true,
+          created_by: user.email
+        });
+
+        toast.success(`✅ SIM ${side.toUpperCase()} Executed`, {
+          description: `${side === 'buy' ? 'Bought' : 'Sold'} ${qty.toFixed(4)} ${selectedSignal.symbol}`
+        });
+      } else {
+        // LIVE trade
+        if (side === 'buy') {
+          const balRes = await base44.functions.invoke('getKrakenBalance', {});
+          const bal = balRes?.data || balRes;
+          const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
+          if (usdAvail < amount) {
+            toast.error("Insufficient USD on Kraken", {
+              description: `Available: $${usdAvail.toFixed(2)} • Need: $${amount.toFixed(2)}`
+            });
+            setIsExecuting(false);
+            return;
+          }
+        }
+
+        let __wsToken = null;
+        try {
+          const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+          __wsToken = (__t?.data || __t)?.token || null;
+        } catch (_) {}
+
+        const response = await base44.functions.invoke('krakenTrade', {
+          action: 'place_order',
+          symbol: selectedSignal.symbol,
+          side: side,
+          quantity: qty,
+          orderType: 'market',
+          wsToken: __wsToken
+        });
+
+        const data = response?.data || response;
+        if (!data?.success) {
+          throw new Error(data?.error || 'Order failed');
+        }
+
+        toast.success(`✅ LIVE ${side.toUpperCase()} Executed`, {
+          description: `${side === 'buy' ? 'Bought' : 'Sold'} ${qty.toFixed(4)} ${selectedSignal.symbol}`
+        });
+      }
+
+      setSelectedSignal(null);
+    } catch (error) {
+      console.error('Execute error:', error);
+      toast.error("Order failed", { description: error.message });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   const filteredRecommendations = (analysisData?.recommendations || []).filter(r => {
