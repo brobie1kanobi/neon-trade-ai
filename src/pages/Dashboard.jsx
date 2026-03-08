@@ -1775,7 +1775,7 @@ export default function Dashboard() {
             : (wallet?.real_cash_balance || 0)));
 
 
-  const liveBalancesLoading = !isSimMode && (!providerHasData || providerLoading);
+  const liveBalancesLoading = !isSimMode && providerLoading;
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
     : ((wsConnected && wsHasBalances)
