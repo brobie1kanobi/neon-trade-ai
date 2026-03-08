@@ -11,7 +11,6 @@ import WalletBalance from "../components/wallet/WalletBalance";
 import BankConnection from "../components/wallet/BankConnection";
 import TransactionForm from "../components/wallet/TransactionForm";
 import TransactionHistory from "../components/wallet/TransactionHistory";
-import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { getRecent, setRecent } from "@/components/hooks/useGlobalDataStore";
 
 export default function WalletPage() {
@@ -419,18 +418,6 @@ export default function WalletPage() {
 
   return (
     <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: 'var(--primary-bg)' }}>
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <EmergencyRepair 
-          wallet={wallet} 
-          isSimMode={isSimMode}
-          onRepairComplete={() => {
-            setTimeout(() => loadData(), 500);
-          }}
-        />
-      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

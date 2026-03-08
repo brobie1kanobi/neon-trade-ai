@@ -13,7 +13,6 @@ import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import AutoTraderHealth from "../components/settings/AutoTraderHealth";
 import RiskManagementSettings from "../components/portfolio/RiskManagementSettings";
-import EmergencyRepair from "../components/wallet/EmergencyRepair";
 
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
@@ -502,15 +501,6 @@ export default function Portfolio() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-        <EmergencyRepair 
-          wallet={wallet} 
-          isSimMode={isSimMode}
-          onRepairComplete={() => {
-            setTimeout(() => loadData(true), 500);
-          }}
-        />
-      </motion.div>
 
       {showDataSync && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
