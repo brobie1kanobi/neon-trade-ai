@@ -103,7 +103,7 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
   const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
   const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 15000);
+  const t = setTimeout(() => controller.abort(), 8000);
   try {
     const res = await fetch(`https://api.kraken.com${endpoint}`, {
       method: 'POST',
@@ -457,6 +457,8 @@ async function getLatestWallet(base44, email) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  const RUNTIME_BUDGET_MS = 9000; // Soft cap to avoid platform timeouts
+  const SOFT_DEADLINE_MS = RUNTIME_BUDGET_MS - 500;
   const runLogs = [];
   let autoTraderRunId = null;
   
@@ -917,7 +919,7 @@ Deno.serve(async (req) => {
     // 3. Confidence >= 80% (already validated by signal generator)
     // 4. 24h trend positive (NEVER buy into falling price)
     // 5. Not blocked + sufficient funds
-    const eligibleProspects = prospects.filter(p => {
+    let eligibleProspects = prospects.filter(p => {
       const signal = signalMap.get(p.symbol);
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
       const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
@@ -953,6 +955,12 @@ Deno.serve(async (req) => {
     });
 
     log(`${eligibleProspects.length} prospects eligible for auto-execution`);
+
+    const maxTrades = isSimMode ? 2 : 1;
+    if (eligibleProspects.length > maxTrades) {
+      eligibleProspects = eligibleProspects.slice(0, maxTrades);
+      log(`Capping to ${maxTrades} trades this run to stay within runtime limits`);
+    }
 
     if (eligibleProspects.length === 0) {
       log('No eligible prospects');
@@ -1011,7 +1019,7 @@ Deno.serve(async (req) => {
     }
 
     // Process each eligible prospect
-    for (const prospect of eligibleProspects) {
+    for (const prospect of eligibleProspects) { if (Date.now() - startTime > RUNTIME_BUDGET_MS) { log('Runtime budget reached - stopping further trades'); break; }
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
       const price = prospect.current_price || 0;
@@ -1153,7 +1161,7 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order (with pacing)
-          await sleep(300 + Math.floor(Math.random() * 700));
+          await sleep(150 + Math.floor(Math.random() * 150));
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
@@ -1218,7 +1226,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 2: Place TAKE PROFIT order (limit at TP price)
-          await new Promise(res => setTimeout(res, 2000));
+          await new Promise(res => setTimeout(res, 200));
           
           let tpOrderId = null;
           let slOrderId = null;
@@ -1252,7 +1260,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 3: Place TRAILING STOP order (locks in profits as price rises)
-          await new Promise(res => setTimeout(res, 2000));
+          await new Promise(res => setTimeout(res, 200));
           
           try {
             // Use trailing stop if enabled, otherwise use static stop-loss
@@ -1473,14 +1481,14 @@ Deno.serve(async (req) => {
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
-      await sleep(2200 + Math.floor(Math.random() * 1800));
+      await sleep(200 + Math.floor(Math.random() * 150));
 
       if (availableCash < 1) break;
     }
 
     // Process emerging prospects (if enabled and we have capacity)
     let emergingTradesPlaced = [];
-    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
+    if (isSimMode && emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
       for (const emerging of emergingOpportunities) {
@@ -1588,7 +1596,7 @@ Deno.serve(async (req) => {
           availableCash -= emergingAllocation;
         }
         
-        await sleep(1500);
+        await sleep(150);
       }
     }
 
