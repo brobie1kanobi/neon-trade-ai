@@ -921,50 +921,27 @@ Deno.serve(async (req) => {
       // Skip external riskEngine to avoid 403s; rely on internal spend/qty/threshold checks below
       log(`Risk engine skipped for ${sym} (using internal checks)`);
       
-      // CRITICAL: Re-fetch current Kraken balance AND asset holdings BEFORE each trade
-      // This is the MOST IMPORTANT check - prevents "insufficient funds" errors
+      // Already refreshed balance earlier via direct Kraken API; just enforce minimal checks here
       if (!isSimMode) {
-        try {
-          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
-          const freshData = freshBalanceRes?.data || freshBalanceRes;
-          if (freshData?.success && freshData?.connected) {
-            // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
-            const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
-            // Apply 10% safety buffer to be EXTRA conservative
-            availableCash = Math.max(0, freshAvailable * 0.90);
-            console.log(`[runAutoTrader] Fresh Kraken balance: $${freshAvailable.toFixed(2)}, effective (90%): $${availableCash.toFixed(2)}`);
-            
-            // CRITICAL: Abort early if no cash available
-            if (availableCash < 1) {
-              console.log(`[runAutoTrader] Aborting - no cash available after refresh`);
-              break;
-            }
-            
-            // CRITICAL: Verify we actually hold the asset if this is a sell-related signal
-            // and verify minimum order size constraints
-            const MIN_ORDER_SIZES = {
-              'BTC': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
-              'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
-              'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-              'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7,
-              'BABY': 50.0, 'FLOKI': 105000.0, 'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0,
-              'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0,
-              'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0, 'GRASS': 13.0, 'GOAT': 5.0,
-              'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6, 'ENA': 4.0,
-              'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0
-            };
-            const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
-            if (qty < minQtyForSymbol) {
-              log(`Skipping ${sym} - quantity ${qty} below Kraken minimum ${minQtyForSymbol}`, { sym, qty, minQtyForSymbol });
-              continue;
-            }
-          } else {
-            console.warn(`[runAutoTrader] Balance refresh failed - aborting to prevent insufficient funds error`);
-            break; // Don't proceed without confirmed balance
-          }
-        } catch (balErr) {
-          console.error(`[runAutoTrader] Balance refresh failed - aborting: ${balErr.message}`);
-          break; // Don't proceed without confirmed balance
+        if (availableCash < 1) {
+          console.log(`[runAutoTrader] Aborting - no cash available after checks`);
+          break;
+        }
+        const MIN_ORDER_SIZES = {
+          'BTC': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+          'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
+          'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+          'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7,
+          'BABY': 50.0, 'FLOKI': 105000.0, 'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0,
+          'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0,
+          'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0, 'GRASS': 13.0, 'GOAT': 5.0,
+          'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6, 'ENA': 4.0,
+          'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0
+        };
+        const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
+        if (qty < minQtyForSymbol) {
+          log(`Skipping ${sym} - quantity ${qty} below Kraken minimum ${minQtyForSymbol}`, { sym, qty, minQtyForSymbol });
+          continue;
         }
       }
       
@@ -1451,11 +1428,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Reconcile wallet
+    // Reconcile wallet (SIM only here to avoid cross-function 403s in LIVE)
     try {
-      await base44.asServiceRole.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
+      if (isSimMode) {
+        await base44.functions.invoke('reconcileWallet', { mode: 'sim' });
+      } else {
+        // Skip live reconcile; a scheduled job handles live wallet sync
+      }
     } catch (e) {
-      console.error('[runAutoTrader] Reconcile error:', e.message);
+      console.warn('[runAutoTrader] Reconcile skipped/failed:', e.message);
     }
 
     const totalTrades = tradesPlaced.length + emergingTradesPlaced.length;
