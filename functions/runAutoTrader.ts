@@ -531,7 +531,20 @@ Deno.serve(async (req) => {
     // CRITICAL: Check available cash FIRST before filtering prospects
     // This prevents processing prospects when there's no money to trade with
     if (!isSimMode) {
-      console.log(`[runAutoTrader] LIVE mode - initial cash available: $${availableCash.toFixed(2)}`);
+      // Refresh live cash once up front to avoid stale $0.00
+      try {
+        const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
+        const freshData = freshBalanceRes?.data || freshBalanceRes;
+        if (freshData?.success) {
+          const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? availableCash;
+          availableCash = Math.max(0, freshAvailable * 0.90); // safety buffer for spending
+          console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+        } else {
+          console.warn('[runAutoTrader] getKrakenBalance not successful; proceeding with cached cash value');
+        }
+      } catch (e) {
+        console.warn('[runAutoTrader] getKrakenBalance failed; proceeding with cached cash value:', e.message);
+      }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
         return Response.json({ 
