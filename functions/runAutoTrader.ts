@@ -609,26 +609,62 @@ Deno.serve(async (req) => {
           const conn = conns[0];
           const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
           const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+          let gotLive = false;
           if (apiKey && apiSecret) {
-            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-            if (!bal?.error?.length && bal?.result) {
-              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-              cashAvailable = rawUsd;
-              // Deduct open buy orders + 2% safety buffer for trading cash
-              let reserved = 0;
-              try {
-                const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
-                if (open?.result?.open) {
-                  for (const [, order] of Object.entries(open.result.open)) {
-                    const side = (order.descr?.type || '').toLowerCase();
-                    if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
-                  }
+            try {
+              const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+              if (!bal?.error?.length && bal?.result) {
+                const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+                const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+                if (!isNaN(rawUsd)) {
+                  cashAvailable = rawUsd;
+                  gotLive = true;
+                  // Deduct open buy orders + 2% safety buffer for trading cash
+                  let reserved = 0;
+                  try {
+                    const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
+                    if (open?.result?.open) {
+                      for (const [, order] of Object.entries(open.result.open)) {
+                        const side = (order.descr?.type || '').toLowerCase();
+                        if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+                      }
+                    }
+                  } catch (_e) {}
+                  tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
                 }
-              } catch (_e) {}
-              tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
+              }
+            } catch (e) {
+              console.warn('[runAutoTrader] Live BalanceEx failed, will try fallbacks:', e.message);
             }
           }
+          // Fallback 1: cached KrakenConnection.account_balance JSON
+          if (!gotLive) {
+            try {
+              if (conn.account_balance) {
+                const ab = JSON.parse(conn.account_balance);
+                const z = ab['ZUSD'] || ab['USD'] || 0;
+                const rawUsd = parseFloat(typeof z === 'object' ? z.balance : (z || 0));
+                if (!isNaN(rawUsd) && rawUsd > 0) {
+                  cashAvailable = rawUsd;
+                  tradingCash = Math.max(0, rawUsd * 0.90);
+                  console.log('[runAutoTrader] Using cached KrakenConnection.account_balance fallback');
+                }
+              }
+            } catch (_e) {}
+          }
+          // Fallback 2: Wallet.real_cash_balance from DB
+          if (!gotLive && (!cashAvailable || cashAvailable <= 0)) {
+            try {
+              const wallet = await getLatestWallet(base44, user.email);
+              const rawUsd = Number(wallet?.real_cash_balance || 0);
+              if (!isNaN(rawUsd) && rawUsd > 0) {
+                cashAvailable = rawUsd;
+                tradingCash = Math.max(0, rawUsd * 0.90);
+                console.log('[runAutoTrader] Using wallet.real_cash_balance fallback');
+              }
+            } catch (_e) {}
+          }
+          // As a last resort, keep cashAvailable at 0 but make it explicit in logs later
         }
       }
 
