@@ -134,7 +134,7 @@ export default function WebSocketTester() {
           <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border">
             <p className="text-xs text-gray-500 mb-1">Last Update</p>
             <p className="text-sm font-semibold">
-              {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—'}
+              {new Date().toLocaleTimeString()}
             </p>
           </div>
         </div>
@@ -148,7 +148,7 @@ export default function WebSocketTester() {
 
           <div className="flex items-center justify-between p-2 rounded bg-blue-50 dark:bg-blue-900/20">
             <span className="text-xs font-medium">Total Assets</span>
-            <span className="text-sm font-bold text-blue-600">{totalAssets || 0}</span>
+            <span className="text-sm font-bold text-blue-600">{displayAssetsCount}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-purple-50 dark:bg-purple-900/20">
@@ -158,7 +158,7 @@ export default function WebSocketTester() {
 
           <div className="flex items-center justify-between p-2 rounded bg-yellow-50 dark:bg-yellow-900/20">
             <span className="text-xs font-medium">Open Orders</span>
-            <span className="text-sm font-bold text-yellow-600">{Object.keys(orders || {}).length}</span>
+            <span className="text-sm font-bold text-yellow-600">{openOrdersCount}</span>
           </div>
         </div>
 
