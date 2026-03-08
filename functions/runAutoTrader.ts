@@ -377,7 +377,7 @@ Deno.serve(async (req) => {
     
     // Check system health before proceeding
     try {
-      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
+      const healthRes = await base44.asServiceRole.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
       const health = healthRes?.data || healthRes;
       
       if (health?.trading_allowed === false) {
@@ -435,7 +435,7 @@ Deno.serve(async (req) => {
     let marketIntelligence = null;
     
     try {
-      const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
+      const prospectsResponse = await base44.asServiceRole.functions.invoke('getAutoTraderProspects', {});
       const prospectsData = prospectsResponse?.data || prospectsResponse;
       
       if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
@@ -464,7 +464,7 @@ Deno.serve(async (req) => {
     // Fetch trade history for dynamic TP/SL calculation
     try {
     log('Fetching trade history for dynamic levels...');
-    const historyResponse = await base44.functions.invoke('analyzeTradeHistory', {
+    const historyResponse = await base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
       includeKrakenHistory: false,
       analyzePatterns: false
     });
@@ -1325,7 +1325,7 @@ Deno.serve(async (req) => {
 
     // Reconcile wallet
     try {
-      await base44.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
+      await base44.asServiceRole.functions.invoke('reconcileWallet', { mode: isSimMode ? 'sim' : 'real' });
     } catch (e) {
       console.error('[runAutoTrader] Reconcile error:', e.message);
     }
