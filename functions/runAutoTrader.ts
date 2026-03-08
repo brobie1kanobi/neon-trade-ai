@@ -540,7 +540,7 @@ Deno.serve(async (req) => {
     }
     
     // Update status to running
-    await base44.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
+    await base44.asServiceRole.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
     log('Lock acquired, status set to running');
     
     // Check system health before proceeding (direct entity read to avoid cross-function auth issues)
