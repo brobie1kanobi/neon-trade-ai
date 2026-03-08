@@ -10,7 +10,6 @@ export default function WebSocketTester() {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  const [testSymbols, setTestSymbols] = useState(['BTC/USD', 'ETH/USD']);
   const [logs, setLogs] = useState([]);
 
   const addLog = (message, type = 'info') => {
@@ -30,7 +29,6 @@ export default function WebSocketTester() {
     refresh
   } = useRealtimeKrakenData({
     subscribeToPrices: true,
-    priceSymbols: testSymbols,
     subscribeToBalances: true,
     subscribeToOrders: true,
     subscribeToExecutions: true,
