@@ -47,7 +47,7 @@ export function useWallet() {
                 1
               );
               return wallets[0] || {
-                cash_balance: 10000,
+                cash_balance: 0,
                 total_deposits: 0,
                 total_withdrawals: 0,
                 real_cash_balance: 0,
@@ -69,7 +69,7 @@ export function useWallet() {
             1
           );
           return wallets[0] || {
-            cash_balance: 10000,
+            cash_balance: 0,
             total_deposits: 0,
             total_withdrawals: 0,
             real_cash_balance: 0,

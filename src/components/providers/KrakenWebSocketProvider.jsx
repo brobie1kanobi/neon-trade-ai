@@ -120,6 +120,15 @@ export function KrakenWebSocketProvider({ children }) {
     totalAssets: 0
   });
 
+  // Prevent SIM bleed: when switching into LIVE mode, clear any page-level cached wallet
+  useEffect(() => {
+    if (shouldConnect && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('wallet:updated')); // force wallet hooks to refetch
+      } catch (_) {}
+    }
+  }, [shouldConnect]);
+
   const [restData, setRestData] = useState({
     krakenBalance: null,
     krakenPnL: null,

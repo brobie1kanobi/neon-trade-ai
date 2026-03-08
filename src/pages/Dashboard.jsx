@@ -1624,7 +1624,13 @@ export default function Dashboard() {
     const isSimModeLocal = settings?.sim_trading_mode !== false;
     
     // CRITICAL: For LIVE mode, use REAL Kraken PnL from getKrakenPnL endpoint
-    if (!isSimModeLocal && krakenPnL) {
+    if (!isSimModeLocal) {
+      if (!krakenPnL) {
+        // Wait for provider PnL to avoid flicker from SIM calculations
+        setRealized24h({ value: 0, percentage: 0 });
+        setLifetimeChange({ value: 0, percentage: 0 });
+        return;
+      }
       // 24h realized PnL from Kraken trades
       const realized24hValue = krakenPnL.pnl_24h || 0;
       const realized24hPct = krakenPnL.realized_pnl > 0 ? (realized24hValue / krakenPnL.realized_pnl) * 100 : 0;
@@ -1762,6 +1768,8 @@ export default function Dashboard() {
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
     : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+
+  const liveBalancesLoading = !isSimMode && (!providerHasData || providerLoading);
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
     : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
@@ -1832,6 +1840,7 @@ export default function Dashboard() {
             isPrimary={true}
             isSimMode={isSimMode}
             changeLabel="Total PnL"
+            isLoading={liveBalancesLoading}
           />
         </motion.div>
 
@@ -1845,6 +1854,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Wallet")}
+              isLoading={liveBalancesLoading}
             />
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
@@ -1857,6 +1867,7 @@ export default function Dashboard() {
               isSimMode={isSimMode}
               changeLabel="Live Lifetime"
               linkTo={createPageUrl("Portfolio")}
+              isLoading={liveBalancesLoading}
             />
           </motion.div>
         </div>

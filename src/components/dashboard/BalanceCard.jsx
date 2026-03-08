@@ -76,7 +76,9 @@ export default function BalanceCard({
         </div>
         
         <div className="space-y-1">
-          {isVisible ? (
+          {isLoading ? (
+            <div className="h-8 w-40 rounded-md bg-gray-200 dark:bg-gray-800 animate-pulse" />
+          ) : isVisible ? (
             <NumberDisplay
               value={typeof amount === 'number' ? amount : 0}
               prefix="$"
@@ -92,7 +94,7 @@ export default function BalanceCard({
             </p>
           )}
           
-          {isVisible && amount !== null &&
+          {isVisible && amount !== null && !isLoading && (
             <div className="flex items-center gap-1 flex-wrap">
               {isPositive ? (
                 <TrendingUp className="w-4 h-4 text-green-500" />
@@ -106,7 +108,7 @@ export default function BalanceCard({
                 {changeLabel ? changeLabel : (isSimMode ? 'Demo Lifetime' : 'Live Lifetime')}
               </span>
             </div>
-          }
+          )}
         </div>
       </CardContent>
     </Card>
