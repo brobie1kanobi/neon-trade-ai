@@ -300,7 +300,7 @@ function evaluateEmergingProspects(marketIntelligence, currentHoldings, cashAvai
 
 // Invoke krakenTrade with robust retries and token refresh on permission errors
 // CRITICAL: Does NOT retry on insufficient funds or other order-specific errors
-async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = null) {
+async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = null, userEmail = null) {
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -340,10 +340,42 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
       if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
       if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
       
+      // Token refresh on permission denied
       if (/permission denied/i.test(msg)) {
         await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
         wsToken = null; // force refetch on next loop
       }
+
+      // Fallback: direct REST AddOrder when cross-function returns 403 (WS path blocked)
+      if ((/status code 403/i.test(msg) || /access denied/i.test(msg) || /403/i.test(msg)) && payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy' && userEmail) {
+        try {
+          const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
+          if (conns.length > 0) {
+            const conn = conns[0];
+            const tradeKey = (conn.trade_api_key || '').trim();
+            const tradeSecret = (conn.trade_api_secret_encrypted || '').trim();
+            if (tradeKey && tradeSecret) {
+              const sym = String(payload.symbol || '').toUpperCase();
+              const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
+              const vol = Number(payload.quantity || 0);
+              const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                pair,
+                type: 'buy',
+                ordertype: String(payload.orderType || 'market').toLowerCase(),
+                volume: String(vol)
+              });
+              if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+              } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                throw new Error(addRes.error.join(', '));
+              }
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn('[runAutoTrader] REST AddOrder fallback failed:', fallbackErr?.message || fallbackErr);
+        }
+      }
+
       if (/rate limit|429|timeout|websocket|nonce/i.test(msg) && attempt < maxAttempts - 1) {
         const delay = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);
         console.warn(`[runAutoTrader] Rate/WS limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
@@ -1125,7 +1157,7 @@ Deno.serve(async (req) => {
                   orderType: 'stop-loss',
                   stopPrice: staticStopLossPrice,
                   timeInForce: 'gtc'
-                }, 4, wsToken);
+                }, 4, wsToken, user.email);
                 if (fallbackData?.success) {
                   slOrderId = fallbackData.order_id;
                   console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
