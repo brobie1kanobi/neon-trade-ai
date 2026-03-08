@@ -70,6 +70,60 @@ function roundPriceForKraken(price, symbol) {
 // Small helper sleep
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+// Kraken public pair map (for price fetching)
+const KRAKEN_PAIR_MAP = {
+  'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+  'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+  'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+  'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+  'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
+};
+
+// Minimal Kraken private API caller (BalanceEx/OpenOrders)
+let __kr_lastNonce = 0;
+function __kr_generateNonce() {
+  const now = Date.now() * 1000;
+  if (now <= __kr_lastNonce) __kr_lastNonce++; else __kr_lastNonce = now;
+  return __kr_lastNonce.toString();
+}
+async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
+  const cleanKey = String(apiKey || '').trim();
+  const cleanSecret = String(apiSecretBase64 || '').trim();
+  const nonce = __kr_generateNonce();
+  const postData = new URLSearchParams({ nonce, ...data }).toString();
+  const msg = new TextEncoder().encode(nonce + postData);
+  const hash = await crypto.subtle.digest('SHA-256', msg);
+  const hmacKey = await crypto.subtle.importKey(
+    'raw', Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+  );
+  const pathBytes = new TextEncoder().encode(endpoint);
+  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(hash), pathBytes.length);
+  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
+  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`https://api.kraken.com${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'API-Key': cleanKey,
+        'API-Sign': apiSign,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'NeonTrade-AI/1.0'
+      },
+      body: postData,
+      signal: controller.signal
+    });
+    clearTimeout(t);
+    return await res.json();
+  } catch (e) {
+    clearTimeout(t);
+    throw e;
+  }
+}
+
 /**
  * Generate idempotency key for a trade
  */
@@ -375,24 +429,22 @@ Deno.serve(async (req) => {
     await base44.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
     log('Lock acquired, status set to running');
     
-    // Check system health before proceeding
+    // Check system health before proceeding (direct entity read to avoid cross-function auth issues)
     try {
-      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
-      const health = healthRes?.data || healthRes;
-      
-      if (health?.trading_allowed === false) {
-        log('Trading not allowed - system unhealthy', health);
+      const records = await base44.asServiceRole.entities.SystemHealth.filter({});
+      const anyPaused = records.some(r => r.is_auto_paused);
+      const anyUnhealthy = records.some(r => r.status === 'unhealthy');
+      const anyDegraded = records.some(r => r.status === 'degraded');
+      const overall = anyPaused || anyUnhealthy ? 'unhealthy' : (anyDegraded ? 'degraded' : 'healthy');
+      if (overall === 'unhealthy') {
+        log('Trading not allowed - system unhealthy (direct check)', { overall });
         await releaseLock(base44, autoTraderRunId, 'canceled', {
           error_message: 'Trading paused due to system health issues'
         });
-        return Response.json({
-          success: false,
-          message: 'Trading paused due to system health',
-          system_status: health?.overall_status
-        });
+        return Response.json({ success: false, message: 'Trading paused due to system health', system_status: overall });
       }
     } catch (e) {
-      log('System health check failed, proceeding anyway', { error: e.message });
+      log('System health check failed (entity read), proceeding anyway', { error: e.message });
     }
 
     // CRITICAL: Fetch pre-computed AssetSignals (decoupled from AI)
@@ -430,21 +482,130 @@ Deno.serve(async (req) => {
       }
     }
     
-    // Also fetch prospects for allocation/cash info
+    // Build prospects in-line (avoid cross-function 403s)
     let prospects = [];
     let marketIntelligence = null;
-    
+
     try {
-      const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
-      const prospectsData = prospectsResponse?.data || prospectsResponse;
-      
-      if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
-        prospects = prospectsData.prospects;
-        cashAvailable = prospectsData.cash_available || 0;
-        marketIntelligence = prospectsData.market_intelligence || null;
-        log(`Got ${prospects.length} prospects, cash: $${cashAvailable.toFixed(2)}`);
+      // 1) Load user preferences for current mode
+      const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
+      const prefs = allPrefs.filter(p => {
+        const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
+        const pEnabled = p.enabled !== false;
+        return pEnabled && (isSimMode ? pIsSim : !pIsSim);
+      });
+
+      // 2) Determine cash available (SIM: wallet, LIVE: Kraken direct)
+      let tradingCash = 0;
+      if (isSimMode) {
+        const wallet = await getLatestWallet(base44, user.email);
+        cashAvailable = wallet?.cash_balance || 0;
+        tradingCash = cashAvailable;
       } else {
-        log('No prospects available');
+        const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+        if (conns.length > 0) {
+          const conn = conns[0];
+          const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+          const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+          if (apiKey && apiSecret) {
+            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+            if (!bal?.error?.length && bal?.result) {
+              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+              cashAvailable = rawUsd;
+              // Deduct open buy orders + 2% safety buffer for trading cash
+              let reserved = 0;
+              try {
+                const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
+                if (open?.result?.open) {
+                  for (const [, order] of Object.entries(open.result.open)) {
+                    const side = (order.descr?.type || '').toLowerCase();
+                    if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+                  }
+                }
+              } catch (_e) {}
+              tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
+            }
+          }
+        }
+      }
+
+      // 3) Load active signals
+      const nowTs = new Date();
+      let activeSignals = [];
+      try {
+        activeSignals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        activeSignals = activeSignals.filter(s => !s.expires_at || new Date(s.expires_at) > nowTs);
+      } catch (_e) {}
+      const sigMap = new Map();
+      for (const s of activeSignals) sigMap.set(s.asset_symbol, s);
+
+      // 4) Fetch quotes via Kraken public API
+      const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
+      let quotes = [];
+      try {
+        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
+        if (pairs.length > 0) {
+          const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.result) {
+              for (const sym of cryptoSymbols) {
+                const pair = KRAKEN_PAIR_MAP[sym];
+                const t = data.result[pair];
+                if (t) {
+                  const price = parseFloat(t.c?.[0] || '0');
+                  const open24h = parseFloat(t.o || '0');
+                  const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
+                  quotes.push({ symbol: sym, price, current_price: price, change_24h_percent: change24h });
+                }
+              }
+            }
+          }
+        }
+      } catch (_e) {}
+
+      // 5) Build prospects
+      const minConf = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
+      const safetyMaxPct = 0.40;
+      const spendable = isSimMode ? tradingCash : tradingCash; // already buffered in live
+      for (const pref of prefs) {
+        const symbol = String(pref.symbol || '').toUpperCase();
+        const q = quotes.find(r => (r.symbol || '').toUpperCase() === symbol);
+        const price = q?.price || q?.current_price || 0;
+        if (!price || price <= 0) continue;
+        const sig = sigMap.get(symbol);
+        if (!sig) continue;
+        const signalType = (sig.signal_type || 'hold').toLowerCase();
+        const confidence = Number(sig.confidence_score || 0);
+        const change24h = Number(sig.change_24h || q?.change_24h_percent || 0);
+        if (!(signalType === 'buy' || signalType === 'strong_buy')) continue;
+        if (confidence < minConf) continue;
+        if (change24h < -5) continue;
+        const userPct = Number(pref.percentage || 10) / 100;
+        let total = spendable * userPct;
+        const safetyMax = spendable * safetyMaxPct;
+        if (total > safetyMax) total = safetyMax;
+        if (total < 1 && spendable >= 5) total = 5;
+        if (total < 1) continue;
+        const qty = total / price;
+        prospects.push({
+          symbol,
+          asset_type: pref.asset_type || 'crypto',
+          current_price: price,
+          quantity: qty,
+          total_value: total,
+          confidence_score: confidence,
+          is_blocked: false,
+          would_execute_now: true,
+          market_trend: change24h,
+          user_allocation_pct: Number(pref.percentage || 10),
+          optimal_action: signalType
+        });
+      }
+
+      log(`Got ${prospects.length} prospects (inline), cash: $${(cashAvailable || 0).toFixed(2)}`);
+      if (prospects.length === 0) {
         await releaseLock(base44, autoTraderRunId, 'completed', {
           trades_attempted: 0,
           trades_successful: 0,
@@ -452,97 +613,15 @@ Deno.serve(async (req) => {
         });
         return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
       }
-    } catch (prospectError) {
-      // Fallback: build prospects in-line if function call is forbidden (403) or fails
-      log('Failed to fetch prospects, building fallback prospects', { error: prospectError.message });
-      try {
-        // 1) Load user preferences for current mode
-        const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
-        const prefs = allPrefs.filter(p => {
-          const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
-          const pEnabled = p.enabled !== false;
-          return pEnabled && (isSimMode ? pIsSim : !pIsSim);
-        });
-        
-        // 2) Get live cash (exact for display)
-        try {
-          const balRes = await base44.functions.invoke('getKrakenBalance', {});
-          const bal = balRes?.data || balRes;
-          if (bal?.success) cashAvailable = bal.available_usd_balance ?? bal.usd_balance ?? 0;
-        } catch (_e) {}
-        
-        // 3) Fetch prices using market data service
-        const cryptoSymbols = prefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
-        let quotes = [];
-        if (cryptoSymbols.length > 0) {
-          try {
-            const md = await base44.functions.invoke('getMarketData', {
-              action: 'getWatchlistData',
-              payload: { cryptoSymbols, stockSymbols: [] }
-            });
-            quotes = Array.isArray(md?.data) ? md.data : [];
-          } catch (_e) {}
-        }
-        
-        // 4) Build minimal prospects from preferences + signals
-        const sigMap = new Map();
-        for (const s of signals) sigMap.set(s.asset_symbol, s);
-        const spendable = Math.max(0, cashAvailable * 0.90); // 10% buffer
-        const minConf = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
-        prospects = [];
-        for (const pref of prefs) {
-          const symbol = String(pref.symbol || '').toUpperCase();
-          const q = quotes.find(r => (r.symbol || r.Symbol || '').toUpperCase() === symbol);
-          const price = q?.price || q?.current_price || 0;
-          if (!price || price <= 0) continue;
-          const sig = sigMap.get(symbol);
-          if (!sig) continue;
-          const signalType = (sig.signal_type || 'hold').toLowerCase();
-          const confidence = Number(sig.confidence_score || 0);
-          const change24h = Number(sig.change_24h || q?.change_24h_percent || q?.price_change_percentage_24h || 0);
-          if (!(signalType === 'buy' || signalType === 'strong_buy')) continue;
-          if (confidence < minConf) continue;
-          if (change24h < -5) continue;
-          const userPct = Number(pref.percentage || 10) / 100;
-          let total = spendable * userPct;
-          // Enforce Kraken min $5 and cap 40% of spendable per trade
-          if (spendable >= 5 && total < 5) total = 5;
-          total = Math.min(total, spendable * 0.40);
-          if (total < 1) continue;
-          const qty = total / price;
-          prospects.push({
-            symbol,
-            asset_type: pref.asset_type || 'crypto',
-            current_price: price,
-            quantity: qty,
-            total_value: total,
-            confidence_score: confidence,
-            is_blocked: false,
-            would_execute_now: true,
-            market_trend: change24h,
-            user_allocation_pct: Number(pref.percentage || 10),
-            optimal_action: signalType
-          });
-        }
-        
-        log(`Built ${prospects.length} fallback prospects, cash: $${cashAvailable.toFixed(2)}`);
-        if (prospects.length === 0) {
-          await releaseLock(base44, autoTraderRunId, 'completed', {
-            trades_attempted: 0,
-            trades_successful: 0,
-            logs_json: JSON.stringify(runLogs)
-          });
-          return Response.json({ success: true, message: 'No prospects available (fallback)', trades_count: 0 });
-        }
-      } catch (fallbackErr) {
-        log('Fallback prospects build failed', { error: fallbackErr.message });
-        await releaseLock(base44, autoTraderRunId, 'failed', {
-          error_message: prospectError.message,
-          logs_json: JSON.stringify(runLogs)
-        });
-        return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
-      }
+    } catch (e) {
+      log('Inline prospects build failed', { error: e.message });
+      await releaseLock(base44, autoTraderRunId, 'failed', {
+        error_message: e.message,
+        logs_json: JSON.stringify(runLogs)
+      });
+      return Response.json({ success: false, error: 'Failed to build prospects inline: ' + e.message });
     }
+
     
     // Fetch trade history for dynamic TP/SL calculation
     try {
