@@ -591,11 +591,15 @@ Deno.serve(async (req) => {
     try {
       // 1) Load user preferences for current mode
       const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
-      const prefs = allPrefs.filter(p => {
+      let prefs = allPrefs.filter(p => {
         const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
         const pEnabled = p.enabled !== false;
         return pEnabled && (isSimMode ? pIsSim : !pIsSim);
       });
+      if (prefs.length === 0) {
+        log('No mode-specific AutoBuyPreference found; falling back to enabled prefs');
+        prefs = allPrefs.filter(p => p.enabled !== false);
+      }
 
       // 2) Determine cash available (SIM: wallet, LIVE: Kraken direct)
       let tradingCash = 0;
