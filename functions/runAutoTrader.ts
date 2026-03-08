@@ -839,7 +839,33 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
-        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with cached cash value:', e.message);
+        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with fallbacks:', e.message);
+        // Fallbacks if BalanceEx failed above
+        try {
+          const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+          if (conns.length > 0 && (availableCash === undefined || availableCash === null || isNaN(availableCash) || availableCash <= 0)) {
+            const conn = conns[0];
+            if (conn.account_balance) {
+              try {
+                const ab = JSON.parse(conn.account_balance);
+                const z = ab['ZUSD'] || ab['USD'] || 0;
+                const rawUsd = parseFloat(typeof z === 'object' ? z.balance : (z || 0));
+                if (!isNaN(rawUsd) && rawUsd > 0) {
+                  availableCash = Math.max(0, rawUsd * 0.90);
+                  console.log('[runAutoTrader] Fallback availableCash from cached account_balance:', rawUsd.toFixed(2));
+                }
+              } catch (_e2) {}
+            }
+            if ((!availableCash || availableCash <= 0)) {
+              const wallet = await getLatestWallet(base44, user.email);
+              const rawUsd = Number(wallet?.real_cash_balance || 0);
+              if (!isNaN(rawUsd) && rawUsd > 0) {
+                availableCash = Math.max(0, rawUsd * 0.90);
+                console.log('[runAutoTrader] Fallback availableCash from wallet.real_cash_balance:', rawUsd.toFixed(2));
+              }
+            }
+          }
+        } catch (_e3) {}
       }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
