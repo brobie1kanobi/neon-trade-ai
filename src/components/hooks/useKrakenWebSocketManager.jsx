@@ -120,6 +120,12 @@ async function getWebSocketToken(keyType = 'trade') {
         GLOBAL_WS_STATE.tokenBalanceExpiry = now + expiresIn * 1000;
         console.log(`[KrakenWS] Cached BALANCE token (expires in ${expiresIn}s)`);
       }
+      // Reset auth-unavailable backoff on success
+      GLOBAL_WS_STATE.authUnavailableUntil = 0;
+      if (typeof window !== 'undefined') {
+        window.__krakenAuthUnavailable = false;
+        window.__krakenAuthUnavailableUntil = 0;
+      }
       return data.token;
     }
     

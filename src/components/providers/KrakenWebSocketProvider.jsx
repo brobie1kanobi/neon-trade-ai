@@ -143,7 +143,7 @@ export function KrakenWebSocketProvider({ children }) {
   // CRITICAL: Only runs in LIVE mode (shouldConnect = !isSimMode && !!user)
   // SIM mode should NEVER listen for Kraken WS events
   useEffect(() => {
-    if (!shouldConnect) return;
+    if (!shouldConnect || (typeof window !== 'undefined' && window.__krakenAuthUnavailable)) return;
 
     // Immediate first read
     setState(computeMetricsFromGlobal());
@@ -169,7 +169,7 @@ export function KrakenWebSocketProvider({ children }) {
 
   // Aggressive WS prime on mount (no REST dependency)
   useEffect(() => {
-    if (!shouldConnect) return;
+    if (!shouldConnect || (typeof window !== 'undefined' && window.__krakenAuthUnavailable)) return;
     let canceled = false;
     let attempts = 0;
     const prime = async () => {
