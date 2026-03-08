@@ -144,7 +144,7 @@ function generateIdempotencyKey(userEmail, symbol, type, timestamp) {
  */
 async function checkIdempotency(base44, idempotencyKey, userEmail) {
   try {
-    const existing = await base44.entities.Trade.filter({
+    const existing = await base44.asServiceRole.entities.Trade.filter({
       created_by: userEmail,
       idempotency_key: idempotencyKey
     });
@@ -160,7 +160,7 @@ async function checkIdempotency(base44, idempotencyKey, userEmail) {
 async function acquireLock(base44, userEmail, runId) {
   try {
     // Check for existing running session
-    const activeRuns = await base44.entities.AutoTraderRun.filter({
+    const activeRuns = await base44.asServiceRole.entities.AutoTraderRun.filter({
       created_by: userEmail,
       status: 'running'
     });
@@ -177,7 +177,7 @@ async function acquireLock(base44, userEmail, runId) {
       }
       
       // Stale run, mark as failed
-      await base44.entities.AutoTraderRun.update(oldestRun.id, {
+      await base44.asServiceRole.entities.AutoTraderRun.update(oldestRun.id, {
         status: 'failed',
         error_message: 'Timed out - marked as failed by new run',
         completed_at: new Date().toISOString()
@@ -196,7 +196,7 @@ async function acquireLock(base44, userEmail, runId) {
  */
 async function releaseLock(base44, runId, status, stats) {
   try {
-    await base44.entities.AutoTraderRun.update(runId, {
+    await base44.asServiceRole.entities.AutoTraderRun.update(runId, {
       status,
       completed_at: new Date().toISOString(),
       ...stats
@@ -451,7 +451,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
 }
 
 async function getLatestWallet(base44, email) {
-  const list = await base44.entities.Wallet.filter({ created_by: email }, "-updated_date");
+  const list = await base44.asServiceRole.entities.Wallet.filter({ created_by: email }, "-updated_date");
   return list[0] || null;
 }
 
@@ -473,8 +473,20 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Determine target trading account email (supports scheduled runs under service user)
+    let targetEmail = user.email;
+    if (/no-reply\.base44\.com$/.test(targetEmail)) {
+      try {
+        const anyConn = await base44.asServiceRole.entities.KrakenConnection.filter({}, '-updated_date', 1);
+        if (anyConn.length > 0 && anyConn[0]?.created_by) {
+          targetEmail = anyConn[0].created_by;
+          console.log('[runAutoTrader] Acting as target user:', targetEmail);
+        }
+      } catch (_) {}
+    }
+
     // CRITICAL: Load user settings to determine mode
-    const settingsList = await base44.entities.UserSettings.filter({ created_by: user.email });
+    const settingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: targetEmail });
     if (settingsList.length > 0) {
       // Sort by updated_date descending to ensure we get the most recently saved settings
       settingsList.sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0));
