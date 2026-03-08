@@ -5,11 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  TrendingUp, TrendingDown, Activity, RefreshCw, Zap, 
+import {
+  TrendingUp, TrendingDown, Activity, RefreshCw, Zap,
   AlertCircle, CheckCircle, Clock, ArrowRight, Brain,
-  Flame, Target, Shield, BarChart3, Send
-} from "lucide-react";
+  Flame, Target, Shield, BarChart3, Send } from
+"lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
@@ -23,7 +23,7 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
   const isStrongSell = signal.optimal_action === 'strong_sell';
   const isBuy = signal.optimal_action === 'buy';
   const isSell = signal.optimal_action === 'sell';
-  
+
   const actionColors = {
     strong_buy: 'bg-green-500 text-white',
     buy: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
@@ -32,22 +32,22 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
     strong_sell: 'bg-red-500 text-white'
   };
 
-  const confidenceColor = signal.confidence_score >= 70 
-    ? 'text-green-500' 
-    : signal.confidence_score >= 50 
-      ? 'text-yellow-500' 
-      : 'text-red-500';
+  const confidenceColor = signal.confidence_score >= 70 ?
+  'text-green-500' :
+  signal.confidence_score >= 50 ?
+  'text-yellow-500' :
+  'text-red-500';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="p-4 rounded-xl border"
-      style={{ 
+      style={{
         backgroundColor: 'var(--card-bg)',
-        borderColor: (isStrongBuy || isStrongSell) ? 'var(--neon-green)' : 'var(--border-color)'
-      }}
-    >
+        borderColor: isStrongBuy || isStrongSell ? 'var(--neon-green)' : 'var(--border-color)'
+      }}>
+
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -56,12 +56,12 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
           <Badge className={actionColors[signal.optimal_action] || actionColors.hold}>
             {signal.optimal_action?.replace('_', ' ').toUpperCase()}
           </Badge>
-          {signal.short_term_signal && (
-            <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400">
+          {signal.short_term_signal &&
+          <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400">
               <Zap className="w-3 h-3 mr-1" />
               Short-term
             </Badge>
-          )}
+          }
         </div>
         <div className="text-right">
           <p className={`text-xl font-bold ${confidenceColor}`}>
@@ -99,34 +99,34 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
         </div>
       </div>
 
-      {signal.entry_zone_low && signal.entry_zone_high && (
-        <div className="p-2 rounded-lg mb-3" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+      {signal.entry_zone_low && signal.entry_zone_high &&
+      <div className="p-2 rounded-lg mb-3" style={{ backgroundColor: 'var(--secondary-bg)' }}>
           <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Entry Zone</p>
           <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
             ${signal.entry_zone_low?.toFixed(4)} - ${signal.entry_zone_high?.toFixed(4)}
           </p>
         </div>
-      )}
+      }
 
       <div className="flex items-center gap-2 mb-3 text-xs">
-        {signal.stop_loss_pct && (
-          <Badge variant="outline" className="text-red-500 border-red-500">
+        {signal.stop_loss_pct &&
+        <Badge variant="outline" className="text-red-500 border-red-500">
             <Shield className="w-3 h-3 mr-1" />
             SL: {signal.stop_loss_pct}%
           </Badge>
-        )}
-        {signal.take_profit_pct && (
-          <Badge variant="outline" className="text-green-500 border-green-500">
+        }
+        {signal.take_profit_pct &&
+        <Badge variant="outline" className="text-green-500 border-green-500">
             <Target className="w-3 h-3 mr-1" />
             TP: {signal.take_profit_pct}%
           </Badge>
-        )}
-        {signal.momentum_strength && (
-          <Badge variant="outline">
+        }
+        {signal.momentum_strength &&
+        <Badge variant="outline">
             <Activity className="w-3 h-3 mr-1" />
             {signal.momentum_strength}
           </Badge>
-        )}
+        }
       </div>
 
       <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
@@ -134,44 +134,44 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
       </p>
 
       <div className="flex gap-2">
-        {(isStrongBuy || isBuy) && signal.confidence_score >= 70 && (
-          <Button 
-            onClick={() => onSendToTrader(signal)}
-            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-            size="sm"
-          >
+        {(isStrongBuy || isBuy) && signal.confidence_score >= 70 &&
+        <Button
+          onClick={() => onSendToTrader(signal)}
+          className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+          size="sm">
+
             <Send className="w-4 h-4 mr-2" />
             Send to Auto-Trader
           </Button>
-        )}
-        <Button 
+        }
+        <Button
           onClick={() => onManualTrade(signal)}
           variant="outline"
           className="flex-1"
-          size="sm"
-        >
+          size="sm">
+
           <ArrowRight className="w-4 h-4 mr-2" />
           Manual Trade
         </Button>
       </div>
-    </motion.div>
-  );
+    </motion.div>);
+
 }
 
 function MarketSentimentCard({ intelligence }) {
   if (!intelligence) return null;
 
   const sentimentScore = intelligence.market_sentiment_score || intelligence.sentiment_score || 50;
-  const sentimentLabel = sentimentScore <= 30 ? 'Extreme Fear' 
-    : sentimentScore <= 50 ? 'Fear' 
-    : sentimentScore <= 70 ? 'Neutral' 
-    : sentimentScore <= 90 ? 'Greed' 
-    : 'Extreme Greed';
+  const sentimentLabel = sentimentScore <= 30 ? 'Extreme Fear' :
+  sentimentScore <= 50 ? 'Fear' :
+  sentimentScore <= 70 ? 'Neutral' :
+  sentimentScore <= 90 ? 'Greed' :
+  'Extreme Greed';
 
-  const sentimentColor = sentimentScore <= 30 ? 'text-red-500' 
-    : sentimentScore <= 50 ? 'text-orange-500' 
-    : sentimentScore <= 70 ? 'text-yellow-500' 
-    : 'text-green-500';
+  const sentimentColor = sentimentScore <= 30 ? 'text-red-500' :
+  sentimentScore <= 50 ? 'text-orange-500' :
+  sentimentScore <= 70 ? 'text-yellow-500' :
+  'text-green-500';
 
   return (
     <Card className="mb-4">
@@ -199,33 +199,33 @@ function MarketSentimentCard({ intelligence }) {
           </div>
         </div>
 
-        {intelligence.short_term_outlook && (
-          <div className="p-3 rounded-lg border" style={{ borderColor: 'var(--neon-green)', backgroundColor: 'rgba(57, 255, 20, 0.05)' }}>
+        {intelligence.short_term_outlook &&
+        <div className="p-3 rounded-lg border" style={{ borderColor: 'var(--neon-green)', backgroundColor: 'rgba(57, 255, 20, 0.05)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--neon-green)' }}>Short-Term Outlook (1-6h)</p>
             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
               {intelligence.short_term_outlook}
             </p>
           </div>
-        )}
+        }
 
-        {intelligence.trading_recommendation && (
-          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+        {intelligence.trading_recommendation &&
+        <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>AI Recommendation</p>
             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
               {intelligence.trading_recommendation}
             </p>
           </div>
-        )}
+        }
 
-        {intelligence.hot_signals && intelligence.hot_signals.length > 0 && (
-          <div>
+        {intelligence.hot_signals && intelligence.hot_signals.length > 0 &&
+        <div>
             <p className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Flame className="w-4 h-4 text-orange-500" />
               Hot Signals
             </p>
             <div className="space-y-2">
-              {intelligence.hot_signals.map((hs, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
+              {intelligence.hot_signals.map((hs, idx) =>
+            <div key={idx} className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{hs.symbol}</span>
                     <Badge className={hs.signal_type === 'strong_buy' ? 'bg-green-500 text-white' : hs.signal_type === 'strong_sell' ? 'bg-red-500 text-white' : ''}>
@@ -239,54 +239,54 @@ function MarketSentimentCard({ intelligence }) {
                     <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{hs.timing}</p>
                   </div>
                 </div>
-              ))}
+            )}
             </div>
           </div>
-        )}
+        }
 
         <div className="grid grid-cols-2 gap-2">
-          {intelligence.best_opportunities && intelligence.best_opportunities.length > 0 && (
-            <div>
+          {intelligence.best_opportunities && intelligence.best_opportunities.length > 0 &&
+          <div>
               <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Best Opportunities</p>
               <div className="flex flex-wrap gap-1">
-                {intelligence.best_opportunities.slice(0, 3).map((sym, idx) => (
-                  <Badge key={idx} className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                {intelligence.best_opportunities.slice(0, 3).map((sym, idx) =>
+              <Badge key={idx} className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                     {sym}
                   </Badge>
-                ))}
+              )}
               </div>
             </div>
-          )}
-          {intelligence.avoid_list && intelligence.avoid_list.length > 0 && (
-            <div>
+          }
+          {intelligence.avoid_list && intelligence.avoid_list.length > 0 &&
+          <div>
               <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Avoid</p>
               <div className="flex flex-wrap gap-1">
-                {intelligence.avoid_list.slice(0, 3).map((sym, idx) => (
-                  <Badge key={idx} className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                {intelligence.avoid_list.slice(0, 3).map((sym, idx) =>
+              <Badge key={idx} className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                     {sym}
                   </Badge>
-                ))}
+              )}
               </div>
             </div>
-          )}
+          }
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>);
+
 }
 
 const LOADING_MESSAGES = [
-  "Analyzing current markets and assets...",
-  "Accessing the moral fabric of the timespace continuum...",
-  "Questioning everything, leaving no stone unturned...",
-  "This will take a few seconds to load the analysis...",
-  "Searching the internet for funny cat pics, er.. I mean, buyable assets...",
-  "Consulting the crypto oracles...",
-  "Crunching the numbers and ignoring the noise...",
-  "Looking for the next moonshot...",
-  "Calculating optimal entry points...",
-  "Reading the tea leaves of the blockchain..."
-];
+"Analyzing current markets and assets...",
+"Accessing the moral fabric of the timespace continuum...",
+"Questioning everything, leaving no stone unturned...",
+"This will take a few seconds to load the analysis...",
+"Searching the internet for funny cat pics, er.. I mean, buyable assets...",
+"Consulting the crypto oracles...",
+"Crunching the numbers and ignoring the noise...",
+"Looking for the next moonshot...",
+"Calculating optimal entry points...",
+"Reading the tea leaves of the blockchain..."];
+
 
 function LoadingState() {
   const [messageIndex, setMessageIndex] = useState(0);
@@ -316,8 +316,8 @@ function LoadingState() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
               className="text-center font-medium px-4"
-              style={{ color: 'var(--text-primary)' }}
-            >
+              style={{ color: 'var(--text-primary)' }}>
+
               {LOADING_MESSAGES[messageIndex]}
             </motion.p>
           </AnimatePresence>
@@ -328,8 +328,8 @@ function LoadingState() {
         <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
         <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
       </div>
-    </div>
-  );
+    </div>);
+
 }
 
 export default function MarketAnalysis() {
@@ -342,12 +342,12 @@ export default function MarketAnalysis() {
   const [selectedSignal, setSelectedSignal] = useState(null);
   const [tradeAmount, setTradeAmount] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
-  
+
   const isSimMode = settings?.sim_trading_mode !== false;
 
   const fetchAnalysis = useCallback(async (force = false) => {
     if (!user?.email) return;
-    
+
     // CROSS-PAGE CHECK: If QuickActions (or earlier visit) already loaded analysis, reuse it
     if (!force) {
       const recent = getRecentAnalysis();
@@ -359,36 +359,36 @@ export default function MarketAnalysis() {
         return;
       }
     }
-    
+
     setAnalyzing(true);
     setError(null);
-    
+
     try {
       // Get user's watchlist symbols
       const watchedCrypto = settings?.watched_crypto || ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
       const watchedStocks = settings?.watched_stocks || [];
-      
+
       // Also include auto-buy preferences
       const autoBuyPrefs = await base44.entities.AutoBuyPreference.filter({
         created_by: user.email,
         enabled: true,
         is_simulation: isSimMode
       }).catch(() => []);
-      
-      const autoBuySymbols = autoBuyPrefs.map(p => p.symbol);
+
+      const autoBuySymbols = autoBuyPrefs.map((p) => p.symbol);
       const allSymbols = [...new Set([...watchedCrypto, ...watchedStocks, ...autoBuySymbols])];
-      
+
       console.log('[MarketAnalysis] Analyzing symbols:', allSymbols);
-      
+
       const response = await base44.functions.invoke('analyzeSmallGains', {
         symbols: allSymbols,
         includeMarketIntelligence: true,
         includeTradeHistory: true
       });
-      
+
       const data = response?.data || response;
       console.log('[MarketAnalysis] Analysis response:', data);
-      
+
       if (data?.success) {
         setAnalysisData(data);
         setRecentAnalysis(data); // Store for cross-page reuse
@@ -416,7 +416,7 @@ export default function MarketAnalysis() {
         symbol: signal.symbol,
         is_simulation: isSimMode
       });
-      
+
       if (existingPrefs.length === 0) {
         await base44.entities.AutoBuyPreference.create({
           symbol: signal.symbol,
@@ -427,7 +427,7 @@ export default function MarketAnalysis() {
           created_by: user.email
         });
       }
-      
+
       toast.success(`${signal.symbol} sent to Auto-Trader`, {
         description: `Will auto-trade when conditions are optimal`
       });
@@ -457,7 +457,7 @@ export default function MarketAnalysis() {
       if (isSimMode) {
         const walletRes = await base44.entities.Wallet.filter({ created_by: user.email });
         let wallet = walletRes[0];
-        
+
         if (side === 'buy') {
           if (!wallet || wallet.cash_balance < amount) {
             toast.error("Insufficient demo funds");
@@ -486,7 +486,7 @@ export default function MarketAnalysis() {
           const holding = holdingsRes[0];
           if (holding) {
             const newQty = holding.quantity + qty;
-            const newAvg = ((holding.quantity * holding.average_cost_price) + amount) / newQty;
+            const newAvg = (holding.quantity * holding.average_cost_price + amount) / newQty;
             await base44.entities.Holding.update(holding.id, { quantity: newQty, average_cost_price: newAvg });
           } else {
             await base44.entities.Holding.create({
@@ -565,7 +565,7 @@ export default function MarketAnalysis() {
     }
   };
 
-  const filteredRecommendations = (analysisData?.recommendations || []).filter(r => {
+  const filteredRecommendations = (analysisData?.recommendations || []).filter((r) => {
     if (filter === 'all') return true;
     if (filter === 'strong_signals') return r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell';
     if (filter === 'buy') return r.optimal_action === 'buy' || r.optimal_action === 'strong_buy';
@@ -574,7 +574,7 @@ export default function MarketAnalysis() {
   });
 
   const strongSignals = (analysisData?.recommendations || []).filter(
-    r => (r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell') && r.confidence_score >= 70
+    (r) => (r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell') && r.confidence_score >= 70
   );
 
   if (loading && !analysisData) {
@@ -587,8 +587,8 @@ export default function MarketAnalysis() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
+        className="flex items-center justify-between">
+
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <BarChart3 className="w-6 h-6" style={{ color: 'var(--neon-green)' }} />
@@ -602,33 +602,33 @@ export default function MarketAnalysis() {
           onClick={() => fetchAnalysis(true)}
           disabled={analyzing}
           variant="outline"
-          size="sm"
-        >
+          size="sm">
+
           <RefreshCw className={`w-4 h-4 mr-2 ${analyzing ? 'animate-spin' : ''}`} />
           {analyzing ? 'Analyzing...' : 'Refresh'}
         </Button>
       </motion.div>
 
-      {error && (
-        <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+      {error &&
+      <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
           <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
             {error}
           </p>
         </div>
-      )}
+      }
 
       {/* Strong Signals Alert */}
-      {strongSignals.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="p-4 rounded-xl border-2"
-          style={{ 
-            borderColor: 'var(--neon-green)',
-            backgroundColor: 'rgba(57, 255, 20, 0.05)'
-          }}
-        >
+      {strongSignals.length > 0 &&
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="p-4 rounded-xl border-2"
+        style={{
+          borderColor: 'var(--neon-green)',
+          backgroundColor: 'rgba(57, 255, 20, 0.05)'
+        }}>
+
           <div className="flex items-center gap-2 mb-2">
             <Zap className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
             <span className="font-bold" style={{ color: 'var(--neon-green)' }}>
@@ -636,14 +636,14 @@ export default function MarketAnalysis() {
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {strongSignals.map((s, idx) => (
-              <Badge key={idx} className={s.optimal_action === 'strong_buy' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
+            {strongSignals.map((s, idx) =>
+          <Badge key={idx} className={s.optimal_action === 'strong_buy' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
                 {s.symbol}: {s.optimal_action?.replace('_', ' ')} ({s.confidence_score?.toFixed(0)}%)
               </Badge>
-            ))}
+          )}
           </div>
         </motion.div>
-      )}
+      }
 
       {/* Market Intelligence */}
       <MarketSentimentCard intelligence={analysisData?.market_intelligence} />
@@ -651,22 +651,22 @@ export default function MarketAnalysis() {
       {/* Filter Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {[
-          { value: 'all', label: 'All Signals' },
-          { value: 'strong_signals', label: 'Strong Only', icon: Zap },
-          { value: 'buy', label: 'Buy Signals', icon: TrendingUp },
-          { value: 'sell', label: 'Sell Signals', icon: TrendingDown }
-        ].map((f) => (
-          <Button
-            key={f.value}
-            onClick={() => setFilter(f.value)}
-            variant={filter === f.value ? 'default' : 'outline'}
-            size="sm"
-            className={filter === f.value ? 'bg-green-600 hover:bg-green-700' : ''}
-          >
+        { value: 'all', label: 'All Signals' },
+        { value: 'strong_signals', label: 'Strong Only', icon: Zap },
+        { value: 'buy', label: 'Buy Signals', icon: TrendingUp },
+        { value: 'sell', label: 'Sell Signals', icon: TrendingDown }].
+        map((f) =>
+        <Button
+          key={f.value}
+          onClick={() => setFilter(f.value)}
+          variant={filter === f.value ? 'default' : 'outline'}
+          size="sm"
+          className={filter === f.value ? 'bg-green-600 hover:bg-green-700' : ''}>
+
             {f.icon && <f.icon className="w-4 h-4 mr-1" />}
             {f.label}
           </Button>
-        ))}
+        )}
       </div>
 
       {/* Recommendations */}
@@ -679,52 +679,52 @@ export default function MarketAnalysis() {
         </h2>
 
         <AnimatePresence>
-          {filteredRecommendations.length === 0 ? (
-            <div className="text-center py-8">
+          {filteredRecommendations.length === 0 ?
+          <div className="text-center py-8">
               <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-secondary)' }} />
               <p style={{ color: 'var(--text-secondary)' }}>
                 No signals match this filter. Try expanding your watchlist or changing the filter.
               </p>
+            </div> :
+
+          <div className="grid gap-4 md:grid-cols-2">
+              {filteredRecommendations.map((signal, idx) =>
+            <SignalCard
+              key={`${signal.symbol}-${idx}`}
+              signal={signal}
+              onSendToTrader={handleSendToTrader}
+              onManualTrade={handleManualTrade} />
+
+            )}
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {filteredRecommendations.map((signal, idx) => (
-                <SignalCard
-                  key={`${signal.symbol}-${idx}`}
-                  signal={signal}
-                  onSendToTrader={handleSendToTrader}
-                  onManualTrade={handleManualTrade}
-                />
-              ))}
-            </div>
-          )}
+          }
         </AnimatePresence>
       </div>
 
       {/* Market Summary */}
-      {analysisData?.market_summary && (
-        <Card>
+      {analysisData?.market_summary &&
+      <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-lg">Market Summary</CardTitle>
           </CardHeader>
           <CardContent>
             <p style={{ color: 'var(--text-primary)' }}>{analysisData.market_summary}</p>
             
-            {analysisData.upcoming_catalysts && analysisData.upcoming_catalysts.length > 0 && (
-              <div className="mt-4">
+            {analysisData.upcoming_catalysts && analysisData.upcoming_catalysts.length > 0 &&
+          <div className="mt-4">
                 <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
                   Upcoming Catalysts
                 </p>
                 <ul className="list-disc list-inside text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {analysisData.upcoming_catalysts.map((c, idx) => (
-                    <li key={idx}>{c}</li>
-                  ))}
+                  {analysisData.upcoming_catalysts.map((c, idx) =>
+              <li key={idx}>{c}</li>
+              )}
                 </ul>
               </div>
-            )}
+          }
           </CardContent>
         </Card>
-      )}
+      }
 
       {/* Last Updated */}
       <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
@@ -757,8 +757,8 @@ export default function MarketAnalysis() {
             </DialogDescription>
           </DialogHeader>
           
-          {selectedSignal && (
-            <div className="space-y-4">
+          {selectedSignal &&
+          <div className="space-y-4">
               <div className="bg-slate-800 p-4 rounded-lg space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm font-medium">Asset:</span>
@@ -778,38 +778,38 @@ export default function MarketAnalysis() {
 
               <div className="space-y-2">
                 <Label>Amount (USD)</Label>
-                <Input 
-                  type="number" 
-                  placeholder="Enter USD amount" 
-                  value={tradeAmount}
-                  onChange={(e) => setTradeAmount(e.target.value)}
-                  className="bg-slate-950"
-                  min="0"
-                  step="any"
-                />
-                {tradeAmount && selectedSignal.current_price && (
-                  <p className="text-xs text-gray-400">
+                <Input
+                type="number"
+                placeholder="Enter USD amount"
+                value={tradeAmount}
+                onChange={(e) => setTradeAmount(e.target.value)}
+                className="bg-slate-950"
+                min="0"
+                step="any" />
+
+                {tradeAmount && selectedSignal.current_price &&
+              <p className="text-xs text-gray-400">
                     ≈ {(Number(tradeAmount) / selectedSignal.current_price).toFixed(6)} {selectedSignal.symbol}
                   </p>
-                )}
+              }
               </div>
             </div>
-          )}
+          }
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedSignal(null)} disabled={isExecuting}>
+          <DialogFooter className="bg-transparent flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+            <Button variant="outline" onClick={() => setSelectedSignal(null)} disabled={isExecuting} className="bg-red-600 px-4 py-2 text-sm font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border border-input shadow-sm hover:bg-accent hover:text-accent-foreground h-9">
               Cancel
             </Button>
-            <Button onClick={executeTrade} disabled={isExecuting || !tradeAmount} className={selectedSignal?.optimal_action?.includes('buy') ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
-              {isExecuting ? (
-                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Executing...</>
-              ) : (
-                <><Zap className="w-4 h-4 mr-2" /> Execute Order</>
-              )}
+            <Button onClick={executeTrade} disabled={isExecuting || !tradeAmount} className="bg-lime-500 text-primary-foreground px-4 py-2 text-sm font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 shadow h-9 hover:bg-green-700">
+              {isExecuting ?
+              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Executing...</> :
+
+              <><Zap className="w-4 h-4 mr-2" /> Execute Order</>
+              }
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </div>);
+
 }
