@@ -875,7 +875,7 @@ Deno.serve(async (req) => {
           trades_count: 0,
           mode: 'live',
           available_cash: availableCash,
-          reason: 'Available cash is below minimum threshold ($5)'
+          reason: availableCash <= 0 ? 'No live balance detected (Kraken API/cached/wallet fallbacks exhausted)' : 'Available cash is below minimum threshold ($5)'
         });
       }
     }
