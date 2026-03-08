@@ -673,7 +673,7 @@ Deno.serve(async (req) => {
         const q = quotes.find(r => (r.symbol || '').toUpperCase() === symbol);
         const price = q?.price || q?.current_price || 0;
         if (!price || price <= 0) continue;
-        const sig = sigMap.get(symbol);
+        const sig = sigMap.get(symbol.toUpperCase());
         if (!sig) continue;
         const signalType = (sig.signal_type || 'hold').toLowerCase();
         const confidence = Number(sig.confidence_score || 0);
