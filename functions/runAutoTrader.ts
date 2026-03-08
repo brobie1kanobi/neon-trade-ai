@@ -1135,11 +1135,11 @@ Deno.serve(async (req) => {
           
           // Record health error
           try {
-            await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
-              action: 'recordError',
-              component: 'kraken_api',
-              error_message: krakenError.message
-            });
+            await base44.functions.invoke('systemHealthMonitor', {
+                      action: 'recordError',
+                      component: 'kraken_api',
+                      error_message: krakenError.message
+                    });
           } catch (e) {}
           
           continue;
@@ -1430,10 +1430,10 @@ Deno.serve(async (req) => {
     
     // Record success with health monitor
     try {
-      await base44.asServiceRole.functions.invoke('systemHealthMonitor', {
-        action: 'recordSuccess',
-        component: 'auto_trader'
-      });
+      await base44.functions.invoke('systemHealthMonitor', {
+                action: 'recordSuccess',
+                component: 'auto_trader'
+              });
     } catch (e) {}
     
     // Summary of advanced orders placed
