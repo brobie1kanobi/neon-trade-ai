@@ -1036,7 +1036,7 @@ Deno.serve(async (req) => {
             side: 'buy',
             quantity: qty,
             orderType: 'market'
-          }, 4, wsToken);
+          }, 4, wsToken, user.email);
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');
           }
@@ -1110,7 +1110,7 @@ Deno.serve(async (req) => {
               orderType: 'take-profit',
               triggerPrice: takeProfitPrice,
               timeInForce: 'gtc'
-            }, 4, wsToken);
+            }, 4, wsToken, user.email);
             console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
             
             if (tpData?.success) {
@@ -1142,7 +1142,7 @@ Deno.serve(async (req) => {
                 trailingPriceType: 'pct',
                 triggerReference: 'last',
                 useLimit: false // Use market order on trigger for guaranteed execution
-              }, 4, wsToken);
+              }, 4, wsToken, user.email);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
@@ -1174,7 +1174,7 @@ Deno.serve(async (req) => {
                 orderType: 'stop-loss',
                 stopPrice: staticStopLossPrice,
                 timeInForce: 'gtc'
-              }, 4, wsToken);
+              }, 4, wsToken, user.email);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
@@ -1405,7 +1405,7 @@ Deno.serve(async (req) => {
               side: 'buy',
               quantity: emergingQty,
               orderType: 'market'
-            }, 4, wsToken);
+            }, 4, wsToken, user.email);
             
             if (emergingBuyData?.success) {
               console.log(`[runAutoTrader] ✅ Emerging buy executed: ${emergingBuyData.order_id}`);
