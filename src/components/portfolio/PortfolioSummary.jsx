@@ -63,7 +63,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     if (wsConnected && wsUsdBalance > 0) {
       return Math.max(0, wsUsdBalance);
     }
-    return wallet?.real_cash_balance || 0;
+    // Live mode must never fall back to DB wallet values
+    return 0;
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
 
   // CRITICAL: Portfolio value = crypto holdings only (not including cash)
@@ -83,7 +84,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     if (wsConnected && wsCryptoValue > 0) {
       return Math.max(0, wsCryptoValue);
     }
-    return currentPortfolioValue || 0;
+    // In LIVE mode, if Kraken data is unavailable, show 0 instead of any DB-derived values
+    return 0;
   }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
 
   const totalValue = currentCashBalance + effectivePortfolioValue;
