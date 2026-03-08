@@ -142,22 +142,22 @@ export default function WebSocketTester() {
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 rounded bg-green-50 dark:bg-green-900/20">
             <span className="text-xs font-medium">USD Balance</span>
-            <span className="text-sm font-bold text-green-600">${usdBalance.toFixed(2)}</span>
+            <span className="text-sm font-bold text-green-600">${(usdBalance || 0).toFixed(2)}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-blue-50 dark:bg-blue-900/20">
             <span className="text-xs font-medium">Total Assets</span>
-            <span className="text-sm font-bold text-blue-600">{totalAssets}</span>
+            <span className="text-sm font-bold text-blue-600">{totalAssets || 0}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-purple-50 dark:bg-purple-900/20">
             <span className="text-xs font-medium">Portfolio Value</span>
-            <span className="text-sm font-bold text-purple-600">${totalPortfolioValue.toFixed(2)}</span>
+            <span className="text-sm font-bold text-purple-600">${(totalPortfolioValue || 0).toFixed(2)}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-yellow-50 dark:bg-yellow-900/20">
             <span className="text-xs font-medium">Open Orders</span>
-            <span className="text-sm font-bold text-yellow-600">{Object.keys(orders).length}</span>
+            <span className="text-sm font-bold text-yellow-600">{Object.keys(orders || {}).length}</span>
           </div>
         </div>
 
