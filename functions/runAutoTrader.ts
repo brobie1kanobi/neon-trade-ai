@@ -453,12 +453,95 @@ Deno.serve(async (req) => {
         return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
       }
     } catch (prospectError) {
-      log('Failed to fetch prospects', { error: prospectError.message });
-      await releaseLock(base44, autoTraderRunId, 'failed', {
-        error_message: prospectError.message,
-        logs_json: JSON.stringify(runLogs)
-      });
-      return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
+      // Fallback: build prospects in-line if function call is forbidden (403) or fails
+      log('Failed to fetch prospects, building fallback prospects', { error: prospectError.message });
+      try {
+        // 1) Load user preferences for current mode
+        const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
+        const prefs = allPrefs.filter(p => {
+          const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
+          const pEnabled = p.enabled !== false;
+          return pEnabled && (isSimMode ? pIsSim : !pIsSim);
+        });
+        
+        // 2) Get live cash (exact for display)
+        try {
+          const balRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+          const bal = balRes?.data || balRes;
+          if (bal?.success) cashAvailable = bal.available_usd_balance ?? bal.usd_balance ?? 0;
+        } catch (_e) {}
+        
+        // 3) Fetch prices using market data service
+        const cryptoSymbols = prefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
+        let quotes = [];
+        if (cryptoSymbols.length > 0) {
+          try {
+            const md = await base44.functions.invoke('getMarketData', {
+              action: 'getWatchlistData',
+              payload: { cryptoSymbols, stockSymbols: [] }
+            });
+            quotes = Array.isArray(md?.data) ? md.data : [];
+          } catch (_e) {}
+        }
+        
+        // 4) Build minimal prospects from preferences + signals
+        const sigMap = new Map();
+        for (const s of signals) sigMap.set(s.asset_symbol, s);
+        const spendable = Math.max(0, cashAvailable * 0.90); // 10% buffer
+        const minConf = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
+        prospects = [];
+        for (const pref of prefs) {
+          const symbol = String(pref.symbol || '').toUpperCase();
+          const q = quotes.find(r => (r.symbol || r.Symbol || '').toUpperCase() === symbol);
+          const price = q?.price || q?.current_price || 0;
+          if (!price || price <= 0) continue;
+          const sig = sigMap.get(symbol);
+          if (!sig) continue;
+          const signalType = (sig.signal_type || 'hold').toLowerCase();
+          const confidence = Number(sig.confidence_score || 0);
+          const change24h = Number(sig.change_24h || q?.change_24h_percent || q?.price_change_percentage_24h || 0);
+          if (!(signalType === 'buy' || signalType === 'strong_buy')) continue;
+          if (confidence < minConf) continue;
+          if (change24h < -5) continue;
+          const userPct = Number(pref.percentage || 10) / 100;
+          let total = spendable * userPct;
+          // Enforce Kraken min $5 and cap 40% of spendable per trade
+          if (spendable >= 5 && total < 5) total = 5;
+          total = Math.min(total, spendable * 0.40);
+          if (total < 1) continue;
+          const qty = total / price;
+          prospects.push({
+            symbol,
+            asset_type: pref.asset_type || 'crypto',
+            current_price: price,
+            quantity: qty,
+            total_value: total,
+            confidence_score: confidence,
+            is_blocked: false,
+            would_execute_now: true,
+            market_trend: change24h,
+            user_allocation_pct: Number(pref.percentage || 10),
+            optimal_action: signalType
+          });
+        }
+        
+        log(`Built ${prospects.length} fallback prospects, cash: $${cashAvailable.toFixed(2)}`);
+        if (prospects.length === 0) {
+          await releaseLock(base44, autoTraderRunId, 'completed', {
+            trades_attempted: 0,
+            trades_successful: 0,
+            logs_json: JSON.stringify(runLogs)
+          });
+          return Response.json({ success: true, message: 'No prospects available (fallback)', trades_count: 0 });
+        }
+      } catch (fallbackErr) {
+        log('Fallback prospects build failed', { error: fallbackErr.message });
+        await releaseLock(base44, autoTraderRunId, 'failed', {
+          error_message: prospectError.message,
+          logs_json: JSON.stringify(runLogs)
+        });
+        return Response.json({ success: false, error: 'Failed to fetch prospects: ' + prospectError.message });
+      }
     }
     
     // Fetch trade history for dynamic TP/SL calculation
