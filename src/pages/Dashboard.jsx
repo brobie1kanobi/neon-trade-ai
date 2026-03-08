@@ -1138,7 +1138,8 @@ export default function Dashboard() {
     krakenPnL: providerKrakenPnL,
     restDataLoading: providerLoading,
     fetchKrakenData,
-    fetchPnL: providerFetchPnL
+    fetchPnL: providerFetchPnL,
+    wsHasBalances
   } = useKrakenWebSocket();
   
   // CRITICAL: Also check global window state - provider React state can be stale
@@ -1767,19 +1768,21 @@ export default function Dashboard() {
   // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 
-        ? wsUsdBalance 
-        : (((providerKrakenBalance?.usd_balance || 0) > 0) 
-            ? providerKrakenBalance.usd_balance 
+    : ((wsConnected && wsHasBalances)
+        ? (typeof wsUsdBalance === 'number' ? wsUsdBalance : 0)
+        : (((providerKrakenBalance?.usd_balance ?? null) !== null)
+            ? providerKrakenBalance.usd_balance
             : (wallet?.real_cash_balance || 0)));
 
 
   const liveBalancesLoading = !isSimMode && (!providerHasData || providerLoading);
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoValue > 0 
-        ? wsCryptoValue 
-        : ((providerKrakenBalance?.total_crypto_value_usd ?? providerKrakenBalance?.total_crypto_value ?? 0) || portfolioMarketValue));
+    : ((wsConnected && wsHasBalances)
+        ? (typeof wsCryptoValue === 'number' ? wsCryptoValue : 0)
+        : ((providerKrakenBalance?.total_crypto_value_usd ?? providerKrakenBalance?.total_crypto_value ?? null) !== null
+            ? (providerKrakenBalance?.total_crypto_value_usd ?? providerKrakenBalance?.total_crypto_value)
+            : portfolioMarketValue));
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = currentCashBalance + currentPortfolioValue;
