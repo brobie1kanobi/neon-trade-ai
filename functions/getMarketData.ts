@@ -84,40 +84,50 @@ Deno.serve(async (req) => {
   } catch (error) {
     clearTimeout(globalTimeout);
     console.error('[getMarketData] ❌ Error:', error.message);
-    return Response.json([], { status: 200 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 });
 
 async function handleRequest(req, startTime) {
   try {
-    // Auth check with timeout
     const base44 = createClientFromRequest(req);
-    
-    const authController = new AbortController();
-    const authTimeout = setTimeout(() => authController.abort(), AUTH_TIMEOUT);
-    
-    let user = null;
-    try {
-      user = await base44.auth.me();
-      clearTimeout(authTimeout);
-    } catch (authErr) {
-      clearTimeout(authTimeout);
-      console.warn('[getMarketData] Auth failed/timeout');
-      return Response.json([], { status: 200 });
-    }
-    
-    if (!user) {
-      return Response.json([], { status: 200 });
-    }
 
+    // Read body first to determine if the action is public or private
     let body = {};
     try {
       body = await req.json();
     } catch (_e) {
       body = {};
     }
-    
     const { action, payload = {} } = body;
+
+    // Actions that only call public APIs (no user auth required)
+    const PUBLIC_ACTIONS = new Set([
+      'getWatchlistData',
+      'getAssetChartData',
+      'getTopMovers',
+      'searchAssets',
+      'getAssetDetails',
+      'getTopStockMovers'
+    ]);
+    const requiresAuth = !PUBLIC_ACTIONS.has(action);
+
+    // Authenticate ONLY when required; return 401 on failure
+    let user = null;
+    if (requiresAuth) {
+      const authController = new AbortController();
+      const authTimeout = setTimeout(() => authController.abort(), AUTH_TIMEOUT);
+      try {
+        user = await base44.auth.me();
+      } catch (_authErr) {
+        clearTimeout(authTimeout);
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      clearTimeout(authTimeout);
+      if (!user) {
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    }
 
     // ============================================
     // GET WATCHLIST DATA
@@ -227,7 +237,7 @@ async function handleRequest(req, startTime) {
 
   } catch (error) {
     console.error('[handleRequest] Error:', error.message);
-    return Response.json([], { status: 200 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
