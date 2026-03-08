@@ -644,7 +644,7 @@ Deno.serve(async (req) => {
       for (const s of activeSignals) sigMap.set(s.asset_symbol, s);
 
       // 4) Fetch quotes via Kraken public API
-      const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
+      const cryptoSymbols = prefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
       let quotes = [];
       try {
         const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
