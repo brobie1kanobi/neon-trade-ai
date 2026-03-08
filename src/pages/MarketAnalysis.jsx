@@ -274,6 +274,9 @@ function MarketSentimentCard({ intelligence }) {
 
 const LOADING_MESSAGES = [
   "Analyzing current markets and assets...",
+  "Accessing the moral fabric of the timespace continuum...",
+  "Questioning everything, leaving no stone unturned...",
+  "This will take a few seconds to load the analysis...",
   "Searching the internet for funny cat pics, er.. I mean, buyable assets...",
   "Consulting the crypto oracles...",
   "Crunching the numbers and ignoring the noise...",
