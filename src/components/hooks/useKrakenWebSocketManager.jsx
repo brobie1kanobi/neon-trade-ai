@@ -621,9 +621,9 @@ export function useKrakenWebSocketManager(options = {}) {
     }
     return connected;
   });
-  const [prices, setPrices] = useState({});
-  const [balances, setBalances] = useState({});
-  const [orders, setOrders] = useState({});
+  const [prices, setPrices] = useState(() => Object.fromEntries(GLOBAL_WS_STATE.prices));
+  const [balances, setBalances] = useState(() => Object.fromEntries(GLOBAL_WS_STATE.balances));
+  const [orders, setOrders] = useState(() => Object.fromEntries(GLOBAL_WS_STATE.orders));
   const [lastExecution, setLastExecution] = useState(null);
 
   const subscriberIdRef = useRef(Symbol());
