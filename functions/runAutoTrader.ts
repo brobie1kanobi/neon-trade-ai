@@ -671,7 +671,8 @@ Deno.serve(async (req) => {
       for (const pref of prefs) {
         const symbol = String(pref.symbol || '').toUpperCase();
         const q = quotes.find(r => (r.symbol || '').toUpperCase() === symbol);
-        const price = q?.price || q?.current_price || 0;
+        const sigForSymbol = sigMap.get(symbol.toUpperCase());
+        const price = q?.price || q?.current_price || Number(sigForSymbol?.price_at_signal) || 0;
         if (!price || price <= 0) continue;
         const sig = sigMap.get(symbol.toUpperCase());
         if (!sig) continue;
