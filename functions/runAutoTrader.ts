@@ -633,15 +633,11 @@ Deno.serve(async (req) => {
         }
       }
 
-      // 3) Load active signals
-      const nowTs = new Date();
-      let activeSignals = [];
-      try {
-        activeSignals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-        activeSignals = activeSignals.filter(s => !s.expires_at || new Date(s.expires_at) > nowTs);
-      } catch (_e) {}
+      // 3) Build signal map from current signals (already fetched / filtered above)
       const sigMap = new Map();
-      for (const s of activeSignals) sigMap.set(s.asset_symbol, s);
+      for (const s of (signals || [])) {
+        sigMap.set(String(s.asset_symbol || '').toUpperCase(), s);
+      }
 
       // 4) Fetch quotes via Kraken public API
       const cryptoSymbols = prefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
