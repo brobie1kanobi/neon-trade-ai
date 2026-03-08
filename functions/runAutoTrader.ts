@@ -144,7 +144,7 @@ function generateIdempotencyKey(userEmail, symbol, type, timestamp) {
  */
 async function checkIdempotency(base44, idempotencyKey, userEmail) {
   try {
-    const existing = await base44.asServiceRole.entities.Trade.filter({
+    const existing = await base44.entities.Trade.filter({
       created_by: userEmail,
       idempotency_key: idempotencyKey
     });
@@ -160,7 +160,7 @@ async function checkIdempotency(base44, idempotencyKey, userEmail) {
 async function acquireLock(base44, userEmail, runId) {
   try {
     // Check for existing running session
-    const activeRuns = await base44.asServiceRole.entities.AutoTraderRun.filter({
+    const activeRuns = await base44.entities.AutoTraderRun.filter({
       created_by: userEmail,
       status: 'running'
     });
@@ -177,7 +177,7 @@ async function acquireLock(base44, userEmail, runId) {
       }
       
       // Stale run, mark as failed
-      await base44.asServiceRole.entities.AutoTraderRun.update(oldestRun.id, {
+      await base44.entities.AutoTraderRun.update(oldestRun.id, {
         status: 'failed',
         error_message: 'Timed out - marked as failed by new run',
         completed_at: new Date().toISOString()
@@ -196,7 +196,7 @@ async function acquireLock(base44, userEmail, runId) {
  */
 async function releaseLock(base44, runId, status, stats) {
   try {
-    await base44.asServiceRole.entities.AutoTraderRun.update(runId, {
+    await base44.entities.AutoTraderRun.update(runId, {
       status,
       completed_at: new Date().toISOString(),
       ...stats
@@ -451,7 +451,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
 }
 
 async function getLatestWallet(base44, email) {
-  const list = await base44.asServiceRole.entities.Wallet.filter({ created_by: email }, "-updated_date");
+  const list = await base44.entities.Wallet.filter({ created_by: email }, "-updated_date");
   return list[0] || null;
 }
 
@@ -473,20 +473,8 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Determine target trading account email (supports scheduled runs under service user)
-    let targetEmail = user.email;
-    if (/no-reply\.base44\.com$/.test(targetEmail)) {
-      try {
-        const anyConn = await base44.asServiceRole.entities.KrakenConnection.filter({}, '-updated_date', 1);
-        if (anyConn.length > 0 && anyConn[0]?.created_by) {
-          targetEmail = anyConn[0].created_by;
-          console.log('[runAutoTrader] Acting as target user:', targetEmail);
-        }
-      } catch (_) {}
-    }
-
     // CRITICAL: Load user settings to determine mode
-    const settingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: targetEmail });
+    const settingsList = await base44.entities.UserSettings.filter({ created_by: user.email });
     if (settingsList.length > 0) {
       // Sort by updated_date descending to ensure we get the most recently saved settings
       settingsList.sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0));
@@ -512,7 +500,7 @@ Deno.serve(async (req) => {
     const runIdempotencyKey = `run_${user.email}_${Date.now()}`;
     
     // Create AutoTraderRun record
-    const autoTraderRun = await base44.asServiceRole.entities.AutoTraderRun.create({
+    const autoTraderRun = await base44.entities.AutoTraderRun.create({
       status: 'pending',
       idempotency_key: runIdempotencyKey,
       started_at: new Date().toISOString(),
@@ -527,7 +515,7 @@ Deno.serve(async (req) => {
     const lockResult = await acquireLock(base44, user.email, autoTraderRunId);
     if (!lockResult.acquired) {
       log('Lock not acquired', lockResult);
-      await base44.asServiceRole.entities.AutoTraderRun.update(autoTraderRunId, {
+      await base44.entities.AutoTraderRun.update(autoTraderRunId, {
         status: 'canceled',
         error_message: lockResult.reason,
         completed_at: new Date().toISOString()
@@ -540,7 +528,7 @@ Deno.serve(async (req) => {
     }
     
     // Update status to running
-    await base44.asServiceRole.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
+    await base44.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
     log('Lock acquired, status set to running');
     
     // Check system health before proceeding (direct entity read to avoid cross-function auth issues)
@@ -571,7 +559,9 @@ Deno.serve(async (req) => {
     
     // Fetch active signals
     try {
-      signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+      signals = await base44.asServiceRole.entities.AssetSignal.filter({
+        is_active: true
+      });
       
       // Filter to non-expired signals
       const now = new Date();
@@ -600,16 +590,12 @@ Deno.serve(async (req) => {
 
     try {
       // 1) Load user preferences for current mode
-      const allPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ created_by: targetEmail }, '-created_date', 50);
-      let prefs = allPrefs.filter(p => {
+      const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
+      const prefs = allPrefs.filter(p => {
         const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
         const pEnabled = p.enabled !== false;
         return pEnabled && (isSimMode ? pIsSim : !pIsSim);
       });
-      if (prefs.length === 0) {
-        log('No mode-specific AutoBuyPreference found; falling back to enabled prefs');
-        prefs = allPrefs.filter(p => p.enabled !== false);
-      }
 
       // 2) Determine cash available (SIM: wallet, LIVE: Kraken direct)
       let tradingCash = 0;
@@ -618,39 +604,46 @@ Deno.serve(async (req) => {
         cashAvailable = wallet?.cash_balance || 0;
         tradingCash = cashAvailable;
       } else {
-        try {
-          const balRes = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
-          const usdBal = parseFloat(balRes?.data?.balance?.USD?.balance ?? 0);
-          cashAvailable = Number.isFinite(usdBal) ? usdBal : 0;
-          let reserved = 0;
-          try {
-            const openRes = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getOpenOrders' });
-            const orders = openRes?.data?.orders || [];
-            for (const o of orders) {
-              const side = (o?.descr?.type || o?.order?.side || '').toLowerCase();
-              const price = parseFloat(o?.descr?.price || o?.price || 0);
-              const vol = (() => {
-                const v = parseFloat(o?.vol || 0), vx = parseFloat(o?.vol_exec || 0);
-                if (Number.isFinite(v) && Number.isFinite(vx)) return Math.max(0, v - vx);
-                return parseFloat(o?.order?.order_qty || 0);
-              })();
-              if (side === 'buy' && price > 0 && vol > 0) reserved += vol * price;
+        const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+        if (conns.length > 0) {
+          const conn = conns[0];
+          const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+          const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+          if (apiKey && apiSecret) {
+            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+            if (!bal?.error?.length && bal?.result) {
+              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+              cashAvailable = rawUsd;
+              // Deduct open buy orders + 2% safety buffer for trading cash
+              let reserved = 0;
+              try {
+                const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
+                if (open?.result?.open) {
+                  for (const [, order] of Object.entries(open.result.open)) {
+                    const side = (order.descr?.type || '').toLowerCase();
+                    if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+                  }
+                }
+              } catch (_e) {}
+              tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
             }
-          } catch (_) {}
-          tradingCash = Math.max(0, cashAvailable - reserved - cashAvailable * 0.02);
-        } catch (e) {
-          log('Live balance fetch via krakenApi failed', { error: e.message });
+          }
         }
       }
 
-      // 3) Build signal map from current signals (already fetched / filtered above)
+      // 3) Load active signals
+      const nowTs = new Date();
+      let activeSignals = [];
+      try {
+        activeSignals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        activeSignals = activeSignals.filter(s => !s.expires_at || new Date(s.expires_at) > nowTs);
+      } catch (_e) {}
       const sigMap = new Map();
-      for (const s of (signals || [])) {
-        sigMap.set(String(s.asset_symbol || '').toUpperCase(), s);
-      }
+      for (const s of activeSignals) sigMap.set(s.asset_symbol, s);
 
       // 4) Fetch quotes via Kraken public API
-      const cryptoSymbols = prefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
+      const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
       let quotes = [];
       try {
         const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
@@ -681,20 +674,9 @@ Deno.serve(async (req) => {
       for (const pref of prefs) {
         const symbol = String(pref.symbol || '').toUpperCase();
         const q = quotes.find(r => (r.symbol || '').toUpperCase() === symbol);
-        const sigForSymbol = sigMap.get(symbol.toUpperCase());
-        let price = q?.price || q?.current_price || Number(sigForSymbol?.price_at_signal) || 0;
-        if (!price || price <= 0) {
-          try {
-            const mdRes = await base44.asServiceRole.functions.invoke('getMarketData', {
-              action: 'getWatchlistData',
-              payload: { cryptoSymbols: [symbol], stockSymbols: [] }
-            });
-            const p = (mdRes?.data?.[0]?.price) ?? 0;
-            price = Number(p) || 0;
-          } catch (_) {}
-        }
+        const price = q?.price || q?.current_price || 0;
         if (!price || price <= 0) continue;
-        const sig = sigMap.get(symbol.toUpperCase());
+        const sig = sigMap.get(symbol);
         if (!sig) continue;
         const signalType = (sig.signal_type || 'hold').toLowerCase();
         const confidence = Number(sig.confidence_score || 0);
@@ -802,14 +784,26 @@ Deno.serve(async (req) => {
     // CRITICAL: Check available cash FIRST before filtering prospects
     // This prevents processing prospects when there's no money to trade with
     if (!isSimMode) {
-      // Refresh live cash via krakenApi proxy (uses balance key)
+      // Refresh live cash once up front via direct Kraken API (avoid cross-function 403s)
       try {
-        const bal2 = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
-        const fresh = parseFloat(bal2?.data?.balance?.USD?.balance ?? 0);
-        availableCash = Math.max(0, fresh * 0.90); // safety buffer for spending
-        console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${fresh.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+        const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+        if (conns.length > 0) {
+          const conn = conns[0];
+          const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+          const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+          if (apiKey && apiSecret) {
+            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+            if (!bal?.error?.length && bal?.result) {
+              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+              const freshAvailable = rawUsd;
+              availableCash = Math.max(0, freshAvailable * 0.90); // safety buffer for spending
+              console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+            }
+          }
+        }
       } catch (e) {
-        console.warn('[runAutoTrader] krakenApi getExtendedBalance failed; proceeding with cached cash value:', e.message);
+        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with cached cash value:', e.message);
       }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
@@ -980,12 +974,23 @@ Deno.serve(async (req) => {
       try {
         if (!isSimMode) {
           try {
-            const balNow = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
-            const freshAvailable = parseFloat(balNow?.data?.balance?.USD?.balance ?? 0);
-            availableCash = Math.max(0, freshAvailable * 0.90);
-            portfolioState = portfolioState || {};
-            portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
-            console.log(`[runAutoTrader] Using fresh cash for checks: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+            const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+            if (conns.length > 0) {
+              const conn = conns[0];
+              const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+              const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+              if (apiKey && apiSecret) {
+                const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+                if (!bal?.error?.length && bal?.result) {
+                  const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+                  const freshAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+                  availableCash = Math.max(0, freshAvailable * 0.90);
+                  portfolioState = portfolioState || {};
+                  portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
+                  console.log(`[runAutoTrader] Using fresh cash for checks: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+                }
+              }
+            }
           } catch (_e) {
             // Keep previous availableCash
           }
