@@ -347,7 +347,7 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
       }
 
       // Fallback: direct REST AddOrder when cross-function returns 403 (WS path blocked)
-      if ((/status code 403/i.test(msg) || /access denied/i.test(msg) || /403/i.test(msg)) && payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy' && userEmail) {
+      if ((/status code 403/i.test(msg) || /access denied/i.test(msg) || /403/i.test(msg)) && userEmail) {
         try {
           const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
           if (conns.length > 0) {
@@ -358,16 +358,78 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
               const sym = String(payload.symbol || '').toUpperCase();
               const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
               const vol = Number(payload.quantity || 0);
-              const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                pair,
-                type: 'buy',
-                ordertype: String(payload.orderType || 'market').toLowerCase(),
-                volume: String(vol)
-              });
-              if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-              } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                throw new Error(addRes.error.join(', '));
+
+              // BUY market/limit fallback
+              if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy') {
+                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                  pair,
+                  type: 'buy',
+                  ordertype: String(payload.orderType || 'market').toLowerCase(),
+                  volume: String(vol)
+                });
+                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                  throw new Error(addRes.error.join(', '));
+                }
+              }
+
+              // SELL take-profit fallback
+              if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'take-profit') {
+                const tp = Number(payload.triggerPrice || payload.stopPrice || 0);
+                if (tp > 0) {
+                  const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                    pair,
+                    type: 'sell',
+                    ordertype: 'take-profit',
+                    price: String(tp),
+                    volume: String(vol)
+                  });
+                  if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                    return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+                  } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                    throw new Error(addRes.error.join(', '));
+                  }
+                }
+              }
+
+              // SELL stop-loss fallback
+              if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'stop-loss') {
+                const sl = Number(payload.stopPrice || payload.triggerPrice || 0);
+                if (sl > 0) {
+                  const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                    pair,
+                    type: 'sell',
+                    ordertype: 'stop-loss',
+                    price: String(sl),
+                    volume: String(vol)
+                  });
+                  if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                    return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+                  } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                    throw new Error(addRes.error.join(', '));
+                  }
+                }
+              }
+
+              // Trailing stop fallback (percentage)
+              if (payload?.action === 'place_trailing_stop') {
+                const pct = Number(payload.trailingPercent || 0);
+                const priceParam = pct > 0 ? `${pct}%` : null;
+                if (priceParam) {
+                  const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                    pair,
+                    type: 'sell',
+                    ordertype: 'trailing-stop',
+                    price: String(priceParam),
+                    volume: String(vol)
+                  });
+                  if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                    return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+                  } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                    throw new Error(addRes.error.join(', '));
+                  }
+                }
               }
             }
           }
