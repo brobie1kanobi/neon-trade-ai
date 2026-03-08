@@ -747,6 +747,69 @@ export default function MarketAnalysis() {
           </Button>
         </Link>
       </div>
+
+      <Dialog open={!!selectedSignal} onOpenChange={(open) => !open && setSelectedSignal(null)}>
+        <DialogContent className="bg-slate-900 p-6 sm:rounded-lg">
+          <DialogHeader>
+            <DialogTitle>Execute Manual Trade</DialogTitle>
+            <DialogDescription>
+              Execute a market order for {selectedSignal?.symbol}.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedSignal && (
+            <div className="space-y-4">
+              <div className="bg-slate-800 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Asset:</span>
+                  <span className="font-semibold">{selectedSignal.symbol}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Action:</span>
+                  <Badge className={selectedSignal.optimal_action?.includes('buy') ? 'bg-green-500' : 'bg-red-500'}>
+                    {selectedSignal.optimal_action?.replace('_', ' ').toUpperCase()}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Current Price:</span>
+                  <span className="font-semibold">${selectedSignal.current_price?.toFixed(4)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Amount (USD)</Label>
+                <Input 
+                  type="number" 
+                  placeholder="Enter USD amount" 
+                  value={tradeAmount}
+                  onChange={(e) => setTradeAmount(e.target.value)}
+                  className="bg-slate-950"
+                  min="0"
+                  step="any"
+                />
+                {tradeAmount && selectedSignal.current_price && (
+                  <p className="text-xs text-gray-400">
+                    ≈ {(Number(tradeAmount) / selectedSignal.current_price).toFixed(6)} {selectedSignal.symbol}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedSignal(null)} disabled={isExecuting}>
+              Cancel
+            </Button>
+            <Button onClick={executeTrade} disabled={isExecuting || !tradeAmount} className={selectedSignal?.optimal_action?.includes('buy') ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}>
+              {isExecuting ? (
+                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Executing...</>
+              ) : (
+                <><Zap className="w-4 h-4 mr-2" /> Execute Order</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
