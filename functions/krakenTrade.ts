@@ -813,13 +813,15 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
 
-    // CRITICAL: Only admin/creator can execute real trades
-    const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+    // CRITICAL: Only privileged users can execute real trades
+    const role = (user?.role || '').toLowerCase();
+    const isAdmin = role === 'admin';
+    const isOwner = role === 'owner';
     const isCreator = !!user?.is_creator;
     
-    if (!isAdmin && !isCreator) {
+    if (!isAdmin && !isOwner && !isCreator) {
       return Response.json({ 
-        error: 'Access denied - Real trading requires admin access', 
+        error: 'Access denied - live trading requires admin/owner privileges', 
         success: false 
       }, { status: 403 });
     }
