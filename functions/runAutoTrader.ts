@@ -571,9 +571,7 @@ Deno.serve(async (req) => {
     
     // Fetch active signals
     try {
-      signals = await base44.asServiceRole.entities.AssetSignal.filter({
-        is_active: true
-      });
+      signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
       
       // Filter to non-expired signals
       const now = new Date();
