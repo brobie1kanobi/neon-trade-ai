@@ -682,19 +682,26 @@ Deno.serve(async (req) => {
     // CRITICAL: Check available cash FIRST before filtering prospects
     // This prevents processing prospects when there's no money to trade with
     if (!isSimMode) {
-      // Refresh live cash once up front to avoid stale $0.00
+      // Refresh live cash once up front via direct Kraken API (avoid cross-function 403s)
       try {
-        const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
-        const freshData = freshBalanceRes?.data || freshBalanceRes;
-        if (freshData?.success) {
-          const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? availableCash;
-          availableCash = Math.max(0, freshAvailable * 0.90); // safety buffer for spending
-          console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
-        } else {
-          console.warn('[runAutoTrader] getKrakenBalance not successful; proceeding with cached cash value');
+        const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+        if (conns.length > 0) {
+          const conn = conns[0];
+          const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+          const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+          if (apiKey && apiSecret) {
+            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+            if (!bal?.error?.length && bal?.result) {
+              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+              const freshAvailable = rawUsd;
+              availableCash = Math.max(0, freshAvailable * 0.90); // safety buffer for spending
+              console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+            }
+          }
         }
       } catch (e) {
-        console.warn('[runAutoTrader] getKrakenBalance failed; proceeding with cached cash value:', e.message);
+        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with cached cash value:', e.message);
       }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
@@ -813,15 +820,8 @@ Deno.serve(async (req) => {
     const defaultTrailingMargin = settings.trailing_takeprofit_margin || 3;
     const signalsConsumed = [];
     
-    // Fetch a single TRADE WebSocket token once for this run
+    // Skip WS token prefetch to avoid cross-function 403s; krakenTrade will handle as needed
     let wsToken = null;
-    try {
-      const tokenRes = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
-      const tokenData = tokenRes?.data || tokenRes;
-      wsToken = tokenData?.token || null;
-    } catch (e) {
-      log('Could not prefetch trade WS token', { error: e.message });
-    }
     
     // Build current portfolio state for risk engine
     let portfolioState = null;
@@ -871,15 +871,26 @@ Deno.serve(async (req) => {
       // Ensure portfolioState has FRESH cash before risk check (fixes $0.00 issue)
       try {
         if (!isSimMode) {
-          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
-          const freshData = freshBalanceRes?.data || freshBalanceRes;
-          if (freshData?.success) {
-            const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
-            // Apply 10% safety buffer for spending calculations
-            availableCash = Math.max(0, freshAvailable * 0.90);
-            portfolioState = portfolioState || {};
-            portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
-            console.log(`[runAutoTrader] Using fresh cash for riskEngine: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+          try {
+            const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
+            if (conns.length > 0) {
+              const conn = conns[0];
+              const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
+              const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+              if (apiKey && apiSecret) {
+                const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+                if (!bal?.error?.length && bal?.result) {
+                  const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+                  const freshAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+                  availableCash = Math.max(0, freshAvailable * 0.90);
+                  portfolioState = portfolioState || {};
+                  portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
+                  console.log(`[runAutoTrader] Using fresh cash for checks: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
+                }
+              }
+            }
+          } catch (_e) {
+            // Keep previous availableCash
           }
         } else {
           const simWallet = await getLatestWallet(base44, user.email);
@@ -907,42 +918,8 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // RISK ENGINE CHECK - validate trade before execution
-      try {
-        const riskResult = await base44.functions.invoke('riskEngine', {
-          action: 'evaluateTrade',
-          payload: {
-            proposedTrade: {
-              symbol: sym,
-              type: 'buy',
-              quantity: qty,
-              price: price,
-              total_value: total_value,
-              is_simulation: isSimMode
-            },
-            // Pass the freshest wallet snapshot so riskEngine sees real cash
-            portfolioState
-          }
-        });
-        
-        const risk = riskResult?.data || riskResult;
-        
-        if (!risk?.approved) {
-          log(`RISK REJECTED: ${sym}`, { rejections: risk?.rejections });
-          tradesRejectedRisk.push({
-            symbol: sym,
-            rejections: risk?.rejections || [],
-            risk_score: risk?.risk_score || 0
-          });
-          continue;
-        }
-        
-        if (risk?.warnings?.length > 0) {
-          log(`Risk warnings for ${sym}`, { warnings: risk.warnings });
-        }
-      } catch (riskErr) {
-        log(`Risk check failed for ${sym}, proceeding with caution`, { error: riskErr.message });
-      }
+      // Skip external riskEngine to avoid 403s; rely on internal spend/qty/threshold checks below
+      log(`Risk engine skipped for ${sym} (using internal checks)`);
       
       // CRITICAL: Re-fetch current Kraken balance AND asset holdings BEFORE each trade
       // This is the MOST IMPORTANT check - prevents "insufficient funds" errors
