@@ -356,7 +356,7 @@ export function KrakenWebSocketProvider({ children }) {
           fetchRestData(true);
           setTimeout(() => fetchPnL(), 5000);
         }
-      }, 500); // Reduced from 2000ms to 500ms - REST is primary, not fallback
+      }, 0); // Reduced from 2000ms to 500ms - REST is primary, not fallback
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
@@ -399,15 +399,13 @@ export function KrakenWebSocketProvider({ children }) {
   // WS balances only have quantities (no prices until ticker data arrives)
   // So: REST first (accurate), then WS only if REST is unavailable
   
-  const bestUsdBalance = restHasBalance 
+  const bestUsdBalance = Math.max(0, restHasBalance 
     ? (restData.krakenBalance.usd_balance || 0)
-    : wsHasBalances ? state.usdBalance
-    : 0;
+    : (wsHasBalances ? state.usdBalance : 0));
 
-  const bestCryptoValue = restHasBalance 
+  const bestCryptoValue = Math.max(0, restHasBalance 
     ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : wsHasBalances ? state.cryptoHoldingsValue
-    : 0;
+    : (wsHasBalances ? state.cryptoHoldingsValue : 0));
 
   const bestHoldings = restHasBalance
     ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))

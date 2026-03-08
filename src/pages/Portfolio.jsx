@@ -469,13 +469,17 @@ export default function Portfolio() {
   // REST API (getKrakenBalance) returns accurate prices+balances, WS only has raw quantities
   const currentCashBalance = isSimMode
     ? (wallet?.cash_balance || 0)
-    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+    : ((krakenData?.success && typeof krakenData.usd_balance === 'number')
+        ? krakenData.usd_balance
+        : (wsUsdBalance >= 0 ? wsUsdBalance : 0));
     
   const currentPortfolioValue = isSimMode
     ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
-    : (wsCryptoValue > 0
-        ? wsCryptoValue
-        : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
+    : ((krakenData?.success && (krakenData.total_crypto_value_usd !== undefined || krakenData.total_crypto_value !== undefined))
+        ? (krakenData.total_crypto_value_usd ?? krakenData.total_crypto_value)
+        : (wsCryptoValue > 0
+            ? wsCryptoValue
+            : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)));
 
   if (isSimMode === null || ctxSettingsLoading || (isLoading && !wallet && !user)) {
     return (
