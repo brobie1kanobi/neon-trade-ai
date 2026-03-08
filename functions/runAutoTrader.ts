@@ -103,7 +103,7 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
   const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
   const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 8000);
+  const t = setTimeout(() => controller.abort(), 2500);
   try {
     const res = await fetch(`https://api.kraken.com${endpoint}`, {
       method: 'POST',
@@ -474,7 +474,8 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      // In scheduled automation context there may be no end-user session; skip quickly
+      return Response.json({ success: true, message: 'Skipped: no user context (automation)', trades_count: 0 });
     }
 
     // CRITICAL: Load user settings to determine mode
@@ -572,6 +573,10 @@ Deno.serve(async (req) => {
       signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
       
       log(`Found ${signals.length} active signals`);
+      if (overBudget()) {
+        await releaseLock(base44, autoTraderRunId, 'canceled', { error_message: 'Budget reached after fetching signals', logs_json: JSON.stringify(runLogs) });
+        return Response.json({ success: true, message: 'Skipped due to runtime budget (signals)', trades_count: 0 });
+      }
     } catch (e) {
       log('Failed to fetch signals', { error: e.message });
     }
@@ -588,6 +593,10 @@ Deno.serve(async (req) => {
     try {
       // 1) Load user preferences for current mode
       const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
+      if (overBudget()) {
+        await releaseLock(base44, autoTraderRunId, 'canceled', { error_message: 'Budget reached before building prospects', logs_json: JSON.stringify(runLogs) });
+        return Response.json({ success: true, message: 'Skipped due to runtime budget (preferences)', trades_count: 0 });
+      }
       const prefs = allPrefs.filter(p => {
         const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
         const pEnabled = p.enabled !== false;
@@ -679,7 +688,7 @@ Deno.serve(async (req) => {
       const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
       let quotes = [];
       try {
-        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean).slice(0, 6);
+        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean).slice(0, 4);
         if (pairs.length > 0) {
           const ctl = new AbortController();
           const to = setTimeout(() => ctl.abort(), 3000);
@@ -954,7 +963,7 @@ Deno.serve(async (req) => {
 
     log(`${eligibleProspects.length} prospects eligible for auto-execution`);
 
-    const maxTrades = isSimMode ? 2 : 1;
+    const maxTrades = 1;
     if (eligibleProspects.length > maxTrades) {
       eligibleProspects = eligibleProspects.slice(0, maxTrades);
       log(`Capping to ${maxTrades} trades this run to stay within runtime limits`);
@@ -1529,6 +1538,8 @@ Deno.serve(async (req) => {
         if (!isSimMode) {
           // LIVE: Execute via Kraken
           if (overBudget()) { log('Runtime budget reached before live trade execution'); break; }
+          // Extra guard: if time left < 1500ms, skip execution to ensure response
+          if (timeLeft() < 1500) { log('Low time left, skipping live execution'); break; }
           try {
             await sleep(500);
             const emergingBuyData = await invokeKrakenTrade(base44, {
