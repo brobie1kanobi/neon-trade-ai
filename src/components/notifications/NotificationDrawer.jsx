@@ -374,7 +374,12 @@ export default function NotificationDrawer({ isOpen, onOpenChange }) {
             }
             
             <p className="text-xs text-gray-400 text-right">
-              {selectedNotification && format(new Date(selectedNotification.created_date), 'MMM d, yyyy h:mm a')}
+              {selectedNotification && (
+                <>
+                  {format(new Date(selectedNotification.created_date), 'MMM d, yyyy')}
+                  <span className="inline-block ml-2">{format(new Date(selectedNotification.created_date), 'h:mm a')}</span>
+                </>
+              )}
             </p>
           </div>
           <DialogFooter>
