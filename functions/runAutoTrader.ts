@@ -600,7 +600,7 @@ Deno.serve(async (req) => {
 
     try {
       // 1) Load user preferences for current mode
-      const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
+      const allPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({ created_by: targetEmail }, '-created_date', 50);
       let prefs = allPrefs.filter(p => {
         const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
         const pEnabled = p.enabled !== false;
