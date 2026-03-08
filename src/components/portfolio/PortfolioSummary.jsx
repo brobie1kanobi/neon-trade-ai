@@ -57,11 +57,11 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
     if (krakenData?.success && typeof krakenData?.usd_balance === 'number') {
-      return krakenData.usd_balance;
+      return Math.max(0, krakenData.usd_balance);
     }
     // WebSocket fallback
     if (wsConnected && wsUsdBalance > 0) {
-      return wsUsdBalance;
+      return Math.max(0, wsUsdBalance);
     }
     return wallet?.real_cash_balance || 0;
   }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
@@ -74,14 +74,14 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     }
     // LIVE MODE: krakenData prop first (REST API is authoritative)
     if (krakenData?.success && krakenData?.total_crypto_value_usd > 0) {
-      return krakenData.total_crypto_value_usd;
+      return Math.max(0, krakenData.total_crypto_value_usd);
     }
     if (krakenData?.success && krakenData?.total_crypto_value > 0) {
-      return krakenData.total_crypto_value;
+      return Math.max(0, krakenData.total_crypto_value);
     }
     // WebSocket fallback
     if (wsConnected && wsCryptoValue > 0) {
-      return wsCryptoValue;
+      return Math.max(0, wsCryptoValue);
     }
     return currentPortfolioValue || 0;
   }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);

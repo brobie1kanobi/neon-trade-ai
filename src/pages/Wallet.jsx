@@ -401,8 +401,8 @@ export default function WalletPage() {
   };
 
   // CRITICAL: Use Kraken values in LIVE mode
-  const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
-  const displayCashBalance = isSimMode ? (wallet?.cash_balance || 0) : krakenCashBalance;
+  const displayPortfolioValue = isSimMode ? Math.max(0, portfolioMarketValue) : Math.max(0, krakenPortfolioValue);
+  const displayCashBalance = isSimMode ? Math.max(0, wallet?.cash_balance || 0) : Math.max(0, krakenCashBalance);
 
   // CRITICAL: Don't render until we know the mode - prevents showing sim UI in live mode
   if (isSimMode === null || settingsLoading) {
