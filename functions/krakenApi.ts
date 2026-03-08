@@ -516,7 +516,7 @@ Deno.serve(async (req) => {
           !payload?.forceRefresh &&
           cachedToken &&
           cachedFingerprint === fingerprint &&
-          (expiresAt - now) > 60000  // 1 minute buffer
+          (expiresAt - now) > 180000  // 3 minute buffer
         );
 
         if (safeToReuse) {
