@@ -377,7 +377,7 @@ Deno.serve(async (req) => {
     
     // Check system health before proceeding
     try {
-      const healthRes = await base44.asServiceRole.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
+      const healthRes = await base44.functions.invoke('systemHealthMonitor', { action: 'checkHealth' });
       const health = healthRes?.data || healthRes;
       
       if (health?.trading_allowed === false) {
@@ -435,7 +435,7 @@ Deno.serve(async (req) => {
     let marketIntelligence = null;
     
     try {
-      const prospectsResponse = await base44.asServiceRole.functions.invoke('getAutoTraderProspects', {});
+      const prospectsResponse = await base44.functions.invoke('getAutoTraderProspects', {});
       const prospectsData = prospectsResponse?.data || prospectsResponse;
       
       if (prospectsData?.success && Array.isArray(prospectsData?.prospects)) {
@@ -466,7 +466,7 @@ Deno.serve(async (req) => {
         
         // 2) Get live cash (exact for display)
         try {
-          const balRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+          const balRes = await base44.functions.invoke('getKrakenBalance', {});
           const bal = balRes?.data || balRes;
           if (bal?.success) cashAvailable = bal.available_usd_balance ?? bal.usd_balance ?? 0;
         } catch (_e) {}
@@ -616,7 +616,7 @@ Deno.serve(async (req) => {
     if (!isSimMode) {
       // Refresh live cash once up front to avoid stale $0.00
       try {
-        const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+        const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
         const freshData = freshBalanceRes?.data || freshBalanceRes;
         if (freshData?.success) {
           const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? availableCash;
@@ -803,7 +803,7 @@ Deno.serve(async (req) => {
       // Ensure portfolioState has FRESH cash before risk check (fixes $0.00 issue)
       try {
         if (!isSimMode) {
-          const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
           const freshData = freshBalanceRes?.data || freshBalanceRes;
           if (freshData?.success) {
             const freshAvailable = freshData.available_usd_balance ?? freshData.usd_balance ?? 0;
@@ -880,7 +880,7 @@ Deno.serve(async (req) => {
       // This is the MOST IMPORTANT check - prevents "insufficient funds" errors
       if (!isSimMode) {
         try {
-          const freshBalanceRes = await base44.asServiceRole.functions.invoke('getKrakenBalance', {});
+          const freshBalanceRes = await base44.functions.invoke('getKrakenBalance', {});
           const freshData = freshBalanceRes?.data || freshBalanceRes;
           if (freshData?.success && freshData?.connected) {
             // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
