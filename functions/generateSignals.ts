@@ -1006,31 +1006,9 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
         if (existingSignal) {
           await base44.asServiceRole.entities.AssetSignal.update(existingSignal.id, signalData);
           signalsCreated.push({ ...signalData, id: existingSignal.id, action: 'updated' });
-          try {
-            await base44.analytics.track({
-              eventName: 'ai_signal_generated',
-              properties: {
-                symbol: sym,
-                signal_type: finalSignalType,
-                confidence: Math.round(finalConfidence),
-                action: 'updated'
-              }
-            });
-          } catch (_) {}
         } else {
           const newSignal = await base44.asServiceRole.entities.AssetSignal.create(signalData);
           signalsCreated.push({ ...signalData, id: newSignal.id, action: 'created' });
-          try {
-            await base44.analytics.track({
-              eventName: 'ai_signal_generated',
-              properties: {
-                symbol: sym,
-                signal_type: finalSignalType,
-                confidence: Math.round(finalConfidence),
-                action: 'created'
-              }
-            });
-          } catch (_) {}
         }
         console.log(`[generateSignals] ${sym}: ${finalSignalType}@${finalConfidence}% (composite=${compositeScore}, RSI=${ti.rsi_1h?.toFixed(0) || '?'}, MACD=${ti.macd_1h?.histogram > 0 ? '+' : ''}${ti.macd_1h?.histogram?.toFixed(4) || '?'}, BB%B=${ti.bb_1h?.percentB?.toFixed(0) || '?'}%, Sent=${sent?.score || '?'})`);
       } catch (e) {
@@ -1055,13 +1033,6 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
 
     const duration = Date.now() - startTime;
     console.log('[generateSignals] v5 Complete:', signalsCreated.length, 'signals in', duration, 'ms');
-
-    try {
-      await base44.analytics.track({
-        eventName: 'ai_signals_batch_generated',
-        properties: { count: signalsCreated.length, reused: validSignals.size, duration_ms: duration }
-      });
-    } catch (_) {}
 
     return Response.json({
       success: true,
