@@ -320,6 +320,14 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
 
+    // Guardrail: add hard timeout wrapper so LLM/net calls never stall the function
+    const withTimeout = (promise, ms = 15000, label = 'operation') => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms))
+      ]);
+    };
+
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -584,49 +592,77 @@ Deno.serve(async (req) => {
     try {
       console.log('[generateSignals] Running sentiment analysis...');
       const sentimentSymbols = cryptoSymbols.join(', ');
-      const sentimentResponse = await base44.integrations.Core.InvokeLLM({
-        prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
 
-Search for and analyze:
+      // Primary: web-enabled, fast model with strict timeout
+      let sentimentResponse = await withTimeout(
+        base44.integrations.Core.InvokeLLM({
+          prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
+\nSearch for and analyze:
 1. Latest news headlines and events affecting each asset
 2. Social media trends (Twitter/X, Reddit, crypto forums)
 3. Recent regulatory developments
 4. Whale activity or large transactions
 5. Overall crypto market Fear & Greed level
 6. Any upcoming events (token unlocks, upgrades, partnerships)
-
-For each asset, provide a sentiment_score from 0-100:
+\nFor each asset, provide a sentiment_score from 0-100:
 - 0-20: Extreme negative sentiment (panic selling, terrible news)
 - 21-40: Negative (bearish news, declining interest)
 - 41-60: Neutral (mixed signals)
 - 61-80: Positive (bullish news, growing interest)
 - 81-100: Extreme positive (euphoria, viral trending)
-
-Also provide an overall_market_sentiment score and a brief reasoning for each.`,
-        add_context_from_internet: true,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            overall_market_sentiment: { type: "number" },
-            overall_fear_greed: { type: "string" },
-            market_narrative: { type: "string" },
-            assets: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  symbol: { type: "string" },
-                  sentiment_score: { type: "number" },
-                  sentiment_label: { type: "string" },
-                  key_news: { type: "string" },
-                  social_buzz: { type: "string" },
-                  upcoming_catalyst: { type: "string" }
+\nAlso provide an overall_market_sentiment score and a brief reasoning for each.`,
+          add_context_from_internet: true,
+          response_json_schema: {
+            type: "object",
+            properties: {
+              overall_market_sentiment: { type: "number" },
+              overall_fear_greed: { type: "string" },
+              market_narrative: { type: "string" },
+              assets: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    symbol: { type: "string" },
+                    sentiment_score: { type: "number" },
+                    sentiment_label: { type: "string" },
+                    key_news: { type: "string" },
+                    social_buzz: { type: "string" },
+                    upcoming_catalyst: { type: "string" }
+                  }
                 }
               }
             }
-          }
-        }
-      });
+          },
+          model: 'gemini_3_flash'
+        }),
+        12000,
+        'sentiment LLM'
+      );
+
+      // Fallback: no web, faster JSON model
+      if (!sentimentResponse?.assets) {
+        console.warn('[generateSignals] Sentiment primary empty, trying fallback model');
+        sentimentResponse = await withTimeout(
+          base44.integrations.Core.InvokeLLM({
+            prompt: `You are a financial sentiment analyst. Analyze relative sentiment for: ${sentimentSymbols}. Return numeric sentiment scores (0-100) only with brief reasoning.`,
+            add_context_from_internet: false,
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                overall_market_sentiment: { type: 'number' },
+                assets: {
+                  type: 'array',
+                  items: { type: 'object', properties: { symbol: { type: 'string' }, sentiment_score: { type: 'number' }, sentiment_label: { type: 'string' } } }
+                }
+              }
+            },
+            model: 'gpt_5_mini'
+          }),
+          9000,
+          'sentiment LLM fallback'
+        );
+      }
 
       if (sentimentResponse?.assets) {
         for (const a of sentimentResponse.assets) {
@@ -646,10 +682,14 @@ Also provide an overall_market_sentiment score and a brief reasoning for each.`,
           fear_greed: sentimentResponse.overall_fear_greed || 'neutral',
           narrative: sentimentResponse.market_narrative || ''
         };
+      } else {
+        console.warn('[generateSignals] Sentiment unavailable — defaulting to neutral');
+        sentimentData._overall = { score: 50, fear_greed: 'neutral', narrative: '' };
       }
-      console.log('[generateSignals] Got sentiment for', Object.keys(sentimentData).length - 1, 'assets');
+      console.log('[generateSignals] Got sentiment for', Math.max(0, Object.keys(sentimentData).length - 1), 'assets');
     } catch (e) {
       console.warn('[generateSignals] Sentiment analysis failed:', e.message);
+      sentimentData._overall = { score: 50, fear_greed: 'neutral', narrative: '' };
     }
 
     // ═══════════════════════════════════════════════
