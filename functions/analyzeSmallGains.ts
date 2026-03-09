@@ -27,6 +27,14 @@ Deno.serve(async (req) => {
 
     console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence, 'trade history:', includeTradeHistory);
 
+    // Utility: add timeout to long operations to prevent 502s
+    const withTimeout = (promise, ms = 15000, label = 'operation') => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms))
+      ]);
+    };
+
     // Get user's auto-buy preferences (check both sim and live)
     const autoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
       created_by: user.email,
