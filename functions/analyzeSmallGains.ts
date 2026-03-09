@@ -299,7 +299,7 @@ For each asset:
       console.warn('[MarketIntelligence] LLM JSON error (primary):', e1.message);
       try {
         // Fallback 1: same model, no web (search can break JSON)
-        const fallbackModel = includeMarketIntelligence ? 'gemini_3_flash' : 'gpt_5_mini';
+        const fallbackModel = includeMarketIntelligence ? 'gemini_3_pro' : 'gpt_5_mini';
         llmResponse = await tryInvoke(fallbackModel, false);
       } catch (e2) {
         console.warn('[MarketIntelligence] LLM JSON error (fallback1):', e2.message);
