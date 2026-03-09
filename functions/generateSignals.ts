@@ -572,10 +572,14 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════
     let tradeHistory = {};
     try {
-      const histRes = await base44.functions.invoke('analyzeTradeHistory', {
-        includeKrakenHistory: false,
-        analyzePatterns: false
-      });
+      const histRes = await withTimeout(
+        base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
+          includeKrakenHistory: false,
+          analyzePatterns: false
+        }),
+        8000,
+        'trade history'
+      );
       const histData = histRes?.data || histRes;
       if (histData?.success && histData.asset_analytics) {
         tradeHistory = histData.asset_analytics;
@@ -594,51 +598,56 @@ Deno.serve(async (req) => {
       const sentimentSymbols = cryptoSymbols.join(', ');
 
       // Primary: web-enabled, fast model with strict timeout
-      let sentimentResponse = await withTimeout(
-        base44.integrations.Core.InvokeLLM({
-          prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
-\nSearch for and analyze:
-1. Latest news headlines and events affecting each asset
-2. Social media trends (Twitter/X, Reddit, crypto forums)
-3. Recent regulatory developments
-4. Whale activity or large transactions
-5. Overall crypto market Fear & Greed level
-6. Any upcoming events (token unlocks, upgrades, partnerships)
-\nFor each asset, provide a sentiment_score from 0-100:
-- 0-20: Extreme negative sentiment (panic selling, terrible news)
-- 21-40: Negative (bearish news, declining interest)
-- 41-60: Neutral (mixed signals)
-- 61-80: Positive (bullish news, growing interest)
-- 81-100: Extreme positive (euphoria, viral trending)
-\nAlso provide an overall_market_sentiment score and a brief reasoning for each.`,
-          add_context_from_internet: true,
-          response_json_schema: {
-            type: "object",
-            properties: {
-              overall_market_sentiment: { type: "number" },
-              overall_fear_greed: { type: "string" },
-              market_narrative: { type: "string" },
-              assets: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    symbol: { type: "string" },
-                    sentiment_score: { type: "number" },
-                    sentiment_label: { type: "string" },
-                    key_news: { type: "string" },
-                    social_buzz: { type: "string" },
-                    upcoming_catalyst: { type: "string" }
+      let sentimentResponse = null;
+      try {
+        sentimentResponse = await withTimeout(
+          base44.integrations.Core.InvokeLLM({
+            prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
+      \nSearch for and analyze:
+      1. Latest news headlines and events affecting each asset
+      2. Social media trends (Twitter/X, Reddit, crypto forums)
+      3. Recent regulatory developments
+      4. Whale activity or large transactions
+      5. Overall crypto market Fear & Greed level
+      6. Any upcoming events (token unlocks, upgrades, partnerships)
+      \nFor each asset, provide a sentiment_score from 0-100:
+      - 0-20: Extreme negative sentiment (panic selling, terrible news)
+      - 21-40: Negative (bearish news, declining interest)
+      - 41-60: Neutral (mixed signals)
+      - 61-80: Positive (bullish news, growing interest)
+      - 81-100: Extreme positive (euphoria, viral trending)
+      \nAlso provide an overall_market_sentiment score and a brief reasoning for each.`,
+            add_context_from_internet: true,
+            response_json_schema: {
+              type: "object",
+              properties: {
+                overall_market_sentiment: { type: "number" },
+                overall_fear_greed: { type: "string" },
+                market_narrative: { type: "string" },
+                assets: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      symbol: { type: "string" },
+                      sentiment_score: { type: "number" },
+                      sentiment_label: { type: "string" },
+                      key_news: { type: "string" },
+                      social_buzz: { type: "string" },
+                      upcoming_catalyst: { type: "string" }
+                    }
                   }
                 }
               }
-            }
-          },
-          model: 'gemini_3_flash'
-        }),
-        12000,
-        'sentiment LLM'
-      );
+            },
+            model: 'gemini_3_flash'
+          }),
+          12000,
+          'sentiment LLM'
+        );
+      } catch (primaryErr) {
+        console.warn('[generateSignals] Sentiment primary failed:', primaryErr.message);
+      }
 
       // Fallback: no web, faster JSON model
       if (!sentimentResponse?.assets) {
