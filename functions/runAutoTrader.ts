@@ -856,35 +856,36 @@ Deno.serve(async (req) => {
     const eligibleProspects = prospects.filter(p => {
       const signal = signalMap.get(p.symbol);
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
-      const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
-      
-      // Allow strong_buy AND buy signals to auto-execute (relaxed from strong_buy only)
-      const isActionable = signalType === 'strong_buy' || signalType === 'buy';
+      const signalType = (signal?.signal_type || p.optimal_action || 'hold').toLowerCase();
+
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
-      
-      // Trend check: allow dips up to -5% if signal is actionable
+
+      // Trend check: allow dips up to -3% for strong_buy and 0% for buy
       const change24h = Number(p.market_trend || 0);
-      const trendPositive = change24h > -5;
-      
-      const meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD;
-      
-      // Metadata validation removed — signal confidence is the sole gate
-      const metadataValid = true;
-      
-      const eligible = meetsConfidence && isActionable && notBlocked && wouldExecute && trendPositive && metadataValid;
-      
+      const trendOkForStrong = change24h > -3;
+      const trendOkForBuy = change24h >= 0;
+
+      let meetsConfidence = false;
+      if (signalType === 'strong_buy') {
+        meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD && trendOkForStrong;
+      } else if (signalType === 'buy') {
+        meetsConfidence = confidenceScore >= BUY_THRESHOLD && trendOkForBuy;
+      }
+
+      const eligible = (signalType === 'strong_buy' || signalType === 'buy') && meetsConfidence && notBlocked && wouldExecute;
+
       log(`Evaluating ${p.symbol}`, {
         confidence: confidenceScore,
         signalType,
         change24h: change24h.toFixed(1),
         blocked: p.is_blocked,
         wouldExecute,
-        trendPositive,
-        metadataValid,
+        trendOkForStrong,
+        trendOkForBuy,
         eligible
       });
-      
+
       return eligible;
     });
 
