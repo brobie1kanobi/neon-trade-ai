@@ -46,6 +46,9 @@ const GLOBAL_WS_STATE = {
   orders: new Map(),
   executions: [],
   
+  // Track active ticker symbols to prevent duplicate subscriptions
+  tickerSymbols: new Set(),
+  
   // Subscription tracking
   activePublicSubs: new Set(),
   activePrivateSubs: new Set(),
@@ -72,6 +75,43 @@ function emitEvent(eventName, data) {
       // Silent error handling for production
     }
   });
+}
+
+// Throttled dispatchers to avoid UI thrashing
+let lastPriceDispatch = 0;
+let priceDispatchTimeout = null;
+function schedulePriceDispatch() {
+  const now = Date.now();
+  if (priceDispatchTimeout) return;
+  const delay = Math.max(0, 1000 - (now - lastPriceDispatch)); // at most once per second
+  priceDispatchTimeout = setTimeout(() => {
+    const pricesObj = Object.fromEntries(GLOBAL_WS_STATE.prices);
+    emitEvent('pricesUpdated', pricesObj);
+    if (typeof window !== 'undefined') {
+      window.__krakenWsPrices = pricesObj;
+      window.dispatchEvent(new CustomEvent('kraken:price-update', { detail: pricesObj }));
+    }
+    lastPriceDispatch = Date.now();
+    priceDispatchTimeout = null;
+  }, delay);
+}
+
+let lastBalanceDispatch = 0;
+let balanceDispatchTimeout = null;
+function scheduleBalanceDispatch() {
+  const now = Date.now();
+  if (balanceDispatchTimeout) return;
+  const delay = Math.max(0, 1000 - (now - lastBalanceDispatch)); // at most once per second
+  balanceDispatchTimeout = setTimeout(() => {
+    const balancesObj = Object.fromEntries(GLOBAL_WS_STATE.balances);
+    emitEvent('balancesUpdated', balancesObj);
+    if (typeof window !== 'undefined') {
+      window.__krakenWsBalances = balancesObj;
+      window.dispatchEvent(new CustomEvent('kraken:balance-update', { detail: balancesObj }));
+    }
+    lastBalanceDispatch = Date.now();
+    balanceDispatchTimeout = null;
+  }, delay);
 }
 
 function isAuthUnavailable() {
@@ -347,28 +387,29 @@ function subscribeToTicker(symbols) {
   const ws = GLOBAL_WS_STATE.publicWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  // CRITICAL: Kraken V2 requires pairs in "XRP/USD" format, not bare symbols
   const normalizedSymbols = symbols.map(s => {
     if (typeof s !== 'string') return null;
     s = s.trim().toUpperCase();
-    if (s.includes('/')) return s; // Already a pair
-    if (s === 'USD' || s === 'ZUSD') return null; // Skip USD itself
+    if (s.includes('/')) return s;
+    if (s === 'USD' || s === 'ZUSD') return null;
     return `${s}/USD`;
   }).filter(Boolean);
 
-  if (normalizedSymbols.length === 0) return;
+  // Only subscribe to symbols we don't already track
+  const missing = normalizedSymbols.filter(sym => !GLOBAL_WS_STATE.tickerSymbols.has(sym));
+  if (missing.length === 0) return;
 
   const subscription = {
     method: 'subscribe',
-    params: {
-      channel: 'ticker',
-      symbol: normalizedSymbols
-    }
+    params: { channel: 'ticker', symbol: missing }
   };
 
-  console.log('[KrakenWS] Subscribing to ticker:', normalizedSymbols.join(', '));
-  ws.send(JSON.stringify(subscription));
-  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: normalizedSymbols }));
+  console.log('[KrakenWS] Subscribing to ticker:', missing.join(', '));
+  try {
+    ws.send(JSON.stringify(subscription));
+    missing.forEach(sym => GLOBAL_WS_STATE.tickerSymbols.add(sym));
+    GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: missing }));
+  } catch (_) {}
 }
 
 /**
@@ -450,16 +491,7 @@ function handlePublicMessage(message) {
         GLOBAL_WS_STATE.prices.set(symbol, priceData);
       });
       
-      const pricesObj = Object.fromEntries(GLOBAL_WS_STATE.prices);
-      emitEvent('pricesUpdated', pricesObj);
-      
-      // Dispatch event for components listening + store on window for provider
-      if (typeof window !== 'undefined') {
-        window.__krakenWsPrices = pricesObj;
-        window.dispatchEvent(new CustomEvent('kraken:price-update', { 
-          detail: pricesObj 
-        }));
-      }
+      schedulePriceDispatch();
     }
   }
 }
@@ -499,16 +531,7 @@ function handlePrivateMessage(message) {
         });
       });
       
-      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
-      
-      // Dispatch event for components listening
-      // Also store on window for AutoTrader access
-      if (typeof window !== 'undefined') {
-        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
-        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
-          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
-        }));
-      }
+      scheduleBalanceDispatch();
     } else if (type === 'update' && Array.isArray(data)) {
       console.log('[KrakenWS] 📊 Balance UPDATE received:', data.length, 'changes');
       
@@ -525,15 +548,7 @@ function handlePrivateMessage(message) {
         console.log(`[KrakenWS] Balance updated: ${asset} = ${newBalance}`);
       });
       
-      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
-      
-      // Store on window for AutoTrader access
-      if (typeof window !== 'undefined') {
-        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
-        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
-          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
-        }));
-      }
+      scheduleBalanceDispatch();
     }
   }
 
