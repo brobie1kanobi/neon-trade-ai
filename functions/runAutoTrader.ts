@@ -1138,6 +1138,17 @@ Deno.serve(async (req) => {
       const signal = signalMap.get(sym);
       if (signal?.id) {
         signalsConsumed.push(signal.id);
+        try {
+          await base44.analytics.track({
+            eventName: 'ai_signal_used',
+            properties: {
+              symbol: sym,
+              signal_type: (signal?.signal_type || 'unknown'),
+              confidence: Number(signal?.confidence_score || 0),
+              mode: isSimMode ? 'sim' : 'live'
+            }
+          });
+        } catch (_) {}
       }
       
       let krakenOrderIds = '';
@@ -1647,6 +1658,17 @@ Deno.serve(async (req) => {
       historical_win_rate: t.dynamic_levels?.win_rate || null,
       idempotency_key: t.idempotency_key
     }));
+
+    try {
+      await base44.analytics.track({
+        eventName: 'ai_signals_batch_used',
+        properties: {
+          signals_used: signalsConsumed.length,
+          trades_count: totalTrades,
+          mode: isSimMode ? 'sim' : 'live'
+        }
+      });
+    } catch (_) {}
 
     return Response.json({
       success: true,
