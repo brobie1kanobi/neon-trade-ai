@@ -476,8 +476,25 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
               }
             }
 
-            // Trailing stop fallback (percentage)
+            // Trailing stop request received -> Prefer static stop-loss instead (guaranteed fallback)
             if (payload?.action === 'place_trailing_stop') {
+              const sl = Number(payload.stopPrice || payload.triggerPrice || 0);
+              if (sl > 0) {
+                const roundedSl = roundPriceForKraken(sl, sym);
+                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                  pair,
+                  type: 'sell',
+                  ordertype: 'stop-loss',
+                  price: String(roundedSl),
+                  volume: String(vol)
+                });
+                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
+                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
+                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
+                  throw new Error(addRes.error.join(', '));
+                }
+              }
+              // If no static price given, only then try true trailing-stop
               const pct = Number(payload.trailingPercent || 0);
               const priceParam = pct > 0 ? `${pct}%` : null;
               if (priceParam) {
