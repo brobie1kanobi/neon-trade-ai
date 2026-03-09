@@ -9,7 +9,13 @@ export default function EmergencyRepair({ wallet, isSimMode, onRepairComplete })
   const [isRepairing, setIsRepairing] = useState(false);
   const [repairStatus, setRepairStatus] = useState(null);
 
-  const currentBalance = isSimMode ? (wallet?.cash_balance || 0) : (wallet?.real_cash_balance || 0);
+  // Disable banner entirely in LIVE mode to prevent any SIM data bleed into live UI
+  if (!isSimMode) {
+    return null;
+  }
+
+  // SIM mode only: compute current balance from SIM wallet
+  const currentBalance = (wallet?.cash_balance || 0);
   const isNegative = currentBalance < 0;
 
   if (!isNegative) {
