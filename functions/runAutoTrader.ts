@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
@@ -539,6 +539,11 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   const runLogs = [];
   let autoTraderRunId = null;
+  const DEADLINE_MS = 55000;
+  const deadline = startTime + DEADLINE_MS;
+  function timeLeft() { return Math.max(0, deadline - Date.now()); }
+  function shouldStop() { return Date.now() > deadline - 1500; }
+  function ps(ms){ const t = Math.max(0, Math.min(ms, timeLeft()-500)); if (t<=0) return Promise.resolve(); return sleep(t); }
   
   function log(message, data = null) {
     const entry = { timestamp: new Date().toISOString(), message, data };
@@ -875,16 +880,21 @@ Deno.serve(async (req) => {
         console.warn('[runAutoTrader] Fresh balance fetch failed; proceeding with cached value:', e.message);
       }
       if (availableCash < 5) {
-        console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
-        return Response.json({ 
-          success: true, 
-          message: 'Insufficient cash for trading', 
-          trades_count: 0,
-          mode: 'live',
-          available_cash: availableCash,
-          reason: 'Available cash is below minimum threshold ($5)'
-        });
-      }
+                console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
+                await releaseLock(base44, autoTraderRunId, 'completed', {
+                  trades_attempted: 0,
+                  trades_successful: 0,
+                  logs_json: JSON.stringify(runLogs)
+                });
+                return Response.json({ 
+                  success: true, 
+                  message: 'Insufficient cash for trading', 
+                  trades_count: 0,
+                  mode: 'live',
+                  available_cash: availableCash,
+                  reason: 'Available cash is below minimum threshold ($5)'
+                });
+              }
     }
     
     // CRITICAL: Check "bad days" mode - if active and not overridden, block all trades
@@ -1022,7 +1032,8 @@ Deno.serve(async (req) => {
     }
 
     // Process each eligible prospect
-    for (const prospect of eligibleProspects) {
+    for (const prospect of eligibleProspects.slice(0, 3)) {
+      if (shouldStop()) { log('Time nearly exhausted, stopping further orders'); break; }
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
       const price = prospect.current_price || 0;
@@ -1160,14 +1171,15 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order (with pacing)
-          await sleep(300 + Math.floor(Math.random() * 700));
+          await ps(250);
+          const attempts = timeLeft() > 20000 ? 3 : 2;
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
             side: 'buy',
             quantity: qty,
             orderType: 'market'
-          }, 4, wsToken, user.email);
+          }, attempts, wsToken, user.email);
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');
           }
@@ -1225,7 +1237,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 2: Place TAKE PROFIT order (limit at TP price)
-          await new Promise(res => setTimeout(res, 2000));
+          await ps(600);
           
           let tpOrderId = null;
           let slOrderId = null;
@@ -1241,7 +1253,7 @@ Deno.serve(async (req) => {
               orderType: 'take-profit',
               triggerPrice: takeProfitPrice,
               timeInForce: 'gtc'
-            }, 4, wsToken, user.email);
+            }, attempts, wsToken, user.email);
             console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
             
             if (tpData?.success) {
@@ -1259,7 +1271,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 3: Place TRAILING STOP order (locks in profits as price rises)
-          await new Promise(res => setTimeout(res, 2000));
+          await ps(600);
           
           try {
             // Use trailing stop if enabled, otherwise use static stop-loss
@@ -1273,7 +1285,7 @@ Deno.serve(async (req) => {
                 trailingPriceType: 'pct',
                 triggerReference: 'last',
                 useLimit: false // Use market order on trigger for guaranteed execution
-              }, 4, wsToken, user.email);
+              }, attempts, wsToken, user.email);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
@@ -1288,7 +1300,7 @@ Deno.serve(async (req) => {
                   orderType: 'stop-loss',
                   stopPrice: staticStopLossPrice,
                   timeInForce: 'gtc'
-                }, 4, wsToken, user.email);
+                }, attempts, wsToken, user.email);
                 if (fallbackData?.success) {
                   slOrderId = fallbackData.order_id;
                   console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
@@ -1305,7 +1317,7 @@ Deno.serve(async (req) => {
                 orderType: 'stop-loss',
                 stopPrice: staticStopLossPrice,
                 timeInForce: 'gtc'
-              }, 4, wsToken, user.email);
+              }, attempts, wsToken, user.email);
               if (slData?.success) {
                 slOrderId = slData.order_id;
                 console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
@@ -1480,7 +1492,7 @@ Deno.serve(async (req) => {
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
-      await sleep(2200 + Math.floor(Math.random() * 1800));
+      await ps(700);
 
       if (availableCash < 1) break;
     }
@@ -1495,18 +1507,24 @@ Deno.serve(async (req) => {
         
         const emergingSymbol = (emerging.symbol || '').toUpperCase();
         
-        // Fetch current price for emerging prospect
-        let emergingPrice = 0;
-        try {
-          const priceRes = await base44.functions.invoke('getMarketData', {
-            action: 'getWatchlistData',
-            payload: { cryptoSymbols: [emergingSymbol], stockSymbols: [] }
-          });
-          const priceData = (priceRes?.data || [])[0];
-          emergingPrice = priceData?.price || 0;
-        } catch (_e) {}
-        
-        if (emergingPrice <= 0) {
+        // Fetch current price for emerging prospect (direct Kraken public API)
+                  let emergingPrice = 0;
+                  try {
+                    const pair = KRAKEN_PAIR_MAP[emergingSymbol];
+                    if (pair) {
+                      const ac = new AbortController();
+                      const to = setTimeout(() => ac.abort(), 6000);
+                      const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pair}`, { signal: ac.signal });
+                      clearTimeout(to);
+                      if (resp.ok) {
+                        const data = await resp.json();
+                        const t = data?.result?.[pair];
+                        if (t) emergingPrice = parseFloat(t.c?.[0] || '0');
+                      }
+                    }
+                  } catch (_e) {}
+
+                  if (emergingPrice <= 0) {
           console.log(`[runAutoTrader] Skipping emerging ${emergingSymbol} - no price available`);
           continue;
         }
@@ -1529,14 +1547,14 @@ Deno.serve(async (req) => {
         if (!isSimMode) {
           // LIVE: Execute via Kraken
           try {
-            await sleep(500);
+            await ps(300);
             const emergingBuyData = await invokeKrakenTrade(base44, {
               action: 'place_order',
               symbol: emergingSymbol,
               side: 'buy',
               quantity: emergingQty,
               orderType: 'market'
-            }, 4, wsToken, user.email);
+            }, attempts, wsToken, user.email);
             
             if (emergingBuyData?.success) {
               console.log(`[runAutoTrader] ✅ Emerging buy executed: ${emergingBuyData.order_id}`);
@@ -1595,7 +1613,7 @@ Deno.serve(async (req) => {
           availableCash -= emergingAllocation;
         }
         
-        await sleep(1500);
+        await ps(500);
       }
     }
 
