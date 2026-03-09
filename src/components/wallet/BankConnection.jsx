@@ -39,7 +39,7 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
   useEffect(() => {
     const checkKrakenStatus = async () => {
       // CRITICAL: Only check once per mount
-      if (statusCheckDone.current || isSimMode || !canUseLiveTrading) {
+      if (statusCheckDone.current) {
         setKrakenChecking(false);
         return;
       }
@@ -76,6 +76,7 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
       const balOk = (balRes?.data || balRes)?.success !== false && !(balRes?.data?.error);
       if (balOk) {
         toast.success('Balance key verified');
+        setKrakenConnected(true);
       } else {
         toast.error('Balance key check failed', { description: (balRes?.data || balRes)?.error || 'See logs' });
       }
