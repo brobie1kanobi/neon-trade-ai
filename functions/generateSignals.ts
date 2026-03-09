@@ -334,23 +334,19 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { symbols = [], forceRefresh = false } = body;
 
-    // Load user's auto_execute_threshold to use as the strong_buy confidence floor
+    // Load user's thresholds (robust: accept numbers or numeric strings) and strategies
     let userAutoExecuteThreshold = null;
     let userMinSignalConfidence = null;
     let userStrategies = {};
     try {
-      // Fetch ALL settings for this user and pick the most recently updated one
       const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email });
       if (userSettingsList.length > 0) {
-        // Sort by updated_date descending to get the most current
         userSettingsList.sort((a, b) => new Date(b.updated_date || 0) - new Date(a.updated_date || 0));
         const latest = userSettingsList[0];
-        if (typeof latest.auto_execute_threshold === 'number') {
-          userAutoExecuteThreshold = latest.auto_execute_threshold;
-        }
-        if (typeof latest.min_signal_confidence === 'number') {
-          userMinSignalConfidence = latest.min_signal_confidence;
-        }
+        const aets = Number(latest.auto_execute_threshold);
+        const msci = Number(latest.min_signal_confidence);
+        userAutoExecuteThreshold = Number.isFinite(aets) ? aets : null;
+        userMinSignalConfidence = Number.isFinite(msci) ? msci : null;
         userStrategies = {
           strategy_rsi: latest.strategy_rsi,
           strategy_macd: latest.strategy_macd,
@@ -361,9 +357,15 @@ Deno.serve(async (req) => {
           strategy_history: latest.strategy_history
         };
       }
+      // Apply safe defaults if not set in DB
+      if (userAutoExecuteThreshold == null) userAutoExecuteThreshold = 70;
+      if (userMinSignalConfidence == null) userMinSignalConfidence = 50;
       console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence);
     } catch (e) {
       console.warn('[generateSignals] Could not load user settings:', e.message);
+      // Still ensure sane defaults on error
+      if (userAutoExecuteThreshold == null) userAutoExecuteThreshold = 70;
+      if (userMinSignalConfidence == null) userMinSignalConfidence = 50;
     }
 
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');

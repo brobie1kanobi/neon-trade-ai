@@ -54,7 +54,10 @@ Deno.serve(async (req) => {
       tts_voice_uri: '',
       biometrics_enabled: false,
       has_seen_biometrics_prompt: false,
-      time_format: '12h'
+      time_format: '12h',
+      // Critical trading thresholds defaults (mirror entity defaults)
+      auto_execute_threshold: 70,
+      min_signal_confidence: 50
     };
 
     const settings = latest ? { ...DEFAULTS, ...latest } : { ...DEFAULTS };
