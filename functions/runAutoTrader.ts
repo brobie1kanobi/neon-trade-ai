@@ -440,11 +440,12 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
             if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'take-profit') {
               const tp = Number(payload.triggerPrice || payload.stopPrice || 0);
               if (tp > 0) {
+                const roundedTp = roundPriceForKraken(tp, sym);
                 const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
                   pair,
                   type: 'sell',
                   ordertype: 'take-profit',
-                  price: String(tp),
+                  price: String(roundedTp),
                   volume: String(vol)
                 });
                 if (!addRes?.error?.length && addRes?.result?.txid?.length) {
@@ -459,11 +460,12 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
             if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'stop-loss') {
               const sl = Number(payload.stopPrice || payload.triggerPrice || 0);
               if (sl > 0) {
+                const roundedSl = roundPriceForKraken(sl, sym);
                 const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
                   pair,
                   type: 'sell',
                   ordertype: 'stop-loss',
-                  price: String(sl),
+                  price: String(roundedSl),
                   volume: String(vol)
                 });
                 if (!addRes?.error?.length && addRes?.result?.txid?.length) {
