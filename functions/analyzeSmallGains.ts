@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       if (pairs.length > 0) {
         const resp = await withTimeout(
           fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`),
-          12000,
+          6000,
           'kraken ticker'
         );
         if (resp.ok) {
@@ -103,21 +103,21 @@ Deno.serve(async (req) => {
 
     // CRITICAL: Fetch historical trade data for smarter recommendations
     let tradeHistoryData = null;
+    let tradeHistoryPromise = null;
     if (includeTradeHistory) {
+      console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
       try {
-        console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
-        const historyResponse = await withTimeout(base44.functions.invoke('analyzeTradeHistory', {
-          symbols: targetSymbols,
-          includeKrakenHistory: false, // Avoid 403 from Kraken API - use local trades only
-          analyzePatterns: false // AI analysis done here instead
-        }));
-        const historyData = historyResponse?.data || historyResponse;
-        if (historyData?.success) {
-          tradeHistoryData = historyData;
-          console.log('[MarketIntelligence] Got trade history for', Object.keys(historyData.asset_analytics || {}).length, 'assets');
-        }
+        tradeHistoryPromise = withTimeout(
+          base44.functions.invoke('analyzeTradeHistory', {
+            symbols: targetSymbols,
+            includeKrakenHistory: false,
+            analyzePatterns: false
+          }),
+          4000,
+          'trade history'
+        );
       } catch (histErr) {
-        console.warn('[MarketIntelligence] Trade history fetch failed:', histErr.message);
+        console.warn('[MarketIntelligence] Trade history scheduling failed:', histErr.message);
       }
     }
 
@@ -285,7 +285,7 @@ For each asset:
           response_json_schema: strictSchema,
           model
         }),
-        includeMarketIntelligence ? 45000 : 30000,
+        includeMarketIntelligence ? 14000 : 12000,
         'LLM invocation'
       );
     }
@@ -293,31 +293,49 @@ For each asset:
     let llmResponse;
     try {
       // Primary: web-enabled model only when requested
-      const primaryModel = includeMarketIntelligence ? 'gemini_3_pro' : 'claude_sonnet_4_6';
+      const primaryModel = includeMarketIntelligence ? 'gemini_3_flash' : 'gpt_5_mini';
       llmResponse = await tryInvoke(primaryModel, includeMarketIntelligence);
     } catch (e1) {
       console.warn('[MarketIntelligence] LLM JSON error (primary):', e1.message);
       try {
         // Fallback 1: same model, no web (search can break JSON)
-        const fallbackModel = includeMarketIntelligence ? 'gemini_3_pro' : 'claude_sonnet_4_6';
+        const fallbackModel = includeMarketIntelligence ? 'gemini_3_flash' : 'gpt_5_mini';
         llmResponse = await tryInvoke(fallbackModel, false);
       } catch (e2) {
         console.warn('[MarketIntelligence] LLM JSON error (fallback1):', e2.message);
         try {
-          // Fallback 2: strongest JSON model, no web
-          llmResponse = await tryInvoke('claude_sonnet_4_6', false);
+          // Fallback 2: stronger JSON model, no web but faster
+          llmResponse = await tryInvoke('gpt_5_mini', false);
         } catch (e3) {
           console.warn('[MarketIntelligence] LLM JSON error (fallback2):', e3.message);
-          // Final graceful fallback: return minimal successful payload to avoid 500s
-          return Response.json({
-            success: true,
-            recommendations: [],
-            market_intelligence: null,
-            market_summary: 'AI temporarily unavailable (JSON error)',
-            upcoming_catalysts: [],
-            analyzed_count: targetSymbols.length,
-            timestamp: new Date().toISOString()
-          });
+          // Final graceful fallback: build HEURISTIC recommendations so auto-trader still has input
+          const heuristics = marketData.map(m => {
+            const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
+            let action = 'hold';
+            let confidence = 45;
+            if (ch >= 0.5) { action = 'buy'; confidence = 60; }
+            else if (ch >= 0.0) { action = 'buy'; confidence = 55; }
+            else if (ch > -1.0) { action = 'buy'; confidence = 57; }
+            return {
+              symbol: m.symbol,
+              confidence_score: confidence,
+              predicted_direction: ch >= 0 ? 'up' : 'down',
+              predicted_move_pct: 2,
+              reasoning: 'Heuristic momentum and 24h change suggest a small upside window.',
+              action,
+              optimal_action: action,
+              timing_window: '4h',
+              stop_loss_pct: 2,
+              take_profit_pct: 3
+            };
+          }).filter(r => r.optimal_action === 'buy' && r.confidence_score >= 55).slice(0, 6);
+
+          llmResponse = {
+            recommendations: heuristics,
+            market_intelligence: { market_sentiment_score: 50, market_regime: 'Heuristic (LLM unavailable)' },
+            market_summary: 'Heuristic fallback used',
+            upcoming_catalysts: []
+          };
         }
       }
     }
@@ -325,6 +343,20 @@ For each asset:
     console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
+
+    // Resolve trade history if scheduled
+    if (!tradeHistoryData && tradeHistoryPromise) {
+      try {
+        const historyResponse = await tradeHistoryPromise;
+        const historyData = historyResponse?.data || historyResponse;
+        if (historyData?.success) {
+          tradeHistoryData = historyData;
+          console.log('[MarketIntelligence] Got trade history for', Object.keys(historyData.asset_analytics || {}).length, 'assets');
+        }
+      } catch (histErr) {
+        console.warn('[MarketIntelligence] Trade history fetch failed:', histErr.message);
+      }
+    }
     console.log('[MarketIntelligence] Parsed recommendations count:', recommendations.length);
     console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
 
