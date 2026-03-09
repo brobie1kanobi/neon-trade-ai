@@ -13,6 +13,7 @@ import { base44 } from "@/api/base44Client";
 import AutoBuyPreferences from "../components/portfolio/AutoBuyPreferences";
 import AutoTraderHealth from "../components/settings/AutoTraderHealth";
 import RiskManagementSettings from "../components/portfolio/RiskManagementSettings";
+import EmergencyRepair from "../components/wallet/EmergencyRepair";
 
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
@@ -468,18 +469,14 @@ export default function Portfolio() {
   // CRITICAL: Provider priority is REST > WS > DB
   // REST API (getKrakenBalance) returns accurate prices+balances, WS only has raw quantities
   const currentCashBalance = isSimMode
-    ? Math.max(0, wallet?.cash_balance || 0)
-    : Math.max(0, (krakenData?.success && typeof krakenData.usd_balance === 'number')
-        ? krakenData.usd_balance
-        : (wsUsdBalance || 0));
+    ? (wallet?.cash_balance || 0)
+    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
     
   const currentPortfolioValue = isSimMode
-    ? Math.max(0, detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0))
-    : Math.max(0, (krakenData?.success && (krakenData.total_crypto_value_usd !== undefined || krakenData.total_crypto_value !== undefined))
-        ? (krakenData.total_crypto_value_usd ?? krakenData.total_crypto_value)
-        : (wsCryptoValue > 0
-            ? wsCryptoValue
-            : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)));
+    ? detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0)
+    : (wsCryptoValue > 0
+        ? wsCryptoValue
+        : detailedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
 
   if (isSimMode === null || ctxSettingsLoading || (isLoading && !wallet && !user)) {
     return (
@@ -505,6 +502,15 @@ export default function Portfolio() {
         </motion.div>
       )}
 
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+        <EmergencyRepair 
+          wallet={wallet} 
+          isSimMode={isSimMode}
+          onRepairComplete={() => {
+            setTimeout(() => loadData(true), 500);
+          }}
+        />
+      </motion.div>
 
       {showDataSync && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>

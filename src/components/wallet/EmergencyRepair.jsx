@@ -5,10 +5,7 @@ import { AlertTriangle, RefreshCw, CheckCircle2 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { toast } from "sonner";
 
-// Component disabled per product decision: negative-balance emergency banner removed.
 export default function EmergencyRepair({ wallet, isSimMode, onRepairComplete }) {
-  return null;
-}
   const [isRepairing, setIsRepairing] = useState(false);
   const [repairStatus, setRepairStatus] = useState(null);
 

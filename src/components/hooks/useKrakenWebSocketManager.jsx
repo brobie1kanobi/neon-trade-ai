@@ -37,7 +37,6 @@ const GLOBAL_WS_STATE = {
   tokenTradeExpiry: 0,
   tokenBalance: null,
   tokenBalanceExpiry: 0,
-  authUnavailableUntil: 0,
   reconnectAttempts: 0,
   
   // Data stores
@@ -45,9 +44,6 @@ const GLOBAL_WS_STATE = {
   balances: new Map(),
   orders: new Map(),
   executions: [],
-  
-  // Track active ticker symbols to prevent duplicate subscriptions
-  tickerSymbols: new Set(),
   
   // Subscription tracking
   activePublicSubs: new Set(),
@@ -77,56 +73,12 @@ function emitEvent(eventName, data) {
   });
 }
 
-// Throttled dispatchers to avoid UI thrashing
-let lastPriceDispatch = 0;
-let priceDispatchTimeout = null;
-function schedulePriceDispatch() {
-  const now = Date.now();
-  if (priceDispatchTimeout) return;
-  const delay = Math.max(0, 1000 - (now - lastPriceDispatch)); // at most once per second
-  priceDispatchTimeout = setTimeout(() => {
-    const pricesObj = Object.fromEntries(GLOBAL_WS_STATE.prices);
-    emitEvent('pricesUpdated', pricesObj);
-    if (typeof window !== 'undefined') {
-      window.__krakenWsPrices = pricesObj;
-      window.dispatchEvent(new CustomEvent('kraken:price-update', { detail: pricesObj }));
-    }
-    lastPriceDispatch = Date.now();
-    priceDispatchTimeout = null;
-  }, delay);
-}
-
-let lastBalanceDispatch = 0;
-let balanceDispatchTimeout = null;
-function scheduleBalanceDispatch() {
-  const now = Date.now();
-  if (balanceDispatchTimeout) return;
-  const delay = Math.max(0, 1000 - (now - lastBalanceDispatch)); // at most once per second
-  balanceDispatchTimeout = setTimeout(() => {
-    const balancesObj = Object.fromEntries(GLOBAL_WS_STATE.balances);
-    emitEvent('balancesUpdated', balancesObj);
-    if (typeof window !== 'undefined') {
-      window.__krakenWsBalances = balancesObj;
-      window.dispatchEvent(new CustomEvent('kraken:balance-update', { detail: balancesObj }));
-    }
-    lastBalanceDispatch = Date.now();
-    balanceDispatchTimeout = null;
-  }, delay);
-}
-
-function isAuthUnavailable() {
-  return Date.now() < GLOBAL_WS_STATE.authUnavailableUntil;
-}
-
 /**
  * Get or refresh WebSocket token
  * CRITICAL: Aggressively cache tokens to prevent API spam
  */
 async function getWebSocketToken(keyType = 'trade') {
   const now = Date.now();
-  if (isAuthUnavailable()) {
-    throw new Error('Kraken account not connected (cached)');
-  }
   
   // Return cached token if still valid (with larger buffer for safety)
   const isTrade = keyType === 'trade';
@@ -160,12 +112,6 @@ async function getWebSocketToken(keyType = 'trade') {
         GLOBAL_WS_STATE.tokenBalanceExpiry = now + expiresIn * 1000;
         console.log(`[KrakenWS] Cached BALANCE token (expires in ${expiresIn}s)`);
       }
-      // Reset auth-unavailable backoff on success
-      GLOBAL_WS_STATE.authUnavailableUntil = 0;
-      if (typeof window !== 'undefined') {
-        window.__krakenAuthUnavailable = false;
-        window.__krakenAuthUnavailableUntil = 0;
-      }
       return data.token;
     }
     
@@ -176,15 +122,6 @@ async function getWebSocketToken(keyType = 'trade') {
     throw new Error(data?.error || 'Failed to get WebSocket token');
   } catch (error) {
     console.error(`[KrakenWS] Failed to get ${keyType} token:`, error.message);
-    const msg = String(error?.message || '').toLowerCase();
-    if (msg.includes('not connected') || msg.includes('unauthorized') || msg.includes('forbidden')) {
-      // Back off private WS attempts for 30 minutes to prevent API spam
-      GLOBAL_WS_STATE.authUnavailableUntil = Date.now() + 30 * 60 * 1000;
-      if (typeof window !== 'undefined') {
-        window.__krakenAuthUnavailable = true;
-        window.__krakenAuthUnavailableUntil = GLOBAL_WS_STATE.authUnavailableUntil;
-      }
-    }
     throw error;
   }
 }
@@ -263,8 +200,6 @@ async function connectPrivateBalancesWebSocket() {
     return;
   }
 
-  if (isAuthUnavailable()) { return; }
-
   try {
     // Get fresh token using BALANCE key only (avoid consuming trade key rate limits)
     const token = await getWebSocketToken('balance');
@@ -335,7 +270,6 @@ async function connectPrivateOrdersWebSocket() {
   if (GLOBAL_WS_STATE.privateWsOrders && GLOBAL_WS_STATE.isPrivateOrdersConnected) {
     return;
   }
-  if (isAuthUnavailable()) { return; }
   try {
     const token = await getWebSocketToken('trade');
     const ws = new WebSocket(PRIVATE_WS_URL);
@@ -387,29 +321,28 @@ function subscribeToTicker(symbols) {
   const ws = GLOBAL_WS_STATE.publicWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+  // CRITICAL: Kraken V2 requires pairs in "XRP/USD" format, not bare symbols
   const normalizedSymbols = symbols.map(s => {
     if (typeof s !== 'string') return null;
     s = s.trim().toUpperCase();
-    if (s.includes('/')) return s;
-    if (s === 'USD' || s === 'ZUSD') return null;
+    if (s.includes('/')) return s; // Already a pair
+    if (s === 'USD' || s === 'ZUSD') return null; // Skip USD itself
     return `${s}/USD`;
   }).filter(Boolean);
 
-  // Only subscribe to symbols we don't already track
-  const missing = normalizedSymbols.filter(sym => !GLOBAL_WS_STATE.tickerSymbols.has(sym));
-  if (missing.length === 0) return;
+  if (normalizedSymbols.length === 0) return;
 
   const subscription = {
     method: 'subscribe',
-    params: { channel: 'ticker', symbol: missing }
+    params: {
+      channel: 'ticker',
+      symbol: normalizedSymbols
+    }
   };
 
-  console.log('[KrakenWS] Subscribing to ticker:', missing.join(', '));
-  try {
-    ws.send(JSON.stringify(subscription));
-    missing.forEach(sym => GLOBAL_WS_STATE.tickerSymbols.add(sym));
-    GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: missing }));
-  } catch (_) {}
+  console.log('[KrakenWS] Subscribing to ticker:', normalizedSymbols.join(', '));
+  ws.send(JSON.stringify(subscription));
+  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: normalizedSymbols }));
 }
 
 /**
@@ -491,7 +424,16 @@ function handlePublicMessage(message) {
         GLOBAL_WS_STATE.prices.set(symbol, priceData);
       });
       
-      schedulePriceDispatch();
+      const pricesObj = Object.fromEntries(GLOBAL_WS_STATE.prices);
+      emitEvent('pricesUpdated', pricesObj);
+      
+      // Dispatch event for components listening + store on window for provider
+      if (typeof window !== 'undefined') {
+        window.__krakenWsPrices = pricesObj;
+        window.dispatchEvent(new CustomEvent('kraken:price-update', { 
+          detail: pricesObj 
+        }));
+      }
     }
   }
 }
@@ -531,7 +473,16 @@ function handlePrivateMessage(message) {
         });
       });
       
-      scheduleBalanceDispatch();
+      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+      
+      // Dispatch event for components listening
+      // Also store on window for AutoTrader access
+      if (typeof window !== 'undefined') {
+        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
+        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
+          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
+        }));
+      }
     } else if (type === 'update' && Array.isArray(data)) {
       console.log('[KrakenWS] 📊 Balance UPDATE received:', data.length, 'changes');
       
@@ -548,7 +499,15 @@ function handlePrivateMessage(message) {
         console.log(`[KrakenWS] Balance updated: ${asset} = ${newBalance}`);
       });
       
-      scheduleBalanceDispatch();
+      emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
+      
+      // Store on window for AutoTrader access
+      if (typeof window !== 'undefined') {
+        window.__krakenWsBalances = Object.fromEntries(GLOBAL_WS_STATE.balances);
+        window.dispatchEvent(new CustomEvent('kraken:balance-update', { 
+          detail: Object.fromEntries(GLOBAL_WS_STATE.balances) 
+        }));
+      }
     }
   }
 
@@ -819,31 +778,25 @@ export function useKrakenWebSocketManager(options = {}) {
       // Reset reconnect counter every watchdog cycle so we always try to reconnect
       // The 60s interval itself is the rate limit
       GLOBAL_WS_STATE.reconnectAttempts = 0;
-
-             if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
-               console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
-               connectPublicWebSocket(priceSymbols);
-             }
-
-             if (isAuthUnavailable()) {
-               // Skip private reconnections while auth is unavailable
-               return;
-             }
-             if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
-               console.log('[KrakenWS] Watchdog: Reconnecting private balances WS...');
-               connectPrivateBalancesWebSocket();
-             }
-             if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
-               console.log('[KrakenWS] Watchdog: Reconnecting private orders WS...');
-               connectPrivateOrdersWebSocket();
-             }
+      
+      if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
+        connectPublicWebSocket(priceSymbols);
+      }
+      if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting private balances WS...');
+        connectPrivateBalancesWebSocket();
+      }
+      if (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected) {
+        console.log('[KrakenWS] Watchdog: Reconnecting private orders WS...');
+        connectPrivateOrdersWebSocket();
+      }
     }, 60000); // CRITICAL: 60 seconds between watchdog checks
     return () => clearInterval(interval);
   }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 
   const refreshBalances = useCallback(async () => {
     try {
-      if (isAuthUnavailable()) return;
       if (!GLOBAL_WS_STATE.privateWsBalances || GLOBAL_WS_STATE.privateWsBalances.readyState !== WebSocket.OPEN) {
         await connectPrivateBalancesWebSocket();
       }
@@ -859,7 +812,6 @@ export function useKrakenWebSocketManager(options = {}) {
 
   const refreshOrders = useCallback(async () => {
     try {
-      if (isAuthUnavailable()) return;
       if (!GLOBAL_WS_STATE.privateWsOrders || GLOBAL_WS_STATE.privateWsOrders.readyState !== WebSocket.OPEN) {
         await connectPrivateOrdersWebSocket();
       }

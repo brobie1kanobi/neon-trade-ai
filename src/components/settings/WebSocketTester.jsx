@@ -143,7 +143,7 @@ export default function WebSocketTester() {
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 rounded bg-green-50 dark:bg-green-900/20">
             <span className="text-xs font-medium">USD Balance</span>
-            <span className="text-sm font-bold text-green-600">${(typeof usdBalance === 'number' ? usdBalance : 0).toFixed(2)}</span>
+            <span className="text-sm font-bold text-green-600">${(usdBalance || 0).toFixed(2)}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-blue-50 dark:bg-blue-900/20">
@@ -153,7 +153,7 @@ export default function WebSocketTester() {
 
           <div className="flex items-center justify-between p-2 rounded bg-purple-50 dark:bg-purple-900/20">
             <span className="text-xs font-medium">Portfolio Value</span>
-            <span className="text-sm font-bold text-purple-600">${(typeof totalPortfolioValue === 'number' ? totalPortfolioValue : 0).toFixed(2)}</span>
+            <span className="text-sm font-bold text-purple-600">${(totalPortfolioValue || 0).toFixed(2)}</span>
           </div>
 
           <div className="flex items-center justify-between p-2 rounded bg-yellow-50 dark:bg-yellow-900/20">

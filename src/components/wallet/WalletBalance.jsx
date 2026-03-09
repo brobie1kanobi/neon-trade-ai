@@ -24,9 +24,7 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
     cryptoHoldingsValue: wsCryptoHoldingsValue,
     totalAssets: wsTotalAssets,
     hasData: providerHasData,
-    refresh: wsRefresh,
-    krakenBalance,
-    wsHasBalances
+    refresh: wsRefresh
   } = useKrakenWebSocket();
 
   // CRITICAL: Also check global window state - provider React state can be stale
@@ -36,16 +34,10 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
   // This prevents blips of old data showing during refreshes
   const displayCash = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : ((wsConnected && wsHasBalances && typeof wsUsdBalance === 'number' && wsUsdBalance >= 0)
-        ? wsUsdBalance
-        : ((krakenBalance?.success && typeof krakenBalance.usd_balance === 'number') ? krakenBalance.usd_balance : 0));
+    : (wsUsdBalance > 0 ? wsUsdBalance : 0);
   const displayPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : ((wsConnected && wsHasBalances && typeof wsCryptoHoldingsValue === 'number' && wsCryptoHoldingsValue >= 0)
-        ? wsCryptoHoldingsValue
-        : ((krakenBalance?.success && (krakenBalance.total_crypto_value_usd !== undefined || krakenBalance.total_crypto_value !== undefined))
-            ? (krakenBalance.total_crypto_value_usd ?? krakenBalance.total_crypto_value)
-            : 0));
+    : (wsCryptoHoldingsValue > 0 ? wsCryptoHoldingsValue : 0);
   const totalBalance = displayCash + displayPortfolioValue;
   const totalAssets = isSimMode ? 0 : wsTotalAssets;
 
@@ -61,10 +53,8 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
 
     const syncTimeout = setTimeout(() => {
       setIsSyncing(false);
-      // Do not block UI on timeout; rely on WebSocket to continue updating
-      setSyncError(null);
-      toast.info('Kraken is responding slowly. Live WebSocket will keep updating.');
-      try { wsRefresh(); } catch (_) {}
+      setSyncError('Sync timeout - Kraken API may be slow, please try again');
+      toast.error('Sync timeout', { description: 'Kraken API may be slow. Try again in a moment.' });
     }, 30000);
 
     try {
@@ -104,17 +94,9 @@ export default function WalletBalance({ wallet, isSimMode, portfolioMarketValue 
       clearTimeout(syncTimeout);
       console.error('[WalletBalance] Sync error:', error);
       const errMsg = error?.message || 'Unknown error';
-      const isTimeout = /timeout/i.test(errMsg);
-      if (isTimeout) {
-        setSyncError(null); // don't scare users; WS continues updating
-        toast.info('Using live WebSocket balances while Kraken REST is slow');
-      } else {
-        setSyncError(`Failed to fetch balance: ${errMsg}`);
-        toast.error('Sync failed', { description: errMsg });
-      }
-      try { wsRefresh(); } catch (_) {}
+      setSyncError(`Failed to fetch balance: ${errMsg}`);
+      toast.error('Sync failed', { description: errMsg });
     } finally {
-      try { wsRefresh(); } catch (_) {}
       setIsSyncing(false);
     }
   };

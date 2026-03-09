@@ -143,7 +143,7 @@ export function KrakenWebSocketProvider({ children }) {
   // CRITICAL: Only runs in LIVE mode (shouldConnect = !isSimMode && !!user)
   // SIM mode should NEVER listen for Kraken WS events
   useEffect(() => {
-    if (!shouldConnect || (typeof window !== 'undefined' && window.__krakenAuthUnavailable)) return;
+    if (!shouldConnect) return;
 
     // Immediate first read
     setState(computeMetricsFromGlobal());
@@ -156,7 +156,7 @@ export function KrakenWebSocketProvider({ children }) {
     window.addEventListener('kraken:disconnected', handleUpdate);
 
     // Fallback interval at 10s for connection-state changes
-    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 3000);
+    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 10000);
 
     return () => {
       window.removeEventListener('kraken:balance-update', handleUpdate);
@@ -166,26 +166,6 @@ export function KrakenWebSocketProvider({ children }) {
       clearInterval(interval);
     };
   }, [shouldConnect]);
-
-  // Aggressive WS prime on mount (no REST dependency)
-  useEffect(() => {
-    if (!shouldConnect || (typeof window !== 'undefined' && window.__krakenAuthUnavailable)) return;
-    let canceled = false;
-    let attempts = 0;
-    const prime = async () => {
-      if (canceled) return;
-      attempts++;
-      try {
-        await wsManager.refreshBalances?.();
-        await wsManager.refreshOrders?.();
-      } catch (_) {}
-      setState(computeMetricsFromGlobal());
-      const hasBalances = typeof window !== 'undefined' && window.__krakenWsBalances && Object.keys(window.__krakenWsBalances).length > 0;
-      if (!hasBalances && attempts < 12) setTimeout(prime, 1500); // retry up to ~18s
-    };
-    prime();
-    return () => { canceled = true; };
-  }, [shouldConnect, wsManager]);
 
   // ── Manual refresh (WS re-subscribe + immediate state push) ──
   const refresh = useCallback(async () => {
@@ -302,11 +282,17 @@ export function KrakenWebSocketProvider({ children }) {
 
     try {
       const [balanceRes, ordersRes] = await Promise.all([
-        base44.functions.invoke('getKrakenBalance', {}).catch(e => {
+        Promise.race([
+          base44.functions.invoke('getKrakenBalance', {}),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Balance fetch timeout')), 25000))
+        ]).catch(e => {
           console.warn('[KrakenWSProvider] Balance fetch failed:', e.message);
           return { error: e.message, success: false };
         }),
-        base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }).catch(e => {
+        Promise.race([
+          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Orders fetch timeout')), 25000))
+        ]).catch(e => {
           console.warn('[KrakenWSProvider] Orders fetch failed:', e.message);
           return { error: e.message };
         })
@@ -360,16 +346,17 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // ── Initial REST snapshot (one-time, fallback) ──
+  // ── Initial REST snapshot (one-time) ──
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
-      // WebSocket is primary; kick a REST snapshot in the background as fallback
+      // Fetch REST data immediately - it's our AUTHORITATIVE source for accurate balances
+      // Don't wait for WS - REST has prices, WS only has raw quantities
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
           setTimeout(() => fetchPnL(), 5000);
         }
-      }, 1000);
+      }, 500); // Reduced from 2000ms to 500ms - REST is primary, not fallback
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
@@ -404,35 +391,39 @@ export function KrakenWebSocketProvider({ children }) {
   // Priority: WS real-time > REST snapshot > 0
   // CRITICAL: Use global window state for connection check (not stale React state)
   const wsActuallyConnected = state.isConnected || (typeof window !== 'undefined' && window.__krakenWsConnected);
-  const wsHasBalances = Object.keys(state.balances).length > 0; // allow using last-known balances even if reconnecting
+  const wsHasBalances = wsActuallyConnected && Object.keys(state.balances).length > 0;
   const restHasBalance = restData.krakenBalance?.success;
   
   // CRITICAL: Best-available balance logic
-  // WS should be primary. If WS has balances, use them. Otherwise, fall back to REST snapshot.
+  // REST API (getKrakenBalance) is AUTHORITATIVE because it returns accurate prices + cost basis
+  // WS balances only have quantities (no prices until ticker data arrives)
+  // So: REST first (accurate), then WS only if REST is unavailable
   
-  const bestUsdBalance = Math.max(0, wsHasBalances 
-    ? state.usdBalance 
-    : (restHasBalance ? (restData.krakenBalance.usd_balance || 0) : 0));
+  const bestUsdBalance = restHasBalance 
+    ? (restData.krakenBalance.usd_balance || 0)
+    : wsHasBalances ? state.usdBalance
+    : 0;
 
-  const bestCryptoValue = Math.max(0, wsHasBalances 
-    ? state.cryptoHoldingsValue 
-    : (restHasBalance ? (restData.krakenBalance.total_crypto_value_usd || 0) : 0));
+  const bestCryptoValue = restHasBalance 
+    ? (restData.krakenBalance.total_crypto_value_usd || 0)
+    : wsHasBalances ? state.cryptoHoldingsValue
+    : 0;
 
-  const bestHoldings = wsHasBalances
-    ? Object.entries(state.balances)
-        .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
-        .filter(([_, b]) => (b.balance || 0) > 0.00001)
-        .map(([asset, bal]) => ({
-          symbol: asset,
-          quantity: bal.balance || 0,
-          asset_type: 'crypto',
-          current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
-          total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
-          is_simulation: false
-        }))
-    : (restHasBalance
-        ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
-        : []);
+  const bestHoldings = restHasBalance
+    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
+    : wsHasBalances
+      ? Object.entries(state.balances)
+          .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
+          .filter(([_, b]) => (b.balance || 0) > 0.00001)
+          .map(([asset, bal]) => ({
+            symbol: asset,
+            quantity: bal.balance || 0,
+            asset_type: 'crypto',
+            current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
+            total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
+            is_simulation: false
+          }))
+      : [];
 
   const hasData = restHasBalance || wsHasBalances;
 
@@ -446,7 +437,6 @@ export function KrakenWebSocketProvider({ children }) {
     totalPortfolioValue: bestUsdBalance + bestCryptoValue,
     // Derived holdings for consumers
     bestHoldings,
-    wsHasBalances,
     hasData,
     refresh,
     wsManager,

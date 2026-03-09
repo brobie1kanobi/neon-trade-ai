@@ -103,7 +103,7 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
   const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
   const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 2500);
+  const t = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(`https://api.kraken.com${endpoint}`, {
       method: 'POST',
@@ -457,10 +457,6 @@ async function getLatestWallet(base44, email) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
-  const RUNTIME_BUDGET_MS = 9000; // Soft cap to avoid platform timeouts
-  const SOFT_DEADLINE_MS = RUNTIME_BUDGET_MS - 500;
-  const timeLeft = () => SOFT_DEADLINE_MS - (Date.now() - startTime);
-  const overBudget = () => timeLeft() <= 0;
   const runLogs = [];
   let autoTraderRunId = null;
   
@@ -474,8 +470,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) {
-      // In scheduled automation context there may be no end-user session; skip quickly
-      return Response.json({ success: true, message: 'Skipped: no user context (automation)', trades_count: 0 });
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // CRITICAL: Load user settings to determine mode
@@ -573,17 +568,20 @@ Deno.serve(async (req) => {
       signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
       
       log(`Found ${signals.length} active signals`);
-      if (overBudget()) {
-        await releaseLock(base44, autoTraderRunId, 'canceled', { error_message: 'Budget reached after fetching signals', logs_json: JSON.stringify(runLogs) });
-        return Response.json({ success: true, message: 'Skipped due to runtime budget (signals)', trades_count: 0 });
-      }
     } catch (e) {
       log('Failed to fetch signals', { error: e.message });
     }
     
     // If no pre-computed signals, fall back to generating them
     if (signals.length === 0) {
-      log('No pre-computed signals; skipping generation to respect runtime budget');
+      log('No pre-computed signals, generating on-demand...');
+      try {
+        await base44.functions.invoke('generateSignals', {});
+        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        log(`Generated ${signals.length} signals`);
+      } catch (e) {
+        log('Signal generation failed', { error: e.message });
+      }
     }
     
     // Build prospects in-line (avoid cross-function 403s)
@@ -593,10 +591,6 @@ Deno.serve(async (req) => {
     try {
       // 1) Load user preferences for current mode
       const allPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user.email }, '-created_date', 50);
-      if (overBudget()) {
-        await releaseLock(base44, autoTraderRunId, 'canceled', { error_message: 'Budget reached before building prospects', logs_json: JSON.stringify(runLogs) });
-        return Response.json({ success: true, message: 'Skipped due to runtime budget (preferences)', trades_count: 0 });
-      }
       const prefs = allPrefs.filter(p => {
         const pIsSim = p.is_simulation === true || p.is_simulation === 'true';
         const pEnabled = p.enabled !== false;
@@ -615,62 +609,26 @@ Deno.serve(async (req) => {
           const conn = conns[0];
           const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
           const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
-          let gotLive = false;
           if (apiKey && apiSecret) {
-            try {
-              const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-              if (!bal?.error?.length && bal?.result) {
-                const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-                const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-                if (!isNaN(rawUsd)) {
-                  cashAvailable = rawUsd;
-                  gotLive = true;
-                  // Deduct open buy orders + 2% safety buffer for trading cash
-                  let reserved = 0;
-                  try {
-                    const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
-                    if (open?.result?.open) {
-                      for (const [, order] of Object.entries(open.result.open)) {
-                        const side = (order.descr?.type || '').toLowerCase();
-                        if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
-                      }
-                    }
-                  } catch (_e) {}
-                  tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
+            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+            if (!bal?.error?.length && bal?.result) {
+              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+              cashAvailable = rawUsd;
+              // Deduct open buy orders + 2% safety buffer for trading cash
+              let reserved = 0;
+              try {
+                const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
+                if (open?.result?.open) {
+                  for (const [, order] of Object.entries(open.result.open)) {
+                    const side = (order.descr?.type || '').toLowerCase();
+                    if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+                  }
                 }
-              }
-            } catch (e) {
-              console.warn('[runAutoTrader] Live BalanceEx failed, will try fallbacks:', e.message);
+              } catch (_e) {}
+              tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
             }
           }
-          // Fallback 1: cached KrakenConnection.account_balance JSON
-          if (!gotLive) {
-            try {
-              if (conn.account_balance) {
-                const ab = JSON.parse(conn.account_balance);
-                const z = ab['ZUSD'] || ab['USD'] || 0;
-                const rawUsd = parseFloat(typeof z === 'object' ? z.balance : (z || 0));
-                if (!isNaN(rawUsd) && rawUsd > 0) {
-                  cashAvailable = rawUsd;
-                  tradingCash = Math.max(0, rawUsd * 0.90);
-                  console.log('[runAutoTrader] Using cached KrakenConnection.account_balance fallback');
-                }
-              }
-            } catch (_e) {}
-          }
-          // Fallback 2: Wallet.real_cash_balance from DB
-          if (!gotLive && (!cashAvailable || cashAvailable <= 0)) {
-            try {
-              const wallet = await getLatestWallet(base44, user.email);
-              const rawUsd = Number(wallet?.real_cash_balance || 0);
-              if (!isNaN(rawUsd) && rawUsd > 0) {
-                cashAvailable = rawUsd;
-                tradingCash = Math.max(0, rawUsd * 0.90);
-                console.log('[runAutoTrader] Using wallet.real_cash_balance fallback');
-              }
-            } catch (_e) {}
-          }
-          // As a last resort, keep cashAvailable at 0 but make it explicit in logs later
         }
       }
 
@@ -688,12 +646,9 @@ Deno.serve(async (req) => {
       const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
       let quotes = [];
       try {
-        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean).slice(0, 4);
+        const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
         if (pairs.length > 0) {
-          const ctl = new AbortController();
-          const to = setTimeout(() => ctl.abort(), 3000);
-          const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}` , { signal: ctl.signal });
-          clearTimeout(to);
+          const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
           if (resp.ok) {
             const data = await resp.json();
             if (data?.result) {
@@ -848,33 +803,7 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
-        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with fallbacks:', e.message);
-        // Fallbacks if BalanceEx failed above
-        try {
-          const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
-          if (conns.length > 0 && (availableCash === undefined || availableCash === null || isNaN(availableCash) || availableCash <= 0)) {
-            const conn = conns[0];
-            if (conn.account_balance) {
-              try {
-                const ab = JSON.parse(conn.account_balance);
-                const z = ab['ZUSD'] || ab['USD'] || 0;
-                const rawUsd = parseFloat(typeof z === 'object' ? z.balance : (z || 0));
-                if (!isNaN(rawUsd) && rawUsd > 0) {
-                  availableCash = Math.max(0, rawUsd * 0.90);
-                  console.log('[runAutoTrader] Fallback availableCash from cached account_balance:', rawUsd.toFixed(2));
-                }
-              } catch (_e2) {}
-            }
-            if ((!availableCash || availableCash <= 0)) {
-              const wallet = await getLatestWallet(base44, user.email);
-              const rawUsd = Number(wallet?.real_cash_balance || 0);
-              if (!isNaN(rawUsd) && rawUsd > 0) {
-                availableCash = Math.max(0, rawUsd * 0.90);
-                console.log('[runAutoTrader] Fallback availableCash from wallet.real_cash_balance:', rawUsd.toFixed(2));
-              }
-            }
-          }
-        } catch (_e3) {}
+        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with cached cash value:', e.message);
       }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
@@ -884,7 +813,7 @@ Deno.serve(async (req) => {
           trades_count: 0,
           mode: 'live',
           available_cash: availableCash,
-          reason: availableCash <= 0 ? 'No live balance detected (Kraken API/cached/wallet fallbacks exhausted)' : 'Available cash is below minimum threshold ($5)'
+          reason: 'Available cash is below minimum threshold ($5)'
         });
       }
     }
@@ -926,7 +855,7 @@ Deno.serve(async (req) => {
     // 3. Confidence >= 80% (already validated by signal generator)
     // 4. 24h trend positive (NEVER buy into falling price)
     // 5. Not blocked + sufficient funds
-    let eligibleProspects = prospects.filter(p => {
+    const eligibleProspects = prospects.filter(p => {
       const signal = signalMap.get(p.symbol);
       const confidenceScore = signal?.confidence_score || Number(p.confidence_score || 0);
       const signalType = signal?.signal_type || (p.optimal_action || 'hold').toLowerCase();
@@ -962,12 +891,6 @@ Deno.serve(async (req) => {
     });
 
     log(`${eligibleProspects.length} prospects eligible for auto-execution`);
-
-    const maxTrades = 1;
-    if (eligibleProspects.length > maxTrades) {
-      eligibleProspects = eligibleProspects.slice(0, maxTrades);
-      log(`Capping to ${maxTrades} trades this run to stay within runtime limits`);
-    }
 
     if (eligibleProspects.length === 0) {
       log('No eligible prospects');
@@ -1026,7 +949,7 @@ Deno.serve(async (req) => {
     }
 
     // Process each eligible prospect
-    for (const prospect of eligibleProspects) { if (Date.now() - startTime > RUNTIME_BUDGET_MS) { log('Runtime budget reached - stopping further trades'); break; }
+    for (const prospect of eligibleProspects) {
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
       const price = prospect.current_price || 0;
@@ -1168,7 +1091,7 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order (with pacing)
-          await sleep(150 + Math.floor(Math.random() * 150));
+          await sleep(300 + Math.floor(Math.random() * 700));
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
@@ -1233,7 +1156,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 2: Place TAKE PROFIT order (limit at TP price)
-          await new Promise(res => setTimeout(res, 200));
+          await new Promise(res => setTimeout(res, 2000));
           
           let tpOrderId = null;
           let slOrderId = null;
@@ -1267,7 +1190,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 3: Place TRAILING STOP order (locks in profits as price rises)
-          await new Promise(res => setTimeout(res, 200));
+          await new Promise(res => setTimeout(res, 2000));
           
           try {
             // Use trailing stop if enabled, otherwise use static stop-loss
@@ -1336,12 +1259,11 @@ Deno.serve(async (req) => {
           
           // Record health error
           try {
-            // fire-and-forget to avoid blocking runtime
-            base44.functions.invoke('systemHealthMonitor', {
-              action: 'recordError',
-              component: 'kraken_api',
-              error_message: krakenError.message
-            }).catch(() => {});
+            await base44.functions.invoke('systemHealthMonitor', {
+                      action: 'recordError',
+                      component: 'kraken_api',
+                      error_message: krakenError.message
+                    });
           } catch (e) {}
           
           continue;
@@ -1489,14 +1411,14 @@ Deno.serve(async (req) => {
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
-      await sleep(200 + Math.floor(Math.random() * 150));
+      await sleep(2200 + Math.floor(Math.random() * 1800));
 
       if (availableCash < 1) break;
     }
 
     // Process emerging prospects (if enabled and we have capacity)
     let emergingTradesPlaced = [];
-    if (false && isSimMode && emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
+    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
       for (const emerging of emergingOpportunities) {
@@ -1537,9 +1459,6 @@ Deno.serve(async (req) => {
         
         if (!isSimMode) {
           // LIVE: Execute via Kraken
-          if (overBudget()) { log('Runtime budget reached before live trade execution'); break; }
-          // Extra guard: if time left < 1500ms, skip execution to ensure response
-          if (timeLeft() < 1500) { log('Low time left, skipping live execution'); break; }
           try {
             await sleep(500);
             const emergingBuyData = await invokeKrakenTrade(base44, {
@@ -1607,15 +1526,14 @@ Deno.serve(async (req) => {
           availableCash -= emergingAllocation;
         }
         
-        await sleep(150);
+        await sleep(1500);
       }
     }
 
     // Reconcile wallet (SIM only here to avoid cross-function 403s in LIVE)
     try {
       if (isSimMode) {
-        // fire-and-forget to avoid blocking runtime
-        base44.functions.invoke('reconcileWallet', { mode: 'sim' }).catch(() => {});
+        await base44.functions.invoke('reconcileWallet', { mode: 'sim' });
       } else {
         // Skip live reconcile; a scheduled job handles live wallet sync
       }
@@ -1640,11 +1558,10 @@ Deno.serve(async (req) => {
     
     // Record success with health monitor
     try {
-      // fire-and-forget to avoid blocking runtime
-      base44.functions.invoke('systemHealthMonitor', {
-        action: 'recordSuccess',
-        component: 'auto_trader'
-      }).catch(() => {});
+      await base44.functions.invoke('systemHealthMonitor', {
+                action: 'recordSuccess',
+                component: 'auto_trader'
+              });
     } catch (e) {}
     
     // Summary of advanced orders placed

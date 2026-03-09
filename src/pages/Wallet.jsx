@@ -11,6 +11,7 @@ import WalletBalance from "../components/wallet/WalletBalance";
 import BankConnection from "../components/wallet/BankConnection";
 import TransactionForm from "../components/wallet/TransactionForm";
 import TransactionHistory from "../components/wallet/TransactionHistory";
+import EmergencyRepair from "../components/wallet/EmergencyRepair";
 import { getRecent, setRecent } from "@/components/hooks/useGlobalDataStore";
 
 export default function WalletPage() {
@@ -401,8 +402,8 @@ export default function WalletPage() {
   };
 
   // CRITICAL: Use Kraken values in LIVE mode
-  const displayPortfolioValue = isSimMode ? Math.max(0, portfolioMarketValue) : Math.max(0, krakenPortfolioValue);
-  const displayCashBalance = isSimMode ? Math.max(0, wallet?.cash_balance || 0) : Math.max(0, krakenCashBalance);
+  const displayPortfolioValue = isSimMode ? portfolioMarketValue : krakenPortfolioValue;
+  const displayCashBalance = isSimMode ? (wallet?.cash_balance || 0) : krakenCashBalance;
 
   // CRITICAL: Don't render until we know the mode - prevents showing sim UI in live mode
   if (isSimMode === null || settingsLoading) {
@@ -418,6 +419,18 @@ export default function WalletPage() {
 
   return (
     <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: 'var(--primary-bg)' }}>
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <EmergencyRepair 
+          wallet={wallet} 
+          isSimMode={isSimMode}
+          onRepairComplete={() => {
+            setTimeout(() => loadData(), 500);
+          }}
+        />
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
