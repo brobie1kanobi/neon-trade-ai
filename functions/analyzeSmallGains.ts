@@ -464,6 +464,7 @@ For each asset:
         try {
           await base44.asServiceRole.entities.AssetSignal.create({
             asset_symbol: (r.symbol || '').toUpperCase(),
+            asset_type: KRAKEN_PAIR_MAP[(r.symbol || '').toUpperCase()] ? 'crypto' : 'stocks',
             signal_type: r.optimal_action,
             confidence_score: r.confidence_score,
             change_24h: r.current_24h_change ?? 0,
