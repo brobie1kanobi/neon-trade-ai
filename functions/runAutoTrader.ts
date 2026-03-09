@@ -831,12 +831,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    // AUTO-EXECUTION THRESHOLD: Use user's slider setting, default to 70%
-    const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number' 
-      ? settings.auto_execute_threshold 
-      : 70;
-    
-    log('Auto-execute threshold from user settings', { threshold: AUTO_EXECUTE_THRESHOLD });
+    // Confidence thresholds from user settings
+    const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number'
+      ? settings.auto_execute_threshold
+      : 70; // for strong_buy
+    const BUY_THRESHOLD = typeof settings.min_signal_confidence === 'number'
+      ? settings.min_signal_confidence
+      : 50; // for buy
+
+    log('Confidence thresholds', { strong_buy: AUTO_EXECUTE_THRESHOLD, buy: BUY_THRESHOLD });
     
     // Build signal map for quick lookup
     const signalMap = new Map();
