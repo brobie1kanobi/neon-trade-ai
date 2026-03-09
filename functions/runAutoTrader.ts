@@ -767,6 +767,11 @@ Deno.serve(async (req) => {
     const cashBefore = availableCash;
     
     if (availableCash <= 0.99) {
+      await releaseLock(base44, autoTraderRunId, 'completed', {
+        trades_attempted: 0,
+        trades_successful: 0,
+        logs_json: JSON.stringify(runLogs)
+      });
       return Response.json({ 
         success: true, 
         message: 'Insufficient cash', 
