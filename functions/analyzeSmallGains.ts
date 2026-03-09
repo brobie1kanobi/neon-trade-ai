@@ -293,7 +293,7 @@ For each asset:
     let llmResponse;
     try {
       // Primary: web-enabled model only when requested
-      const primaryModel = includeMarketIntelligence ? 'gemini_3_flash' : 'gpt_5_mini';
+      const primaryModel = includeMarketIntelligence ? 'gemini_3_pro' : 'gpt_5_mini';
       llmResponse = await tryInvoke(primaryModel, includeMarketIntelligence);
     } catch (e1) {
       console.warn('[MarketIntelligence] LLM JSON error (primary):', e1.message);
