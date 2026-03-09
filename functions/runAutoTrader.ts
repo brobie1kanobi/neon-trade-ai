@@ -708,7 +708,8 @@ Deno.serve(async (req) => {
           trades_successful: 0,
           logs_json: JSON.stringify(runLogs)
         });
-        return Response.json({ success: true, message: 'No prospects available', trades_count: 0 });
+        // Clarify why: maybe thresholds too high or no active signals
+        return Response.json({ success: true, message: 'No prospects available (no active signals meeting thresholds)', trades_count: 0 });
       }
     } catch (e) {
       log('Inline prospects build failed', { error: e.message });
