@@ -25,6 +25,7 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
   const [tradeApiSecret, setTradeApiSecret] = useState("");
   const [showBalanceSecret, setShowBalanceSecret] = useState(false);
   const [showTradeSecret, setShowTradeSecret] = useState(false);
+  const [tradeKeyPresent, setTradeKeyPresent] = useState(false);
   const { user } = useSettings();
 
   // CRITICAL: Prevent duplicate requests
@@ -50,9 +51,11 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
         const response = await base44.functions.invoke('krakenApi', { action: 'status' });
         const data = response?.data || response;
         const isConnected = data?.connected || false;
+        const hasTrade = data?.trade_key_present || false;
 
-        console.log('[BankConnection] Status:', isConnected);
+        console.log('[BankConnection] Status:', isConnected, 'trade_key:', hasTrade);
         setKrakenConnected(isConnected);
+        setTradeKeyPresent(hasTrade);
 
       } catch (error) {
         console.error('[BankConnection] Status check failed:', error);
@@ -64,6 +67,33 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
 
     checkKrakenStatus();
   }, [isSimMode, canUseLiveTrading]);
+
+  const handleVerifySecrets = async () => {
+    try {
+      setIsConnecting(true);
+      // Verify Balance key by fetching balance
+      const balRes = await base44.functions.invoke('krakenApi', { action: 'getBalance' });
+      const balOk = (balRes?.data || balRes)?.success !== false && !(balRes?.data?.error);
+      if (balOk) {
+        toast.success('Balance key verified');
+      } else {
+        toast.error('Balance key check failed', { description: (balRes?.data || balRes)?.error || 'See logs' });
+      }
+      // Verify Trade key by requesting WS token
+      const wsRes = await base44.functions.invoke('krakenApi', { action: 'getWebSocketToken', payload: { keyType: 'trade', forceRefresh: true } });
+      const wsData = wsRes?.data || wsRes;
+      if (wsData?.success) {
+        toast.success('Trade key verified');
+        setTradeKeyPresent(true);
+      } else {
+        toast.error('Trade key check failed', { description: wsData?.error || 'Ensure Trade_Key/Trade_Secret and permissions' });
+      }
+    } catch (e) {
+      toast.error('Verification error', { description: e?.message || 'Unknown error' });
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   const handleConfirmConnection = async () => {
     // CRITICAL: Prevent duplicate requests
@@ -83,20 +113,21 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
     try {
       console.log('[BankConnection] Connecting...');
 
-      const response = await base44.functions.invoke('krakenApi', {
-        action: 'connect',
-        payload: {
-          // Send as both legacy and new fields for maximum compatibility
-          apiKey: (balanceApiKey || '').trim(),
-          apiSecret: (balanceApiSecret || '').trim(),
-          balanceApiKey: (balanceApiKey || '').trim(),
-          balanceApiSecret: (balanceApiSecret || '').trim(),
-          tradeApiKey: (tradeApiKey || '').trim() || undefined,
-          tradeApiSecret: (tradeApiSecret || '').trim() || undefined
-        }
-      });
+      // In secrets-managed mode, skip connect and verify instead
+      const status = await base44.functions.invoke('krakenApi', { action: 'status' });
+      const statusData = status?.data || status;
+      if (statusData?.connected) {
+        await handleVerifySecrets();
+        setShowConnectionModal(false);
+        return;
+      }
 
-      const data = response?.data || response;
+      // Legacy path (not expected): backend will reject; show guidance
+      toast.info('Connection is managed via Application Secrets', { description: 'Go to Settings → Secrets and set Kraken_API_Key/Secret and Trade_Key/Secret.' });
+      setShowConnectionModal(false);
+      return;
+
+      const data = {}; // Unused legacy
 
       if (data?.success) {
         toast.success('🎉 Kraken Connected!', {
@@ -140,14 +171,10 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
   };
 
   const handleKrakenDisconnect = async () => {
-    try {
-      await base44.functions.invoke('krakenApi', { action: 'disconnect' });
-      toast.success('Kraken disconnected');
-      setKrakenConnected(false);
-      onConnectionChange?.();
-    } catch (error) {
-      toast.error('Failed to disconnect');
-    }
+    // Secrets-managed: guide user where to change/remove keys
+    toast.info('Manage connection via Secrets', { description: 'Go to Settings → Secrets to remove or change keys.' });
+    setKrakenConnected(false);
+    onConnectionChange?.();
   };
 
   return (
@@ -346,10 +373,9 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
               </Button>
               <Button
               className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
-              onClick={handleConfirmConnection}
-              disabled={isConnecting || !balanceApiKey || !balanceApiSecret}>
-
-                {isConnecting ? 'Connecting...' : 'Connect Kraken'}
+              onClick={krakenConnected ? handleVerifySecrets : handleConfirmConnection}
+              disabled={isConnecting || (!krakenConnected && (!balanceApiKey || !balanceApiSecret))}>
+                {isConnecting ? (krakenConnected ? 'Verifying...' : 'Connecting...') : (krakenConnected ? 'Verify with Secrets' : 'Connect Kraken')}
               </Button>
             </div>
           </motion.div>
@@ -404,31 +430,38 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
                       </div>
                     </div>
                     {!krakenChecking && (
-                krakenConnected ?
-                <Button variant="outline" size="sm" onClick={handleKrakenDisconnect}>
-                          Disconnect
-                        </Button> :
-
-                <Button
-                  size="sm"
-                  onClick={() => setShowConnectionModal(true)}
-                  disabled={isConnecting}
-                  className="bg-purple-600 hover:bg-purple-700 text-white">
-
-                          Connect
-                        </Button>)
-
+                krakenConnected ? (
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={handleVerifySecrets} disabled={isConnecting} className="bg-purple-600 hover:bg-purple-700 text-white">
+                      {isConnecting ? 'Verifying...' : 'Verify Keys'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleKrakenDisconnect}>
+                      Manage via Secrets
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowConnectionModal(true)}
+                    disabled={isConnecting}
+                    className="bg-purple-600 hover:bg-purple-700 text-white">
+                    Enter Keys
+                  </Button>
+                ))
                 }
                   </div>
                   
-                  {krakenConnected &&
+                  {krakenConnected && (
               <>
                       <div className="mt-3 p-2 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 mb-3">
                         <p className="text-xs font-medium text-green-800 dark:text-green-300">
-                          ✅ Connected - You can now trade with your Kraken account
+                          ✅ Secrets detected. Balance key is set. {tradeKeyPresent ? 'Trade key is set.' : 'Trade key is missing.'}
                         </p>
                       </div>
-
+                      <div className="flex items-center gap-2 mb-3">
+                        <Badge variant={krakenConnected ? 'secondary' : 'outline'}>Balance Key: {krakenConnected ? 'Present' : 'Missing'}</Badge>
+                        <Badge variant={tradeKeyPresent ? 'secondary' : 'outline'}>Trade Key: {tradeKeyPresent ? 'Present' : 'Missing'}</Badge>
+                      </div>
                       <div className="flex justify-center">
                         <Button 
                           size="sm" 
@@ -440,7 +473,7 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
                         </Button>
                       </div>
                     </>
-              }
+                  )}
 
                   {!krakenConnected &&
               <div className="mt-3">
