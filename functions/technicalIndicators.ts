@@ -104,8 +104,25 @@ Deno.serve(async (req) => {
     }
     
     if (action === 'evaluateSignal') {
-      const { prices, strategy } = payload;
-      const indicators = strategy.indicators || {};
+      const { prices, strategy, strategy_id } = payload;
+
+      // Ownership check: if an id is provided, fetch and verify; else verify provided strategy belongs to user
+      let effectiveStrategy = strategy;
+      if (strategy_id || (strategy && strategy.id)) {
+        const sid = strategy_id || strategy.id;
+        const fetched = await base44.entities.TradingStrategy.get(sid);
+        if (!fetched || fetched.is_active === false) {
+          return Response.json({ error: 'Strategy not found or inactive' }, { status: 404 });
+        }
+        if (user?.role !== 'admin' && fetched.created_by !== user.email) {
+          return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
+        }
+        effectiveStrategy = fetched;
+      } else if (strategy && strategy.created_by && user?.role !== 'admin' && strategy.created_by !== user.email) {
+        return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
+      }
+
+      const indicators = (effectiveStrategy?.indicators) || {};
       
       const rsi = indicators.rsi_period ? calculateRSI(prices, indicators.rsi_period) : null;
       const macd = indicators.macd_fast ? calculateMACD(prices, indicators.macd_fast, indicators.macd_slow, indicators.macd_signal) : null;
@@ -117,33 +134,33 @@ Deno.serve(async (req) => {
       let signalType = null;
       
       // Entry signals
-      if (strategy.entry_conditions === 'RSI_OVERSOLD' && rsi && rsi < indicators.rsi_oversold) {
+      if (effectiveStrategy.entry_conditions === 'RSI_OVERSOLD' && rsi && rsi < indicators.rsi_oversold) {
         buySignal = true;
         signalType = 'RSI_OVERSOLD';
       }
       
-      if (strategy.entry_conditions === 'MACD_BULLISH_CROSS' && macd && macd.histogram > 0) {
+      if (effectiveStrategy.entry_conditions === 'MACD_BULLISH_CROSS' && macd && macd.histogram > 0) {
         buySignal = true;
         signalType = 'MACD_BULLISH_CROSS';
       }
       
-      if (strategy.entry_conditions === 'MA_CROSS_UP' && maShort && maLong && maShort > maLong) {
+      if (effectiveStrategy.entry_conditions === 'MA_CROSS_UP' && maShort && maLong && maShort > maLong) {
         buySignal = true;
         signalType = 'MA_CROSS_UP';
       }
       
       // Exit signals
-      if (strategy.exit_conditions === 'RSI_OVERBOUGHT' && rsi && rsi > indicators.rsi_overbought) {
+      if (effectiveStrategy.exit_conditions === 'RSI_OVERBOUGHT' && rsi && rsi > indicators.rsi_overbought) {
         sellSignal = true;
         signalType = 'RSI_OVERBOUGHT';
       }
       
-      if (strategy.exit_conditions === 'MACD_BEARISH_CROSS' && macd && macd.histogram < 0) {
+      if (effectiveStrategy.exit_conditions === 'MACD_BEARISH_CROSS' && macd && macd.histogram < 0) {
         sellSignal = true;
         signalType = 'MACD_BEARISH_CROSS';
       }
       
-      if (strategy.exit_conditions === 'MA_CROSS_DOWN' && maShort && maLong && maShort < maLong) {
+      if (effectiveStrategy.exit_conditions === 'MA_CROSS_DOWN' && maShort && maLong && maShort < maLong) {
         sellSignal = true;
         signalType = 'MA_CROSS_DOWN';
       }
