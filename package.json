@@ -75,7 +75,9 @@
     "three": "^0.171.0",
     "vaul": "^1.1.2",
     "zod": "^3.24.2",
-    "fast-equals": "^5.0.1"
+    "fast-equals": "^5.0.1",
+    "autoprefixer": "^10.4.16",
+    "normalize-range": "^0.1.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
