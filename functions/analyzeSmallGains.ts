@@ -240,8 +240,38 @@ For each asset:
 - Include market_sentiment_score in market_intelligence
 - Prioritize assets with clearest short-term signals`;
 
-    // Call LLM with robust JSON handling + fallbacks
-    const strictSchema = {
+    // Two-stage LLM: (1) market intelligence with web context, (2) recommendations without web
+    const intelSchema = {
+      type: "object",
+      properties: {
+        market_intelligence: {
+          type: "object",
+          properties: {
+            market_sentiment_score: { type: "number" },
+            market_regime: { type: "string" },
+            volatility_level: { type: "string" },
+            trading_recommendation: { type: "string" },
+            best_opportunities: { type: "array", items: { type: "string" } },
+            hot_signals: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  symbol: { type: "string" },
+                  signal_type: { type: "string" },
+                  predicted_move_pct: { type: "number" },
+                  timing: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        market_summary: { type: "string" },
+        upcoming_catalysts: { type: "array", items: { type: "string" } }
+      }
+    };
+
+    const recsSchema = {
       type: "object",
       properties: {
         recommendations: {
@@ -261,84 +291,117 @@ For each asset:
               take_profit_pct: { type: "number" }
             }
           }
-        },
-        market_intelligence: {
-          type: "object",
-          properties: {
-            market_sentiment_score: { type: "number" },
-            market_regime: { type: "string" },
-            volatility_level: { type: "string" },
-            trading_recommendation: { type: "string" },
-            best_opportunities: { type: "array", items: { type: "string" } }
-          }
-        },
-        market_summary: { type: "string" },
-        upcoming_catalysts: { type: "array", items: { type: "string" } }
+        }
       }
     };
 
-    async function tryInvoke(model, withWeb) {
+    async function invokeLLM({ prompt, model, withWeb, schema, label }) {
       return await withTimeout(
         base44.integrations.Core.InvokeLLM({
-          prompt: analysisPrompt,
+          prompt,
           add_context_from_internet: !!withWeb,
-          response_json_schema: strictSchema,
+          response_json_schema: schema,
           model
         }),
         includeMarketIntelligence ? 14000 : 12000,
-        'LLM invocation'
+        label || 'LLM invocation'
       );
     }
 
-    let llmResponse;
-    try {
-      // Primary: web-enabled model only when requested
-      const primaryModel = includeMarketIntelligence ? 'gemini_3_pro' : 'gpt_5_mini';
-      llmResponse = await tryInvoke(primaryModel, includeMarketIntelligence);
-    } catch (e1) {
-      console.warn('[MarketIntelligence] LLM JSON error (primary):', e1.message);
-      try {
-        // Fallback 1: same model, no web (search can break JSON)
-        const fallbackModel = includeMarketIntelligence ? 'gemini_3_pro' : 'gpt_5_mini';
-        llmResponse = await tryInvoke(fallbackModel, false);
-      } catch (e2) {
-        console.warn('[MarketIntelligence] LLM JSON error (fallback1):', e2.message);
-        try {
-          // Fallback 2: stronger JSON model, no web but faster
-          llmResponse = await tryInvoke('gpt_5_mini', false);
-        } catch (e3) {
-          console.warn('[MarketIntelligence] LLM JSON error (fallback2):', e3.message);
-          // Final graceful fallback: build HEURISTIC recommendations so auto-trader still has input
-          const heuristics = marketData.map(m => {
-            const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
-            let action = 'hold';
-            let confidence = 45;
-            if (ch >= 0.5) { action = 'buy'; confidence = 60; }
-            else if (ch >= 0.0) { action = 'buy'; confidence = 55; }
-            else if (ch > -1.0) { action = 'buy'; confidence = 57; }
-            return {
-              symbol: m.symbol,
-              confidence_score: confidence,
-              predicted_direction: ch >= 0 ? 'up' : 'down',
-              predicted_move_pct: 2,
-              reasoning: 'Heuristic momentum and 24h change suggest a small upside window.',
-              action,
-              optimal_action: action,
-              timing_window: '4h',
-              stop_loss_pct: 2,
-              take_profit_pct: 3
-            };
-          }).filter(r => r.optimal_action === 'buy' && r.confidence_score >= 55).slice(0, 6);
+    // Limit symbols sent to LLM to reduce token load (choose by largest absolute 24h change)
+    const symbolRank = (marketData.length > 0 ? marketData.map(m => ({
+      symbol: (m.symbol || '').toUpperCase(),
+      abs: Math.abs(Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0))
+    })) : targetSymbols.map(s => ({ symbol: (s || '').toUpperCase(), abs: 0 })))
+      .filter(x => x.symbol)
+      .sort((a,b) => b.abs - a.abs)
+      .map(x => x.symbol);
 
-          llmResponse = {
-            recommendations: heuristics,
-            market_intelligence: { market_sentiment_score: 50, market_regime: 'Heuristic (LLM unavailable)' },
-            market_summary: 'Heuristic fallback used',
-            upcoming_catalysts: []
-          };
-        }
+    const symbolsForIntel = (symbolRank.length ? symbolRank : targetSymbols.map(s => (s || '').toUpperCase())).slice(0, 8);
+
+    const intelPrompt = `You are a short-term crypto market analyst.
+    Focus ONLY on overall market context using news and social buzz for the next 1-6h.
+    Symbols of interest (prioritize if mentioned in news/social):\n${symbolsForIntel.map(s => '- ' + s).join('\n')}\n\nReturn: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), trading_recommendation (one sentence), best_opportunities (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
+
+    let marketIntelResp;
+    try {
+      // Primary web-enabled model
+      marketIntelResp = await invokeLLM({
+        prompt: intelPrompt,
+        model: 'gemini_3_pro',
+        withWeb: true,
+        schema: intelSchema,
+        label: 'LLM market intelligence'
+      });
+    } catch (eA) {
+      console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
+      try {
+        // Alternate web-enabled fallback model
+        marketIntelResp = await invokeLLM({
+          prompt: intelPrompt,
+          model: 'gemini_3_flash',
+          withWeb: true,
+          schema: intelSchema,
+          label: 'LLM market intelligence (fallback)'
+        });
+      } catch (eB) {
+        console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
+        marketIntelResp = {
+          market_intelligence: { market_sentiment_score: 50, market_regime: 'Heuristic (LLM unavailable)', volatility_level: 'moderate' },
+          market_summary: 'Heuristic fallback used',
+          upcoming_catalysts: []
+        };
       }
     }
+
+    // Build concise recommendations prompt using intel + real-time prices
+    const assetsLines = (marketData.length > 0
+      ? marketData.map(asset => `- ${asset.symbol}: price=$${asset.price || asset.current_price}, change_24h=${(asset.change_24h_percent || asset.price_change_percentage_24h || 0).toFixed(2)}%`).join('\n')
+      : targetSymbols.map(s => `- ${s}: (no price snapshot; infer conservatively)`).join('\n'));
+
+    const intelJson = JSON.stringify(marketIntelResp?.market_intelligence || marketIntelResp || {});
+
+    const recsPrompt = `Given these assets and current snapshots:\n${assetsLines}\n\nAnd this market_intelligence (from web context):\n${intelJson}\n\nReturn a 'recommendations' array with up to ${Math.min(8, (symbolsForIntel.length || 5))} items. Be conservative with 'strong_buy'/'strong_sell'. Prefer 'buy' or 'hold' if unclear. JSON only.`;
+
+    let recsResp;
+    try {
+      recsResp = await invokeLLM({
+        prompt: recsPrompt,
+        model: 'gpt_5_mini',
+        withWeb: false,
+        schema: recsSchema,
+        label: 'LLM recommendations'
+      });
+    } catch (eR) {
+      console.warn('[MarketIntelligence] Recs LLM error:', eR?.message || eR);
+      // Heuristic thin fallback if needed
+      const heuristics = marketData.map(m => {
+        const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
+        let action = ch >= 0 ? 'buy' : 'hold';
+        let confidence = ch >= 3 ? 65 : ch >= 0 ? 58 : 45;
+        return {
+          symbol: m.symbol,
+          confidence_score: confidence,
+          predicted_direction: ch >= 0 ? 'up' : 'down',
+          predicted_move_pct: 2,
+          reasoning: 'Heuristic based on 24h change and momentum proxy',
+          action,
+          optimal_action: action,
+          timing_window: '4h',
+          stop_loss_pct: 2,
+          take_profit_pct: 3
+        };
+      }).filter(r => r.confidence_score >= 55).slice(0, 6);
+      recsResp = { recommendations: heuristics };
+    }
+
+    // Compose unified llmResponse compatible with downstream logic
+    let llmResponse = {
+      recommendations: recsResp?.recommendations || [],
+      market_intelligence: marketIntelResp?.market_intelligence || null,
+      market_summary: marketIntelResp?.market_summary || 'Analysis complete',
+      upcoming_catalysts: marketIntelResp?.upcoming_catalysts || []
+    };
 
     console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
