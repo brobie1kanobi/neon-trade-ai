@@ -165,12 +165,27 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
         }
         
         // Wait for market data
-        const { data: details } = await marketDataPromise;
+        let { data: details } = await marketDataPromise;
 
         setHolding(holdingData);
 
         if (!details) {
-          throw new Error("Failed to fetch asset details.");
+          try {
+            const cached = await base44.entities.AssetCache.filter({ symbol: symbol.toUpperCase(), asset_type: assetType });
+            if (cached && cached.length > 0) {
+              details = {
+                name: cached[0].name,
+                symbol: cached[0].symbol,
+                description: cached[0].description || '',
+                website: cached[0].website || '',
+                icon_url: cached[0].icon_url || ''
+              };
+            }
+          } catch (_) {}
+        }
+        if (!details) {
+          // Graceful minimal fallback to avoid breaking the page
+          details = { name: symbol.toUpperCase(), symbol: symbol.toUpperCase() };
         }
 
         // Base assetData

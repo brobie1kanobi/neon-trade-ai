@@ -783,18 +783,37 @@ async function getAssetDetails(symbol, assetType) {
       const coinGeckoIds = {
         'BTC': 'bitcoin', 'ETH': 'ethereum', 'SOL': 'solana', 'USDT': 'tether',
         'BNB': 'binancecoin', 'XRP': 'ripple', 'USDC': 'usd-coin', 'ADA': 'cardano',
-        'XLM': 'stellar'
+        'XLM': 'stellar', 'DOGE': 'dogecoin', 'DOT': 'polkadot', 'LINK': 'chainlink',
+        'MATIC': 'polygon', 'AVAX': 'avalanche-2', 'UNI': 'uniswap', 'ATOM': 'cosmos',
+        'LTC': 'litecoin', 'BCH': 'bitcoin-cash', 'TRX': 'tron', 'SHIB': 'shiba-inu',
+        'PEPE': 'pepe', 'TON': 'the-open-network', 'HBAR': 'hedera-hashgraph'
       };
-      const coinId = coinGeckoIds[symbol.toUpperCase()];
-      if (!coinId) return null;
+      let coinId = coinGeckoIds[symbol.toUpperCase()];
+      if (!coinId) {
+        try {
+          const searchUrl = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
+          const searchResp = await fetchWithTimeout(searchUrl, 5000);
+          if (searchResp && searchResp.ok) {
+            const searchData = await searchResp.json();
+            const match = Array.isArray(searchData?.coins)
+              ? searchData.coins.find(c => (c.symbol || '').toUpperCase() === symbol.toUpperCase())
+              : null;
+            if (match?.id) coinId = match.id;
+          }
+        } catch (_) {}
+      }
+      if (!coinId) {
+        // Minimal fallback so pages don't break
+        return { name: symbol.toUpperCase(), symbol: symbol.toUpperCase(), description: '', website: '', icon_url: '' };
+      }
 
       const url = `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&community_data=false&developer_data=false&sparkline=false${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
-      const response = await fetchWithTimeout(url);
+      const response = await fetchWithTimeout(url, 8000);
       if (response && response.ok) {
         const data = await response.json();
         return {
           name: data.name,
-          symbol: data.symbol.toUpperCase(),
+          symbol: (data.symbol || symbol).toUpperCase(),
           description: data.description?.en || '',
           website: data.links?.homepage?.[0] || '',
           icon_url: data.image?.small || ''
