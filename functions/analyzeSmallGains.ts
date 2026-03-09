@@ -228,121 +228,90 @@ For each asset:
 - Include market_sentiment_score in market_intelligence
 - Prioritize assets with clearest short-term signals`;
 
-    // Call LLM with enhanced schema
-    const llmResponse = await base44.integrations.Core.InvokeLLM({
-      prompt: analysisPrompt,
-      add_context_from_internet: includeMarketIntelligence,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          recommendations: {
+    // Call LLM with robust JSON handling + fallbacks
+    const strictSchema = {
+      type: "object",
+      properties: {
+        recommendations: {
           type: "array",
           items: {
-          type: "object",
-          properties: {
-            symbol: { type: "string" },
-            confidence_score: { type: "number" },
-            predicted_gain_percent: { type: "number" },
-            predicted_direction: { type: "string" },
-            predicted_move_pct: { type: "number" },
-            reasoning: { type: "string" },
-            action: { type: "string" },
-            risk_level: { type: "string" },
-            technical_pattern: { type: "string" },
-            pattern_reliability: { type: "string" },
-            optimal_action: { type: "string" },
-            timing_window: { type: "string" },
-            entry_zone_low: { type: "number" },
-            entry_zone_high: { type: "number" },
-            stop_loss_pct: { type: "number" },
-            take_profit_pct: { type: "number" },
-            sentiment_score: { type: "number" },
-            momentum_strength: { type: "string" },
-            volume_profile: { type: "string" },
-            correlation_group: { type: "string" },
-            historical_win_rate: { type: "number" },
-            historical_avg_gain: { type: "number" },
-            is_top_performer: { type: "boolean" },
-            short_term_signal: { type: "boolean" },
-            auto_tradeable: { type: "boolean" }
-          }
-          }
-          },
-          market_intelligence: {
             type: "object",
             properties: {
-              overall_sentiment: { type: "string" },
-              sentiment_score: { type: "number" },
-              market_sentiment_score: { type: "number" },
-              market_regime: { type: "string" },
-              volatility_level: { type: "string" },
-              trend_strength: { type: "string" },
-              btc_dominance_trend: { type: "string" },
-              macro_outlook: { type: "string" },
-              short_term_outlook: { type: "string" },
-              momentum_direction: { type: "string" },
-              key_levels: {
-                type: "object",
-                properties: {
-                  btc_support: { type: "number" },
-                  btc_resistance: { type: "number" }
-                }
-              },
-              correlation_clusters: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    group_name: { type: "string" },
-                    assets: { type: "array", items: { type: "string" } },
-                    correlation_strength: { type: "string" }
-                  }
-                }
-              },
-              trading_recommendation: { type: "string" },
-              best_opportunities: { type: "array", items: { type: "string" } },
-              avoid_list: { type: "array", items: { type: "string" } },
-              emerging_prospects: { 
-                type: "array", 
-                items: { 
-                  type: "object",
-                  properties: {
-                    symbol: { type: "string" },
-                    reason: { type: "string" },
-                    potential_gain_pct: { type: "number" },
-                    timing_window: { type: "string" },
-                    confidence: { type: "number" }
-                  }
-                } 
-              },
-              hot_signals: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    symbol: { type: "string" },
-                    signal_type: { type: "string" },
-                    predicted_move_pct: { type: "number" },
-                    timing: { type: "string" },
-                    confidence: { type: "number" },
-                    reasoning: { type: "string" }
-                  }
-                }
-              }
+              symbol: { type: "string" },
+              confidence_score: { type: "number" },
+              predicted_direction: { type: "string" },
+              predicted_move_pct: { type: "number" },
+              reasoning: { type: "string" },
+              action: { type: "string" },
+              optimal_action: { type: "string" },
+              timing_window: { type: "string" },
+              stop_loss_pct: { type: "number" },
+              take_profit_pct: { type: "number" }
             }
-          },
-          market_summary: { type: "string" },
-          upcoming_catalysts: { type: "array", items: { type: "string" } }
+          }
+        },
+        market_intelligence: {
+          type: "object",
+          properties: {
+            market_sentiment_score: { type: "number" },
+            market_regime: { type: "string" },
+            volatility_level: { type: "string" },
+            trading_recommendation: { type: "string" },
+            best_opportunities: { type: "array", items: { type: "string" } }
+          }
+        },
+        market_summary: { type: "string" },
+        upcoming_catalysts: { type: "array", items: { type: "string" } }
+      }
+    };
+
+    async function tryInvoke(model, withWeb) {
+      return await base44.integrations.Core.InvokeLLM({
+        prompt: analysisPrompt,
+        add_context_from_internet: !!withWeb,
+        response_json_schema: strictSchema,
+        model
+      });
+    }
+
+    let llmResponse;
+    try {
+      // Primary: web-enabled model only when requested
+      const primaryModel = includeMarketIntelligence ? 'gemini_3_pro' : 'claude_sonnet_4_6';
+      llmResponse = await tryInvoke(primaryModel, includeMarketIntelligence);
+    } catch (e1) {
+      console.warn('[MarketIntelligence] LLM JSON error (primary):', e1.message);
+      try {
+        // Fallback 1: same model, no web (search can break JSON)
+        const fallbackModel = includeMarketIntelligence ? 'gemini_3_pro' : 'claude_sonnet_4_6';
+        llmResponse = await tryInvoke(fallbackModel, false);
+      } catch (e2) {
+        console.warn('[MarketIntelligence] LLM JSON error (fallback1):', e2.message);
+        try {
+          // Fallback 2: strongest JSON model, no web
+          llmResponse = await tryInvoke('claude_sonnet_4_6', false);
+        } catch (e3) {
+          console.warn('[MarketIntelligence] LLM JSON error (fallback2):', e3.message);
+          // Final graceful fallback: return minimal successful payload to avoid 500s
+          return Response.json({
+            success: true,
+            recommendations: [],
+            market_intelligence: null,
+            market_summary: 'AI temporarily unavailable (JSON error)',
+            upcoming_catalysts: [],
+            analyzed_count: targetSymbols.length,
+            timestamp: new Date().toISOString()
+          });
         }
       }
-    });
+    }
 
     console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
     console.log('[MarketIntelligence] Parsed recommendations count:', recommendations.length);
     console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
-    
+
     // Enrich recommendations with trade history data
     // CRITICAL: Apply strict filtering to prevent buying into downtrends
     const enhancedRecommendations = recommendations
