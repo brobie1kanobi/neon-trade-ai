@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * AI SIGNAL GENERATOR v5 — ENHANCED TECHNICAL + SENTIMENT + ML SCORING
@@ -315,6 +315,11 @@ function scoreToSignal(compositeScore) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  const DEADLINE_MS = 55000;
+  const deadline = startTime + DEADLINE_MS;
+  function timeLeft() { return Math.max(0, deadline - Date.now()); }
+  function shouldStop() { return Date.now() > deadline - 1200; }
+  function ps(ms){ const t = Math.max(0, Math.min(ms, timeLeft()-400)); if (t<=0) return Promise.resolve(); return new Promise(r=>setTimeout(r,t)); }
 
   try {
     const base44 = createClientFromRequest(req);
@@ -434,7 +439,10 @@ Deno.serve(async (req) => {
     try {
       const pairs = cryptoSymbols.map(s => KRAKEN_PAIR_MAP[s]).filter(Boolean);
       if (pairs.length > 0) {
-        const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`);
+        const ac = new AbortController();
+        const to = setTimeout(() => ac.abort(), Math.min(8000, timeLeft()-200));
+        const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`, { signal: ac.signal });
+        clearTimeout(to);
         if (resp.ok) {
           const data = await resp.json();
           if (data?.result) {
@@ -467,11 +475,15 @@ Deno.serve(async (req) => {
 
     // Fetch OHLC 1h candles (for RSI, MACD, BB, trend)
     for (const sym of cryptoSymbols) {
+      if (shouldStop()) { console.warn('[generateSignals] Deadline near, stopping OHLC fetch'); break; }
       const pair = KRAKEN_PAIR_MAP[sym];
       if (!pair) continue;
 
       try {
-        const ohlcResp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=60`);
+        const ac2 = new AbortController();
+        const to2 = setTimeout(() => ac2.abort(), Math.min(9000, timeLeft()-200));
+        const ohlcResp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=60`, { signal: ac2.signal });
+        clearTimeout(to2);
         if (ohlcResp.ok) {
           const ohlcJson = await ohlcResp.json();
           const resultKey = Object.keys(ohlcJson.result || {}).find(k => k !== 'last');
@@ -559,7 +571,7 @@ Deno.serve(async (req) => {
             };
           }
         }
-        await new Promise(r => setTimeout(r, 350));
+        await ps(200);
       } catch (e) {
         console.warn(`[generateSignals] OHLC fetch failed for ${sym}:`, e.message);
       }
@@ -704,7 +716,12 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════
     //  STEP 4: LLM contextual analysis (with all data)
     // ═══════════════════════════════════════════════
-    const assetsSection = marketData.map(a => {
+    // Limit assets for LLM context to reduce token/time usage (most volatile first)
+    const ranked = (marketData || []).map(a => ({ sym: a.symbol, abs: Math.abs(Number(a.change_24h_percent||0)) }))
+      .sort((x,y)=> y.abs - x.abs);
+    const symbolsForLLM = (ranked.length ? ranked.map(r=>r.sym) : cryptoSymbols).slice(0, Math.min(8, (cryptoSymbols.length||5)));
+
+    const assetsSection = marketData.filter(a => symbolsForLLM.includes(a.symbol)).map(a => {
       const ti = techIndicators[a.symbol] || {};
       const hist = tradeHistory[a.symbol] || {};
       const sent = sentimentData[a.symbol] || {};
@@ -733,7 +750,10 @@ Deno.serve(async (req) => {
     let aiRecommendations = [];
     try {
       console.log('[generateSignals] Calling LLM with full technical + sentiment context...');
-      const llmResponse = await base44.integrations.Core.InvokeLLM({
+      let llmResponse;
+      try {
+        llmResponse = await withTimeout(
+          base44.integrations.Core.InvokeLLM({
         prompt: `You are a CONSERVATIVE quantitative trading system optimized for 80%+ WIN RATE.
 You have access to real technical indicators (RSI, MACD, Bollinger Bands, ATR, VWAP, EMAs) computed from actual OHLC data.
 
@@ -803,7 +823,25 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
             }
           }
         }
-      });
+      }), Math.min(14000, timeLeft()-200), 'contextual LLM');
+      } catch (e1) {
+        console.warn('[generateSignals] Contextual LLM primary failed:', e1.message);
+        try {
+          llmResponse = await withTimeout(
+            base44.integrations.Core.InvokeLLM({
+              prompt: `You are a CONSERVATIVE quantitative trading system. Using ONLY the assets listed below, output compact JSON recommendations with symbol, optimal_action, confidence_score, stop_loss_pct (1-3), take_profit_pct (2-8), momentum_strength, timing_window, predicted_gain_percent, sentiment_score, reasoning.\nASSETS (concise):\n${assetsSection}`,
+              add_context_from_internet: false,
+              response_json_schema: {
+                type: 'object',
+                properties: { recommendations: { type: 'array', items: { type: 'object', properties: { symbol: {type:'string'}, optimal_action:{type:'string'}, confidence_score:{type:'number'}, stop_loss_pct:{type:'number'}, take_profit_pct:{type:'number'}, momentum_strength:{type:'string'}, timing_window:{type:'string'}, predicted_gain_percent:{type:'number'}, sentiment_score:{type:'number'}, reasoning:{type:'string'} } } } }
+              },
+              model: 'gpt_5_mini'
+            }), Math.min(9000, timeLeft()-200), 'contextual LLM fallback');
+        } catch (e2) {
+          console.warn('[generateSignals] Contextual LLM fallback failed:', e2.message);
+          llmResponse = { recommendations: [] };
+        }
+      }
 
       aiRecommendations = llmResponse?.recommendations || [];
       console.log('[generateSignals] Got', aiRecommendations.length, 'LLM recommendations');
@@ -818,6 +856,7 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
     const expiresAt = new Date(Date.now() + SIGNAL_TTL_HOURS * 60 * 60 * 1000).toISOString();
 
     for (const asset of assetsNeedingAnalysis) {
+      if (shouldStop()) { console.warn('[generateSignals] Deadline near, stopping signal save loop'); break; }
       const sym = asset.symbol;
       const quote = marketData.find(q => q.symbol === sym);
       const ti = techIndicators[sym] || {};
