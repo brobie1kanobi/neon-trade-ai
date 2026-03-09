@@ -839,20 +839,13 @@ Deno.serve(async (req) => {
     console.log('[krakenTrade] Action:', action, 'User:', user.email);
 
     // Get Kraken connection
-    const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
-    ]);
-
-    if (!connections || connections.length === 0) {
-      return Response.json({
-        error: 'Kraken account not connected',
-        success: false
-      }, { status: 200 });
+    // Secrets-based credentials; presence validated when requesting WS token
+    const tradeKey = Deno.env.get('Trade_Key');
+    const tradeSecret = Deno.env.get('Trade_Secret');
+    if (!tradeKey || !tradeSecret) {
+      return Response.json({ error: 'Missing Trade_Key/Trade_Secret in application secrets', success: false }, { status: 200 });
     }
-
-    const connection = connections[0];
-    // Proceed without early trade key presence check; WebSocket token request will validate permissions
+    // Proceed without connection entity; krakenApi will verify permissions
 
     // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
     // CRITICAL: forceRefresh=false to use cached token and prevent rate limit spam

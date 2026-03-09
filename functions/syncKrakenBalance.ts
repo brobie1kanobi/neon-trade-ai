@@ -99,18 +99,11 @@ async function handleSync(req, startTime) {
     // CRITICAL: 2-second timeout for connection check
     const connectionsPromise = base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
     
-    const connections = await Promise.race([
-      connectionsPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection query timeout')), 2000))
-    ]);
-
-    if (!connections || connections.length === 0) {
-      console.log('[syncKrakenBalance] No connection');
-      return Response.json({ 
-        error: 'Kraken not connected',
-        connected: false,
-        success: false
-      }, { status: 200 });
+    // Secrets-based; verify presence of balance secrets
+    const hasBal = !!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'));
+    if (!hasBal) {
+      console.log('[syncKrakenBalance] No balance secrets');
+      return Response.json({ error: 'Kraken not connected', connected: false, success: false }, { status: 200 });
     }
 
     // FETCH BALANCE
@@ -118,7 +111,7 @@ async function handleSync(req, startTime) {
     try {
       console.log('[syncKrakenBalance] Fetching balance...');
       const balanceResponse = await fetchWithTimeout(
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance' }),
+        base44.functions.invoke('krakenApi', { action: 'getBalance' }),
         BALANCE_TIMEOUT_MS,
         'Balance fetch timeout'
       );
@@ -160,7 +153,7 @@ async function handleSync(req, startTime) {
     try {
       console.log('[syncKrakenBalance] Fetching trades...');
       const tradesResponse = await fetchWithTimeout(
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory' }),
+        base44.functions.invoke('krakenApi', { action: 'getTradesHistory' }),
         TRADES_TIMEOUT_MS,
         'Trades fetch timeout'
       );

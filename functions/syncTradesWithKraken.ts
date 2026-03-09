@@ -88,18 +88,11 @@ Deno.serve(async (req) => {
     console.log('[syncTradesWithKraken] Starting sync for user:', user.email);
 
     // Get Kraken connection to call API directly
-    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
-    if (!connections || connections.length === 0) {
-      return Response.json({ error: 'Kraken not connected', success: false }, { status: 200 });
-    }
-    
-    const connection = connections[0];
     const normalize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
-    const apiKey = normalize(connection.balance_api_key || connection.api_key);
-    const apiSecret = normalize(connection.balance_api_secret_encrypted || connection.api_secret_encrypted);
-    
+    const apiKey = normalize(Deno.env.get('Kraken_API_Key'));
+    const apiSecret = normalize(Deno.env.get('Kraken_API_Secret'));
     if (!apiKey || !apiSecret) {
-      return Response.json({ error: 'Missing Kraken API credentials', success: false }, { status: 200 });
+      return Response.json({ error: 'Missing Kraken_API_Key/Kraken_API_Secret in application secrets', success: false }, { status: 200 });
     }
 
     // Step 1: Fetch ALL trades from Kraken directly

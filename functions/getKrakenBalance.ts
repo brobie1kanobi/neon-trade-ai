@@ -117,10 +117,9 @@ Deno.serve(async (req) => {
     }
     const limiter = rateLimiters.get(userKey);
 
-    const connections = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email });
-
-    if (!connections || connections.length === 0) {
-      console.log('[getKrakenBalance] No Kraken connection found for user');
+    const hasBalanceSecrets = !!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'));
+    if (!hasBalanceSecrets) {
+      console.log('[getKrakenBalance] Missing Kraken balance secrets');
       return Response.json({
         error: 'Not connected',
         connected: false,

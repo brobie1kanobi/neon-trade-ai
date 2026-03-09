@@ -147,14 +147,9 @@ Deno.serve(async (req) => {
     try {
       console.log('[Prospects] Fetching Kraken balance directly...');
       
-      const krakenConns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
-      
-      if (krakenConns.length > 0) {
-        const conn = krakenConns[0];
-        const balKey = (conn.balance_api_key || conn.api_key || '').trim();
-        const balSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
-        
-        if (balKey && balSecret) {
+      const balKey = (Deno.env.get('Kraken_API_Key') || '').trim();
+      const balSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
+      if (balKey && balSecret) {
           const extBalResult = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
           
           if (extBalResult?.error?.length > 0) {
@@ -255,11 +250,8 @@ Deno.serve(async (req) => {
             }
           }
         } else {
-          console.warn('[Prospects] No Kraken API keys found on connection');
+          console.warn('[Prospects] Missing Kraken_API_Key/Kraken_API_Secret in secrets');
         }
-      } else {
-        console.warn('[Prospects] No Kraken connection found for user');
-      }
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
     }
