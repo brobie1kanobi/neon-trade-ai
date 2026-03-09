@@ -347,38 +347,70 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { symbols = [], forceRefresh = false } = body;
 
-    // Load user's thresholds (robust: accept numbers or numeric strings) and strategies
+    // Load thresholds (prefer caller's user; fallback to most recent global settings)
     let userAutoExecuteThreshold = null;
     let userMinSignalConfidence = null;
     let userStrategies = {};
+    let settingsSource = 'defaults';
     try {
-      const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email });
-      if (userSettingsList.length > 0) {
-        userSettingsList.sort((a, b) => new Date(b.updated_date || 0) - new Date(a.updated_date || 0));
-        const latest = userSettingsList[0];
-        const aets = Number(latest.auto_execute_threshold);
-        const msci = Number(latest.min_signal_confidence);
-        userAutoExecuteThreshold = Number.isFinite(aets) ? aets : null;
-        userMinSignalConfidence = Number.isFinite(msci) ? msci : null;
+      // 1) Try current user's settings
+      const userSettingsList = await base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
+      const latestUser = userSettingsList?.[0];
+      if (latestUser) {
+        const aets = Number(latestUser.auto_execute_threshold);
+        const msci = Number(latestUser.min_signal_confidence);
+        if (Number.isFinite(aets)) userAutoExecuteThreshold = aets;
+        if (Number.isFinite(msci)) userMinSignalConfidence = msci;
         userStrategies = {
-          strategy_rsi: latest.strategy_rsi,
-          strategy_macd: latest.strategy_macd,
-          strategy_bollinger: latest.strategy_bollinger,
-          strategy_trend: latest.strategy_trend,
-          strategy_volume: latest.strategy_volume,
-          strategy_sentiment: latest.strategy_sentiment,
-          strategy_history: latest.strategy_history
+          strategy_rsi: latestUser.strategy_rsi,
+          strategy_macd: latestUser.strategy_macd,
+          strategy_bollinger: latestUser.strategy_bollinger,
+          strategy_trend: latestUser.strategy_trend,
+          strategy_volume: latestUser.strategy_volume,
+          strategy_sentiment: latestUser.strategy_sentiment,
+          strategy_history: latestUser.strategy_history
         };
+        settingsSource = `user:${latestUser.created_by}`;
       }
-      // Apply safe defaults if not set in DB
+
+      // 2) Fallback to most recent settings across all users (global default for scheduled runs)
+      if (userAutoExecuteThreshold == null || userMinSignalConfidence == null) {
+        const globalLatest = await base44.asServiceRole.entities.UserSettings.filter({}, '-updated_date', 1);
+        const latestAny = globalLatest?.[0];
+        if (latestAny) {
+          if (userAutoExecuteThreshold == null) {
+            const aets2 = Number(latestAny.auto_execute_threshold);
+            if (Number.isFinite(aets2)) userAutoExecuteThreshold = aets2;
+          }
+          if (userMinSignalConfidence == null) {
+            const msci2 = Number(latestAny.min_signal_confidence);
+            if (Number.isFinite(msci2)) userMinSignalConfidence = msci2;
+          }
+          // Only fill missing strategy flags from global if we didn't get any from user
+          if (Object.keys(userStrategies).length === 0) {
+            userStrategies = {
+              strategy_rsi: latestAny.strategy_rsi,
+              strategy_macd: latestAny.strategy_macd,
+              strategy_bollinger: latestAny.strategy_bollinger,
+              strategy_trend: latestAny.strategy_trend,
+              strategy_volume: latestAny.strategy_volume,
+              strategy_sentiment: latestAny.strategy_sentiment,
+              strategy_history: latestAny.strategy_history
+            };
+          }
+          if (settingsSource === 'defaults') settingsSource = `global:${latestAny.created_by || 'unknown'}`;
+        }
+      }
+
+      // 3) Safe defaults if still missing
       if (userAutoExecuteThreshold == null) userAutoExecuteThreshold = 70;
       if (userMinSignalConfidence == null) userMinSignalConfidence = 50;
-      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence);
+      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence, 'source:', settingsSource);
     } catch (e) {
-      console.warn('[generateSignals] Could not load user settings:', e.message);
-      // Still ensure sane defaults on error
+      console.warn('[generateSignals] Could not load user/global settings:', e.message);
       if (userAutoExecuteThreshold == null) userAutoExecuteThreshold = 70;
       if (userMinSignalConfidence == null) userMinSignalConfidence = 50;
+      console.log('[generateSignals] Using auto_execute_threshold:', userAutoExecuteThreshold, 'min_signal_confidence:', userMinSignalConfidence, 'source:', 'defaults_error');
     }
 
     console.log('[generateSignals] v5 Starting for', symbols.length || 'all', 'symbols');
