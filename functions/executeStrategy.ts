@@ -11,10 +11,13 @@ Deno.serve(async (req) => {
     
     const { strategy_id } = await req.json();
     
-    // Get strategy
+    // Get strategy with ownership check
     const strategy = await base44.entities.TradingStrategy.get(strategy_id);
     if (!strategy || !strategy.is_active) {
       return Response.json({ error: 'Strategy not found or inactive' }, { status: 404 });
+    }
+    if (user?.role !== 'admin' && strategy.created_by !== user.email) {
+      return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
     }
     
     const executions = [];
