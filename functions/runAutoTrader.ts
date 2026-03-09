@@ -124,6 +124,60 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
   }
 }
 
+// Live cash fetcher tries KrakenConnection first, then env keys
+async function fetchLiveCash(base44, userEmail) {
+  let rawUsd = 0; let reserved = 0; let source = 'none';
+  try {
+    const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
+    if (conns.length > 0) {
+      const conn = conns[0];
+      const apiKey = (conn.balance_api_key || conn.trade_api_key || conn.api_key || '').trim();
+      const apiSecret = (conn.balance_api_secret_encrypted || conn.trade_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
+      if (apiKey && apiSecret) {
+        const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
+        if (!bal?.error?.length && bal?.result) {
+          const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+          rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+          try {
+            const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
+            if (open?.result?.open) {
+              for (const [, order] of Object.entries(open.result.open)) {
+                const side = (order.descr?.type || '').toLowerCase();
+                if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+              }
+            }
+          } catch (_) {}
+          source = 'kraken_connection';
+          return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
+        }
+      }
+    }
+  } catch (_) {}
+  try {
+    const envKey = (Deno.env.get('Kraken_API_Key') || '').trim();
+    const envSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
+    if (envKey && envSecret) {
+      const bal = await __kr_callPrivate(envKey, envSecret, '/0/private/BalanceEx', {});
+      if (!bal?.error?.length && bal?.result) {
+        const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
+        rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
+        try {
+          const open = await __kr_callPrivate(envKey, envSecret, '/0/private/OpenOrders', { trades: 'true' });
+          if (open?.result?.open) {
+            for (const [, order] of Object.entries(open.result.open)) {
+              const side = (order.descr?.type || '').toLowerCase();
+              if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
+            }
+          }
+        } catch (_) {}
+        source = 'env';
+        return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
+      }
+    }
+  } catch (_) {}
+  return { rawUsd: 0, reserved: 0, available: 0, source };
+}
+
 /**
  * Generate idempotency key for a trade
  */
@@ -604,27 +658,10 @@ Deno.serve(async (req) => {
         cashAvailable = wallet?.cash_balance || 0;
         tradingCash = cashAvailable;
       } else {
-        const apiKey = (Deno.env.get('Kraken_API_Key') || '').trim();
-        const apiSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
-        if (apiKey && apiSecret) {
-          const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-          if (!bal?.error?.length && bal?.result) {
-            const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-            const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-            cashAvailable = rawUsd;
-            let reserved = 0;
-            try {
-              const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
-              if (open?.result?.open) {
-                for (const [, order] of Object.entries(open.result.open)) {
-                  const side = (order.descr?.type || '').toLowerCase();
-                  if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
-                }
-              }
-            } catch (_e) {}
-            tradingCash = Math.max(0, rawUsd - reserved - rawUsd * 0.02);
-          }
-        }
+        const live = await fetchLiveCash(base44, user.email);
+        cashAvailable = live.available;
+        tradingCash = cashAvailable;
+        log('Live cash snapshot', { source: live.source, rawUsd: round2(live.rawUsd || 0), available: round2(live.available || 0) });
       }
 
       // 3) Load active signals
@@ -785,26 +822,13 @@ Deno.serve(async (req) => {
     // CRITICAL: Check available cash FIRST before filtering prospects
     // This prevents processing prospects when there's no money to trade with
     if (!isSimMode) {
-      // Refresh live cash once up front via direct Kraken API (avoid cross-function 403s)
+      // Refresh live cash via helper to ensure we don't see $0 due to a single fetch path
       try {
-        const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
-        if (conns.length > 0) {
-          const conn = conns[0];
-          const apiKey = (conn.balance_api_key || conn.api_key || '').trim();
-          const apiSecret = (conn.balance_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
-          if (apiKey && apiSecret) {
-            const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-            if (!bal?.error?.length && bal?.result) {
-              const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-              const rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-              const freshAvailable = rawUsd;
-              availableCash = Math.max(0, freshAvailable * 0.90); // safety buffer for spending
-              console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
-            }
-          }
-        }
+        const live2 = await fetchLiveCash(base44, user.email);
+        availableCash = Math.max(0, (live2.available || 0));
+        console.log(`[runAutoTrader] LIVE mode - fresh cash available: $${(live2.rawUsd || 0).toFixed(2)} (eff: $${availableCash.toFixed(2)})`);
       } catch (e) {
-        console.warn('[runAutoTrader] Direct Kraken balance failed; proceeding with cached cash value:', e.message);
+        console.warn('[runAutoTrader] Fresh balance fetch failed; proceeding with cached value:', e.message);
       }
       if (availableCash < 5) {
         console.log('[runAutoTrader] Insufficient cash for any trades (< $5)');
