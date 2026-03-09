@@ -440,11 +440,16 @@ For each asset:
 
   } catch (error) {
     console.error('[MarketIntelligence] Error:', error);
+    // Graceful fallback on any unexpected error (avoid 500)
     return Response.json({
       success: false,
       error: error.message,
       recommendations: [],
-      market_intelligence: null
-    }, { status: 500 });
+      market_intelligence: null,
+      market_summary: 'Analysis failed, but request completed without crashing',
+      upcoming_catalysts: [],
+      analyzed_count: 0,
+      timestamp: new Date().toISOString()
+    }, { status: 200 });
   }
 });
