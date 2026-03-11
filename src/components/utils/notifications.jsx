@@ -49,6 +49,7 @@ const SUPPRESSED_PATTERNS = [
   'insufficient available',
   'insufficient funds',
   'failed to sell',
+  'failed sell',
   'kraken sell failed',
   'below kraken minimum',
   'order blocked',

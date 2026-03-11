@@ -1363,8 +1363,8 @@ Deno.serve(async (req) => {
             console.log(`[runAutoTrader] Skipping TP/SL for ${sym} - qty ${qty} below Kraken minimum ${minQtyForSymbol}`);
           }
           
-          // Store Kraken order IDs for tracking
-          krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
+          // Store Kraken order IDs for tracking (no TP/SL IDs recorded)
+          krakenOrderIds = [buyOrderId].filter(Boolean).join(',');
           
           console.log(`[runAutoTrader] 📋 Order IDs saved: ${krakenOrderIds}`);
 

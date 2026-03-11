@@ -134,13 +134,6 @@ export default function AutoTraderProspects() {
         console.warn('[Prospects] Balance preflight failed, proceeding cautiously:', balErr?.message);
       }
       
-      // Prefetch WS token from TRADE key to avoid extra calls/rate limits
-      let __wsToken = null;
-      try {
-        const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
-        __wsToken = (__t?.data || __t)?.token || null;
-      } catch (_) {}
-      
       // Step 1: Execute market BUY order
       const buyResponse = await base44.functions.invoke('krakenTrade', {
         action: 'place_order',
@@ -162,39 +155,30 @@ export default function AutoTraderProspects() {
         description: `Bought ${qty.toFixed(4)} ${prospect.symbol} @ $${price.toFixed(2)}`
       });
       
-      // Step 2: Place bracket orders (TP + SL) with short delay
-      await new Promise(res => setTimeout(res, 2000));
-      
+      // Skipping Kraken bracket orders; create app-managed ConditionalOrder instead
+      await new Promise(res => setTimeout(res, 500));
       try {
-        const bracketResponse = await base44.functions.invoke('krakenTrade', {
-          action: 'place_bracket_orders',
+        await base44.entities.ConditionalOrder.create({
           symbol: prospect.symbol,
+          asset_type: prospect.asset_type || 'crypto',
           quantity: qty,
-          takeProfitPrice: takeProfitPrice,
-          stopLossPrice: stopLossPrice,
-          wsToken: __wsToken
+          purchase_price: price,
+          gain_margin: tpPercent,
+          loss_margin: slPercent,
+          status: 'active',
+          trailing_enabled: settings?.trailing_takeprofit_enabled !== false,
+          highest_price: price,
+          trailing_margin: settings?.trailing_takeprofit_margin ?? 3,
+          is_simulation: false,
+          idempotency_key: `manual_${prospect.symbol}_${Date.now()}`,
+          trade_id: null
         });
-        
-        const bracketData = bracketResponse?.data || bracketResponse;
-        
-        if (bracketData?.tp_success && bracketData?.sl_success) {
-          toast.success(`✅ Bracket Orders Placed`, {
-            description: `TP @ $${takeProfitPrice} (+${tpPercent}%) | SL @ $${stopLossPrice} (-${slPercent}%)`
-          });
-        } else if (bracketData?.tp_success || bracketData?.sl_success) {
-          toast.warning(`⚠️ Partial Bracket`, {
-            description: `TP: ${bracketData?.tp_success ? '✓' : '✗'} | SL: ${bracketData?.sl_success ? '✓' : '✗'}`
-          });
-        } else {
-          toast.warning(`⚠️ Bracket orders failed`, {
-            description: `Position opened but TP/SL not set. Check Kraken manually.`
-          });
-        }
-      } catch (bracketError) {
-        console.error('Bracket error:', bracketError);
-        toast.warning(`⚠️ Bracket orders failed`, {
-          description: `Position opened. Set TP/SL manually on Kraken.`
+        toast.success(`✅ Protection Set`, {
+          description: `Conditional TP @ +${tpPercent}% and SL @ -${slPercent}% will be managed by the app`
         });
+      } catch (e) {
+        console.error('ConditionalOrder create failed:', e);
+        toast.warning('Protection not set', { description: 'Position opened; app-managed TP/SL creation failed' });
       }
 
       setSelectedProspect(null);
