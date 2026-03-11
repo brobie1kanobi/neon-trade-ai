@@ -127,6 +127,13 @@ const normalizeKrakenSymbol = (symbol) => {
   return s;
 };
 
+// Sort helper: most recent first (updated_date then created_date)
+const sortByDateDesc = (arr) => {
+  return [...(arr || [])].sort(
+    (a, b) => new Date(b?.updated_date || b?.created_date || 0) - new Date(a?.updated_date || a?.created_date || 0)
+  );
+};
+
 export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefresh }) {
   const [activeTab, setActiveTab] = useState("conditional");
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -454,8 +461,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       
       console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);
 
-      setConditionalOrders(prev => mergeLists(prev, conditionalOrdersList));
-      setOpenOrders(prev => mergeLists(prev, openOrdersList));
+      setConditionalOrders(prev => sortByDateDesc(mergeLists(prev, conditionalOrdersList)));
+      setOpenOrders(prev => sortByDateDesc(mergeLists(prev, openOrdersList)));
 
       // Combine all closed orders - executed, cancelled, failed, and orders with errors
       // Use a Map to avoid duplicates (keyed by order ID)
@@ -472,7 +479,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       const sortedClosed = uniqueClosedOrders.sort((a, b) =>
         new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
       );
-      setClosedOrders(prev => mergeLists(prev, sortedClosed));
+      setClosedOrders(prev => sortByDateDesc(mergeLists(prev, sortedClosed)));
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
@@ -561,8 +568,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                (!desc.includes('stop') && !desc.includes('take profit') && !desc.includes('trailing') && !desc.includes('oco'));
       });
 
-      setConditionalOrders(prev => mergeLists(prev, conditionalList));
-      setOpenOrders(prev => mergeLists(prev, openList));
+      setConditionalOrders(prev => sortByDateDesc(mergeLists(prev, conditionalList)));
+      setOpenOrders(prev => sortByDateDesc(mergeLists(prev, openList)));
       setLastRefreshAt(Date.now());
     }
   }, [providerKrakenOrders, isSimMode, mergeLists]);
@@ -679,6 +686,26 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // Filter trades by simulation mode - merge with Kraken trades in LIVE mode
   const filteredTrades = React.useMemo(() => {
     const localTrades = trades.filter((t) => t.is_simulation === isSimMode);
+
+    // Add executed orders from Closed tab as trades (mostly SELL executions)
+    const executedFromClosed = closedOrders
+      .filter((o) => o.status === 'executed' && (o.is_simulation === isSimMode))
+      .map((o) => {
+        const execPrice = o.execution_price || o.trigger_price || o.purchase_price || 0;
+        return {
+          id: `exec-${o.id}`,
+          symbol: normalizeKrakenSymbol(o.symbol || ''),
+          type: 'sell',
+          quantity: Number(o.quantity) || 0,
+          price: execPrice,
+          total_value: (Number(o.quantity) || 0) * execPrice,
+          created_date: o.updated_date || o.created_date,
+          is_simulation: !!o.is_simulation,
+          is_auto_trade: true,
+          asset_type: 'crypto',
+          status: 'executed'
+        };
+      });
     
     // In LIVE mode, merge with Kraken trades history
     if (!isSimMode && krakenTradesHistory.length > 0) {
@@ -705,11 +732,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       });
       
       // Merge and dedupe by checking if local trade matches Kraken trade (within time window)
-      const mergedTrades = [...localTrades];
+      const base = [...localTrades, ...executedFromClosed];
+      const mergedTrades = [...base];
       krakenTradesList.forEach(kt => {
-        const isDupe = localTrades.some(lt => 
+        const isDupe = base.some(lt => 
           lt.symbol === kt.symbol && 
-          Math.abs(lt.quantity - kt.quantity) < 0.0001 &&
+          Math.abs((lt.quantity || 0) - kt.quantity) < 0.0001 &&
           Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
         );
         if (!isDupe) {
@@ -717,14 +745,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
         }
       });
       
-      // Sort by date descending
-      return mergedTrades.sort((a, b) => 
-        new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
-      );
+      return sortByDateDesc(mergedTrades.map(t => ({...t})));
     }
     
-    return localTrades;
-  }, [trades, isSimMode, krakenTradesHistory]);
+    return sortByDateDesc([...localTrades, ...executedFromClosed]);
+  }, [trades, isSimMode, krakenTradesHistory, closedOrders]);
   
   const buyTrades = filteredTrades.filter((t) => t.type === "buy");
   const sellTrades = filteredTrades.filter((t) => t.type === "sell");
@@ -828,7 +853,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                   message="No open orders. Your active limit and stop orders will appear here." />
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {openOrders.map((order) => (
+                  {sortByDateDesc(openOrders).map((order) => (
                     <OrderRow
                       key={order.id}
                       order={order}
@@ -852,7 +877,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                   message="No conditional orders. Auto-trader creates these when buying assets." />
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {conditionalOrders.map((order) => (
+                  {sortByDateDesc(conditionalOrders).map((order) => (
                     <ConditionalOrderRow
                       key={order.id}
                       order={order}
@@ -875,7 +900,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
                   message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." />
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {closedOrders.slice(0, 50).map((order) => (
+                  {sortByDateDesc(closedOrders).slice(0, 50).map((order) => (
                     <ClosedOrderRow
                       key={order.id}
                       order={order}
