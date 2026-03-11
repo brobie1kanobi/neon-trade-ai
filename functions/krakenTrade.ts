@@ -981,7 +981,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, 2);
       let buyResult;
       try {
-        buyResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), buyParams));
+        buyResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), buyParams));
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
@@ -1054,7 +1054,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
           await tradeRateGate(user.email, 2);
-          tpResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), tpParams));
+          tpResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), tpParams));
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
           console.error('[krakenTrade] ❌ TP failed:', tpError.message);
@@ -1086,7 +1086,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
           await tradeRateGate(user.email, 2);
-          slResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), slParams));
+          slResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), slParams));
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
           console.error('[krakenTrade] ❌ SL failed:', slError.message);
@@ -1334,7 +1334,7 @@ Deno.serve(async (req) => {
 
       // Execute both orders over single WebSocket connection
       await tradeRateGate(user.email, 2);
-      const bracketResult = await withOrderLock(user.email, () => executeBracketOrders(await getWsTokenLazy(2), tpParams, slParams, 4000));
+      const bracketResult = await withOrderLock(user.email, async () => executeBracketOrders(await getWsTokenLazy(2), tpParams, slParams, 4000));
 
       console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
 
@@ -1548,7 +1548,7 @@ Deno.serve(async (req) => {
       let tradeResult;
       try {
         await tradeRateGate(user.email, 2);
-        tradeResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams));
+        tradeResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams));
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
