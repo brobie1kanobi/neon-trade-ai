@@ -421,6 +421,31 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
             const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
             const vol = Number(payload.quantity || 0);
 
+            // Preflight: block SELL fallbacks when below Kraken minimum or insufficient available
+            const MIN_ORDER_SIZES = {
+              'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
+              'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+              'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
+              'PEPE': 500000.0, 'SUI': 3.0, 'HBAR': 20.0
+            };
+            const minQty = MIN_ORDER_SIZES[sym] || 0.00001;
+            if (String(payload?.side).toLowerCase() === 'sell') {
+              try {
+                const bal = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/BalanceEx', {});
+                const raw = bal?.result || {};
+                const key = sym === 'BTC' ? 'XXBT' : (sym.length === 3 ? `X${sym}` : sym);
+                const entry = raw[key] || raw[sym] || {};
+                const available = parseFloat(entry?.balance || 0) || 0;
+                const finalQty = Math.min(vol, available);
+                if (finalQty < minQty) {
+                  return { success: false, error: `Insufficient available ${sym} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` };
+                }
+              } catch (_e) {
+                // If balance preflight fails, be conservative and block
+                return { success: false, error: `Order blocked: unable to verify available ${sym} for sell` };
+              }
+            }
+
             // BUY market/limit fallback
             if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy') {
               const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
