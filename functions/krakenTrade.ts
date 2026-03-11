@@ -1031,7 +1031,7 @@ Deno.serve(async (req) => {
         const tpParams = {
           order_type: 'take-profit',
           side: 'sell',
-          order_qty: finalQty,
+          order_qty: parsedQty,
           symbol: formattedSymbol,
           time_in_force: 'gtc',
           triggers: {
@@ -1063,7 +1063,7 @@ Deno.serve(async (req) => {
         const slParams = {
           order_type: 'stop-loss',
           side: 'sell',
-          order_qty: finalQty,
+          order_qty: parsedQty,
           symbol: formattedSymbol,
           time_in_force: 'gtc',
           triggers: {
@@ -1295,7 +1295,7 @@ Deno.serve(async (req) => {
       const tpParams = {
         order_type: 'take-profit',
         side: 'sell',
-        order_qty: parsedQty,
+        order_qty: finalQty,
         symbol: formattedSymbol,
         time_in_force: 'gtc',
         triggers: {
@@ -1309,7 +1309,7 @@ Deno.serve(async (req) => {
       const slParams = {
         order_type: 'stop-loss',
         side: 'sell',
-        order_qty: parsedQty,
+        order_qty: finalQty,
         symbol: formattedSymbol,
         time_in_force: 'gtc',
         triggers: {
