@@ -564,7 +564,7 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   const runLogs = [];
   let autoTraderRunId = null;
-  const DEADLINE_MS = 55000;
+  const DEADLINE_MS = 28000;
   const deadline = startTime + DEADLINE_MS;
   function timeLeft() { return Math.max(0, deadline - Date.now()); }
   function shouldStop() { return Date.now() > deadline - 1500; }
@@ -684,14 +684,14 @@ Deno.serve(async (req) => {
     
     // If no pre-computed signals, fall back to generating them
     if (signals.length === 0) {
-      log('No pre-computed signals, generating on-demand...');
-      try {
-        await base44.functions.invoke('generateSignals', {});
-        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-        log(`Generated ${signals.length} signals`);
-      } catch (e) {
-        log('Signal generation failed', { error: e.message });
-      }
+      log('No pre-computed signals; skipping this run to avoid timeouts');
+      await releaseLock(base44, autoTraderRunId, 'completed', {
+        trades_attempted: 0,
+        trades_successful: 0,
+        logs_json: JSON.stringify(runLogs),
+        note: 'No active signals'
+      });
+      return Response.json({ success: true, message: 'No active signals; run skipped', trades_count: 0 });
     }
     
     // Build prospects in-line (avoid cross-function 403s)
@@ -1057,7 +1057,7 @@ Deno.serve(async (req) => {
     }
 
     // Process each eligible prospect
-    for (const prospect of eligibleProspects.slice(0, 3)) {
+    for (const prospect of eligibleProspects.slice(0, 2)) {
       if (shouldStop()) { log('Time nearly exhausted, stopping further orders'); break; }
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
@@ -1532,14 +1532,14 @@ Deno.serve(async (req) => {
 
       // Pace between prospects to avoid Kraken burst limits
       // Extra pacing between orders to avoid WS bursts
-      await ps(700);
+      await ps(350);
 
       if (availableCash < 1) break;
     }
 
     // Process emerging prospects (if enabled and we have capacity)
     let emergingTradesPlaced = [];
-    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled) {
+    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled && timeLeft() > 8000) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
       for (const emerging of emergingOpportunities) {
