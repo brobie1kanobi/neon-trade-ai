@@ -107,6 +107,47 @@ Deno.serve(async (req) => {
       console.error('[MarketIntelligence] Market data error:', err);
     }
 
+    // FAST PATH: If the remaining budget is tight, skip LLM and history to avoid 502s
+    if (timeLeft() < 7000) {
+      const recs = (marketData || []).map(m => {
+        const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
+        const price = Number(m.price ?? m.current_price ?? 0);
+        const action = ch >= 0 ? 'buy' : 'hold';
+        const confidence = ch >= 3 ? 65 : ch >= 0 ? 58 : 45;
+        return {
+          symbol: (m.symbol || '').toUpperCase(),
+          confidence_score: confidence,
+          predicted_direction: ch >= 0 ? 'up' : 'down',
+          predicted_move_pct: Math.abs(ch),
+          reasoning: 'Heuristic (fast path)',
+          action,
+          optimal_action: action,
+          timing_window: '4h',
+          stop_loss_pct: 2,
+          take_profit_pct: 3,
+          current_price: price,
+          current_24h_change: ch
+        };
+      });
+      const avg = recs.reduce((a, r) => a + (r.current_24h_change || 0), 0) / (recs.length || 1);
+      const intel = {
+        market_sentiment_score: Math.max(0, Math.min(100, 50 + avg)),
+        market_regime: avg > 1 ? 'risk-on' : avg < -1 ? 'risk-off' : 'range',
+        volatility_level: Math.abs(avg) > 3 ? 'high' : Math.abs(avg) > 1 ? 'moderate' : 'low',
+      };
+      return Response.json({
+        success: true,
+        recommendations: recs,
+        market_intelligence: intel,
+        market_summary: 'Fast-path analysis',
+        upcoming_catalysts: [],
+        analyzed_count: targetSymbols.length,
+        trade_history_summary: null,
+        top_historical_performers: [],
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // CRITICAL: Fetch historical trade data for smarter recommendations
     let tradeHistoryData = null;
     let tradeHistoryPromise = null;
