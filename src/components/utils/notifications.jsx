@@ -43,6 +43,20 @@ const shouldSaveToDb = (title) => {
   return !TOAST_ONLY_MESSAGES.some(msg => title?.toLowerCase().includes(msg.toLowerCase()));
 };
 
+// Suppress noisy errors for auto-skipped SELL orders (insufficient available / below Kraken minimum)
+const SUPPRESSED_PATTERNS = [
+  'kraken minimum sell',
+  'insufficient available',
+  'below kraken minimum',
+  'order blocked'
+];
+
+const isSuppressed = (title, description) => {
+  const t = String(title || '').toLowerCase();
+  const d = String(description || '').toLowerCase();
+  return SUPPRESSED_PATTERNS.some(p => t.includes(p) || d.includes(p));
+};
+
 export const notify = {
   success: (title, options = {}) => {
     const dedupKey = options.dedupKey;
@@ -54,6 +68,10 @@ export const notify = {
   },
   error: (title, options = {}) => {
     const dedupKey = options.dedupKey;
+    // Suppress specific auto-skipped sell notifications
+    if (isSuppressed(title, options.description)) {
+      return; // no toast, no DB record
+    }
     if (hadRecentSuccess(dedupKey)) {
       // Downgrade to info to avoid false failures right after confirmed success
       const infoOpts = { ...options };
@@ -75,6 +93,10 @@ export const notify = {
     }
   },
   warning: (title, options = {}) => {
+    // Suppress specific auto-skipped sell notifications
+    if (isSuppressed(title, options.description)) {
+      return; // no toast, no DB record
+    }
     toast.warning(title, options);
     if (shouldSaveToDb(title)) {
       saveNotification(title, options.description, 'warning', options.data);
