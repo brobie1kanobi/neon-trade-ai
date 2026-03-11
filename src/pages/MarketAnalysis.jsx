@@ -367,7 +367,7 @@ export default function MarketAnalysis() {
         return { symbol: sym, confidence_score: conf, predicted_direction: ch >= 0 ? 'up' : 'down', predicted_move_pct: Math.abs(ch), reasoning: 'Heuristic fallback', action, optimal_action: action, timing_window: '4h', stop_loss_pct: 2, take_profit_pct: 3, current_price: price, current_24h_change: ch };
       });
       const avg = recs.reduce((a,r)=>a+(r.current_24h_change||0),0)/recs.length || 0;
-      return { success: true, recommendations: recs.filter(r=>r.confidence_score>=55), market_intelligence: { market_sentiment_score: Math.max(0, Math.min(100, 50 + avg))), market_regime: avg>1? 'risk-on': avg<-1? 'risk-off':'range', volatility_level: Math.abs(avg)>3?'high':Math.abs(avg)>1?'moderate':'low' }, analyzed_count: syms.length, timestamp: new Date().toISOString(), market_summary: 'Fallback analysis based on Kraken 24h change', upcoming_catalysts: [] };
+      return { success: true, recommendations: recs.filter(r=>r.confidence_score>=55), market_intelligence: { market_sentiment_score: Math.max(0, Math.min(100, 50 + avg)), market_regime: avg>1? 'risk-on': avg<-1? 'risk-off':'range', volatility_level: Math.abs(avg)>3?'high':Math.abs(avg)>1?'moderate':'low' }, analyzed_count: syms.length, timestamp: new Date().toISOString(), market_summary: 'Fallback analysis based on Kraken 24h change', upcoming_catalysts: [] };
     } catch (_e) {
       return { success: true, recommendations: [], market_intelligence: null, analyzed_count: syms.length, timestamp: new Date().toISOString(), market_summary: 'Fallback analysis unavailable', upcoming_catalysts: [] };
     }
