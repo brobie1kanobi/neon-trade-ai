@@ -1264,8 +1264,9 @@ Deno.serve(async (req) => {
           // Check if we can place closing SELL orders based on Kraken minimums
           const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
           const canPlaceClosers = executedQty >= minQtyForSymbol;
+          const PLACE_TPSL_ON_EXCHANGE = false;
           
-          if (canPlaceClosers) {
+          if (PLACE_TPSL_ON_EXCHANGE && canPlaceClosers) {
           // Step 2: Place TAKE PROFIT order (limit at TP price)
           await ps(600);
           
