@@ -1517,6 +1517,11 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Place order:', { symbol, side, quantity: finalQty, orderType });
 
       // Build order parameters
+      // Block creation of SELL conditional/closing orders when below min or no availability
+      if (String(side).toLowerCase() === 'sell' && finalQty < minQty) {
+        return Response.json({ success: false, error: `Order blocked: ${symbol} sell size ${finalQty} is below Kraken minimum ${minQty} or exceeds available.` }, { status: 200 });
+      }
+
       const orderParams = buildOrderParams({
         orderType,
         side,
