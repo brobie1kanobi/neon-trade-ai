@@ -336,10 +336,10 @@ For each asset:
       // Primary web-enabled model
       marketIntelResp = await invokeLLM({
         prompt: intelPrompt,
-        model: 'gemini_3_flash',
-        withWeb: timeLeft() > 12000,
+        model: 'gpt_5_mini',
+        withWeb: false,
         schema: intelSchema,
-        label: 'LLM market intelligence',
+        label: 'LLM market intelligence (no-web)',
         timeoutMs: ensureTime()
       });
     } catch (eA) {
@@ -348,10 +348,10 @@ For each asset:
         // Alternate web-enabled fallback model
         marketIntelResp = await invokeLLM({
           prompt: intelPrompt,
-          model: 'gemini_3_pro',
-          withWeb: timeLeft() > 12000,
+          model: 'gpt_5_mini',
+          withWeb: false,
           schema: intelSchema,
-          label: 'LLM market intelligence (fallback)',
+          label: 'LLM market intelligence (fallback no-web)',
           timeoutMs: ensureTime()
         });
       } catch (eB) {
