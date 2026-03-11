@@ -194,7 +194,17 @@ function formatKrakenSymbol(symbol) {
       if (!bal) return out;
       for (const [k, v] of Object.entries(bal)) {
         const sym = normalizeAssetKey(k);
-        const qty = typeof v === 'object' && v !== null ? parseFloat(v.balance ?? v.total ?? 0) : parseFloat(v || 0);
+        let qty = 0;
+        if (v && typeof v === 'object') {
+          const rawBal = parseFloat(v.balance ?? v.total ?? 0) || 0;
+          const heldTrade = parseFloat(v.hold_trade ?? v.hold ?? 0) || 0;
+          const heldFunding = parseFloat(v.hold_funding ?? 0) || 0;
+          const avail = parseFloat(v.available ?? (rawBal - heldTrade - heldFunding));
+          qty = isFinite(avail) ? avail : Math.max(0, rawBal - heldTrade - heldFunding);
+        } else {
+          qty = parseFloat(v || 0) || 0;
+        }
+        if (qty < 0) qty = 0;
         if (!isNaN(qty)) out[sym] = qty;
       }
       return out;
@@ -1023,6 +1033,9 @@ Deno.serve(async (req) => {
       let tpResult = null;
       let slResult = null;
 
+      // Use a safety haircut for closing orders to account for fees/rounding
+      const sellQtyForClosers = Math.max(sellMinQty, Math.floor((parsedQty * 0.995) * 1e8) / 1e8);
+
       if (finalTpPrice && canPlaceSellOrders) {
         // CRITICAL: Round TP price to Kraken's required decimal precision
         const roundedTpPrice = roundPriceForKraken(parseFloat(finalTpPrice), formattedSymbol);
@@ -1031,7 +1044,7 @@ Deno.serve(async (req) => {
         const tpParams = {
           order_type: 'take-profit',
           side: 'sell',
-          order_qty: parsedQty,
+          order_qty: sellQtyForClosers,
           symbol: formattedSymbol,
           time_in_force: 'gtc',
           triggers: {
@@ -1063,7 +1076,7 @@ Deno.serve(async (req) => {
         const slParams = {
           order_type: 'stop-loss',
           side: 'sell',
-          order_qty: parsedQty,
+          order_qty: sellQtyForClosers,
           symbol: formattedSymbol,
           time_in_force: 'gtc',
           triggers: {
