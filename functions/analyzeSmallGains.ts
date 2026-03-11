@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * Enhanced Market Intelligence Analyzer v2.0
@@ -16,6 +16,12 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
+
+    // Global execution deadline to avoid 502 timeouts
+    const start = Date.now();
+    const DEADLINE_MS = 24000; // keep below platform hard limit
+    const timeLeft = () => Math.max(0, DEADLINE_MS - (Date.now() - start));
+    const ensureTime = (pad = 500) => Math.max(2000, timeLeft() - pad);
     
     const user = await base44.auth.me();
     if (!user) {
@@ -296,7 +302,8 @@ For each asset:
     };
 
     async function invokeLLM({ prompt, model, withWeb, schema, label, timeoutMs }) {
-      const ms = typeof timeoutMs === 'number' ? timeoutMs : (withWeb ? 22000 : 12000);
+      const baseMs = typeof timeoutMs === 'number' ? timeoutMs : (withWeb ? 14000 : 9000);
+      const ms = Math.min(baseMs, ensureTime());
       return await withTimeout(
         base44.integrations.Core.InvokeLLM({
           prompt,
@@ -330,10 +337,10 @@ For each asset:
       marketIntelResp = await invokeLLM({
         prompt: intelPrompt,
         model: 'gemini_3_flash',
-        withWeb: true,
+        withWeb: timeLeft() > 12000,
         schema: intelSchema,
         label: 'LLM market intelligence',
-        timeoutMs: 10000
+        timeoutMs: ensureTime()
       });
     } catch (eA) {
       console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
@@ -342,10 +349,10 @@ For each asset:
         marketIntelResp = await invokeLLM({
           prompt: intelPrompt,
           model: 'gemini_3_pro',
-          withWeb: true,
+          withWeb: timeLeft() > 12000,
           schema: intelSchema,
           label: 'LLM market intelligence (fallback)',
-          timeoutMs: 10000
+          timeoutMs: ensureTime()
         });
       } catch (eB) {
         console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
@@ -373,7 +380,8 @@ For each asset:
         model: 'gpt_5_mini',
         withWeb: false,
         schema: recsSchema,
-        label: 'LLM recommendations'
+        label: 'LLM recommendations',
+        timeoutMs: ensureTime()
       });
     } catch (eR) {
       console.warn('[MarketIntelligence] Recs LLM error:', eR?.message || eR);
@@ -541,7 +549,7 @@ For each asset:
     console.log('[MarketIntelligence] Market regime:', marketIntelligence?.market_regime);
 
     // Persist actionable signals for auto-trader (global, short-lived)
-    try {
+    if (timeLeft() > 4000) try {
       const actionable = enhancedRecommendations.filter(r =>
         (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50
       );
@@ -590,6 +598,9 @@ For each asset:
       console.log('[MarketIntelligence] Persisted', actionable.length, 'signals for auto-trader');
     } catch (persistErr) {
       console.warn('[MarketIntelligence] Persistence warning:', persistErr?.message || persistErr);
+    }
+    } else {
+      console.log('[MarketIntelligence] Skipping signal persistence - low time budget');
     }
 
      return Response.json({
