@@ -348,12 +348,6 @@ export default function MarketAnalysis() {
   // Retry if user/settings not yet ready; debounce refresh clicks
   const retryRef = useRef(0);
   const refreshCooldownRef = useRef(0);
-  const handleRefresh = useCallback(() => {
-    const now = Date.now();
-    if (now - refreshCooldownRef.current < 3000 || analyzing) return; // 3s cooldown
-    refreshCooldownRef.current = now;
-    fetchAnalysis(true);
-  }, [fetchAnalysis, analyzing]);
 
   const fetchAnalysis = useCallback(async (force = false) => {
     if (!user?.email) {
@@ -420,6 +414,13 @@ export default function MarketAnalysis() {
       setAnalyzing(false);
     }
   }, [user?.email, settings?.watched_crypto, settings?.watched_stocks, isSimMode]);
+
+  const handleRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - refreshCooldownRef.current < 3000 || analyzing) return; // 3s cooldown
+    refreshCooldownRef.current = now;
+    fetchAnalysis(true);
+  }, [fetchAnalysis, analyzing]);
 
   useEffect(() => {
     fetchAnalysis();
