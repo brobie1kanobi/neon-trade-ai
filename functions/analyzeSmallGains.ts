@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
     // CRITICAL: Fetch historical trade data for smarter recommendations
     let tradeHistoryData = null;
     let tradeHistoryPromise = null;
-    if (includeTradeHistory) {
+    if (includeTradeHistory && timeLeft() > 9000 && targetSymbols.length <= 10) {
       console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
       try {
         tradeHistoryPromise = withTimeout(
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
             includeKrakenHistory: false,
             analyzePatterns: false
           }),
-          4000,
+          Math.min(4000, ensureTime()),
           'trade history'
         );
       } catch (histErr) {
