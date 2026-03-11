@@ -16,19 +16,49 @@ const MAX_NONCE_RETRIES = 5;
 
 // In-memory WS token cache per key type
 const wsTokenCache = new Map(); // key: 'balance'|'trade' => { token, expiresAt, fingerprint }
+// De-duplicate in-flight requests for WS token
+const inFlight = new Map(); // keyType => Promise
 
 class TokenBucket {
   constructor(capacity, refillPerSec) {
-    this.capacity = capacity; this.refillPerSec = refillPerSec; this.tokens = capacity; this.lastRefill = Date.now();
+    this.capacity = capacity;
+    this.refillPerSec = refillPerSec;
+    this.tokens = capacity;
+    this.lastRefill = Date.now();
   }
-  refill() { const now = Date.now(); const elapsed = (now - this.lastRefill) / 1000; this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerSec); this.lastRefill = now; }
-  async remove(cost = 1, maxWaitMs = 3000) { this.refill(); if (this.tokens >= cost) { this.tokens -= cost; return; } const deficit = cost - this.tokens; const waitMs = Math.ceil((deficit / this.refillPerSec) * 1000) + 50; const capped = Math.min(waitMs, maxWaitMs); await new Promise(res => setTimeout(res, capped)); this.refill(); if (this.tokens >= cost) { this.tokens -= cost; return; } this.tokens = Math.max(0, this.tokens - cost); }
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;
+    this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerSec);
+    this.lastRefill = now;
+  }
+  async remove(cost = 1, maxWaitMs = 2000) {
+    const deadline = Date.now() + maxWaitMs;
+    while (true) {
+      this.refill();
+      if (this.tokens >= cost) {
+        this.tokens -= cost;
+        return;
+      }
+      const deficit = cost - this.tokens;
+      const waitMs = Math.ceil((deficit / this.refillPerSec) * 1000) + 50;
+      const now = Date.now();
+      if (now + waitMs > deadline) {
+        const remaining = Math.max(0, deadline - now);
+        if (remaining === 0) return; // give up without consuming to avoid bursts
+        await new Promise(res => setTimeout(res, remaining));
+      } else {
+        await new Promise(res => setTimeout(res, waitMs));
+      }
+    }
+  }
 }
 const rateLimiters = new Map();
 function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
-    const cfg = type === 'trade' ? { capacity: 8, refillPerSec: 2 } : { capacity: 15, refillPerSec: 3 };
+    // More conservative limits to avoid Kraken 429s
+    const cfg = type === 'trade' ? { capacity: 4, refillPerSec: 1 } : { capacity: 6, refillPerSec: 1 };
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);
@@ -187,7 +217,12 @@ Deno.serve(async (req) => {
         }
 
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
-        const result = await callKraken(apiKey, apiSecret, '/0/private/GetWebSocketsToken', {});
+        let p = inFlight.get(keyType);
+        if (!p || forceRefresh) {
+          p = callKraken(apiKey, apiSecret, '/0/private/GetWebSocketsToken', {});
+          inFlight.set(keyType, p);
+        }
+        const result = await p.finally(() => { inFlight.delete(keyType); });
         const token = result.result?.token; const expires = result.result?.expires || 900;
         if (!token) throw new Error('Failed to get WebSocket token from Kraken');
         wsTokenCache.set(keyType, { token, expiresAt: now + expires * 1000, fingerprint });

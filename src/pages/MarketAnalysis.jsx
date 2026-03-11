@@ -383,7 +383,7 @@ export default function MarketAnalysis() {
       const response = await base44.functions.invoke('analyzeSmallGains', {
         symbols: allSymbols,
         includeMarketIntelligence: true,
-        includeTradeHistory: true
+        includeTradeHistory: false
       });
 
       const data = response?.data || response;
