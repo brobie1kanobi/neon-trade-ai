@@ -1289,7 +1289,10 @@ Deno.serve(async (req) => {
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       const availMap = await getAvailableMap(base44);
       const available = availMap[symbol.toUpperCase()] || 0;
-      const finalQty = Math.min(parsedQty, available);
+      let finalQty = Math.min(parsedQty, available);
+      // Haircut to avoid "insufficient funds" from fee/rounding holds
+      finalQty = Math.max(minQty, Math.floor((finalQty * 0.995) * 1e8) / 1e8);
+      if (finalQty > available) finalQty = Math.max(0, available - minQty * 0.01);
       if (finalQty < minQty) {
         return Response.json({ success: false, error: `Insufficient available ${symbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` }, { status: 200 });
       }
