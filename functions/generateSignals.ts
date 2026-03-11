@@ -315,7 +315,7 @@ function scoreToSignal(compositeScore) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
-  const DEADLINE_MS = 55000;
+  const DEADLINE_MS = 28000;
   const deadline = startTime + DEADLINE_MS;
   function timeLeft() { return Math.max(0, deadline - Date.now()); }
   function shouldStop() { return Date.now() > deadline - 1200; }
@@ -454,6 +454,11 @@ Deno.serve(async (req) => {
 
     const assetsNeedingAnalysis = assetsToAnalyze.filter(a => !validSignals.has(a.symbol));
 
+    // Limit per-run batch to fit time/CPU budget
+    const MAX_ASSETS_PER_RUN = 6;
+    const assetsBatch = assetsNeedingAnalysis.slice(0, MAX_ASSETS_PER_RUN);
+    console.log('[generateSignals] Batch size limited to', assetsBatch.length, 'assets');
+
     if (assetsNeedingAnalysis.length === 0) {
       return Response.json({ success: true, signals_generated: 0, signals_reused: validSignals.size, message: 'All signals still valid' });
     }
@@ -461,7 +466,7 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════
     //  STEP 1: Fetch Ticker + OHLC data from Kraken
     // ═══════════════════════════════════════════════
-    const cryptoSymbols = assetsNeedingAnalysis.filter(a => a.asset_type === 'crypto').map(a => a.symbol);
+    const cryptoSymbols = assetsBatch.filter(a => a.asset_type === 'crypto').map(a => a.symbol);
 
     let marketData = [];
     const ohlcData = {};       // symbol -> { candles_1h, candles_4h }
@@ -615,23 +620,7 @@ Deno.serve(async (req) => {
     //  STEP 2: Fetch historical trade performance
     // ═══════════════════════════════════════════════
     let tradeHistory = {};
-    try {
-      const histRes = await withTimeout(
-        base44.asServiceRole.functions.invoke('analyzeTradeHistory', {
-          includeKrakenHistory: false,
-          analyzePatterns: false
-        }),
-        8000,
-        'trade history'
-      );
-      const histData = histRes?.data || histRes;
-      if (histData?.success && histData.asset_analytics) {
-        tradeHistory = histData.asset_analytics;
-        console.log('[generateSignals] Got trade history for', Object.keys(tradeHistory).length, 'assets');
-      }
-    } catch (e) {
-      console.warn('[generateSignals] Trade history fetch failed:', e.message);
-    }
+    console.log('[generateSignals] Skipping trade history function to keep within time budget');
 
     // ═══════════════════════════════════════════════
     //  STEP 3: Sentiment Analysis via LLM + Internet
@@ -646,22 +635,8 @@ Deno.serve(async (req) => {
       try {
         sentimentResponse = await withTimeout(
           base44.integrations.Core.InvokeLLM({
-            prompt: `You are a financial sentiment analyst. Analyze the CURRENT market sentiment for these crypto assets: ${sentimentSymbols}
-      \nSearch for and analyze:
-      1. Latest news headlines and events affecting each asset
-      2. Social media trends (Twitter/X, Reddit, crypto forums)
-      3. Recent regulatory developments
-      4. Whale activity or large transactions
-      5. Overall crypto market Fear & Greed level
-      6. Any upcoming events (token unlocks, upgrades, partnerships)
-      \nFor each asset, provide a sentiment_score from 0-100:
-      - 0-20: Extreme negative sentiment (panic selling, terrible news)
-      - 21-40: Negative (bearish news, declining interest)
-      - 41-60: Neutral (mixed signals)
-      - 61-80: Positive (bullish news, growing interest)
-      - 81-100: Extreme positive (euphoria, viral trending)
-      \nAlso provide an overall_market_sentiment score and a brief reasoning for each.`,
-            add_context_from_internet: true,
+            prompt: `You are a financial sentiment analyst. Analyze relative sentiment for these assets: ${sentimentSymbols}. Return compact JSON with per-asset sentiment_score (0-100), label, and one-line reason.`,
+            add_context_from_internet: false,
             response_json_schema: {
               type: "object",
               properties: {
@@ -684,7 +659,7 @@ Deno.serve(async (req) => {
                 }
               }
             },
-            model: 'gemini_3_flash'
+            model: 'gpt_5_mini'
           }),
           12000,
           'sentiment LLM'
@@ -751,7 +726,7 @@ Deno.serve(async (req) => {
     // Limit assets for LLM context to reduce token/time usage (most volatile first)
     const ranked = (marketData || []).map(a => ({ sym: a.symbol, abs: Math.abs(Number(a.change_24h_percent||0)) }))
       .sort((x,y)=> y.abs - x.abs);
-    const symbolsForLLM = (ranked.length ? ranked.map(r=>r.sym) : cryptoSymbols).slice(0, Math.min(8, (cryptoSymbols.length||5)));
+    const symbolsForLLM = (ranked.length ? ranked.map(r=>r.sym) : cryptoSymbols).slice(0, Math.min(4, (cryptoSymbols.length||4)));
 
     const assetsSection = marketData.filter(a => symbolsForLLM.includes(a.symbol)).map(a => {
       const ti = techIndicators[a.symbol] || {};
@@ -825,7 +800,7 @@ reasoning (cite specific indicator values), technical_pattern, trend_alignment,
 volume_confirmation (bool), correlation_group
 
 BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "strong_buy".`,
-        add_context_from_internet: true,
+        add_context_from_internet: false,
         response_json_schema: {
           type: "object",
           properties: {
@@ -855,7 +830,7 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
             }
           }
         }
-      }), Math.min(14000, timeLeft()-200), 'contextual LLM');
+      }), Math.min(7000, timeLeft()-200), 'contextual LLM');
       } catch (e1) {
         console.warn('[generateSignals] Contextual LLM primary failed:', e1.message);
         try {
@@ -868,7 +843,7 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
                 properties: { recommendations: { type: 'array', items: { type: 'object', properties: { symbol: {type:'string'}, optimal_action:{type:'string'}, confidence_score:{type:'number'}, stop_loss_pct:{type:'number'}, take_profit_pct:{type:'number'}, momentum_strength:{type:'string'}, timing_window:{type:'string'}, predicted_gain_percent:{type:'number'}, sentiment_score:{type:'number'}, reasoning:{type:'string'} } } } }
               },
               model: 'gpt_5_mini'
-            }), Math.min(9000, timeLeft()-200), 'contextual LLM fallback');
+            }), Math.min(5000, timeLeft()-200), 'contextual LLM fallback');
         } catch (e2) {
           console.warn('[generateSignals] Contextual LLM fallback failed:', e2.message);
           llmResponse = { recommendations: [] };
@@ -887,7 +862,7 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
     const signalsCreated = [];
     const expiresAt = new Date(Date.now() + SIGNAL_TTL_HOURS * 60 * 60 * 1000).toISOString();
 
-    for (const asset of assetsNeedingAnalysis) {
+    for (const asset of assetsBatch) {
       if (shouldStop()) { console.warn('[generateSignals] Deadline near, stopping signal save loop'); break; }
       const sym = asset.symbol;
       const quote = marketData.find(q => q.symbol === sym);
