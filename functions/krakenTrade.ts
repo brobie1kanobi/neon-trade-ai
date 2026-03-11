@@ -1063,7 +1063,7 @@ Deno.serve(async (req) => {
         const slParams = {
           order_type: 'stop-loss',
           side: 'sell',
-          order_qty: parsedQty,
+          order_qty: finalQty,
           symbol: formattedSymbol,
           time_in_force: 'gtc',
           triggers: {
