@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * Kraken Trade Executor - COMPLETE WebSocket v2 Trading Implementation
@@ -165,7 +165,43 @@ function formatKrakenSymbol(symbol) {
   };
   
   return symbolMap[symbol.toUpperCase()] || `${symbol.toUpperCase()}/USD`;
-}
+  }
+
+  // Normalize Kraken asset key (e.g., XXLM -> XLM, XBT -> BTC)
+  function normalizeAssetKey(key) {
+    let s = String(key || '').toUpperCase();
+    if (s.startsWith('Z')) s = s.slice(1); // ZUSD -> USD
+    if (s.startsWith('XX')) s = s.slice(1); // XXLM -> XLM
+    const map = {
+      XBT: 'BTC', XXBT: 'BTC', BT: 'BTC',
+      ETH: 'ETH', XETH: 'ETH',
+      XRP: 'XRP', XXRP: 'XRP',
+      XLM: 'XLM', XXLM: 'XLM', LM: 'XLM',
+      DOGE: 'DOGE', XDG: 'DOGE',
+      USDT: 'USDT', USDC: 'USDC', USD: 'USD'
+    };
+    return map[s] || s;
+  }
+
+  // Fetch available (free) holdings per asset from Kraken extended balance
+  async function getAvailableMap(base44) {
+    try {
+      const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+      let data = resp?.data || resp;
+      if (data?.data) data = data.data;
+      const out = {};
+      const bal = data?.balance || data;
+      if (!bal) return out;
+      for (const [k, v] of Object.entries(bal)) {
+        const sym = normalizeAssetKey(k);
+        const qty = typeof v === 'object' && v !== null ? parseFloat(v.balance ?? v.total ?? 0) : parseFloat(v || 0);
+        if (!isNaN(qty)) out[sym] = qty;
+      }
+      return out;
+    } catch (_e) {
+      return {};
+    }
+  }
 
 /**
  * Build order parameters based on order type
@@ -904,6 +940,16 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
       console.log('[krakenTrade] Entry:', entryPrice || 'MARKET', 'TP:', takeProfitPrice || `+${takeProfitPercent}%`, 'SL:', stopLossPrice || `-${stopLossPercent}%`);
 
+      // Kraken minimums for potential future SELL orders (TP/SL)
+      const minOrderSizes = {
+        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
+        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
+        'PEPE': 500000.0, 'SUI': 3.0
+      };
+      const sellMinQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
+      const canPlaceSellOrders = parsedQty >= sellMinQty;
+
       // Step 1: Place the BUY order (market or limit)
       let buyParams;
       if (useMarketEntry || !entryPrice) {
@@ -977,7 +1023,7 @@ Deno.serve(async (req) => {
       let tpResult = null;
       let slResult = null;
 
-      if (finalTpPrice) {
+      if (finalTpPrice && canPlaceSellOrders) {
         // CRITICAL: Round TP price to Kraken's required decimal precision
         const roundedTpPrice = roundPriceForKraken(parseFloat(finalTpPrice), formattedSymbol);
         console.log('[krakenTrade] TP price rounded:', finalTpPrice, '->', roundedTpPrice);
@@ -1009,7 +1055,7 @@ Deno.serve(async (req) => {
       // Small delay between orders
       await new Promise(res => setTimeout(res, 2000));
 
-      if (finalSlPrice) {
+      if (finalSlPrice && canPlaceSellOrders) {
         // CRITICAL: Round SL price to Kraken's required decimal precision
         const roundedSlPrice = roundPriceForKraken(parseFloat(finalSlPrice), formattedSymbol);
         console.log('[krakenTrade] SL price rounded:', finalSlPrice, '->', roundedSlPrice);
@@ -1110,6 +1156,22 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Trailing:', trailingPriceType === 'pct' ? `${trailingPercent}%` : `$${trailingAmount}`);
       console.log('[krakenTrade] Use limit:', useLimit, 'Reference:', triggerReference);
 
+      // Enforce Kraken minimums and available holdings for SELL side
+      const minOrderSizes = {
+        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
+        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
+        'PEPE': 500000.0, 'SUI': 3.0
+      };
+      const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
+      let finalQty = parsedQty;
+      const availMap = await getAvailableMap(base44);
+      const available = availMap[symbol.toUpperCase()] || 0;
+      finalQty = Math.min(parsedQty, available);
+      if (finalQty < minQty) {
+        return Response.json({ success: false, error: `Insufficient available ${symbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` }, { status: 200 });
+      }
+
       // Determine trailing offset value
       let trailPrice, trailPriceType;
       if (trailingPriceType === 'quote' && trailingAmount) {
@@ -1203,6 +1265,21 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] === BRACKET ORDERS ===');
       console.log('[krakenTrade] Symbol:', formattedSymbol, 'Qty:', parsedQty);
       console.log('[krakenTrade] TP:', takeProfitPrice, 'SL:', stopLossPrice);
+
+      // Enforce Kraken minimums and available holdings for SELL side
+      const minOrderSizes = {
+        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
+        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
+        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
+        'PEPE': 500000.0, 'SUI': 3.0
+      };
+      const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
+      const availMap = await getAvailableMap(base44);
+      const available = availMap[symbol.toUpperCase()] || 0;
+      const finalQty = Math.min(parsedQty, available);
+      if (finalQty < minQty) {
+        return Response.json({ success: false, error: `Insufficient available ${symbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` }, { status: 200 });
+      }
 
       // CRITICAL: Round prices to Kraken's required decimal precision
       const roundedTpPrice = roundPriceForKraken(parseFloat(takeProfitPrice), formattedSymbol);
