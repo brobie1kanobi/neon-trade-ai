@@ -1238,7 +1238,7 @@ Deno.serve(async (req) => {
           
           // Check if we can place closing SELL orders based on Kraken minimums
           const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
-          const canPlaceClosers = qty >= minQtyForSymbol;
+          const canPlaceClosers = executedQty >= minQtyForSymbol;
           
           if (canPlaceClosers) {
           // Step 2: Place TAKE PROFIT order (limit at TP price)
@@ -1254,7 +1254,7 @@ Deno.serve(async (req) => {
               action: 'place_order',
               symbol: sym,
               side: 'sell',
-              quantity: qty,
+              quantity: executedQty,
               orderType: 'take-profit',
               triggerPrice: takeProfitPrice,
               timeInForce: 'gtc'
@@ -1285,7 +1285,7 @@ Deno.serve(async (req) => {
               const slData = await invokeKrakenTrade(base44, {
                 action: 'place_trailing_stop',
                 symbol: sym,
-                quantity: qty,
+                quantity: executedQty,
                 trailingPercent: trailingMargin,
                 trailingPriceType: 'pct',
                 triggerReference: 'last',
@@ -1301,7 +1301,7 @@ Deno.serve(async (req) => {
                   action: 'place_order',
                   symbol: sym,
                   side: 'sell',
-                  quantity: qty,
+                  quantity: executedQty,
                   orderType: 'stop-loss',
                   stopPrice: staticStopLossPrice,
                   timeInForce: 'gtc'
@@ -1318,7 +1318,7 @@ Deno.serve(async (req) => {
                 action: 'place_order',
                 symbol: sym,
                 side: 'sell',
-                quantity: qty,
+                quantity: executedQty,
                 orderType: 'stop-loss',
                 stopPrice: staticStopLossPrice,
                 timeInForce: 'gtc'
@@ -1422,13 +1422,13 @@ Deno.serve(async (req) => {
         });
       }
 
-      availableCash = round2(availableCash - total_value);
+      availableCash = round2(availableCash - (isSimMode ? total_value : executedValue));
 
       // Create conditional order for stop-loss/take-profit management
       const conditionalOrderData = {
         symbol: sym,
         asset_type: typ,
-        quantity: qty,
+        quantity: (isSimMode ? qty : executedQty),
         purchase_price: price,
         gain_margin: gainMargin,
         loss_margin: lossMargin,
@@ -1450,7 +1450,12 @@ Deno.serve(async (req) => {
         conditionalOrderData.kraken_sl_order_id = orderIdParts[2] || null;
       }
       
-      await base44.entities.ConditionalOrder.create(conditionalOrderData);
+      const __minQtyCO = MIN_ORDER_SIZES[sym] || 0.00001;
+      if (!isSimMode && executedQty < __minQtyCO) {
+        log(`Skipping ConditionalOrder for ${sym} - executedQty ${executedQty} below Kraken minimum ${__minQtyCO}`);
+      } else {
+        await base44.entities.ConditionalOrder.create(conditionalOrderData);
+      }
 
       tradesPlaced.push({
         symbol: sym,
