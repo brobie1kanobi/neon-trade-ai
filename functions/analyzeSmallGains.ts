@@ -549,56 +549,57 @@ For each asset:
     console.log('[MarketIntelligence] Market regime:', marketIntelligence?.market_regime);
 
     // Persist actionable signals for auto-trader (global, short-lived)
-    if (timeLeft() > 4000) try {
-      const actionable = enhancedRecommendations.filter(r =>
-        (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50
-      );
+    if (timeLeft() > 4000) {
+      try {
+        const actionable = enhancedRecommendations.filter(r =>
+          (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50
+        );
 
-      // Deactivate existing active signals for these symbols (prevent duplicates)
-      const existing = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-      const symbolsSet = new Set(actionable.map(a => (a.symbol || '').toUpperCase()));
-      for (const sig of existing) {
-        try {
-          if (symbolsSet.has((sig.asset_symbol || '').toUpperCase())) {
-            await base44.asServiceRole.entities.AssetSignal.update(sig.id, { is_active: false });
-          }
-        } catch (_e) {}
-      }
-
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      for (const r of actionable) {
-        try {
-          await base44.asServiceRole.entities.AssetSignal.create({
-            asset_symbol: (r.symbol || '').toUpperCase(),
-            asset_type: KRAKEN_PAIR_MAP[(r.symbol || '').toUpperCase()] ? 'crypto' : 'stocks',
-            signal_type: r.optimal_action,
-            confidence_score: r.confidence_score,
-            change_24h: r.current_24h_change ?? 0,
-            take_profit_pct: r.take_profit_pct ?? 3,
-            stop_loss_pct: r.stop_loss_pct ?? 2,
-            reasoning: r.action_reason || r.reasoning || '',
-            is_active: true,
-            is_short_term: true,
-            expires_at: expiresAt,
-            metadata_json: JSON.stringify({
-              generated_at: new Date().toISOString(),
-              auto_tradeable: r.auto_tradeable === true,
-              timing_window: r.timing_window,
-              momentum_strength: r.momentum_strength,
-              technical_pattern: r.technical_pattern,
-              sentiment_score: r.sentiment_score ?? null,
-              predicted_gain_pct: r.predicted_move_pct ?? null
-            })
-          });
-        } catch (saveErr) {
-          console.warn('[MarketIntelligence] Failed to save AssetSignal for', r.symbol, saveErr?.message || saveErr);
+        // Deactivate existing active signals for these symbols (prevent duplicates)
+        const existing = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        const symbolsSet = new Set(actionable.map(a => (a.symbol || '').toUpperCase()));
+        for (const sig of existing) {
+          try {
+            if (symbolsSet.has((sig.asset_symbol || '').toUpperCase())) {
+              await base44.asServiceRole.entities.AssetSignal.update(sig.id, { is_active: false });
+            }
+          } catch (_e) {}
         }
-      }
 
-      console.log('[MarketIntelligence] Persisted', actionable.length, 'signals for auto-trader');
-    } catch (persistErr) {
-      console.warn('[MarketIntelligence] Persistence warning:', persistErr?.message || persistErr);
-    }
+        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+        for (const r of actionable) {
+          try {
+            await base44.asServiceRole.entities.AssetSignal.create({
+              asset_symbol: (r.symbol || '').toUpperCase(),
+              asset_type: KRAKEN_PAIR_MAP[(r.symbol || '').toUpperCase()] ? 'crypto' : 'stocks',
+              signal_type: r.optimal_action,
+              confidence_score: r.confidence_score,
+              change_24h: r.current_24h_change ?? 0,
+              take_profit_pct: r.take_profit_pct ?? 3,
+              stop_loss_pct: r.stop_loss_pct ?? 2,
+              reasoning: r.action_reason || r.reasoning || '',
+              is_active: true,
+              is_short_term: true,
+              expires_at: expiresAt,
+              metadata_json: JSON.stringify({
+                generated_at: new Date().toISOString(),
+                auto_tradeable: r.auto_tradeable === true,
+                timing_window: r.timing_window,
+                momentum_strength: r.momentum_strength,
+                technical_pattern: r.technical_pattern,
+                sentiment_score: r.sentiment_score ?? null,
+                predicted_gain_pct: r.predicted_move_pct ?? null
+              })
+            });
+          } catch (saveErr) {
+            console.warn('[MarketIntelligence] Failed to save AssetSignal for', r.symbol, saveErr?.message || saveErr);
+          }
+        }
+
+        console.log('[MarketIntelligence] Persisted', actionable.length, 'signals for auto-trader');
+      } catch (persistErr) {
+        console.warn('[MarketIntelligence] Persistence warning:', persistErr?.message || persistErr);
+      }
     } else {
       console.log('[MarketIntelligence] Skipping signal persistence - low time budget');
     }
