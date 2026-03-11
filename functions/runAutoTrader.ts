@@ -1236,6 +1236,11 @@ Deno.serve(async (req) => {
             log(`Failed to create ledger entry for ${sym}`, { error: ledgerErr.message });
           }
           
+          // Check if we can place closing SELL orders based on Kraken minimums
+          const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
+          const canPlaceClosers = qty >= minQtyForSymbol;
+          
+          if (canPlaceClosers) {
           // Step 2: Place TAKE PROFIT order (limit at TP price)
           await ps(600);
           
@@ -1327,6 +1332,10 @@ Deno.serve(async (req) => {
             }
           } catch (slError) {
             console.error('[runAutoTrader] Stop-Loss order failed:', slError.message);
+          }
+          
+          } else {
+            console.log(`[runAutoTrader] Skipping TP/SL for ${sym} - qty ${qty} below Kraken minimum ${minQtyForSymbol}`);
           }
           
           // Store Kraken order IDs for tracking

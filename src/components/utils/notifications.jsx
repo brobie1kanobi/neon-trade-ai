@@ -47,8 +47,12 @@ const shouldSaveToDb = (title) => {
 const SUPPRESSED_PATTERNS = [
   'kraken minimum sell',
   'insufficient available',
+  'insufficient funds',
   'below kraken minimum',
-  'order blocked'
+  'order blocked',
+  'trade execution timeout',
+  'execution timeout',
+  'rate limit exceeded'
 ];
 
 const isSuppressed = (title, description) => {
