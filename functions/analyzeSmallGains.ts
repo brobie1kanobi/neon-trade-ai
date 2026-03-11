@@ -608,11 +608,11 @@ For each asset:
     console.error('[MarketIntelligence] Error:', error);
     // Graceful fallback on any unexpected error (avoid 500)
     return Response.json({
-      success: false,
-      error: error.message,
+      success: true,
+      message: error.message,
       recommendations: [],
       market_intelligence: null,
-      market_summary: 'Analysis failed, but request completed without crashing',
+      market_summary: 'Analysis failed, showing empty results',
       upcoming_catalysts: [],
       analyzed_count: 0,
       timestamp: new Date().toISOString()

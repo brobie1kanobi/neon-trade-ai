@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -345,8 +345,25 @@ export default function MarketAnalysis() {
 
   const isSimMode = settings?.sim_trading_mode !== false;
 
+  // Retry if user/settings not yet ready; debounce refresh clicks
+  const retryRef = useRef(0);
+  const refreshCooldownRef = useRef(0);
+  const handleRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - refreshCooldownRef.current < 3000 || analyzing) return; // 3s cooldown
+    refreshCooldownRef.current = now;
+    fetchAnalysis(true);
+  }, [fetchAnalysis, analyzing]);
+
   const fetchAnalysis = useCallback(async (force = false) => {
-    if (!user?.email) return;
+    if (!user?.email) {
+      // Wait for auth to resolve, retry a few times with backoff
+      if (retryRef.current < 6) {
+        const attempt = ++retryRef.current;
+        setTimeout(() => fetchAnalysis(force), 400 * attempt);
+      }
+      return;
+    }
 
     // CROSS-PAGE CHECK: If QuickActions (or earlier visit) already loaded analysis, reuse it
     if (!force) {
@@ -383,7 +400,7 @@ export default function MarketAnalysis() {
       const response = await base44.functions.invoke('analyzeSmallGains', {
         symbols: allSymbols,
         includeMarketIntelligence: true,
-        includeTradeHistory: false
+        includeTradeHistory: true
       });
 
       const data = response?.data || response;
@@ -599,7 +616,7 @@ export default function MarketAnalysis() {
           </p>
         </div>
         <Button
-          onClick={() => fetchAnalysis(true)}
+          onClick={handleRefresh}
           disabled={analyzing}
           variant="outline"
           size="sm">
