@@ -1196,8 +1196,8 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order (with pacing)
-          await ps(250);
-          const attempts = timeLeft() > 20000 ? 3 : 2;
+          await ps(150);
+          const attempts = timeLeft() > 12000 ? 2 : 1;
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
@@ -1268,7 +1268,7 @@ Deno.serve(async (req) => {
           
           if (PLACE_TPSL_ON_EXCHANGE && canPlaceClosers) {
           // Step 2: Place TAKE PROFIT order (limit at TP price)
-          await ps(600);
+          await ps(300);
           
           let tpOrderId = null;
           let slOrderId = null;
@@ -1302,7 +1302,7 @@ Deno.serve(async (req) => {
           }
           
           // Step 3: Place TRAILING STOP order (locks in profits as price rises)
-          await ps(600);
+          await ps(300);
           
           try {
             // Use trailing stop if enabled, otherwise use static stop-loss
