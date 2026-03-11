@@ -295,7 +295,8 @@ For each asset:
       }
     };
 
-    async function invokeLLM({ prompt, model, withWeb, schema, label }) {
+    async function invokeLLM({ prompt, model, withWeb, schema, label, timeoutMs }) {
+      const ms = typeof timeoutMs === 'number' ? timeoutMs : (withWeb ? 22000 : 12000);
       return await withTimeout(
         base44.integrations.Core.InvokeLLM({
           prompt,
@@ -303,7 +304,7 @@ For each asset:
           response_json_schema: schema,
           model
         }),
-        includeMarketIntelligence ? 14000 : 12000,
+        ms,
         label || 'LLM invocation'
       );
     }
@@ -317,7 +318,7 @@ For each asset:
       .sort((a,b) => b.abs - a.abs)
       .map(x => x.symbol);
 
-    const symbolsForIntel = (symbolRank.length ? symbolRank : targetSymbols.map(s => (s || '').toUpperCase())).slice(0, 8);
+    const symbolsForIntel = (symbolRank.length ? symbolRank : targetSymbols.map(s => (s || '').toUpperCase())).slice(0, 5);
 
     const intelPrompt = `You are a short-term crypto market analyst.
     Focus ONLY on overall market context using news and social buzz for the next 1-6h.
@@ -328,10 +329,11 @@ For each asset:
       // Primary web-enabled model
       marketIntelResp = await invokeLLM({
         prompt: intelPrompt,
-        model: 'gemini_3_pro',
+        model: 'gemini_3_flash',
         withWeb: true,
         schema: intelSchema,
-        label: 'LLM market intelligence'
+        label: 'LLM market intelligence',
+        timeoutMs: 22000
       });
     } catch (eA) {
       console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
@@ -339,10 +341,11 @@ For each asset:
         // Alternate web-enabled fallback model
         marketIntelResp = await invokeLLM({
           prompt: intelPrompt,
-          model: 'gemini_3_flash',
+          model: 'gemini_3_pro',
           withWeb: true,
           schema: intelSchema,
-          label: 'LLM market intelligence (fallback)'
+          label: 'LLM market intelligence (fallback)',
+          timeoutMs: 22000
         });
       } catch (eB) {
         console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
