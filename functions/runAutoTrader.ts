@@ -1544,7 +1544,8 @@ Deno.serve(async (req) => {
     if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled && timeLeft() > 8000) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
-      for (const emerging of emergingOpportunities) {
+      let __emergingCount = 0;
+      for (const emerging of emergingOpportunities.slice(0, MAX_EMERGING)) {
         if (availableCash < 5) break;
         
         const emergingSymbol = (emerging.symbol || '').toUpperCase();
