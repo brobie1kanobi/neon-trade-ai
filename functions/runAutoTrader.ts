@@ -1539,6 +1539,8 @@ Deno.serve(async (req) => {
 
     // Process emerging prospects (if enabled and we have capacity)
     let emergingTradesPlaced = [];
+    // Hard cap to 1 emerging trade per run to stay within time budget
+    const MAX_EMERGING = 1;
     if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled && timeLeft() > 8000) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
