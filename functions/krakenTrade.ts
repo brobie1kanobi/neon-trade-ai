@@ -1186,7 +1186,7 @@ Deno.serve(async (req) => {
       const orderParams = {
         order_type: useLimit ? 'trailing-stop-limit' : 'trailing-stop',
         side: 'sell',
-        order_qty: parsedQty,
+        order_qty: finalQty,
         symbol: formattedSymbol,
         time_in_force: 'gtc',
         triggers: {
