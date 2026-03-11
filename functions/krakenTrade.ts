@@ -893,32 +893,29 @@ Deno.serve(async (req) => {
     }
     // Proceed without connection entity; krakenApi will verify permissions
 
-    // Get WebSocket token (allow caller to pass one to avoid extra GetWebSocketsToken calls)
-    // CRITICAL: forceRefresh=false to use cached token and prevent rate limit spam
+    // Lazy WS token fetcher to avoid rate-limit/work when order will be blocked early
     let wsToken = body?.wsToken || body?.token;
     let tokenData;
-    if (!wsToken) {
-      console.log('[krakenTrade] Getting WebSocket token (using cache if available)...');
-      // Rate-limit token and order placement calls per user to avoid EAPI:Rate limit exceeded
-      await tradeRateGate(user.email, 1); // Reduced cost since we're using cache
+    async function getWsTokenLazy(cost = 1, forceRefresh = false) {
+      if (wsToken && !forceRefresh) return wsToken;
+      console.log('[krakenTrade] Getting WebSocket token (lazy, cache-friendly)...');
+      await tradeRateGate(user.email, cost);
       const tokenResponse = await Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: false } }),
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh } }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;
-      // Guard: token must come from TRADE key
       if (tokenData?.used_key_type && tokenData.used_key_type !== 'trade') {
         throw new Error('Invalid token source: expected TRADE key');
       }
+      if (!wsToken) {
+        const detail = (tokenData && (tokenData.error || tokenData.used_key_type)) ? (`Failed to get WebSocket token (${tokenData.used_key_type || 'unknown'} key)`) : 'Failed to get WebSocket token';
+        throw new Error(detail);
+      }
+      console.log('[krakenTrade] ✅ Got WebSocket token');
+      return wsToken;
     }
-
-    if (!wsToken) {
-      const detail = (tokenData && (tokenData.error || tokenData.used_key_type)) ? (`Failed to get WebSocket token (${tokenData.used_key_type || 'unknown'} key)`) : 'Failed to get WebSocket token';
-      throw new Error(detail);
-    }
-
-    console.log('[krakenTrade] ✅ Got WebSocket token');
 
     // ============================================
     // ACTION: PLACE BUY WITH TP/SL (Complete trading setup)
@@ -984,7 +981,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, 2);
       let buyResult;
       try {
-        buyResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, buyParams));
+        buyResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), buyParams));
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
@@ -1057,7 +1054,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
           await tradeRateGate(user.email, 2);
-          tpResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, tpParams));
+          tpResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), tpParams));
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
           console.error('[krakenTrade] ❌ TP failed:', tpError.message);
@@ -1089,7 +1086,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
           await tradeRateGate(user.email, 2);
-          slResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, slParams));
+          slResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), slParams));
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
           console.error('[krakenTrade] ❌ SL failed:', slError.message);
@@ -1219,7 +1216,7 @@ Deno.serve(async (req) => {
 
       try {
         await tradeRateGate(user.email, 2);
-        const result = await executeKrakenTrade(wsToken, orderParams);
+        const result = await executeKrakenTrade(await getWsTokenLazy(2), orderParams);
         console.log('[krakenTrade] ✅ Trailing stop placed:', result.order_id);
 
         // Log the order
@@ -1337,7 +1334,7 @@ Deno.serve(async (req) => {
 
       // Execute both orders over single WebSocket connection
       await tradeRateGate(user.email, 2);
-      const bracketResult = await withOrderLock(user.email, () => executeBracketOrders(wsToken, tpParams, slParams, 4000));
+      const bracketResult = await withOrderLock(user.email, () => executeBracketOrders(await getWsTokenLazy(2), tpParams, slParams, 4000));
 
       console.log('[krakenTrade] Bracket result:', JSON.stringify(bracketResult));
 
@@ -1551,7 +1548,7 @@ Deno.serve(async (req) => {
       let tradeResult;
       try {
         await tradeRateGate(user.email, 2);
-        tradeResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(wsToken, orderParams));
+        tradeResult = await withOrderLock(user.email, () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams));
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
