@@ -114,7 +114,7 @@ export default function RefundManagement() {
 
             <form onSubmit={handleProcessRefund} className="space-y-4">
               <div>
-                <Label htmlFor="sessionId">Stripe Session ID</Label>
+                <Label htmlFor="sessionId">Session ID</Label>
                 <Input
                   id="sessionId"
                   placeholder="cs_test_..."
