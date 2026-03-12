@@ -40,7 +40,14 @@ export default function DonateSection() {
   };
 
   const handleViewPolicy = () => {
-    setShowRefundModal(true);
+    if (user?.role === 'admin') {
+      // Admin users go to the RefundManagement page
+      const refundPolicyUrl = createPageUrl("RefundManagement");
+      window.open(refundPolicyUrl, "_blank");
+    } else {
+      // Non-admin users see the modal
+      setShowRefundModal(true);
+    }
   };
 
   return (

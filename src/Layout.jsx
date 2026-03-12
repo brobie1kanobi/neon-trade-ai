@@ -3,16 +3,16 @@ import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import AssistantModal from "@/components/ai/AssistantModal";
-import WelcomeScreen from "@/components/welcome/WelcomeScreen";
-import BiometricsSetupModal from "@/components/auth/BiometricsSetupModal";
-import PushManager from "@/components/utils/PushManager";
-import NotificationDrawer from "@/components/notifications/NotificationDrawer";
+import AssistantModal from "./components/ai/AssistantModal";
+import WelcomeScreen from "./components/welcome/WelcomeScreen";
+import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
+import PushManager from "./components/utils/PushManager";
+import NotificationDrawer from "./components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { SettingsProvider, useSettings } from "@/components/utils/SettingsContext";
-import { KrakenWebSocketProvider } from "@/components/providers/KrakenWebSocketProvider";
-import { LongPressTooltip } from "@/components/utils/LongPressTooltip";
+import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
+import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
+import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 import { base44 } from "@/api/base44Client";
 
 function LayoutContent({ children, currentPageName }) {
@@ -279,7 +279,7 @@ function LayoutContent({ children, currentPageName }) {
                 disabled={isRefreshing}
                 className="flex items-center gap-1 px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors select-none"
                 style={{ color: 'var(--text-secondary)' }}>
-                <RefreshCw className={`${isRefreshing ? 'animate-spin' : ''} w-4 h-4`} />
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="text-xs hidden sm:inline">Refresh</span>
               </button>
               <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
