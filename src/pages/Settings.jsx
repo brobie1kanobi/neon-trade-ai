@@ -42,10 +42,7 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* 1) Support & Policies */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-        <DonateSection />
-      </motion.div>
+
 
       {/* 2) Trading Settings */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
