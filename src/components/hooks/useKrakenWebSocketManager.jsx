@@ -368,6 +368,7 @@ function subscribeToBalances(ws, token) {
 
   ws.send(JSON.stringify(subscription));
   GLOBAL_WS_STATE.activePrivateSubs.add('balances');
+  console.log('[KrakenWS] Subscribed to balances');
 }
 
 /**
