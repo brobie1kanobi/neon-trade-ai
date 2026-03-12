@@ -391,6 +391,7 @@ function subscribeToExecutions(ws, token) {
 
   ws.send(JSON.stringify(subscription));
   GLOBAL_WS_STATE.activePrivateSubs.add('executions');
+  console.log('[KrakenWS] Subscribed to executions');
 }
 
 /**
