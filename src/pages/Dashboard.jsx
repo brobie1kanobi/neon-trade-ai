@@ -611,7 +611,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                     orderType: 'market',
                     timeInForce: 'ioc'
                   }),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 30000))
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 60000))
                 ]);
                 
                 console.log('[AutoTrader] Kraken response:', JSON.stringify(krakenResponse));
@@ -859,7 +859,7 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                   orderType: 'market',
                   timeInForce: 'ioc'
                 }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 20000))
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Trade execution timeout')), 60000))
               ]);
               
               const krakenData = krakenResponse?.data || krakenResponse;
@@ -1741,21 +1741,21 @@ export default function Dashboard() {
     ? (wallet?.cash_balance || 0) 
     : (hasKrakenSnapshot 
         ? (providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0)
-        : 0);
+        : (wsUsdBalance || 0));
 
-  const liveBalancesLoading = !isSimMode && !hasKrakenSnapshot;
+  const liveBalancesLoading = !isSimMode && !(hasKrakenSnapshot || (wsConnected && wsBalances && Object.keys(wsBalances || {}).length > 0));
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
     : (hasKrakenSnapshot 
         ? (providerKrakenBalance?.total_crypto_value_usd ?? 0)
-        : 0);
+        : (wsCryptoValue || 0));
     
   // Total Balance = Cash + Portfolio (crypto)
   const totalBalance = isSimMode 
     ? (currentCashBalance + currentPortfolioValue)
     : (hasKrakenSnapshot 
         ? (providerKrakenBalance?.total_portfolio_value_usd ?? (currentCashBalance + currentPortfolioValue))
-        : 0);
+        : ((wsUsdBalance || 0) + (wsCryptoValue || 0)));
 
   // Live mode uses provider's best-available data (WS > REST), no special zero-handling needed
 
