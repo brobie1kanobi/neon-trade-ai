@@ -3,16 +3,16 @@ import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import AssistantModal from "./components/ai/AssistantModal";
-import WelcomeScreen from "./components/welcome/WelcomeScreen";
-import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
-import PushManager from "./components/utils/PushManager";
-import NotificationDrawer from "./components/notifications/NotificationDrawer";
+import AssistantModal from "@/components/ai/AssistantModal";
+import WelcomeScreen from "@/components/welcome/WelcomeScreen";
+import BiometricsSetupModal from "@/components/auth/BiometricsSetupModal";
+import PushManager from "@/components/utils/PushManager";
+import NotificationDrawer from "@/components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
-import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
-import { LongPressTooltip } from "./components/utils/LongPressTooltip";
+import { SettingsProvider, useSettings } from "@/components/utils/SettingsContext";
+import { KrakenWebSocketProvider } from "@/components/providers/KrakenWebSocketProvider";
+import { LongPressTooltip } from "@/components/utils/LongPressTooltip";
 import { base44 } from "@/api/base44Client";
 
 function LayoutContent({ children, currentPageName }) {
@@ -346,7 +346,7 @@ function LayoutContent({ children, currentPageName }) {
                   <Component
                     key={item.title}
                     {...props}
-                    className={`flex flex-col items<center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
+                    className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
                       isNotification ? "w-10 h-10 p-1.5 ml-1" : "w-16 h-16 p-2 text-base"
                     }`}
                     style={{
