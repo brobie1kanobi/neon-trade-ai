@@ -267,7 +267,6 @@ export function KrakenWebSocketProvider({ children }) {
     if (isSimMode || !shouldConnect) return null;
 
     if (restInFlightRef.current) { return null; }
-    restInFlightRef.current = true;
     const now = Date.now();
     const timeSinceLastFetch = now - lastRestCallRef.current;
     const needsInitialSnapshot = !hasInitialSnapshotRef.current;
@@ -276,6 +275,7 @@ export function KrakenWebSocketProvider({ children }) {
     if (!force && !needsInitialSnapshot && !isRecoveryMode) {
       return null;
     }
+    restInFlightRef.current = true;
 
     setRestData(prev => ({ ...prev, isLoading: true, error: null }));
 
