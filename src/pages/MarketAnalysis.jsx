@@ -194,7 +194,7 @@ function MarketSentimentCard({ intelligence }) {
               {intelligence.market_regime || 'Unknown'}
             </p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {intelligence.momentum_direction || intelligence.trend_strength || 'Analyzing...'}
+              {intelligence.momentum_direction || intelligence.trend_strength || (intelligence.volatility_level ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility` : (intelligence.trading_recommendation || 'Analyzing...'))}
             </p>
           </div>
         </div>
