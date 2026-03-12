@@ -3,7 +3,7 @@ import { useLocation, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import { stripePayments } from '@/functions/stripePayments';
+
 import { createPageUrl } from '@/utils';
 
 export default function PaymentSuccess() {
@@ -12,42 +12,9 @@ export default function PaymentSuccess() {
   const location = useLocation();
 
   useEffect(() => {
-    const verifySession = async () => {
-      const urlParams = new URLSearchParams(location.search);
-      const sessionId = urlParams.get('session_id');
-
-      if (!sessionId) {
-        setStatus('error');
-        setMessage('No session ID found. Payment cannot be verified.');
-        return;
-      }
-
-      try {
-        const { data: result } = await stripePayments({
-          action: 'verifyPaymentAndUpdate',
-          payload: { sessionId }
-        });
-
-        if (!result.success) {
-          throw new Error(result.error || 'Verification failed.');
-        }
-
-        setStatus('success');
-        if (result.data.alreadyProcessed) {
-          setMessage('This transaction has already been processed. Your account is up to date.');
-        } else {
-          setMessage('Payment successful! Your account has been updated.');
-        }
-
-      } catch (err) {
-        setStatus('error');
-        setMessage(err.message || 'An error occurred while verifying your payment. Please contact support.');
-        console.error("Payment verification error:", err);
-      }
-    };
-
-    verifySession();
-  }, [location]);
+    setStatus('error');
+    setMessage('Payments are disabled in this app.');
+  }, []);
 
   const StatusIcon = () => {
     if (status === 'processing') return <Loader2 className="w-16 h-16 animate-spin text-blue-500" />;
@@ -63,9 +30,7 @@ export default function PaymentSuccess() {
           <CardTitle className="flex flex-col items-center gap-4">
             <StatusIcon />
             <span style={{ color: 'var(--text-primary)' }}>
-              {status === 'processing' && 'Processing...'}
-              {status === 'success' && 'Payment Successful'}
-              {status === 'error' && 'Payment Error'}
+              Payments Disabled
             </span>
           </CardTitle>
         </CardHeader>
