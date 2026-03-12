@@ -50,17 +50,7 @@ export default function RefundManagement() {
     setResult(null);
 
     try {
-      const response = await stripePayments({
-        action: 'processRefund',
-        payload: { sessionId: sessionId.trim(), adminUserEmail: user.email }
-      });
-
-      if (response.data) {
-        setResult(response.data);
-        toast.success("Refund processed successfully");
-      } else {
-        throw new Error("Failed to process refund");
-      }
+      throw new Error("Stripe payments are disabled in this app.");
 
     } catch (error) {
       console.error("Refund processing error:", error);
