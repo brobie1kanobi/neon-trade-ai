@@ -419,7 +419,7 @@ For each asset:
       recsResp = await invokeLLM({
         prompt: recsPrompt,
         model: 'gpt_5_mini',
-        withWeb: false,
+        withWeb: true,
         schema: recsSchema,
         label: 'LLM recommendations',
         timeoutMs: ensureTime()
