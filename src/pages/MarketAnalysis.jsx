@@ -191,7 +191,11 @@ function MarketSentimentCard({ intelligence }) {
           <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Market Regime</p>
             <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-              {intelligence.market_regime || 'Unknown'}
+              {intelligence.market_regime
+                ? `${intelligence.market_regime}${intelligence.volatility_level ? ' • ' + (String(intelligence.volatility_level).charAt(0).toUpperCase() + String(intelligence.volatility_level).slice(1)) : ''}`
+                : (intelligence.volatility_level
+                  ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility`
+                  : 'Analyzing...')}
             </p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {intelligence.momentum_direction || intelligence.trend_strength || (intelligence.volatility_level ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility` : (intelligence.trading_recommendation || 'Analyzing...'))}
