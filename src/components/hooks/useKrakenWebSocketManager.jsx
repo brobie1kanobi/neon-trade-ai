@@ -375,6 +375,7 @@ function subscribeToBalances(ws, token) {
  * Requires token per Kraken v2 docs
  */
 function subscribeToExecutions(ws, token) {
+  if (GLOBAL_WS_STATE.activePrivateSubs.has('executions')) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   const subscription = {
