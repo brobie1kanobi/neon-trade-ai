@@ -185,7 +185,7 @@ function MarketSentimentCard({ intelligence }) {
         <div className="grid grid-cols-2 gap-4">
           <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Market Sentiment</p>
-            <p className={`text-2xl font-bold ${sentimentColor}`}>{sentimentScore}</p>
+            <p className={`text-2xl font-bold ${sentimentColor}`}>{Math.ceil(Number(sentimentScore))}</p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{sentimentLabel}</p>
           </div>
           <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
