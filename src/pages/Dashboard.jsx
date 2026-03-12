@@ -1769,7 +1769,7 @@ export default function Dashboard() {
     ? (wallet?.cash_balance || 0) 
     : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
 
-  const liveBalancesLoading = !isSimMode && (!providerHasData || providerLoading);
+  const liveBalancesLoading = !isSimMode && (!providerHasData && providerLoading);
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
     : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
