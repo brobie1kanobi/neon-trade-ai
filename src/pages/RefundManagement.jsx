@@ -15,7 +15,7 @@ export default function RefundManagement() {
   const [result, setResult] = useState(null);
   const [user, setUser] = useState(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const checkAdminAccess = async () => {
       try {
         const currentUser = await User.me();
