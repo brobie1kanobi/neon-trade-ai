@@ -352,6 +352,8 @@ function subscribeToTicker(symbols) {
  * Requires token per Kraken v2 docs
  */
 function subscribeToBalances(ws, token) {
+  // Guard against duplicate subscribe spam
+  if (GLOBAL_WS_STATE.activePrivateSubs.has('balances')) return;
   if (!token) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
