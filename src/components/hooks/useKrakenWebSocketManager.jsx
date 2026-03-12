@@ -342,9 +342,13 @@ function subscribeToTicker(symbols) {
     }
   };
 
+  const key = JSON.stringify({ channel: 'ticker', symbols: Array.from(new Set(normalizedSymbols)) });
+  if (GLOBAL_WS_STATE.activePublicSubs.has(key)) {
+    return; // avoid "Already subscribed" spam
+  }
   console.log('[KrakenWS] Subscribing to ticker:', normalizedSymbols.join(', '));
   ws.send(JSON.stringify(subscription));
-  GLOBAL_WS_STATE.activePublicSubs.add(JSON.stringify({ channel: 'ticker', symbols: normalizedSymbols }));
+  GLOBAL_WS_STATE.activePublicSubs.add(key);
 }
 
 /**
