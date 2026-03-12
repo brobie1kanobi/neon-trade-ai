@@ -7,7 +7,7 @@ import TradingStrategiesSettings from "../components/settings/TradingStrategiesS
 import AccountSettings from "../components/settings/AccountSettings";
 import NotificationSettings from "../components/settings/NotificationSettings";
 import CurrencySettings from "../components/settings/CurrencySettings";
-import DonateSection from "../components/settings/DonateSection";
+
 
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
