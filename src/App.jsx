@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import VisualEditAgent from '@/lib/VisualEditAgent'
 import NavigationTracker from '@/lib/NavigationTracker'
-import Layout from './layout';
+import Layout from './layout.jsx';
 import Dashboard from './pages/Dashboard';
 import Portfolio from './pages/Portfolio';
 import MarketAnalysis from './pages/MarketAnalysis';
