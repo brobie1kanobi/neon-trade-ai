@@ -391,7 +391,7 @@ export function KrakenWebSocketProvider({ children }) {
   // ── Derived: best available balance (WS > REST > cached) ──
   // Priority: WS real-time > REST snapshot > 0
   // CRITICAL: Use global window state for connection check (not stale React state)
-  const wsActuallyConnected = state.isConnected || (typeof window !== 'undefined' && window.__krakenWsConnected);
+  const wsActuallyConnected = !!(state.isConnected || (typeof window !== 'undefined' && window.__krakenWsConnected));
   const wsHasBalances = wsActuallyConnected && Object.keys(state.balances).length > 0;
   const restHasBalance = restData.krakenBalance?.success;
   
