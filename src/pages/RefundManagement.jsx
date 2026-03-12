@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle, Loader2, Shield } from "lucide-react";
 import { User } from "@/entities/all";
-import { stripePayments } from "@/functions/stripePayments";
+
 import { toast } from "sonner";
 
 export default function RefundManagement() {
