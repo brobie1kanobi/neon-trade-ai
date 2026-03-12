@@ -9,7 +9,6 @@ import NotificationSettings from "../components/settings/NotificationSettings";
 import CurrencySettings from "../components/settings/CurrencySettings";
 import DonateSection from "../components/settings/DonateSection";
 
-
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
@@ -44,6 +43,11 @@ export default function Settings() {
       </div>
 
 
+
+      {/* 1) Support & Policies */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+        <DonateSection />
+      </motion.div>
 
       {/* 2) Trading Settings */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
