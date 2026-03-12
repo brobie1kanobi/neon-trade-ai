@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { DollarSign, Activity } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { motion } from "framer-motion";
