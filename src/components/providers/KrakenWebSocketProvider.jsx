@@ -426,7 +426,7 @@ export function KrakenWebSocketProvider({ children }) {
           }))
       : [];
 
-  const hasData = restHasBalance || wsHasBalances;
+  const hasData = !!(restHasBalance || wsHasBalances);
 
   const value = {
     ...state,
