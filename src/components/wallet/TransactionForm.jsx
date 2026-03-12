@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, X, Loader2, CreditCard, Shield, AlertCircle } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, X, Loader2, CreditCard, AlertCircle } from "lucide-react";
 import { notify } from "@/components/utils/notifications";
-import { stripePayments } from "@/functions/stripePayments";
 
 export default function TransactionForm({ type, wallet, settings, onSubmit, onCancel, isSimMode = true }) {
   const [amount, setAmount] = useState("");
@@ -44,20 +43,8 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
           });
           notify.success(`Demo deposit of $${transactionAmount} completed!`);
         } else {
-          // Create real Stripe checkout session
-          const response = await stripePayments({
-            action: 'createDepositSession',
-            payload: { amount: transactionAmount }
-          });
-
-          if (response.data?.success && response.data?.data?.url) {
-            notify.success("Redirecting to secure payment...");
-            // Open Stripe in a new tab to avoid issues with embedded iframes or security policies
-            window.open(response.data.data.url, '_blank');
-          } else {
-            const errorMessage = response.data?.error || "Failed to create payment session";
-            throw new Error(errorMessage);
-          }
+          notify.info("Real-money deposits are disabled in this app.");
+          onCancel();
         }
       } else {
         // Withdrawal
@@ -158,23 +145,7 @@ export default function TransactionForm({ type, wallet, settings, onSubmit, onCa
             </div>
           </div>
 
-          {type === 'deposit' && !isSimMode &&
-          <div className="p-3 rounded-lg border" style={{
-            backgroundColor: 'var(--secondary-bg)',
-            borderColor: 'var(--border-color)'
-          }}>
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-blue-500" />
-                <CreditCard className="w-4 h-4 text-blue-500" />
-                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  Secure Payment via Stripe
-                </span>
-              </div>
-              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                Your payment information is encrypted and secure. Powered by Stripe.
-              </p>
-            </div>
-          }
+
 
           {type === 'withdrawal' && !isSimMode &&
           <div className="p-3 rounded-lg border border-orange-200 bg-orange-50 dark:bg-orange-900/20">
