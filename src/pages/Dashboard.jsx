@@ -140,24 +140,6 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
                 quantity: bal.balance || 0,
                 asset_type: 'crypto'
               }));
-          } else {
-            // Fallback to REST snapshot (provider already fetched this)
-            try {
-              console.log('[AutoTrader] Fetching from REST snapshot...');
-              const krakenResponse = await Promise.race([
-                base44.functions.invoke('getKrakenBalance', {}),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Kraken balance timeout')), 15000))
-              ]);
-              
-              const krakenData = krakenResponse?.data || krakenResponse;
-              
-              if (krakenData?.success && krakenData?.connected) {
-                krakenCashBalance = krakenData.usd_balance || 0;
-                krakenHoldings = (krakenData.holdings || []).filter(h => h.quantity > 0.00001);
-              }
-            } catch (krakenError) {
-              console.error('[AutoTrader] Kraken fetch error:', krakenError.message);
-            }
           }
           console.log('[AutoTrader] Kraken cash:', krakenCashBalance, 'holdings:', krakenHoldings.length);
         }
@@ -235,22 +217,9 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             const symU = (holding.symbol || "").toUpperCase();
             let purchasePrice = holding.average_cost_price || 0;
 
-            // CRITICAL: For LIVE mode, if no cost basis, fetch current market price
+            // CRITICAL: For LIVE mode, if no cost basis, skip for now (batch prices fetched later)
             if (purchasePrice <= 0 && !isSimMode) {
-              try {
-                const priceRes = await base44.functions.invoke('getMarketData', {
-                  action: 'getWatchlistData',
-                  payload: { cryptoSymbols: [symU], stockSymbols: [] }
-                });
-                const priceData = Array.isArray(priceRes?.data) ? priceRes.data : [];
-                const found = priceData.find(p => (p.symbol || "").toUpperCase() === symU);
-                if (found?.price > 0) {
-                  purchasePrice = found.price;
-                  console.log('[AutoTrader] Fetched market price for', symU, ':', purchasePrice);
-                }
-              } catch (priceError) {
-                console.error('[AutoTrader] Price fetch error for', symU, ':', priceError.message);
-              }
+              // Skip; will retry next cycle once prices are cached
             }
 
             // Skip if we still don't have a valid price
@@ -278,20 +247,10 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             if (!isSimMode) {
               console.log('[AutoTrader] 🟢 LIVE MODE - Placing REAL Kraken bracket orders for existing holding:', symU);
 
-              // CRITICAL: Fetch current price to check if we're in profit
-              let currentPrice = 0;
-              try {
-                const priceRes = await base44.functions.invoke('getMarketData', {
-                  action: 'getWatchlistData',
-                  payload: { cryptoSymbols: [symU], stockSymbols: [] }
-                });
-                const priceData = Array.isArray(priceRes?.data) ? priceRes.data : [];
-                const found = priceData.find(p => (p.symbol || "").toUpperCase() === symU);
-                currentPrice = found?.price || 0;
-                console.log('[AutoTrader] Current price for', symU, ':', currentPrice, '| Cost:', purchasePrice);
-              } catch (priceError) {
-                console.error('[AutoTrader] Price fetch error for', symU, ':', priceError.message);
-              }
+              // CRITICAL: Use WebSocket price to check if we're in profit (no per-holding REST calls)
+              const pair = `${symU}/USD`;
+              let currentPrice = (window.__krakenWsPrices && window.__krakenWsPrices[pair]?.price) || 0;
+              console.log('[AutoTrader] Current price (WS) for', symU, ':', currentPrice, '| Cost:', purchasePrice);
 
               const lossMargin = parseFloat(settings?.loss_margin ?? 5);
               const gainMargin = parseFloat(settings?.gain_margin ?? 10);
@@ -581,7 +540,13 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             if (!isSimMode) {
               try {
                 const verifyRes = await Promise.race([
-                  base44.functions.invoke('getKrakenBalance', {}),
+                  (async () => {
+                    const wsBal = (window.__krakenWsBalances && window.__krakenWsBalances[symU]?.balance) || 0;
+                    if (wsBal > 0) {
+                      return { success: true, holdings: [{ symbol: symU, quantity: wsBal }] };
+                    }
+                    return base44.functions.invoke('getKrakenBalance', {});
+                  })(),
                   new Promise((_, reject) => setTimeout(() => reject(new Error('Balance verify timeout')), 10000))
                 ]);
                 const verifyData = verifyRes?.data || verifyRes;
@@ -1091,7 +1056,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     performRuleBasedTrade();
 
     // Run every 180 seconds to reduce rate limiting pressure (was 120s)
-    const interval = setInterval(performRuleBasedTrade, 180000);
+    const intervalMs = isSimMode ? 180000 : 300000;
+    const interval = setInterval(performRuleBasedTrade, intervalMs);
     const flushCheckInterval = setInterval(checkAndFlushBatch, 30000);
     return () => {
       if (interval) clearInterval(interval);

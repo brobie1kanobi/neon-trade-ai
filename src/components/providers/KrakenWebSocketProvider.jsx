@@ -107,6 +107,7 @@ export function KrakenWebSocketProvider({ children }) {
   const lastRestCallRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
   const ordersSubscribedRef = useRef(false);
+  const restInFlightRef = useRef(false);
   const MIN_REST_INTERVAL = 60000; // Increased from 30s to 60s to reduce rate limits
 
   // ── Merged state: WS real-time + REST snapshot ──
@@ -197,9 +198,7 @@ export function KrakenWebSocketProvider({ children }) {
         fetchRestDataRef.current?.(true);
         refreshRef.current?.();
       }, 2000);
-      setTimeout(() => {
-        fetchRestDataRef.current?.(true);
-      }, 5000);
+
     };
 
     const handleSync = () => {
@@ -267,6 +266,8 @@ export function KrakenWebSocketProvider({ children }) {
   const fetchRestData = useCallback(async (force = false) => {
     if (isSimMode || !shouldConnect) return null;
 
+    if (restInFlightRef.current) { return null; }
+    restInFlightRef.current = true;
     const now = Date.now();
     const timeSinceLastFetch = now - lastRestCallRef.current;
     const needsInitialSnapshot = !hasInitialSnapshotRef.current;
@@ -321,11 +322,13 @@ export function KrakenWebSocketProvider({ children }) {
         }, 5000);
       }
 
-      return { krakenBalance: balanceData, krakenOrders: ordersData?.orders || [] };
+      restInFlightRef.current = false;
+      return { krakenBalance: balanceData };
     } catch (err) {
       console.error('[KrakenWSProvider] REST error:', err);
       hasInitialSnapshotRef.current = true;
       setRestData(prev => ({ ...prev, isLoading: false, error: err.message }));
+      restInFlightRef.current = false;
       return null;
     }
   }, [isSimMode, state.isConnected]);

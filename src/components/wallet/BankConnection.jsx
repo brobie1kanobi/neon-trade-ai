@@ -433,11 +433,13 @@ export default function BankConnection({ settings: _settingsProp, onConnectionCh
                     {!krakenChecking && (
                 krakenConnected ? (
                   <div className="flex items-center gap-2">
-                    <Button size="sm" onClick={handleVerifySecrets} disabled={isConnecting} className="bg-purple-600 hover:bg-purple-700 text-white">
-                      {isConnecting ? 'Verifying...' : 'Verify Keys'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleKrakenDisconnect}>
-                      Manage via Secrets
+                    <Button
+                      size="sm"
+                      onClick={krakenConnected && tradeKeyPresent ? undefined : handleVerifySecrets}
+                      disabled={isConnecting || (krakenConnected && tradeKeyPresent)}
+                      className={(krakenConnected && tradeKeyPresent) ? 'bg-green-600 text-white cursor-default' : 'bg-purple-600 hover:bg-purple-700 text-white'}
+                    >
+                      {isConnecting ? 'Verifying...' : (krakenConnected && tradeKeyPresent ? 'Keys verified' : 'Verify Keys')}
                     </Button>
                   </div>
                 ) : (
