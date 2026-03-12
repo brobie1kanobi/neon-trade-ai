@@ -338,7 +338,7 @@ function subscribeToTicker(symbols) {
     method: 'subscribe',
     params: {
       channel: 'ticker',
-      symbol: normalizedSymbols
+      symbol: Array.from(new Set(normalizedSymbols))
     }
   };
 
