@@ -376,23 +376,23 @@ For each asset:
     try {
       // Primary web-enabled model
       marketIntelResp = await invokeLLM({
-        prompt: intelPrompt,
-        model: 'gpt_5_mini',
-        withWeb: false,
-        schema: intelSchema,
-        label: 'LLM market intelligence (no-web)',
-        timeoutMs: ensureTime()
-      });
+            prompt: intelPrompt,
+            model: 'gemini_3_flash',
+            withWeb: true,
+            schema: intelSchema,
+            label: 'LLM market intelligence (web)',
+            timeoutMs: ensureTime()
+          });
     } catch (eA) {
       console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
       try {
         // Alternate web-enabled fallback model
         marketIntelResp = await invokeLLM({
           prompt: intelPrompt,
-          model: 'gpt_5_mini',
-          withWeb: false,
+          model: 'gemini_3_flash',
+          withWeb: true,
           schema: intelSchema,
-          label: 'LLM market intelligence (fallback no-web)',
+          label: 'LLM market intelligence (fallback web)',
           timeoutMs: ensureTime()
         });
       } catch (eB) {
