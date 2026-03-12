@@ -224,17 +224,7 @@ export default function WalletPage() {
         console.log('[Wallet] LIVE mode - portfolio value from Kraken');
       }
 
-      const urlParams = new URLSearchParams(window.location.search);
-      const paymentStatus = urlParams.get('payment');
-      
-      if (paymentStatus === 'success') {
-        toast.success("Payment successful! Your funds have been added to your account.");
-        window.history.replaceState({}, '', window.location.pathname);
-        setTimeout(loadData, 1000);
-      } else if (paymentStatus === 'cancelled') {
-        toast.info("Payment was cancelled.");
-        window.history.replaceState({}, '', window.location.pathname);
-      }
+
 
       setLastLoadTime(Date.now());
       

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeartHandshake } from "lucide-react";
 import { toast } from "sonner";
-import { createPageUrl } from "@/utils";
+
 import { User } from "@/entities/User";
 import RefundPolicyModal from "./RefundPolicyModal";
 
@@ -40,14 +40,7 @@ export default function DonateSection() {
   };
 
   const handleViewPolicy = () => {
-    if (user?.role === 'admin') {
-      // Admin users go to the RefundManagement page
-      const refundPolicyUrl = createPageUrl("RefundManagement");
-      window.open(refundPolicyUrl, "_blank");
-    } else {
-      // Non-admin users see the modal
-      setShowRefundModal(true);
-    }
+    setShowRefundModal(true);
   };
 
   return (
