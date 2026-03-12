@@ -633,7 +633,7 @@ function executeKrakenTrade(token, orderParams) {
         if (ws) { try { ws.close(); } catch (e) {} }
         reject(new Error('Trade execution timeout'));
       }
-    }, 45000);
+    }, 75000);
     
     try {
       ws = new WebSocket(WS_URL);
@@ -902,7 +902,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, cost);
       const tokenResponse = await Promise.race([
         base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh } }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
       wsToken = tokenData?.token;
