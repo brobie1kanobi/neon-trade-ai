@@ -100,11 +100,13 @@ export function KrakenWebSocketProvider({ children }) {
     priceSymbols: settings?.watched_crypto || [],
     subscribeToBalances: shouldConnect,
     subscribeToOrders: false,
-    subscribeToExecutions: shouldConnect
+    // Delay executions subscription to avoid rate limits at boot; we'll trigger via refreshOrders after first snapshot
+    subscribeToExecutions: false
   });
 
   const lastRestCallRef = useRef(0);
   const hasInitialSnapshotRef = useRef(false);
+  const ordersSubscribedRef = useRef(false);
   const MIN_REST_INTERVAL = 60000; // Increased from 30s to 60s to reduce rate limits
 
   // ── Merged state: WS real-time + REST snapshot ──
@@ -281,32 +283,23 @@ export function KrakenWebSocketProvider({ children }) {
     lastRestCallRef.current = now;
 
     try {
-      const [balanceRes, ordersRes] = await Promise.all([
-        Promise.race([
-          base44.functions.invoke('getKrakenBalance', {}),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Balance fetch timeout')), 25000))
-        ]).catch(e => {
-          console.warn('[KrakenWSProvider] Balance fetch failed:', e.message);
-          return { error: e.message, success: false };
-        }),
-        Promise.race([
-          base44.functions.invoke('krakenApi', { action: 'getOpenOrders' }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Orders fetch timeout')), 25000))
-        ]).catch(e => {
-          console.warn('[KrakenWSProvider] Orders fetch failed:', e.message);
-          return { error: e.message };
-        })
-      ]);
+      // Fetch BALANCE snapshot first to reduce rate-limit pressure; defer orders subscription
+      const balanceRes = await Promise.race([
+        base44.functions.invoke('getKrakenBalance', {}),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Balance fetch timeout')), 25000))
+      ]).catch(e => {
+        console.warn('[KrakenWSProvider] Balance fetch failed:', e.message);
+        return { error: e.message, success: false };
+      });
 
       const balanceData = balanceRes?.data || balanceRes;
-      const ordersData = ordersRes?.data || ordersRes;
       hasInitialSnapshotRef.current = true;
       
       console.log('[KrakenWSProvider] REST snapshot complete - Balance:', balanceData?.success, 'USD:', balanceData?.usd_balance);
 
       setRestData(prev => ({
         krakenBalance: balanceData?.success ? balanceData : prev.krakenBalance,
-        krakenOrders: ordersData?.orders || prev.krakenOrders || [],
+        krakenOrders: prev.krakenOrders || [],
         krakenTrades: prev.krakenTrades,
         krakenPnL: prev.krakenPnL,
         lastFetchTime: Date.now(),
@@ -316,8 +309,16 @@ export function KrakenWebSocketProvider({ children }) {
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('kraken:snapshot-loaded', {
-          detail: { balance: balanceData, orders: ordersData?.orders }
+          detail: { balance: balanceData, orders: null }
         }));
+      }
+
+      // After first successful snapshot, delay subscribe to executions to avoid rate limits at boot
+      if (!ordersSubscribedRef.current && wsManager?.refreshOrders) {
+        ordersSubscribedRef.current = true;
+        setTimeout(() => {
+          try { wsManager.refreshOrders?.(); } catch (_) {}
+        }, 5000);
       }
 
       return { krakenBalance: balanceData, krakenOrders: ordersData?.orders || [] };
