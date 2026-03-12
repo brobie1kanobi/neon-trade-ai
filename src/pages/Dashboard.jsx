@@ -1143,6 +1143,8 @@ export default function Dashboard() {
   
   // CRITICAL: Also check global window state - provider React state can be stale
   const wsConnected = wsConnectedFromProvider || (typeof window !== 'undefined' && window.__krakenWsConnected);
+  // Consider REST snapshot as the source of truth; show UI only after it loads
+  const hasKrakenSnapshot = !isSimMode && !!(providerKrakenBalance && providerKrakenBalance.connected);
   
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -1608,7 +1610,11 @@ export default function Dashboard() {
     setEnrichedHoldings(updatedEnrichedHoldings);
     setPortfolioMarketValue(currentHoldingsValue);
 
-    const cash = isSimMode ? (wallet?.cash_balance || 0) : wsUsdBalance;
+    const cash = isSimMode 
+      ? (wallet?.cash_balance || 0) 
+      : (hasKrakenSnapshot 
+          ? (providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0)
+          : wsUsdBalance);
     const totalDelta = currentHoldingsValue - prevHoldingsValue;
     const prevTotal = (cash || 0) + prevHoldingsValue;
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
@@ -1767,15 +1773,23 @@ export default function Dashboard() {
   // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)
   const currentCashBalance = isSimMode 
     ? (wallet?.cash_balance || 0) 
-    : (wsUsdBalance > 0 ? wsUsdBalance : (wallet?.real_cash_balance || 0));
+    : (hasKrakenSnapshot 
+        ? (providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0)
+        : 0);
 
-  const liveBalancesLoading = !isSimMode && (!providerHasData && providerLoading);
+  const liveBalancesLoading = !isSimMode && !hasKrakenSnapshot;
   const currentPortfolioValue = isSimMode 
     ? portfolioMarketValue 
-    : (wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue);
+    : (hasKrakenSnapshot 
+        ? (providerKrakenBalance?.total_crypto_value_usd ?? 0)
+        : 0);
     
   // Total Balance = Cash + Portfolio (crypto)
-  const totalBalance = currentCashBalance + currentPortfolioValue;
+  const totalBalance = isSimMode 
+    ? (currentCashBalance + currentPortfolioValue)
+    : (hasKrakenSnapshot 
+        ? (providerKrakenBalance?.total_portfolio_value_usd ?? (currentCashBalance + currentPortfolioValue))
+        : 0);
 
   // Live mode uses provider's best-available data (WS > REST), no special zero-handling needed
 
