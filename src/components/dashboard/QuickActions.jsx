@@ -31,7 +31,7 @@ function FearGreedGauge({ score }) {
     <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: bgColor }}>
       <div className="flex flex-col items-center justify-center min-w-[52px]">
         <span className="text-2xl font-black leading-none" style={{ color }}>{score}</span>
-        <span className="text-[9px] font-semibold mt-0.5 uppercase tracking-wide" style={{ color }}>{label}</span>
+        <span className="text-[9px] mt-0.5 text-xs font-semibold uppercase tracking-wide" style={{ color }}>{label}</span>
       </div>
       <div className="flex-1">
         <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-color)' }}>
