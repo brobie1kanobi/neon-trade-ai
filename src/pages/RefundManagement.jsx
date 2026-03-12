@@ -123,7 +123,7 @@ export default function RefundManagement() {
                   disabled={isProcessing}
                 />
                 <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                  Enter the Stripe checkout session ID that needs to be refunded
+                  Refunds are disabled because Stripe is no longer used.
                 </p>
               </div>
 
