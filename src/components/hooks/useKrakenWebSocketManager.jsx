@@ -55,8 +55,8 @@ const GLOBAL_WS_STATE = {
 
 const PUBLIC_WS_URL = 'wss://ws.kraken.com/v2';
 const PRIVATE_WS_URL = 'wss://ws-auth.kraken.com/v2';
-const MAX_RECONNECT_ATTEMPTS = 3;
-const RECONNECT_DELAY = 10000; // 10 seconds between retries
+const MAX_RECONNECT_ATTEMPTS = 2;
+const RECONNECT_DELAY = 20000; // 20 seconds between retries to ease rate limits
 const TOKEN_REFRESH_BUFFER = 60000; // Refresh token 1 minute before expiry
 
 /**
