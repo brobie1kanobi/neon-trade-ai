@@ -279,7 +279,7 @@ function LayoutContent({ children, currentPageName }) {
                 disabled={isRefreshing}
                 className="flex items-center gap-1 px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors select-none"
                 style={{ color: 'var(--text-secondary)' }}>
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`${isRefreshing ? 'animate-spin' : ''} w-4 h-4`} />
                 <span className="text-xs hidden sm:inline">Refresh</span>
               </button>
               <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
