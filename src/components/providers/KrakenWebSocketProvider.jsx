@@ -351,13 +351,12 @@ export function KrakenWebSocketProvider({ children }) {
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
       // Fetch REST data immediately - it's our AUTHORITATIVE source for accurate balances
-      // Don't wait for WS - REST has prices, WS only has raw quantities
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
           setTimeout(() => fetchPnL(), 5000);
         }
-      }, 500); // Reduced from 2000ms to 500ms - REST is primary, not fallback
+      }, 300); // Faster first snapshot to populate balances quickly
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
