@@ -131,9 +131,11 @@ async function getWebSocketToken(keyType = 'trade') {
  */
 function connectPublicWebSocket(priceSymbols = []) {
   if (GLOBAL_WS_STATE.publicWs && GLOBAL_WS_STATE.isPublicConnected) {
-    // Already connected, just subscribe to new symbols
+    // Already connected, just subscribe to new symbols (avoid duplicate error by filtering)
     if (priceSymbols.length > 0) {
-      subscribeToTicker(priceSymbols);
+      const normalized = priceSymbols.map(s => (typeof s === 'string' && s.includes('/') ? s : `${String(s||'').toUpperCase()}/USD`));
+      const unique = Array.from(new Set(normalized));
+      subscribeToTicker(unique);
     }
     return;
   }
