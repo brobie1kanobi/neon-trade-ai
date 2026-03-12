@@ -636,7 +636,7 @@ Deno.serve(async (req) => {
         sentimentResponse = await withTimeout(
           base44.integrations.Core.InvokeLLM({
             prompt: `You are a financial sentiment analyst. Analyze relative sentiment for these assets: ${sentimentSymbols}. Return compact JSON with per-asset sentiment_score (0-100), label, and one-line reason.`,
-            add_context_from_internet: false,
+            add_context_from_internet: true,
             response_json_schema: {
               type: "object",
               properties: {
@@ -659,7 +659,7 @@ Deno.serve(async (req) => {
                 }
               }
             },
-            model: 'gpt_5_mini'
+            model: 'gemini_3_flash'
           }),
           12000,
           'sentiment LLM'
@@ -674,7 +674,7 @@ Deno.serve(async (req) => {
         sentimentResponse = await withTimeout(
           base44.integrations.Core.InvokeLLM({
             prompt: `You are a financial sentiment analyst. Analyze relative sentiment for: ${sentimentSymbols}. Return numeric sentiment scores (0-100) only with brief reasoning.`,
-            add_context_from_internet: false,
+            add_context_from_internet: true,
             response_json_schema: {
               type: 'object',
               properties: {
@@ -685,7 +685,7 @@ Deno.serve(async (req) => {
                 }
               }
             },
-            model: 'gpt_5_mini'
+            model: 'gemini_3_flash'
           }),
           9000,
           'sentiment LLM fallback'
@@ -800,7 +800,7 @@ reasoning (cite specific indicator values), technical_pattern, trend_alignment,
 volume_confirmation (bool), correlation_group
 
 BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "strong_buy".`,
-        add_context_from_internet: false,
+        add_context_from_internet: true,
         response_json_schema: {
           type: "object",
           properties: {
@@ -829,20 +829,21 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
               }
             }
           }
-        }
-      }), Math.min(7000, timeLeft()-200), 'contextual LLM');
+        },
+         model: 'gemini_3_flash'
+        }), Math.min(7000, timeLeft()-200), 'contextual LLM');
       } catch (e1) {
         console.warn('[generateSignals] Contextual LLM primary failed:', e1.message);
         try {
           llmResponse = await withTimeout(
             base44.integrations.Core.InvokeLLM({
               prompt: `You are a CONSERVATIVE quantitative trading system. Using ONLY the assets listed below, output compact JSON recommendations with symbol, optimal_action, confidence_score, stop_loss_pct (1-3), take_profit_pct (2-8), momentum_strength, timing_window, predicted_gain_percent, sentiment_score, reasoning.\nASSETS (concise):\n${assetsSection}`,
-              add_context_from_internet: false,
+              add_context_from_internet: true,
               response_json_schema: {
                 type: 'object',
                 properties: { recommendations: { type: 'array', items: { type: 'object', properties: { symbol: {type:'string'}, optimal_action:{type:'string'}, confidence_score:{type:'number'}, stop_loss_pct:{type:'number'}, take_profit_pct:{type:'number'}, momentum_strength:{type:'string'}, timing_window:{type:'string'}, predicted_gain_percent:{type:'number'}, sentiment_score:{type:'number'}, reasoning:{type:'string'} } } } }
               },
-              model: 'gpt_5_mini'
+              model: 'gemini_3_flash'
             }), Math.min(5000, timeLeft()-200), 'contextual LLM fallback');
         } catch (e2) {
           console.warn('[generateSignals] Contextual LLM fallback failed:', e2.message);
