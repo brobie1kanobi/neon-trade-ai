@@ -43,16 +43,27 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
 
-    // Check Kraken connection
-    const connections = await Promise.race([
-      base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 2000))
-    ]);
-
-    if (!connections || connections.length === 0) {
+    // Check Kraken connection via Secrets-backed status (not DB row)
+    try {
+      const statusRes = await Promise.race([
+        base44.functions.invoke('krakenApi', { action: 'status' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Status timeout')), 2500))
+      ]);
+      const status = statusRes?.data || statusRes;
+      if (!status?.connected) {
+        return Response.json({
+          success: false,
+          error: 'Kraken not connected',
+          pnl_24h: 0,
+          pnl_lifetime: 0,
+          realized_pnl: 0,
+          unrealized_pnl: 0
+        }, { status: 200 });
+      }
+    } catch (_e) {
       return Response.json({
         success: false,
-        error: 'Kraken not connected',
+        error: 'Kraken status unavailable',
         pnl_24h: 0,
         pnl_lifetime: 0,
         realized_pnl: 0,
