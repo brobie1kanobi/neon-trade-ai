@@ -75,42 +75,85 @@ function endpointCost(endpoint) {
 let lastNonce = 0;
 function generateNonce() { const now = Date.now() * 1000; if (now <= lastNonce) lastNonce++; else lastNonce = now; return lastNonce.toString(); }
 
+// Global caches to reduce CPU and duplicate calls
+const hmacKeyCache = new Map(); // cleanSecret(base64) -> CryptoKey
+const inFlightCalls = new Map(); // `${endpoint}|${postData}` -> Promise
+
 async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0) {
   const cleanKey = String(apiKey || '').trim().replace(/\s+/g, '');
   const cleanSecret = String(apiSecret || '').trim().replace(/\s+/g, '');
   const nonce = generateNonce();
   const postData = new URLSearchParams({ nonce, ...data }).toString();
 
-  const message = nonce + postData;
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
-  const hmacKey = await crypto.subtle.importKey('raw', Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
-  const pathBytes = new TextEncoder().encode(endpoint);
-  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
-  combined.set(pathBytes); combined.set(new Uint8Array(hash), pathBytes.length);
-  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
-  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  // Build a de-duplication key for identical concurrent requests
+  const dedupKey = `${endpoint}|${postData}`;
+  const existing = inFlightCalls.get(dedupKey);
+  if (existing) return existing;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-  try {
-    const response = await fetch(`${KRAKEN_API_URL}${endpoint}` , { method: 'POST', headers: { 'API-Key': cleanKey, 'API-Sign': apiSign, 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'NeonTrade-AI/1.0' }, body: postData, signal: controller.signal });
-    clearTimeout(timeoutId);
-    const result = await response.json();
-    if (result.error?.length > 0) {
-      const errorMsg = result.error.join(', ');
-      if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
-        const isWs = endpoint.includes('GetWebSocketsToken'); const baseDelay = isWs ? 3000 : 1500; const delay = baseDelay * Math.pow(2, retryCount) + Math.floor(Math.random() * 1000); await new Promise(r => setTimeout(r, delay)); return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
-      }
-      if (/nonce/i.test(errorMsg) && retryCount < MAX_NONCE_RETRIES) { await new Promise(r => setTimeout(r, 500 * Math.pow(2, retryCount))); return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1); }
-      if (/signature/i.test(errorMsg)) throw new Error('Invalid signature - check API credentials.');
-      if (/nonce/i.test(errorMsg)) throw new Error('Invalid nonce - enable Custom nonce window in Kraken API settings.');
-      throw new Error(errorMsg);
+  const p = (async () => {
+    // Compute signature with cached CryptoKey to avoid repeated imports
+    const message = nonce + postData;
+    const msgHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+
+    let hmacKey = hmacKeyCache.get(cleanSecret);
+    if (!hmacKey) {
+      const raw = Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0));
+      hmacKey = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
+      hmacKeyCache.set(cleanSecret, hmacKey);
     }
-    return result;
-  } catch (e) {
-    clearTimeout(timeoutId);
-    if (e.name === 'AbortError') throw new Error('Kraken API timeout');
-    throw e;
+
+    const pathBytes = new TextEncoder().encode(endpoint);
+    const combined = new Uint8Array(pathBytes.length + msgHash.byteLength);
+    combined.set(pathBytes); combined.set(new Uint8Array(msgHash), pathBytes.length);
+    const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
+    const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+    try {
+      const response = await fetch(`${KRAKEN_API_URL}${endpoint}` , {
+        method: 'POST',
+        headers: {
+          'API-Key': cleanKey,
+          'API-Sign': apiSign,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'NeonTrade-AI/1.0'
+        },
+        body: postData,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      const result = await response.json();
+      if (result.error?.length > 0) {
+        const errorMsg = result.error.join(', ');
+        if ((/rate limit/i.test(errorMsg) || /EAPI:Rate limit exceeded/i.test(errorMsg)) && retryCount < MAX_NONCE_RETRIES) {
+          const isWs = endpoint.includes('GetWebSocketsToken');
+          const baseDelay = isWs ? 3000 : 1500;
+          const delay = baseDelay * Math.pow(2, retryCount) + Math.floor(Math.random() * 1000);
+          await new Promise(r => setTimeout(r, delay));
+          return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
+        }
+        if (/nonce/i.test(errorMsg) && retryCount < MAX_NONCE_RETRIES) {
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, retryCount)));
+          return callKraken(apiKey, apiSecret, endpoint, data, retryCount + 1);
+        }
+        if (/signature/i.test(errorMsg)) throw new Error('Invalid signature - check API credentials.');
+        if (/nonce/i.test(errorMsg)) throw new Error('Invalid nonce - enable Custom nonce window in Kraken API settings.');
+        throw new Error(errorMsg);
+      }
+      return result;
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') throw new Error('Kraken API timeout');
+      throw e;
+    }
+  })();
+
+  inFlightCalls.set(dedupKey, p);
+  try {
+    return await p;
+  } finally {
+    inFlightCalls.delete(dedupKey);
   }
 }
 
