@@ -457,6 +457,69 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
               }
             }
 
+            // BRACKET TP/SL fallback
+            if (payload?.action === 'place_bracket_orders') {
+              const tp = Number(payload.takeProfitPrice || 0);
+              const sl = Number(payload.stopLossPrice || 0);
+              const sellVol = vol;
+              let tpOrderId = null;
+              let slOrderId = null;
+              let tpError = null;
+              let slError = null;
+
+              if (tp > 0) {
+                try {
+                  const roundedTp = roundPriceForKraken(tp, sym);
+                  const tpRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                    pair,
+                    type: 'sell',
+                    ordertype: 'take-profit',
+                    price: String(roundedTp),
+                    volume: String(sellVol)
+                  });
+                  if (!tpRes?.error?.length && tpRes?.result?.txid?.length) {
+                    tpOrderId = tpRes.result.txid[0];
+                  } else if (Array.isArray(tpRes?.error) && tpRes.error.length) {
+                    tpError = tpRes.error.join(', ');
+                  }
+                } catch (err) {
+                  tpError = err?.message || String(err);
+                }
+              }
+
+              await sleep(500);
+
+              if (sl > 0) {
+                try {
+                  const roundedSl = roundPriceForKraken(sl, sym);
+                  const slRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
+                    pair,
+                    type: 'sell',
+                    ordertype: 'stop-loss',
+                    price: String(roundedSl),
+                    volume: String(sellVol)
+                  });
+                  if (!slRes?.error?.length && slRes?.result?.txid?.length) {
+                    slOrderId = slRes.result.txid[0];
+                  } else if (Array.isArray(slRes?.error) && slRes.error.length) {
+                    slError = slRes.error.join(', ');
+                  }
+                } catch (err) {
+                  slError = err?.message || String(err);
+                }
+              }
+
+              return {
+                success: !!(tpOrderId || slOrderId),
+                tp_success: !!tpOrderId,
+                sl_success: !!slOrderId,
+                tp_order_id: tpOrderId,
+                sl_order_id: slOrderId,
+                tp_error: tpError,
+                sl_error: slError
+              };
+            }
+
             // BUY market/limit fallback
             if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy') {
               const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
