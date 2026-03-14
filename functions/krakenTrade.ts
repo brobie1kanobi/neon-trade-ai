@@ -901,7 +901,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Getting WebSocket token (lazy, cache-friendly)...');
       await tradeRateGate(user.email, cost);
       const tokenResponse = await Promise.race([
-        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh } }),
+        base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh }, internal: true }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
@@ -931,7 +931,7 @@ Deno.serve(async (req) => {
         takeProfitPercent,    // Percentage from entry (e.g., 3 for +3%)
         stopLossPercent,      // Percentage from entry (e.g., 1 for -1%)
         useMarketEntry = false // Use market order for immediate execution
-      } = body;
+      } = requestBody;
 
       if (!symbol || !quantity) {
         return Response.json({ 
@@ -990,7 +990,7 @@ Deno.serve(async (req) => {
         if (isPerm) {
           try {
             console.warn('[krakenTrade] Forcing WS token refresh and retrying BUY once...');
-            const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
+            const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
             const freshToken = refresh?.data?.token || refresh?.token;
             if (freshToken) {
               buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams);
@@ -1139,7 +1139,7 @@ Deno.serve(async (req) => {
         useLimit = false,     // Use trailing-stop-limit instead of trailing-stop
         limitPriceOffset = 0, // Offset from trigger for limit orders
         limitPriceOffsetType = 'quote'
-      } = body;
+      } = requestBody;
 
       if (!symbol || !quantity) {
         return Response.json({ 
@@ -1387,7 +1387,7 @@ Deno.serve(async (req) => {
         reduceOnly,
         displayQty,
         conditionalCloseOrder
-      } = body;
+      } = requestBody;
 
       // Validate required fields
       if (!symbol || !side || !quantity) {
@@ -1552,7 +1552,7 @@ Deno.serve(async (req) => {
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
-          const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
+          const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
           const freshToken = refresh?.data?.token || refresh?.token;
           tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams);
         } else {
