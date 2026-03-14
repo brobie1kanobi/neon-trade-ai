@@ -43,32 +43,22 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     }
 
-    // Check Kraken connection via Secrets-backed status (not DB row)
+    // Connectivity check: prefer secrets presence; don't hard-fail on status timeout
+    const hasBalSecrets = !!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'));
+    if (!hasBalSecrets) {
+      return Response.json({ success: false, error: 'Kraken not connected', pnl_24h: 0, pnl_lifetime: 0, realized_pnl: 0, unrealized_pnl: 0 }, { status: 200 });
+    }
     try {
       const statusRes = await Promise.race([
         base44.asServiceRole.functions.invoke('krakenApi', { action: 'status', internal: true }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Status timeout')), 2500))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Status timeout')), 5000))
       ]);
       const status = statusRes?.data || statusRes;
-      if (!status?.connected) {
-        return Response.json({
-          success: false,
-          error: 'Kraken not connected',
-          pnl_24h: 0,
-          pnl_lifetime: 0,
-          realized_pnl: 0,
-          unrealized_pnl: 0
-        }, { status: 200 });
+      if (status && status.connected === false) {
+        return Response.json({ success: false, error: 'Kraken not connected', pnl_24h: 0, pnl_lifetime: 0, realized_pnl: 0, unrealized_pnl: 0 }, { status: 200 });
       }
     } catch (_e) {
-      return Response.json({
-        success: false,
-        error: 'Kraken status unavailable',
-        pnl_24h: 0,
-        pnl_lifetime: 0,
-        realized_pnl: 0,
-        unrealized_pnl: 0
-      }, { status: 200 });
+      // Soft-fail: continue since secrets exist; transient status failures shouldn't block PnL
     }
 
     // Fetch trades history to calculate realized PnL
