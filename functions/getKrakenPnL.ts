@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
     const balanceData = balanceResponse?.data || balanceResponse;
     const balances = balanceData?.balance || {};
     
-    // Get current prices from public sources (no Kraken) to avoid rate limit coupling
+    // Get current prices without coupling to internal function errors
     const symbols = Object.keys(balances)
       .filter(asset => asset !== 'ZUSD' && asset !== 'USD')
       .map(asset => parseKrakenAsset(asset));
@@ -151,13 +151,37 @@ Deno.serve(async (req) => {
 
     if (symbols.length > 0) {
       try {
+        // Try getMarketData first
         const mdRes = await base44.asServiceRole.functions.invoke('getMarketData', {
           action: 'getWatchlistData',
           payload: { cryptoSymbols: symbols, stockSymbols: [] }
         });
-        const quotes = Array.isArray(mdRes?.data) ? mdRes.data : [];
-        const priceMap = Object.fromEntries(quotes.map(q => [String(q.symbol || '').toUpperCase(), Number(q.price) || 0]));
+        let quotes = Array.isArray(mdRes?.data) ? mdRes.data : [];
 
+        // If empty or 500-like shape, fallback to Kraken public ticker quickly
+        if (!quotes.length) {
+          const pairMap = {
+            BTC: 'XXBTZUSD', ETH: 'XETHZUSD', SOL: 'SOLUSD', XRP: 'XXRPZUSD', ADA: 'ADAUSD', DOGE: 'XDGUSD', DOT: 'DOTUSD', LINK: 'LINKUSD', MATIC: 'MATICUSD', AVAX: 'AVAXUSD', UNI: 'UNIUSD', ATOM: 'ATOMUSD', LTC: 'XLTCZUSD', BCH: 'BCHUSD', XLM: 'XXLMZUSD', TRX: 'TRXUSD', SHIB: 'SHIBUSD', PEPE: 'PEPEUSD'
+          };
+          const pairs = symbols.map(s => pairMap[s]).filter(Boolean);
+          if (pairs.length) {
+            const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 2500);
+            const resp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`, { signal: ctrl.signal });
+            clearTimeout(to);
+            if (resp.ok) {
+              const data = await resp.json();
+              quotes = Object.entries(data?.result || {}).map(([pair, t]) => {
+                let sym = pair.replace(/ZUSD$|USD$/g, '');
+                if (sym.startsWith('X') && sym.length === 4) sym = sym.substring(1);
+                if (sym === 'XBT') sym = 'BTC';
+                if (sym === 'XDG') sym = 'DOGE';
+                return { symbol: sym, price: parseFloat(t.c?.[0]) || 0 };
+              });
+            }
+          }
+        }
+
+        const priceMap = Object.fromEntries(quotes.map(q => [String(q.symbol || '').toUpperCase(), Number(q.price) || 0]));
         for (const sym of symbols) {
           const currentPrice = priceMap[String(sym || '').toUpperCase()] || 0;
           const balance = parseFloat(balances[`X${sym}`] || balances[sym] || 0);
@@ -169,7 +193,7 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
-        console.warn('[getKrakenPnL] Price fetch failed:', e.message);
+        console.warn('[getKrakenPnL] Price fetch failed (soft):', e.message);
       }
     }
 
