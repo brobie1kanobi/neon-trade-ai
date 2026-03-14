@@ -712,7 +712,7 @@ function executeKrakenTrade(token, orderParams) {
 }
 
 // Retry wrapper to mitigate rate limits and transient WS errors
-async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) {
+async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5, base44 = null) {
   let attempt = 0;
   let lastErr;
   while (attempt < maxAttempts) {
@@ -721,8 +721,6 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) 
     } catch (e) {
       lastErr = e;
       const msg = String(e?.message || e || '');
-      // CRITICAL: Don't retry permission issues or insufficient funds - these won't resolve with retries
-      if (/permission denied/i.test(msg)) { throw e; }
       if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) {
         console.error('[krakenTrade] Insufficient funds - not retrying');
         throw e;
@@ -731,12 +729,11 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) 
         console.error('[krakenTrade] Insufficient margin - not retrying');
         throw e;
       }
-      // Don't retry order-specific errors that won't resolve
       if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
       if (/unknown order/i.test(msg) || /EOrder:Unknown order/i.test(msg)) { throw e; }
       if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
-      
-      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error/i.test(msg);
+
+      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(msg);
       if (!shouldRetry) { throw e; }
       const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 400);
       console.warn(`[krakenTrade] Retry ${attempt + 1}/${maxAttempts} after ${delay}ms due to: ${msg}`);
@@ -744,7 +741,96 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5) 
       attempt++;
     }
   }
+  if (base44 && /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(String(lastErr?.message || ''))) {
+    console.warn('[krakenTrade] Falling back to REST AddOrder for', orderParams.order_type, orderParams.symbol);
+    return await executeKrakenRestOrder(base44, orderParams);
+  }
   throw lastErr;
+}
+
+async function executeKrakenRestOrder(base44, orderParams) {
+  const tradeKey = Deno.env.get('Trade_Key');
+  const tradeSecret = Deno.env.get('Trade_Secret');
+  if (!tradeKey || !tradeSecret) throw new Error('Missing Trade_Key/Trade_Secret in application secrets');
+
+  const pair = String(orderParams.symbol || '').replace('/', '').toUpperCase();
+  const baseSymbol = String(orderParams.symbol || '').split('/')[0].toUpperCase();
+  const side = String(orderParams.side || '').toLowerCase();
+  const minOrderSizes = {
+    BTC: 0.00005, XBT: 0.00005, ETH: 0.001, SOL: 0.02, XRP: 10.0, ADA: 4.4, DOT: 0.5, DOGE: 13.0, XDG: 13.0,
+    LINK: 0.2, UNI: 0.5, MATIC: 10.0, POL: 10.0, ATOM: 0.5, AVAX: 0.1, BCH: 0.01, LTC: 0.04, TRX: 50.0,
+    SHIB: 100000.0, XLM: 20.0, ALGO: 10.0, FIL: 0.7, NEAR: 0.7, APT: 2.2, ARB: 5.2, OP: 16.0, INJ: 0.9,
+    PEPE: 500000.0, SUI: 3.0, HBAR: 20.0, KAS: 30.0, TAO: 0.008, GRASS: 13.0, GOAT: 5.0, TRUMP: 0.2,
+    MOVE: 6.0, KAITO: 2.5, TIA: 8.2, FET: 18.0, WIF: 14.0, BONK: 500000.0, FLOKI: 105000.0, BABY: 50.0
+  };
+
+  let finalQty = parseFloat(orderParams.order_qty) || 0;
+  if (side === 'sell') {
+    const availableMap = await getAvailableMap(base44);
+    const available = availableMap[baseSymbol] || 0;
+    finalQty = Math.min(finalQty, available);
+    finalQty = Math.floor((finalQty * 0.995) * 1e8) / 1e8;
+    const minQty = minOrderSizes[baseSymbol] || 0.00001;
+    if (finalQty < minQty) {
+      throw new Error(`Insufficient available ${baseSymbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.`);
+    }
+  }
+
+  const typeMap = {
+    market: 'market',
+    limit: 'limit',
+    'stop-loss': 'stop-loss',
+    'take-profit': 'take-profit'
+  };
+
+  const payload = {
+    nonce: String(Date.now() * 1000),
+    pair,
+    type: side,
+    ordertype: typeMap[orderParams.order_type] || 'market',
+    volume: String(finalQty)
+  };
+
+  if (orderParams.limit_price) {
+    payload.price = String(roundPriceForKraken(parseFloat(orderParams.limit_price), orderParams.symbol));
+  }
+  if (orderParams.triggers?.price) {
+    payload.price = String(roundPriceForKraken(parseFloat(orderParams.triggers.price), orderParams.symbol));
+  }
+  if (orderParams.time_in_force && orderParams.order_type !== 'market') {
+    payload.timeinforce = String(orderParams.time_in_force).toUpperCase();
+  }
+
+  const endpoint = '/0/private/AddOrder';
+  const postData = new URLSearchParams(payload).toString();
+  const nonce = payload.nonce;
+  const enc = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(nonce + postData));
+  const secretBytes = Uint8Array.from(atob(String(tradeSecret).trim()), c => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey('raw', secretBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
+  const pathBytes = enc.encode(endpoint);
+  const combined = new Uint8Array(pathBytes.length + hashBuffer.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(hashBuffer), pathBytes.length);
+  const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, combined);
+  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+
+  const response = await fetch(`https://api.kraken.com${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'API-Key': String(tradeKey).trim(),
+      'API-Sign': apiSign,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'NeonTrade-AI/1.0'
+    },
+    body: postData
+  });
+  const result = await response.json();
+  if (result.error?.length > 0) {
+    throw new Error(result.error.join(', '));
+  }
+  const txid = result.result?.txid?.[0] || null;
+  return { success: true, order_id: txid, order_userref: null, via: 'rest_fallback' };
 }
 
 /**
@@ -981,7 +1067,7 @@ Deno.serve(async (req) => {
       await tradeRateGate(user.email, 2);
       let buyResult;
       try {
-        buyResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), buyParams));
+        buyResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), buyParams, 5, base44));
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
@@ -993,7 +1079,7 @@ Deno.serve(async (req) => {
             const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
             const freshToken = refresh?.data?.token || refresh?.token;
             if (freshToken) {
-              buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams);
+              buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams, 5, base44);
               console.log('[krakenTrade] ✅ BUY executed after token refresh:', buyResult.order_id);
             } else {
               throw new Error('WS token refresh returned no token');
@@ -1054,7 +1140,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing TP order at', roundedTpPrice);
           await tradeRateGate(user.email, 2);
-          tpResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), tpParams));
+          tpResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), tpParams, 5, base44));
           console.log('[krakenTrade] ✅ TP placed:', tpResult.order_id);
         } catch (tpError) {
           console.error('[krakenTrade] ❌ TP failed:', tpError.message);
@@ -1086,7 +1172,7 @@ Deno.serve(async (req) => {
         try {
           console.log('[krakenTrade] 📤 Placing SL order at', roundedSlPrice);
           await tradeRateGate(user.email, 2);
-          slResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), slParams));
+          slResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), slParams, 5, base44));
           console.log('[krakenTrade] ✅ SL placed:', slResult.order_id);
         } catch (slError) {
           console.error('[krakenTrade] ❌ SL failed:', slError.message);
@@ -1548,13 +1634,13 @@ Deno.serve(async (req) => {
       let tradeResult;
       try {
         await tradeRateGate(user.email, 2);
-        tradeResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams));
+        tradeResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams, 5, base44));
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
           const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
           const freshToken = refresh?.data?.token || refresh?.token;
-          tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams);
+          tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams, 5, base44);
         } else {
           throw firstErr;
         }
