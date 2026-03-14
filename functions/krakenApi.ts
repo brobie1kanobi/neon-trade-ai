@@ -11,8 +11,8 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
  */
 
 const KRAKEN_API_URL = 'https://api.kraken.com';
-const API_TIMEOUT = 15000;
-const MAX_NONCE_RETRIES = 5;
+const API_TIMEOUT = 10000;
+const MAX_NONCE_RETRIES = 3;
 
 // In-memory WS token cache per key type
 const wsTokenCache = new Map(); // key: 'balance'|'trade' => { token, expiresAt, fingerprint }
