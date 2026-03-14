@@ -981,10 +981,10 @@ Deno.serve(async (req) => {
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
 
-      // Trend check: allow dips up to -3% for strong_buy and 0% for buy
+      // Align trader execution with prospects logic: only block steep drops worse than -5%
       const change24h = Number(p.market_trend || 0);
-      const trendOkForStrong = change24h > -3;
-      const trendOkForBuy = change24h >= 0;
+      const trendOkForStrong = change24h > -5;
+      const trendOkForBuy = change24h > -5;
 
       let meetsConfidence = false;
       if (signalType === 'strong_buy') {
