@@ -845,6 +845,7 @@ function cancelKrakenOrder(token, orderIds) {
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
+  let requestBody = {};
   
   try {
     const base44 = createClientFromRequest(req);
@@ -873,14 +874,13 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    let body = {};
     try {
-      body = await req.json();
+      requestBody = await req.json();
     } catch (e) {
       return Response.json({ error: 'Invalid JSON', success: false }, { status: 400 });
     }
 
-    const { action = 'place_order' } = body;
+    const { action = 'place_order' } = requestBody;
 
     console.log('[krakenTrade] Action:', action, 'User:', user.email);
 
@@ -894,7 +894,7 @@ Deno.serve(async (req) => {
     // Proceed without connection entity; krakenApi will verify permissions
 
     // Lazy WS token fetcher to avoid rate-limit/work when order will be blocked early
-    let wsToken = body?.wsToken || body?.token;
+    let wsToken = requestBody?.wsToken || requestBody?.token;
     let tokenData;
     async function getWsTokenLazy(cost = 1, forceRefresh = false) {
       if (wsToken && !forceRefresh) return wsToken;
@@ -1661,7 +1661,7 @@ Deno.serve(async (req) => {
       
       if (user) {
         await base44.asServiceRole.entities.KrakenLog.create({
-          event_type: body.action || 'unknown',
+          event_type: requestBody?.action || 'unknown',
           status: 'error',
           message: 'Failed to execute action',
           details_json: JSON.stringify({ error: error.message, stack: error.stack }),
