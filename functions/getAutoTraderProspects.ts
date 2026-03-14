@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 // Kraken pair mappings for public API
 const KRAKEN_PAIR_MAP = {
@@ -234,19 +234,7 @@ Deno.serve(async (req) => {
             console.log('[Prospects] Display cash: $' + cashAvailable.toFixed(2) + ', Trading cash: $' + tradingCash.toFixed(2));
             
             if (tradingCash < 5) {
-              return Response.json({
-                success: true,
-                prospects: [],
-                cash_available: cashAvailable,
-                assets_value: assetsValue,
-                total_portfolio_value: cashAvailable + assetsValue,
-                is_sim_mode: false,
-                auto_trading_enabled: settings?.auto_trading_enabled || false,
-                total_analyzed: 0,
-                market_intelligence: null,
-                user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
-                message: `Insufficient trading cash ($${tradingCash.toFixed(2)} after reserves). Need at least $5.`
-              });
+              console.log('[Prospects] Warning: Insufficient trading cash ($' + tradingCash.toFixed(2) + ')');
             }
           }
         } else {
@@ -274,17 +262,35 @@ Deno.serve(async (req) => {
     console.log('[Prospects] Found', prefs.length, 'enabled preferences for', isSimMode ? 'SIM' : 'LIVE', 'mode (from', allPrefs.length, 'total)');
 
     if (prefs.length === 0) {
-      return Response.json({
-        success: true,
-        prospects: [],
-        cash_available: cashAvailable,
-        is_sim_mode: isSimMode,
-        auto_trading_enabled: settings?.auto_trading_enabled || false,
-        total_analyzed: 0,
-        market_intelligence: null,
-        user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
-        message: "No assets configured. Please add assets to your watchlist in Portfolio settings."
-      });
+      // Fallback: use ANY enabled prefs regardless of is_simulation flag
+      const enabled = allPrefs.filter(p => p.enabled !== false);
+      if (enabled.length > 0) {
+        prefs = enabled;
+        console.log('[Prospects] Fallback to enabled prefs regardless of mode:', prefs.length);
+      } else {
+        // Last resort: use watched_crypto from settings (10% each)
+        const watched = Array.isArray(rawRecord?.watched_crypto) ? rawRecord.watched_crypto : [];
+        if (watched.length > 0) {
+          prefs = watched.map(s => ({ symbol: String(s).toUpperCase(), asset_type: 'crypto', percentage: 10, enabled: true }));
+          console.log('[Prospects] Using watched_crypto as prefs:', prefs.length);
+        }
+      }
+
+      if (prefs.length === 0) {
+        return Response.json({
+          success: true,
+          prospects: [],
+          cash_available: cashAvailable,
+          assets_value: assetsValue,
+          total_portfolio_value: cashAvailable + assetsValue,
+          is_sim_mode: isSimMode,
+          auto_trading_enabled: settings?.auto_trading_enabled || false,
+          total_analyzed: 0,
+          market_intelligence: null,
+          user_settings: { gain_margin: settings.gain_margin, loss_margin: settings.loss_margin },
+          message: "No assets configured. Please add assets to your watchlist in Portfolio settings."
+        });
+      }
     }
 
     // Get current holdings

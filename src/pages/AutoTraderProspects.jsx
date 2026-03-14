@@ -260,11 +260,11 @@ export default function AutoTraderProspects() {
       <Card className="border-yellow-300">
           <CardContent className="py-12 text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-yellow-400" />
-            {totalAnalyzed > 0 ? (
+            {(totalAnalyzed > 0 || !!backendMessage) ? (
               <>
                 <p className="text-gray-500 font-semibold">No Actionable Signals</p>
                 <p className="text-sm text-gray-400 mt-2">
-                  {totalAnalyzed} asset{totalAnalyzed !== 1 ? 's' : ''} analyzed, but none have buy signals right now.
+                  {totalAnalyzed} asset{totalAnalyzed !== 1 ? 's' : ''} analyzed.
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
                   {backendMessage || "The AI is waiting for favorable market conditions. Signals refresh automatically."}
