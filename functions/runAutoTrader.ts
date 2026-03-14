@@ -1263,111 +1263,41 @@ Deno.serve(async (req) => {
             log(`Failed to create ledger entry for ${sym}`, { error: ledgerErr.message });
           }
           
-          // Check if we can place closing SELL orders based on Kraken minimums
+          // Step 2: Place linked TP/SL orders on Kraken when the filled size supports closing orders
           const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
           const canPlaceClosers = executedQty >= minQtyForSymbol;
-          const PLACE_TPSL_ON_EXCHANGE = false;
-          
-          if (PLACE_TPSL_ON_EXCHANGE && canPlaceClosers) {
-          // Step 2: Place TAKE PROFIT order (limit at TP price)
-          await ps(300);
-          
           let tpOrderId = null;
           let slOrderId = null;
-          
-          // Place Take Profit order
-          try {
-            console.log(`[runAutoTrader] 📤 Placing Take Profit at $${takeProfitPrice}...`);
-            const tpData = await invokeKrakenTrade(base44, {
-              action: 'place_order',
-              symbol: sym,
-              side: 'sell',
-              quantity: executedQty,
-              orderType: 'take-profit',
-              triggerPrice: takeProfitPrice,
-              timeInForce: 'gtc'
-            }, attempts, wsToken, user.email);
-            console.log(`[runAutoTrader] TP response:`, JSON.stringify(tpData));
-            
-            if (tpData?.success) {
-              tpOrderId = tpData.order_id;
-              console.log(`[runAutoTrader] ✅ Take Profit order placed: ${tpOrderId}`);
-            } else if (tpData?.order_id) {
-              // Sometimes success is not explicitly set but order_id exists
-              tpOrderId = tpData.order_id;
-              console.log(`[runAutoTrader] ✅ Take Profit order placed (implicit): ${tpOrderId}`);
-            } else {
-              console.warn(`[runAutoTrader] ⚠️ Take Profit failed: ${tpData?.error || 'Unknown error'}`);
-            }
-          } catch (tpError) {
-            console.error('[runAutoTrader] Take Profit order failed:', tpError.message);
-          }
-          
-          // Step 3: Place TRAILING STOP order (locks in profits as price rises)
-          await ps(300);
-          
-          try {
-            // Use trailing stop if enabled, otherwise use static stop-loss
-            if (trailingEnabled && trailingMargin > 0) {
-              console.log(`[runAutoTrader] 📤 Placing Trailing Stop (${trailingMargin}% from peak)...`);
-              const slData = await invokeKrakenTrade(base44, {
-                action: 'place_trailing_stop',
+
+          if (canPlaceClosers) {
+            await ps(1200);
+            try {
+              console.log(`[runAutoTrader] 📤 Placing linked TP/SL for ${sym}...`);
+              const bracketData = await invokeKrakenTrade(base44, {
+                action: 'place_bracket_orders',
                 symbol: sym,
                 quantity: executedQty,
-                trailingPercent: trailingMargin,
-                trailingPriceType: 'pct',
-                triggerReference: 'last',
-                useLimit: false // Use market order on trigger for guaranteed execution
-              }, attempts, wsToken, user.email);
-              if (slData?.success) {
-                slOrderId = slData.order_id;
-                console.log(`[runAutoTrader] ✅ Trailing Stop order placed: ${slOrderId} (${trailingMargin}% trail)`);
+                takeProfitPrice,
+                stopLossPrice: staticStopLossPrice
+              }, orderAttempts, wsToken, user.email);
+
+              tpOrderId = bracketData?.tp_order_id || null;
+              slOrderId = bracketData?.sl_order_id || null;
+
+              if (tpOrderId || slOrderId) {
+                console.log(`[runAutoTrader] ✅ Linked TP/SL placed`, { tpOrderId, slOrderId });
               } else {
-                console.warn(`[runAutoTrader] ⚠️ Trailing Stop failed: ${slData?.error}, falling back to static SL`);
-                // Fallback to static stop-loss
-                const fallbackData = await invokeKrakenTrade(base44, {
-                  action: 'place_order',
-                  symbol: sym,
-                  side: 'sell',
-                  quantity: executedQty,
-                  orderType: 'stop-loss',
-                  stopPrice: staticStopLossPrice,
-                  timeInForce: 'gtc'
-                }, attempts, wsToken, user.email);
-                if (fallbackData?.success) {
-                  slOrderId = fallbackData.order_id;
-                  console.log(`[runAutoTrader] ✅ Fallback Stop-Loss placed: ${slOrderId} @ $${staticStopLossPrice}`);
-                }
+                console.warn(`[runAutoTrader] ⚠️ Linked TP/SL not created`, { error: bracketData?.error, tp_error: bracketData?.tp_error, sl_error: bracketData?.sl_error });
               }
-            } else {
-              // Use static stop-loss if trailing not enabled
-              console.log(`[runAutoTrader] 📤 Placing Static Stop-Loss at $${staticStopLossPrice}...`);
-              const slData = await invokeKrakenTrade(base44, {
-                action: 'place_order',
-                symbol: sym,
-                side: 'sell',
-                quantity: executedQty,
-                orderType: 'stop-loss',
-                stopPrice: staticStopLossPrice,
-                timeInForce: 'gtc'
-              }, attempts, wsToken, user.email);
-              if (slData?.success) {
-                slOrderId = slData.order_id;
-                console.log(`[runAutoTrader] ✅ Stop-Loss order placed: ${slOrderId}`);
-              } else {
-                console.warn(`[runAutoTrader] ⚠️ Stop-Loss failed: ${slData?.error}`);
-              }
+            } catch (bracketError) {
+              console.error('[runAutoTrader] Linked TP/SL placement failed:', bracketError.message);
             }
-          } catch (slError) {
-            console.error('[runAutoTrader] Stop-Loss order failed:', slError.message);
-          }
-          
           } else {
-            console.log(`[runAutoTrader] Skipping TP/SL for ${sym} - qty ${qty} below Kraken minimum ${minQtyForSymbol}`);
+            console.log(`[runAutoTrader] Skipping TP/SL for ${sym} - executed qty ${executedQty} below Kraken minimum ${minQtyForSymbol}`);
           }
-          
-          // Store Kraken order IDs for tracking (no TP/SL IDs recorded)
-          krakenOrderIds = [buyOrderId].filter(Boolean).join(',');
+
+          // Store Kraken order IDs for tracking
+          krakenOrderIds = [buyOrderId, tpOrderId, slOrderId].filter(Boolean).join(',');
           
           console.log(`[runAutoTrader] 📋 Order IDs saved: ${krakenOrderIds}`);
 
