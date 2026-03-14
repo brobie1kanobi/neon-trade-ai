@@ -162,11 +162,11 @@ function MarketSentimentCard({ intelligence }) {
   if (!intelligence) return null;
 
   const sentimentScore = intelligence.market_sentiment_score || intelligence.sentiment_score || 50;
-  const sentimentLabel = sentimentScore <= 30 ? 'Extreme Fear' :
-  sentimentScore <= 50 ? 'Fear' :
-  sentimentScore <= 70 ? 'Neutral' :
-  sentimentScore <= 90 ? 'Greed' :
-  'Extreme Greed';
+  const sentimentLabel = sentimentScore <= 25 ? 'Extreme Fear' :
+  sentimentScore <= 45 ? 'Fear' :
+  sentimentScore <= 54 ? 'Neutral' :
+  sentimentScore <= 75 ? 'Greed' :
+  sentimentScore <= 90 ? 'Extreme Greed';
 
   const sentimentColor = sentimentScore <= 30 ? 'text-red-500' :
   sentimentScore <= 50 ? 'text-orange-500' :
