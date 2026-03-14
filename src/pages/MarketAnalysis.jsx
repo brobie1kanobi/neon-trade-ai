@@ -166,7 +166,8 @@ function MarketSentimentCard({ intelligence }) {
   sentimentScore <= 45 ? 'Fear' :
   sentimentScore <= 54 ? 'Neutral' :
   sentimentScore <= 75 ? 'Greed' :
-  sentimentScore <= 90 ? 'Extreme Greed';
+  sentimentScore <= 90 ? 'Extreme Greed' :
+  'Extreme Greed';
 
   const sentimentColor = sentimentScore <= 30 ? 'text-red-500' :
   sentimentScore <= 50 ? 'text-orange-500' :
