@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * Trade History Intelligence Analyzer
@@ -30,10 +30,16 @@ Deno.serve(async (req) => {
     console.log('[TradeHistory] Analyzing trade history for user:', user.email);
     console.log('[TradeHistory] Symbols filter:', symbols.length > 0 ? symbols : 'ALL');
 
-    // 1. Fetch ALL local trades (both sim and live)
+    // 1. Fetch local trades defensively so this helper never hard-fails analyzeSmallGains
     const [localTrades, conditionalOrders] = await Promise.all([
-      base44.entities.Trade.filter({ created_by: user.email }, '-created_date', 1000),
-      base44.entities.ConditionalOrder.filter({ created_by: user.email }, '-created_date', 500)
+      base44.asServiceRole.entities.Trade.filter({ created_by: user.email }, '-created_date', 500).catch((err) => {
+        console.warn('[TradeHistory] Local Trade fetch failed:', err.message);
+        return [];
+      }),
+      base44.asServiceRole.entities.ConditionalOrder.filter({ created_by: user.email }, '-created_date', 250).catch((err) => {
+        console.warn('[TradeHistory] Local ConditionalOrder fetch failed:', err.message);
+        return [];
+      })
     ]);
 
     console.log('[TradeHistory] Found', localTrades.length, 'local trades,', conditionalOrders.length, 'conditional orders');
@@ -83,11 +89,11 @@ Deno.serve(async (req) => {
     const localNormalized = localTrades.map(lt => ({
       symbol: normalizeSymbol(lt.symbol),
       type: lt.type || 'unknown',
-      quantity: lt.quantity || 0,
-      price: lt.price || 0,
-      total_value: lt.total_value || 0,
-      fee: lt.fee || 0,
-      timestamp: new Date(lt.created_date),
+      quantity: Number(lt.quantity) || 0,
+      price: Number(lt.price) || 0,
+      total_value: Number(lt.total_value) || 0,
+      fee: Number(lt.fee) || 0,
+      timestamp: new Date(lt.filled_at || lt.created_date || Date.now()),
       source: 'local',
       order_type: lt.is_auto_trade ? 'auto' : 'manual',
       is_simulation: lt.is_simulation
@@ -260,7 +266,7 @@ ANALYSIS TASKS:
 6. Suggest specific price levels for auto-trading take-profit and stop-loss
 
 Provide actionable intelligence for automated trading decisions.`,
-          add_context_from_internet: true,
+          add_context_from_internet: false,
           response_json_schema: {
             type: "object",
             properties: {
@@ -334,8 +340,25 @@ Provide actionable intelligence for automated trading decisions.`,
   } catch (error) {
     console.error('[TradeHistory] Error:', error);
     return Response.json({
-      success: false,
-      error: error.message
-    }, { status: 500 });
+      success: true,
+      summary: {
+        total_trades: 0,
+        live_trades: 0,
+        simulation_trades: 0,
+        unique_assets: 0,
+        total_volume_usd: 0,
+        date_range: {
+          first_trade: null,
+          last_trade: null
+        },
+        overall_win_rate: 0,
+        best_performing_assets: []
+      },
+      asset_analytics: {},
+      ai_insights: null,
+      degraded: true,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }, { status: 200 });
   }
 });

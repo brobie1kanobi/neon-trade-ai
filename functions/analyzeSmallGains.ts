@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * Enhanced Market Intelligence Analyzer v2.0
@@ -425,8 +425,8 @@ For each asset:
     try {
       recsResp = await invokeLLM({
         prompt: recsPrompt,
-        model: 'gemini_3_flash',
-        withWeb: true,
+        model: 'automatic',
+        withWeb: false,
         schema: recsSchema,
         label: 'LLM recommendations',
         timeoutMs: ensureTime()
