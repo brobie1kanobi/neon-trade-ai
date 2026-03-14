@@ -50,30 +50,27 @@ export default function QuickActions() {
   const { settings, user } = useSettings();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const isSimMode = settings?.sim_trading_mode !== false;
 
   useEffect(() => {
     if (!user?.email) return;
 
-    // CROSS-PAGE CHECK: Reuse if MarketAnalysis (or a previous load) already fetched this
+    const cacheKey = 'dashboard_market_intel';
     const recentAnalysis = getRecentAnalysis();
     if (recentAnalysis) {
-      console.log('[QuickActions] Using cross-page cached analysis (< 5min old)');
+      console.log('[QuickActions] Using cached analysis while refreshing');
       setData(recentAnalysis);
       setLoading(false);
-      return;
     }
 
-    // Check sessionStorage cache (5 min TTL)
-    const cacheKey = 'dashboard_market_intel';
     const cached = sessionStorage.getItem(cacheKey);
-    if (cached) {
+    if (!recentAnalysis && cached) {
       try {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed._ts < 5 * 60 * 1000) {
           setData(parsed);
-          setRecentAnalysis(parsed); // Populate global store too
+          setRecentAnalysis(parsed);
           setLoading(false);
-          return;
         }
       } catch (_) {}
     }
@@ -82,23 +79,25 @@ export default function QuickActions() {
     (async () => {
       try {
         const watchedCrypto = settings?.watched_crypto || ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'];
+        const watchedStocks = settings?.watched_stocks || [];
         const autoBuyPrefs = await base44.entities.AutoBuyPreference.filter({
           created_by: user.email,
-          enabled: true
+          enabled: true,
+          is_simulation: isSimMode
         }).catch(() => []);
         const autoBuySymbols = autoBuyPrefs.map((p) => p.symbol);
-        const allSymbols = [...new Set([...watchedCrypto, ...autoBuySymbols])];
+        const allSymbols = [...new Set([...watchedCrypto, ...watchedStocks, ...autoBuySymbols])];
 
         const response = await base44.functions.invoke('analyzeSmallGains', {
           symbols: allSymbols,
           includeMarketIntelligence: true,
-          includeTradeHistory: false
+          includeTradeHistory: true
         });
         const result = response?.data || response;
         if (!cancelled && result?.success) {
           result._ts = Date.now();
           setData(result);
-          setRecentAnalysis(result); // Store in global cross-page store
+          setRecentAnalysis(result);
           sessionStorage.setItem(cacheKey, JSON.stringify(result));
         }
       } catch (err) {
@@ -108,7 +107,7 @@ export default function QuickActions() {
       }
     })();
     return () => {cancelled = true;};
-  }, [user?.email, settings?.watched_crypto]);
+  }, [user?.email, settings?.watched_crypto, settings?.watched_stocks, isSimMode]);
 
   const intel = data?.market_intelligence;
   const recs = data?.recommendations || [];
@@ -116,6 +115,8 @@ export default function QuickActions() {
   const bestOpps = intel?.best_opportunities?.slice(0, 3) || [];
   const avoidList = intel?.avoid_list?.slice(0, 2) || [];
   const outlook = intel?.short_term_outlook || intel?.trading_recommendation || null;
+  const marketSummary = data?.market_summary || null;
+  const regimeText = [intel?.market_regime, intel?.volatility_level].filter(Boolean).join(' • ');
   const topSignal = recs.find((r) => r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell');
 
   return (
@@ -151,6 +152,18 @@ export default function QuickActions() {
             {outlook &&
           <div className="p-2.5 rounded-lg text-xs leading-relaxed" style={{ backgroundColor: 'var(--secondary-bg)', color: 'var(--text-primary)' }}>
                 <p className="line-clamp-3">{outlook}</p>
+              </div>
+          }
+
+            {regimeText &&
+          <div className="p-2 rounded-lg text-[11px] font-medium" style={{ backgroundColor: 'var(--secondary-bg)', color: 'var(--text-secondary)' }}>
+                {regimeText}
+              </div>
+          }
+
+            {marketSummary &&
+          <div className="p-2.5 rounded-lg text-xs leading-relaxed" style={{ backgroundColor: 'var(--secondary-bg)', color: 'var(--text-primary)' }}>
+                <p className="line-clamp-3">{marketSummary}</p>
               </div>
           }
 

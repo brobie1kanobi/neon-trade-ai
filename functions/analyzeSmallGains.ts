@@ -297,8 +297,12 @@ For each asset:
             market_sentiment_score: { type: "number" },
             market_regime: { type: "string" },
             volatility_level: { type: "string" },
+            momentum_direction: { type: "string" },
+            trend_strength: { type: "string" },
+            short_term_outlook: { type: "string" },
             trading_recommendation: { type: "string" },
             best_opportunities: { type: "array", items: { type: "string" } },
+            avoid_list: { type: "array", items: { type: "string" } },
             hot_signals: {
               type: "array",
               items: {
@@ -370,7 +374,7 @@ For each asset:
 
     const intelPrompt = `You are a short-term crypto market analyst.
     Focus ONLY on overall market context using news and social buzz for the next 1-6h.
-    Symbols of interest (prioritize if mentioned in news/social):\n${symbolsForIntel.map(s => '- ' + s).join('\n')}\n\nReturn: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), trading_recommendation (one sentence), best_opportunities (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
+    Symbols of interest (prioritize if mentioned in news/social):\n${symbolsForIntel.map(s => '- ' + s).join('\n')}\n\nReturn: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), momentum_direction, trend_strength, short_term_outlook (1-2 sentences), trading_recommendation (one sentence), best_opportunities (up to 3 tickers), avoid_list (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
 
     let marketIntelResp;
     try {
