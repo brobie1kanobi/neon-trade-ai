@@ -79,6 +79,17 @@ const KRAKEN_PAIR_MAP = {
   'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'HBAR': 'HBARUSD'
 };
 
+const MIN_ORDER_SIZES = {
+  'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+  'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
+  'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0, 'SHIB': 100000.0,
+  'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'BABY': 50.0, 'FLOKI': 105000.0,
+  'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0,
+  'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0, 'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0,
+  'GRASS': 13.0, 'GOAT': 5.0, 'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6,
+  'ENA': 4.0, 'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0
+};
+
 // Minimal Kraken private API caller (BalanceEx/OpenOrders)
 let __kr_lastNonce = 0;
 function __kr_generateNonce() {
@@ -1134,17 +1145,6 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] Aborting - no cash available after checks`);
           break;
         }
-        const MIN_ORDER_SIZES = {
-          'BTC': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
-          'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
-          'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-          'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7,
-          'BABY': 50.0, 'FLOKI': 105000.0, 'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0,
-          'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0,
-          'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0, 'GRASS': 13.0, 'GOAT': 5.0,
-          'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6, 'ENA': 4.0,
-          'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0
-        };
         const minQtyForSymbol = MIN_ORDER_SIZES[sym] || 0.00001;
         if (qty < minQtyForSymbol) {
           log(`Skipping ${sym} - quantity ${qty} below Kraken minimum ${minQtyForSymbol}`, { sym, qty, minQtyForSymbol });
@@ -1177,6 +1177,9 @@ Deno.serve(async (req) => {
       }
       
       let krakenOrderIds = '';
+      let executedQty = qty;
+      let executedValue = total_value;
+      const orderAttempts = timeLeft() > 12000 ? 2 : 1;
 
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
@@ -1197,14 +1200,13 @@ Deno.serve(async (req) => {
           
           // Step 1: Place market BUY order (with pacing)
           await ps(150);
-          const attempts = timeLeft() > 12000 ? 2 : 1;
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
             side: 'buy',
             quantity: qty,
             orderType: 'market'
-          }, attempts, wsToken, user.email);
+          }, orderAttempts, wsToken, user.email);
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');
           }
@@ -1213,8 +1215,8 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
           
           // CRITICAL: Record LIVE trade with ACTUAL executed quantity from Kraken response
-          const executedQty = buyData.executed_qty || buyData.quantity || qty;
-          const executedValue = executedQty * price;
+          executedQty = buyData.executed_qty || buyData.quantity || qty;
+          executedValue = executedQty * price;
           
           log(`Recording LIVE trade`, { requestedQty: qty, executedQty, executedValue: executedValue.toFixed(2) });
           
@@ -1597,7 +1599,7 @@ Deno.serve(async (req) => {
               side: 'buy',
               quantity: emergingQty,
               orderType: 'market'
-            }, attempts, wsToken, user.email);
+            }, orderAttempts, wsToken, user.email);
             
             if (emergingBuyData?.success) {
               console.log(`[runAutoTrader] ✅ Emerging buy executed: ${emergingBuyData.order_id}`);
