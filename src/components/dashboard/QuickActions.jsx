@@ -91,7 +91,7 @@ export default function QuickActions() {
         const response = await base44.functions.invoke('analyzeSmallGains', {
           symbols: allSymbols,
           includeMarketIntelligence: true,
-          includeTradeHistory: true
+          includeTradeHistory: false
         });
         const result = response?.data || response;
         if (!cancelled && result?.success) {

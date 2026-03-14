@@ -162,7 +162,10 @@ Deno.serve(async (req) => {
           }),
           Math.min(4000, ensureTime()),
           'trade history'
-        );
+        ).catch((histErr) => {
+          console.warn('[MarketIntelligence] Trade history fetch failed:', histErr.message);
+          return null;
+        });
       } catch (histErr) {
         console.warn('[MarketIntelligence] Trade history scheduling failed:', histErr.message);
       }
