@@ -98,8 +98,8 @@ function __kr_generateNonce() {
   return __kr_lastNonce.toString();
 }
 async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
-  const cleanKey = String(apiKey || '').trim();
-  const cleanSecret = String(apiSecretBase64 || '').trim();
+  const cleanKey = String(apiKey || '').trim().replace(/\s+/g, '');
+  const cleanSecret = String(apiSecretBase64 || '').trim().replace(/\s+/g, '');
   const nonce = __kr_generateNonce();
   const postData = new URLSearchParams({ nonce, ...data }).toString();
   const msg = new TextEncoder().encode(nonce + postData);
