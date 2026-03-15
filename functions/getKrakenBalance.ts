@@ -12,12 +12,30 @@ const KRAKEN_API_URL = 'https://api.kraken.com';
 const API_TIMEOUT = 15000;
 
 function parseKrakenAsset(krakenCode) {
-  let symbol = krakenCode;
-  if (krakenCode.startsWith('XX')) symbol = krakenCode.substring(1); // XXBT -> XBT
-  if (krakenCode.startsWith('X') && krakenCode.length === 4 && krakenCode !== 'XETH') symbol = krakenCode.substring(1);
-  if (krakenCode.startsWith('Z')) symbol = krakenCode.substring(1);
-  const map = { XBT: 'BTC', XXBT: 'BTC', BT: 'BTC', XDG: 'DOGE', XLM: 'XLM' };
-  return map[symbol] || symbol;
+  const code = String(krakenCode || '').toUpperCase();
+  const map = {
+    'XXBT': 'BTC',
+    'XBT': 'BTC',
+    'XETH': 'ETH',
+    'ETH': 'ETH',
+    'XXRP': 'XRP',
+    'XRP': 'XRP',
+    'XXLM': 'XLM',
+    'XLM': 'XLM',
+    'XLTC': 'LTC',
+    'LTC': 'LTC',
+    'XDG': 'DOGE',
+    'XXDG': 'DOGE',
+    'ZUSD': 'USD',
+    'USD': 'USD'
+  };
+  if (map[code]) return map[code];
+
+  let symbol = code;
+  if (symbol.startsWith('Z')) symbol = symbol.substring(1);
+  if (symbol.startsWith('X') && symbol.length > 3) symbol = symbol.substring(1);
+  if (map[symbol]) return map[symbol];
+  return symbol;
 }
 
 function knownPair(symbol) {

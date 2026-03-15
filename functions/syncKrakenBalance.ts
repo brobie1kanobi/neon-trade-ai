@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 
 /**
  * Sync Kraken Balance - WITH AGGRESSIVE TIMEOUT
@@ -9,28 +9,28 @@ const BALANCE_TIMEOUT_MS = 12000; // 12 seconds max (Kraken can be slow)
 const TRADES_TIMEOUT_MS = 12000; // 12 seconds max
 
 function parseKrakenAsset(krakenCode) {
-  let symbol = krakenCode;
-  if (krakenCode.startsWith('X') && krakenCode !== 'XRP') {
-    symbol = krakenCode.substring(1);
-  }
-  if (krakenCode.startsWith('Z')) {
-    symbol = krakenCode.substring(1);
-  }
-  
+  const code = String(krakenCode || '').toUpperCase();
   const symbolMap = {
-    'XBT': 'BTC', 'ETH': 'ETH', 'SOL': 'SOL', 'XRP': 'XRP',
-    'ADA': 'ADA', 'DOT': 'DOT', 'DOGE': 'DOGE', 'LINK': 'LINK',
-    'UNI': 'UNI', 'MATIC': 'MATIC', 'ATOM': 'ATOM', 'LTC': 'LTC',
-    'BCH': 'BCH', 'AVAX': 'AVAX', 'BNB': 'BNB', 'TRX': 'TRX',
-    'USDT': 'USDT', 'USDC': 'USDC', 'USD': 'USD'
+    'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH': 'ETH',
+    'XXRP': 'XRP', 'XRP': 'XRP', 'XXLM': 'XLM', 'XLM': 'XLM',
+    'XLTC': 'LTC', 'LTC': 'LTC', 'XDG': 'DOGE', 'XXDG': 'DOGE',
+    'SOL': 'SOL', 'ADA': 'ADA', 'DOT': 'DOT', 'LINK': 'LINK',
+    'UNI': 'UNI', 'MATIC': 'MATIC', 'ATOM': 'ATOM', 'BCH': 'BCH',
+    'AVAX': 'AVAX', 'BNB': 'BNB', 'TRX': 'TRX', 'USDT': 'USDT',
+    'USDC': 'USDC', 'ZUSD': 'USD', 'USD': 'USD'
   };
-  
+  if (symbolMap[code]) return symbolMap[code];
+
+  let symbol = code;
+  if (symbol.startsWith('Z')) symbol = symbol.substring(1);
+  if (symbol.startsWith('X') && symbol.length > 3) symbol = symbol.substring(1);
   return symbolMap[symbol] || symbol;
 }
 
 function extractBaseAsset(pair) {
-  let cleaned = pair.replace(/^X+|^Z+/g, '');
-  cleaned = cleaned.replace(/ZUSD$|USD$|EUR$|GBP$/g, '');
+  const cleaned = String(pair || '')
+    .toUpperCase()
+    .replace(/\/USD$|ZUSD$|USD$|EUR$|GBP$/g, '');
   return parseKrakenAsset(cleaned);
 }
 
