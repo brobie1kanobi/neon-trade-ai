@@ -360,7 +360,7 @@ async function handleSync(req, startTime) {
         success: true,
         usdBalance,
         holdings,
-        balance: krakenBalance,
+        balance: { USD: usdBalance },
         costBasis: costBasisMap,
         duration: Date.now() - startTime
       });
