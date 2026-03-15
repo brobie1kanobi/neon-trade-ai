@@ -41,6 +41,47 @@ async function fetchWithTimeout(promise, timeoutMs, errorMessage) {
   return Promise.race([promise, timeoutPromise]);
 }
 
+let lastNonce = 0;
+function generateNonce() {
+  const now = Date.now() * 1000;
+  if (now <= lastNonce) lastNonce++;
+  else lastNonce = now;
+  return lastNonce.toString();
+}
+
+async function callKraken(apiKey, apiSecret, endpoint, data = {}) {
+  const cleanKey = String(apiKey || '').trim().replace(/\s+/g, '');
+  const cleanSecret = String(apiSecret || '').trim().replace(/\s+/g, '');
+  const nonce = generateNonce();
+  const postData = new URLSearchParams({ nonce, ...data }).toString();
+  const message = nonce + postData;
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+  const hmacKey = await crypto.subtle.importKey(
+    'raw', Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+  );
+  const pathBytes = new TextEncoder().encode(endpoint);
+  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(hash), pathBytes.length);
+  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
+  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+  const response = await fetch(`https://api.kraken.com${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'API-Key': cleanKey,
+      'API-Sign': apiSign,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'NeonTrade-AI/1.0'
+    },
+    body: postData
+  });
+
+  const json = await response.json();
+  if (json?.error?.length) throw new Error(json.error.join(', '));
+  return json.result || {};
+}
+
 Deno.serve(async (req) => {
   const startTime = Date.now();
   
@@ -111,19 +152,28 @@ async function handleSync(req, startTime) {
     let usdBalance = 0;
     try {
       console.log('[syncKrakenBalance] Fetching balance...');
-      const balanceResponse = await fetchWithTimeout(
-        base44.functions.invoke('getKrakenBalance', {}),
+      const balKey = Deno.env.get('Kraken_API_Key');
+      const balSecret = Deno.env.get('Kraken_API_Secret');
+      const balanceData = await fetchWithTimeout(
+        callKraken(balKey, balSecret, '/0/private/BalanceEx', {}),
         BALANCE_TIMEOUT_MS,
         'Balance fetch timeout'
       );
 
-      const balanceData = balanceResponse?.data || balanceResponse;
-      if (balanceData?.success === false) {
-        throw new Error(balanceData.error || 'Balance fetch failed');
+      for (const [asset, info] of Object.entries(balanceData || {})) {
+        const qty = typeof info === 'object' && info !== null
+          ? parseFloat(info.balance ?? info.total ?? 0)
+          : parseFloat(info || 0);
+        if (asset === 'USD' || asset === 'ZUSD') {
+          usdBalance = qty || 0;
+          continue;
+        }
+        if ((qty || 0) <= 0.00001) continue;
+        krakenHoldings.push({
+          symbol: parseKrakenAsset(asset),
+          quantity: qty
+        });
       }
-
-      usdBalance = parseFloat(balanceData?.usd_balance ?? balanceData?.available_usd_balance ?? 0) || 0;
-      krakenHoldings = Array.isArray(balanceData?.holdings) ? balanceData.holdings : [];
 
       console.log('[syncKrakenBalance] Balance OK -', Date.now() - startTime, 'ms');
     } catch (balanceError) {
