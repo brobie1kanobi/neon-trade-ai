@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       error: error.message || 'Internal error',
       success: false,
       duration: Date.now() - startTime
-    }, { status: 500 });
+    }, { status: 200 });
   }
 });
 
@@ -354,6 +354,6 @@ async function handleSync(req, startTime) {
       error: error.message || 'Internal error',
       success: false,
       duration: Date.now() - startTime
-    }, { status: 500 });
+    }, { status: 200 });
   }
 }
