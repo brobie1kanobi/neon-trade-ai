@@ -107,36 +107,23 @@ async function handleSync(req, startTime) {
     }
 
     // FETCH BALANCE
-    let krakenBalance = null;
+    let krakenHoldings = [];
+    let usdBalance = 0;
     try {
       console.log('[syncKrakenBalance] Fetching balance...');
       const balanceResponse = await fetchWithTimeout(
-        base44.functions.invoke('krakenApi', { action: 'getBalance' }),
+        base44.functions.invoke('getKrakenBalance', {}),
         BALANCE_TIMEOUT_MS,
         'Balance fetch timeout'
       );
 
-      let balanceData = balanceResponse?.data || balanceResponse;
-      if (balanceData?.data) {
-        balanceData = balanceData.data;
-      }
-      
+      const balanceData = balanceResponse?.data || balanceResponse;
       if (balanceData?.success === false) {
         throw new Error(balanceData.error || 'Balance fetch failed');
       }
-      
-      if (balanceData?.balance) {
-        krakenBalance = balanceData.balance;
-      } else if (typeof balanceData === 'object' && !balanceData.error) {
-        const { success, ...possibleBalance } = balanceData;
-        if (Object.keys(possibleBalance).length > 0) {
-          krakenBalance = possibleBalance;
-        }
-      }
-      
-      if (!krakenBalance || typeof krakenBalance !== 'object') {
-        throw new Error('Invalid balance response');
-      }
+
+      usdBalance = parseFloat(balanceData?.usd_balance ?? balanceData?.available_usd_balance ?? 0) || 0;
+      krakenHoldings = Array.isArray(balanceData?.holdings) ? balanceData.holdings : [];
 
       console.log('[syncKrakenBalance] Balance OK -', Date.now() - startTime, 'ms');
     } catch (balanceError) {
@@ -215,7 +202,6 @@ async function handleSync(req, startTime) {
     }
 
     // UPDATE WALLET
-    const usdBalance = parseFloat(krakenBalance.ZUSD || krakenBalance.USD || 0);
     console.log('[syncKrakenBalance] USD:', usdBalance);
 
     try {
@@ -276,15 +262,15 @@ async function handleSync(req, startTime) {
       const holdings = [];
       const createPromises = [];
       
-      for (const [asset, balance] of Object.entries(krakenBalance)) {
-        const qty = parseFloat(balance);
-        if (asset === 'ZUSD' || asset === 'USD' || qty <= 0.00001) continue;
-        
-        const symbol = parseKrakenAsset(asset);
-        const costBasis = costBasisMap[symbol]?.avgPrice || 0;
-        
+      for (const holding of krakenHoldings) {
+        const qty = parseFloat(holding.quantity) || 0;
+        if (qty <= 0.00001) continue;
+
+        const symbol = parseKrakenAsset(holding.symbol);
+        const costBasis = costBasisMap[symbol]?.avgPrice || holding.average_cost_price || 0;
+
         holdings.push({ symbol, balance: qty, avgCost: costBasis });
-        
+
         createPromises.push(
           base44.asServiceRole.entities.Holding.create({
             symbol,
