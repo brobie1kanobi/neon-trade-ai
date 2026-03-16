@@ -679,7 +679,7 @@ For each asset:
     console.log('[MarketIntelligence] Market regime:', marketIntelligence?.market_regime);
 
     // Persist actionable signals for auto-trader (global, short-lived)
-    if (timeLeft() > 4000) {
+    if (timeLeft() > 1500) {
       try {
         const actionable = enhancedRecommendations.filter(r =>
           (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50
