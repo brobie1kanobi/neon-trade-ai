@@ -482,9 +482,38 @@ For each asset:
     console.log('[MarketIntelligence] Parsed recommendations count:', recommendations.length);
     console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
 
+    // Normalize LLM outputs before filtering/enrichment
+    const normalizedRecommendations = recommendations.map((r) => {
+      const rawConfidence = Number(r.confidence_score || 0);
+      const normalizedConfidence = rawConfidence > 0 && rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence;
+      const normalizedAction = String(r.optimal_action || r.action || 'hold').toLowerCase().replace(/\s+/g, '_');
+      const actionMap = {
+        strongbuy: 'strong_buy',
+        strong_buy: 'strong_buy',
+        buy: 'buy',
+        buy_on_dip: 'buy',
+        accumulate: 'buy',
+        hold: 'hold',
+        wait: 'hold',
+        neutral: 'hold',
+        sell: 'sell',
+        strongsell: 'strong_sell',
+        strong_sell: 'strong_sell',
+        avoid: 'sell',
+        not_applicable: 'hold'
+      };
+
+      return {
+        ...r,
+        confidence_score: Math.max(0, Math.min(100, normalizedConfidence)),
+        action: actionMap[String(r.action || normalizedAction).toLowerCase().replace(/\s+/g, '_')] || 'hold',
+        optimal_action: actionMap[normalizedAction] || 'hold'
+      };
+    });
+
     // Enrich recommendations with trade history data
     // CRITICAL: Apply strict filtering to prevent buying into downtrends
-    const enhancedRecommendations = recommendations
+    const enhancedRecommendations = normalizedRecommendations
       .filter(r => r.confidence_score >= 40) // Lower filter to show more options
       .map(r => {
         // Get historical data for this asset
