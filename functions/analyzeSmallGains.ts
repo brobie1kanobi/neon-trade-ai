@@ -490,6 +490,29 @@ For each asset:
       console.log('[MarketIntelligence] Synthesized recommendations from hot_signals:', llmResponse.recommendations.length);
     }
 
+    if (!llmResponse.recommendations || llmResponse.recommendations.length === 0) {
+      llmResponse.recommendations = marketData.map((m) => {
+        const change24h = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
+        const action = change24h >= 0 ? 'buy' : 'hold';
+        const confidence = change24h >= 3 ? 65 : change24h >= 0 ? 58 : 45;
+        return {
+          symbol: String(m.symbol || '').toUpperCase(),
+          confidence_score: confidence,
+          predicted_direction: change24h >= 0 ? 'up' : 'down',
+          predicted_move_pct: Math.abs(change24h),
+          reasoning: 'Heuristic fallback based on live market momentum',
+          action,
+          optimal_action: action,
+          timing_window: '4h',
+          stop_loss_pct: 2,
+          take_profit_pct: 3,
+          current_price: Number(m.price || m.current_price || 0),
+          current_24h_change: change24h,
+        };
+      }).filter((r) => r.confidence_score >= 55).slice(0, 6);
+      console.log('[MarketIntelligence] Synthesized recommendations from marketData:', llmResponse.recommendations.length);
+    }
+
     console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
