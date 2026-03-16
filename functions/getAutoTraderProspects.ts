@@ -315,6 +315,15 @@ Deno.serve(async (req) => {
     for (const sig of signals) {
       signalMap.set(sig.asset_symbol, sig);
     }
+
+    const reloadSignals = async () => {
+      const latest = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+      const now = new Date();
+      const fresh = latest.filter(s => !s.expires_at || new Date(s.expires_at) > now);
+      signalMap.clear();
+      for (const sig of fresh) signalMap.set(sig.asset_symbol, sig);
+      return fresh;
+    };
     
     // If no signals exist, trigger generation
     if (signals.length === 0) {
@@ -326,15 +335,33 @@ Deno.serve(async (req) => {
           forceRefresh: true 
         });
         
-        signals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
-        const now = new Date();
-        signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
-        for (const sig of signals) {
-          signalMap.set(sig.asset_symbol, sig);
-        }
+        signals = await reloadSignals();
         console.log('[Prospects] Generated and loaded', signals.length, 'signals');
       } catch (genErr) {
         console.error('[Prospects] Signal generation failed:', genErr.message);
+      }
+    }
+
+    // If signals exist but none are actionable for the watched assets, refresh from analyzeSmallGains
+    const watchedSymbols = prefs.map(p => String(p.symbol || '').toUpperCase());
+    const hasActionableStoredSignal = watchedSymbols.some((symbol) => {
+      const sig = signalMap.get(symbol);
+      const type = String(sig?.signal_type || '').toLowerCase();
+      return type === 'buy' || type === 'strong_buy';
+    });
+
+    if (!hasActionableStoredSignal && watchedSymbols.length > 0) {
+      console.log('[Prospects] Stored signals are stale/non-actionable - refreshing via analyzeSmallGains...');
+      try {
+        await base44.functions.invoke('analyzeSmallGains', {
+          symbols: watchedSymbols,
+          includeMarketIntelligence: true,
+          includeTradeHistory: true
+        });
+        signals = await reloadSignals();
+        console.log('[Prospects] Reloaded signals after analyzeSmallGains:', signals.length);
+      } catch (refreshErr) {
+        console.error('[Prospects] analyzeSmallGains refresh failed:', refreshErr.message);
       }
     }
     
