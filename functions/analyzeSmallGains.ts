@@ -554,11 +554,13 @@ For each asset:
         not_applicable: 'hold'
       };
 
+      const mappedAction = actionMap[String(r.action || normalizedAction).toLowerCase().replace(/\s+/g, '_')] || 'hold';
+      const mappedOptimalAction = actionMap[normalizedAction] || mappedAction || 'hold';
       return {
         ...r,
         confidence_score: Math.max(0, Math.min(100, normalizedConfidence)),
-        action: actionMap[String(r.action || normalizedAction).toLowerCase().replace(/\s+/g, '_')] || 'hold',
-        optimal_action: actionMap[normalizedAction] || 'hold'
+        action: mappedAction,
+        optimal_action: mappedOptimalAction
       };
     });
 
