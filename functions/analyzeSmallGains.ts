@@ -462,6 +462,34 @@ For each asset:
       upcoming_catalysts: marketIntelResp?.upcoming_catalysts || []
     };
 
+    // Fallback: if the recommendation step returns nothing but market intelligence has hot signals,
+    // synthesize actionable recommendations so UI + auto-trader stay aligned.
+    if ((!llmResponse.recommendations || llmResponse.recommendations.length === 0) && llmResponse.market_intelligence?.hot_signals?.length) {
+      const hotSignals = llmResponse.market_intelligence.hot_signals;
+      llmResponse.recommendations = hotSignals.map((hs) => {
+        const symbol = String(hs.symbol || '').toUpperCase();
+        const marketQuote = marketData.find((m) => String(m.symbol || '').toUpperCase() === symbol);
+        const predictedMove = Number(hs.predicted_move_pct || 0);
+        const confidence = Math.max(55, Math.min(78, 55 + Math.round(Math.abs(predictedMove) * 4)));
+        const action = predictedMove >= 0 ? 'buy' : 'sell';
+        return {
+          symbol,
+          confidence_score: confidence,
+          predicted_direction: predictedMove >= 0 ? 'up' : 'down',
+          predicted_move_pct: predictedMove,
+          reasoning: hs.signal_type ? `Market intelligence signal: ${hs.signal_type}` : 'Market intelligence hot signal',
+          action,
+          optimal_action: action,
+          timing_window: hs.timing || '4h',
+          stop_loss_pct: 2,
+          take_profit_pct: Math.max(3, Math.abs(predictedMove)),
+          current_price: Number(marketQuote?.price || marketQuote?.current_price || 0),
+          current_24h_change: Number(marketQuote?.change_24h_percent || marketQuote?.price_change_percentage_24h || 0),
+        };
+      });
+      console.log('[MarketIntelligence] Synthesized recommendations from hot_signals:', llmResponse.recommendations.length);
+    }
+
     console.log('[MarketIntelligence] Raw LLM response:', JSON.stringify(llmResponse, null, 2));
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
