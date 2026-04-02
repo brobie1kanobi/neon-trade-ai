@@ -26,10 +26,11 @@ export default function LossCapHaltStatus() {
 
   // Auto-resume check (frontend side - backend also checks)
   useEffect(() => {
+    if (!settings) return;
     if (isHalted && triggeredAt > 0 && now >= resumeAtMs) {
       updateSetting("bad_days_active", false);
     }
-  }, [isHalted, triggeredAt, now, resumeAtMs, updateSetting]);
+  }, [settings, isHalted, triggeredAt, now, resumeAtMs, updateSetting]);
 
   const handleManualResume = async () => {
     setResuming(true);

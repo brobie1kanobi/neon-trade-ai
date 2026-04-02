@@ -133,13 +133,14 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         payload: { term: term, assetType: type }
       });
 
-      const symbols = data.map((d) => d.symbol);
+      const exchangeResults = Array.isArray(data) ? data.filter((asset) => asset?.source === 'kraken' || type !== 'crypto') : [];
+      const symbols = exchangeResults.map((d) => d.symbol);
       const { data: priceData } = await base44.functions.invoke('getMarketData', {
         action: 'getWatchlistData',
         payload: { cryptoSymbols: type === 'crypto' ? symbols : [], stockSymbols: type === 'stocks' ? symbols : [] }
       });
 
-      const resultsWithPrices = data.map((asset) => {
+      const resultsWithPrices = exchangeResults.map((asset) => {
         const pData = priceData.find((p) => p.symbol === asset.symbol);
         return { ...asset, price: pData?.price };
       });

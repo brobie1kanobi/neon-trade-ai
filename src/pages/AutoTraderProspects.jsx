@@ -134,6 +134,13 @@ export default function AutoTraderProspects() {
         console.warn('[Prospects] Balance preflight failed, proceeding cautiously:', balErr?.message);
       }
       
+      // Prefetch a trade WS token
+      let __wsToken = null;
+      try {
+        const __t = await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade' } });
+        __wsToken = (__t?.data || __t)?.token || null;
+      } catch (_) {}
+
       // Step 1: Execute market BUY order
       const buyResponse = await base44.functions.invoke('krakenTrade', {
         action: 'place_order',

@@ -716,39 +716,28 @@ async function searchAssets(term, assetType) {
         console.warn('[searchAssets] Kraken search failed:', e.message);
       }
       
-      // PRIORITY 2: Supplement with CoinGecko for names and icons
+      // PRIORITY 2: Use CoinGecko only to enrich Kraken-matched assets with names/icons
+      // Do NOT append non-Kraken assets here, otherwise manual trading shows coins
+      // that are not available on the connected exchange.
       const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
       const url = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(term)}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
       const response = await fetchWithTimeout(url);
       if (response && response.ok) {
         const data = await response.json();
         if (data && Array.isArray(data.coins)) {
-          for (const c of data.coins.slice(0, 10)) {
+          for (const c of data.coins.slice(0, 20)) {
             const symbol = c.symbol.toUpperCase();
-            // Update existing Kraken results with CoinGecko metadata
             const existing = results.find(r => r.symbol === symbol);
             if (existing) {
               existing.name = c.name;
               existing.icon_url = c.thumb;
-            } else if (!foundSymbols.has(symbol)) {
-              // Add new results from CoinGecko (may not be tradeable on Kraken)
-              foundSymbols.add(symbol);
-              results.push({
-                symbol: symbol,
-                name: c.name,
-                icon_url: c.thumb,
-                source: 'coingecko'
-              });
             }
           }
         }
       }
       
-      // Sort: Kraken results first (tradeable), then others
+      // Sort exact match first, but keep Kraken-only results
       results.sort((a, b) => {
-        if (a.source === 'kraken' && b.source !== 'kraken') return -1;
-        if (a.source !== 'kraken' && b.source === 'kraken') return 1;
-        // Exact match priority
         if (a.symbol === searchTerm && b.symbol !== searchTerm) return -1;
         if (a.symbol !== searchTerm && b.symbol === searchTerm) return 1;
         return 0;
