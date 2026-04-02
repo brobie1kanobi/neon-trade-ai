@@ -15,14 +15,12 @@ export default function LossCapHaltStatus() {
     return () => clearInterval(interval);
   }, []);
 
-  if (!settings) return null;
-
-  const isHalted = settings.bad_days_active === true;
-  const triggeredAt = settings.bad_days_triggered_at ? new Date(settings.bad_days_triggered_at).getTime() : 0;
-  const haltHours = Math.min(24, Math.max(6, settings.loss_cap_halt_hours || 12));
+  const isHalted = settings?.bad_days_active === true;
+  const triggeredAt = settings?.bad_days_triggered_at ? new Date(settings.bad_days_triggered_at).getTime() : 0;
+  const haltHours = Math.min(24, Math.max(6, settings?.loss_cap_halt_hours || 12));
   const haltDurationMs = haltHours * 60 * 60 * 1000;
   const resumeAtMs = triggeredAt + haltDurationMs;
-  const reason = settings.bad_days_reason || "Daily loss cap exceeded";
+  const reason = settings?.bad_days_reason || "Daily loss cap exceeded";
 
   // Auto-resume check (frontend side - backend also checks)
   useEffect(() => {
@@ -31,6 +29,8 @@ export default function LossCapHaltStatus() {
       updateSetting("bad_days_active", false);
     }
   }, [settings, isHalted, triggeredAt, now, resumeAtMs, updateSetting]);
+
+  if (!settings) return null;
 
   const handleManualResume = async () => {
     setResuming(true);

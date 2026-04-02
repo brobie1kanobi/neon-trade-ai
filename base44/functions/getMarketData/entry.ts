@@ -671,76 +671,49 @@ async function searchAssets(term, assetType) {
         }
 
         if (krakenPairs) {
-          // Filter USD pairs and match search term
           const usdPairs = Object.entries(krakenPairs)
-              .filter(([pairName, pairInfo]) => {
-                // Only USD pairs (not USDT, not EUR, etc)
-                const isUsdPair = pairName.endsWith('USD') || pairName.endsWith('ZUSD');
-                if (!isUsdPair) return false;
-                
-                // wsname is the canonical trading symbol (e.g., "XRP/USD", "BTC/USD")
-                const wsname = pairInfo.wsname || '';
-                const wsnameBase = wsname.split('/')[0] || '';
-                const altname = pairInfo.altname || '';
-                
-                // Match against search term - use wsname as primary (it's the actual trading symbol)
-                return wsnameBase.toUpperCase().includes(searchTerm) ||
-                       altname.toUpperCase().includes(searchTerm);
-              })
-              .slice(0, 10);
-            
-            for (const [pairName, pairInfo] of usdPairs) {
-              // Use wsname as the canonical symbol (e.g., "XRP/USD" -> "XRP")
-              // This is what Kraken actually uses for trading
+            .filter(([pairName, pairInfo]) => {
+              const isUsdPair = pairName.endsWith('USD') || pairName.endsWith('ZUSD');
+              if (!isUsdPair) return false;
+
               const wsname = pairInfo.wsname || '';
-              let symbol = wsname.split('/')[0] || '';
-              
-              // Only normalize XBT->BTC, keep everything else as-is (including XRP)
+              let symbol = (wsname.split('/')[0] || '').toUpperCase();
               if (symbol === 'XBT') symbol = 'BTC';
-              
-              symbol = symbol.toUpperCase();
-              
-              if (symbol && !foundSymbols.has(symbol)) {
-                foundSymbols.add(symbol);
-                results.push({
-                  symbol: symbol,
-                  name: symbol,
-                  icon_url: null,
-                  source: 'kraken'
-                });
-              }
+
+              const altname = String(pairInfo.altname || '').toUpperCase();
+              const pairUpper = String(pairName || '').toUpperCase();
+              const query = searchTerm.toUpperCase();
+
+              return symbol === query || symbol.startsWith(query) || altname.startsWith(query) || pairUpper.startsWith(query);
+            })
+            .slice(0, 20);
+
+          for (const [, pairInfo] of usdPairs) {
+            const wsname = pairInfo.wsname || '';
+            let symbol = (wsname.split('/')[0] || '').toUpperCase();
+            if (symbol === 'XBT') symbol = 'BTC';
+
+            if (symbol && !foundSymbols.has(symbol)) {
+              foundSymbols.add(symbol);
+              results.push({
+                symbol,
+                name: symbol,
+                icon_url: null,
+                source: 'kraken'
+              });
             }
-            console.log(`[searchAssets] Found ${results.length} Kraken matches for "${term}"`);
           }
+
+          console.log(`[searchAssets] Found ${results.length} Kraken-only matches for "${term}"`);
+        }
       } catch (e) {
         console.warn('[searchAssets] Kraken search failed:', e.message);
       }
-      
-      // PRIORITY 2: Use CoinGecko only to enrich Kraken-matched assets with names/icons
-      // Do NOT append non-Kraken assets here, otherwise manual trading shows coins
-      // that are not available on the connected exchange.
-      const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
-      const url = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(term)}${coinGeckoKey ? `&x_cg_demo_api_key=${coinGeckoKey}` : ''}`;
-      const response = await fetchWithTimeout(url);
-      if (response && response.ok) {
-        const data = await response.json();
-        if (data && Array.isArray(data.coins)) {
-          for (const c of data.coins.slice(0, 20)) {
-            const symbol = c.symbol.toUpperCase();
-            const existing = results.find(r => r.symbol === symbol);
-            if (existing) {
-              existing.name = c.name;
-              existing.icon_url = c.thumb;
-            }
-          }
-        }
-      }
-      
-      // Sort exact match first, but keep Kraken-only results
+
       results.sort((a, b) => {
         if (a.symbol === searchTerm && b.symbol !== searchTerm) return -1;
         if (a.symbol !== searchTerm && b.symbol === searchTerm) return 1;
-        return 0;
+        return a.symbol.localeCompare(b.symbol);
       });
       
     } else if (assetType === 'stocks') {
