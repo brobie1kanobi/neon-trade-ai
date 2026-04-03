@@ -980,10 +980,12 @@ Deno.serve(async (req) => {
     // Proceed without connection entity; krakenApi will verify permissions
 
     // Lazy WS token fetcher to avoid rate-limit/work when order will be blocked early
-    let wsToken = requestBody?.wsToken || requestBody?.token;
+    let wsToken = typeof requestBody?.wsToken === 'string' && requestBody.wsToken.trim()
+      ? requestBody.wsToken.trim()
+      : (typeof requestBody?.token === 'string' && requestBody.token.trim() ? requestBody.token.trim() : null);
     let tokenData;
     async function getWsTokenLazy(cost = 1, forceRefresh = false) {
-      if (wsToken && !forceRefresh) return wsToken;
+      if (typeof wsToken === 'string' && wsToken.trim() && !forceRefresh) return wsToken.trim();
       console.log('[krakenTrade] Getting WebSocket token (lazy, cache-friendly)...');
       await tradeRateGate(user.email, cost);
       const tokenResponse = await Promise.race([
@@ -991,16 +993,25 @@ Deno.serve(async (req) => {
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
       ]);
       tokenData = tokenResponse?.data || tokenResponse;
-      wsToken = tokenData?.token;
+      const nextToken = typeof tokenData?.token === 'string' ? tokenData.token.trim() : '';
       if (tokenData?.used_key_type && tokenData.used_key_type !== 'trade') {
         throw new Error('Invalid token source: expected TRADE key');
       }
-      if (!wsToken) {
+      if (!nextToken) {
         const detail = (tokenData && (tokenData.error || tokenData.used_key_type)) ? (`Failed to get WebSocket token (${tokenData.used_key_type || 'unknown'} key)`) : 'Failed to get WebSocket token';
         throw new Error(detail);
       }
+      wsToken = nextToken;
       console.log('[krakenTrade] ✅ Got WebSocket token');
       return wsToken;
+    }
+
+    async function refreshWsToken(cost = 1) {
+      const freshToken = await getWsTokenLazy(cost, true);
+      if (!freshToken) {
+        throw new Error('WS token refresh returned no token');
+      }
+      return freshToken;
     }
 
     // ============================================
@@ -1076,14 +1087,9 @@ Deno.serve(async (req) => {
         if (isPerm) {
           try {
             console.warn('[krakenTrade] Forcing WS token refresh and retrying BUY once...');
-            const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
-            const freshToken = refresh?.data?.token || refresh?.token;
-            if (freshToken) {
-              buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams, 5, base44);
-              console.log('[krakenTrade] ✅ BUY executed after token refresh:', buyResult.order_id);
-            } else {
-              throw new Error('WS token refresh returned no token');
-            }
+            const freshToken = await refreshWsToken(2);
+            buyResult = await executeKrakenTradeWithRetry(freshToken, buyParams, 5, base44);
+            console.log('[krakenTrade] ✅ BUY executed after token refresh:', buyResult.order_id);
           } catch (retryErr) {
             return Response.json({
               success: false,
@@ -1638,9 +1644,8 @@ Deno.serve(async (req) => {
       } catch (firstErr) {
         if (/permission denied/i.test(firstErr?.message || '')) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
-          const refresh = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true }, internal: true });
-          const freshToken = refresh?.data?.token || refresh?.token;
-          tradeResult = await executeKrakenTradeWithRetry(freshToken || wsToken, orderParams, 5, base44);
+          const freshToken = await refreshWsToken(2);
+          tradeResult = await executeKrakenTradeWithRetry(freshToken, orderParams, 5, base44);
         } else {
           throw firstErr;
         }
@@ -1707,7 +1712,7 @@ Deno.serve(async (req) => {
 
       console.log('[krakenTrade] Cancel orders:', orderIds);
 
-      const cancelResult = await cancelKrakenOrder(wsToken, orderIds);
+      const cancelResult = await cancelKrakenOrder(await getWsTokenLazy(2), orderIds);
 
       console.log('[krakenTrade] ✅ Orders cancelled:', cancelResult);
 
