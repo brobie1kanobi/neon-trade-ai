@@ -33,6 +33,83 @@ Deno.serve(async (req) => {
 
     console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence, 'trade history:', includeTradeHistory);
 
+    const parseJsonString = (value, fallback = []) => {
+      if (!value) return fallback;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    };
+
+    const buildCacheKey = (symbolList) => {
+      const normalized = [...new Set((symbolList || []).map((s) => String(s || '').toUpperCase()).filter(Boolean))].sort();
+      return `market-intel:${normalized.join(',')}`;
+    };
+
+    const getCachedMarketIntelligence = async (cacheKey) => {
+      const records = await base44.asServiceRole.entities.MarketIntelligenceCache.filter({ cache_key: cacheKey });
+      const nowIso = new Date().toISOString();
+      const valid = records
+        .filter((record) => !record.expires_at || record.expires_at > nowIso)
+        .sort((a, b) => new Date(b.cached_at || b.created_date || 0) - new Date(a.cached_at || a.created_date || 0));
+
+      if (valid.length === 0) return null;
+
+      const record = valid[0];
+      return {
+        record,
+        payload: {
+          market_intelligence: {
+            market_sentiment_score: record.market_sentiment_score ?? 50,
+            market_regime: record.market_regime || 'range',
+            volatility_level: record.volatility_level || 'moderate',
+            momentum_direction: record.momentum_direction || 'neutral',
+            trend_strength: record.trend_strength || 'moderate',
+            short_term_outlook: record.short_term_outlook || '',
+            trading_recommendation: record.trading_recommendation || '',
+            best_opportunities: parseJsonString(record.best_opportunities_json, []),
+            avoid_list: parseJsonString(record.avoid_list_json, []),
+            hot_signals: parseJsonString(record.hot_signals_json, [])
+          },
+          market_summary: record.market_summary || 'Cached market summary',
+          upcoming_catalysts: parseJsonString(record.upcoming_catalysts_json, [])
+        }
+      };
+    };
+
+    const saveCachedMarketIntelligence = async (cacheKey, symbolList, intelPayload) => {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+      const marketIntel = intelPayload?.market_intelligence || {};
+      const cacheRecord = {
+        cache_key: cacheKey,
+        symbols_json: JSON.stringify([...new Set((symbolList || []).map((s) => String(s || '').toUpperCase()).filter(Boolean))].sort()),
+        market_sentiment_score: marketIntel.market_sentiment_score ?? 50,
+        market_regime: marketIntel.market_regime || 'range',
+        volatility_level: marketIntel.volatility_level || 'moderate',
+        momentum_direction: marketIntel.momentum_direction || 'neutral',
+        trend_strength: marketIntel.trend_strength || 'moderate',
+        short_term_outlook: marketIntel.short_term_outlook || '',
+        trading_recommendation: marketIntel.trading_recommendation || '',
+        best_opportunities_json: JSON.stringify(marketIntel.best_opportunities || []),
+        avoid_list_json: JSON.stringify(marketIntel.avoid_list || []),
+        hot_signals_json: JSON.stringify(marketIntel.hot_signals || []),
+        market_summary: intelPayload?.market_summary || 'Analysis complete',
+        upcoming_catalysts_json: JSON.stringify(intelPayload?.upcoming_catalysts || []),
+        cached_at: now.toISOString(),
+        expires_at: expiresAt
+      };
+
+      const existing = await base44.asServiceRole.entities.MarketIntelligenceCache.filter({ cache_key: cacheKey });
+      if (existing.length > 0) {
+        const latest = existing.sort((a, b) => new Date(b.cached_at || b.created_date || 0) - new Date(a.cached_at || a.created_date || 0))[0];
+        await base44.asServiceRole.entities.MarketIntelligenceCache.update(latest.id, cacheRecord);
+      } else {
+        await base44.asServiceRole.entities.MarketIntelligenceCache.create(cacheRecord);
+      }
+    };
+
     // Utility: add timeout to long operations to prevent 502s
     const withTimeout = (promise, ms = 15000, label = 'operation') => {
       return Promise.race([
@@ -48,6 +125,8 @@ Deno.serve(async (req) => {
     }).catch(() => []);
 
     const targetSymbols = symbols.length > 0 ? symbols : autoBuyPrefs.map(p => p.symbol);
+    const normalizedTargetSymbols = [...new Set(targetSymbols.map((s) => String(s || '').toUpperCase()).filter(Boolean))];
+    const marketIntelCacheKey = buildCacheKey(normalizedTargetSymbols);
 
     if (targetSymbols.length === 0) {
       return Response.json({
@@ -380,35 +459,47 @@ For each asset:
     Symbols of interest (prioritize if mentioned in news/social):\n${symbolsForIntel.map(s => '- ' + s).join('\n')}\n\nReturn: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), momentum_direction, trend_strength, short_term_outlook (1-2 sentences), trading_recommendation (one sentence), best_opportunities (up to 3 tickers), avoid_list (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
 
     let marketIntelResp;
-    try {
-      // Primary web-enabled model
-      marketIntelResp = await invokeLLM({
+    const cachedMarketIntel = includeMarketIntelligence ? await getCachedMarketIntelligence(marketIntelCacheKey) : null;
+
+    if (cachedMarketIntel) {
+      marketIntelResp = cachedMarketIntel.payload;
+      console.log('[MarketIntelligence] Using cached market intelligence for', marketIntelCacheKey);
+    } else {
+      try {
+        // Primary web-enabled model
+        marketIntelResp = await invokeLLM({
+              prompt: intelPrompt,
+              model: 'gemini_3_flash',
+              withWeb: true,
+              schema: intelSchema,
+              label: 'LLM market intelligence (web)',
+              timeoutMs: ensureTime()
+            });
+      } catch (eA) {
+        console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
+        try {
+          // Alternate web-enabled fallback model
+          marketIntelResp = await invokeLLM({
             prompt: intelPrompt,
             model: 'gemini_3_flash',
             withWeb: true,
             schema: intelSchema,
-            label: 'LLM market intelligence (web)',
+            label: 'LLM market intelligence (fallback web)',
             timeoutMs: ensureTime()
           });
-    } catch (eA) {
-      console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
-      try {
-        // Alternate web-enabled fallback model
-        marketIntelResp = await invokeLLM({
-          prompt: intelPrompt,
-          model: 'gemini_3_flash',
-          withWeb: true,
-          schema: intelSchema,
-          label: 'LLM market intelligence (fallback web)',
-          timeoutMs: ensureTime()
-        });
-      } catch (eB) {
-        console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
-        marketIntelResp = {
-          market_intelligence: { market_sentiment_score: 50, market_regime: 'Heuristic (LLM unavailable)', volatility_level: 'moderate' },
-          market_summary: 'Heuristic fallback used',
-          upcoming_catalysts: []
-        };
+        } catch (eB) {
+          console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
+          marketIntelResp = {
+            market_intelligence: { market_sentiment_score: 50, market_regime: 'Heuristic (LLM unavailable)', volatility_level: 'moderate' },
+            market_summary: 'Heuristic fallback used',
+            upcoming_catalysts: []
+          };
+        }
+      }
+
+      if (includeMarketIntelligence) {
+        await saveCachedMarketIntelligence(marketIntelCacheKey, normalizedTargetSymbols, marketIntelResp);
+        console.log('[MarketIntelligence] Saved market intelligence cache for', marketIntelCacheKey);
       }
     }
 

@@ -1,0 +1,96 @@
+{
+  "name": "MarketIntelligenceCache",
+  "type": "object",
+  "properties": {
+    "cache_key": {
+      "type": "string",
+      "description": "Deterministic cache key for the market intelligence request"
+    },
+    "symbols_json": {
+      "type": "string",
+      "description": "JSON stringified list of analyzed symbols"
+    },
+    "market_sentiment_score": {
+      "type": "number",
+      "description": "Cached market sentiment score 0-100"
+    },
+    "market_regime": {
+      "type": "string",
+      "description": "Cached market regime summary"
+    },
+    "volatility_level": {
+      "type": "string",
+      "description": "Cached market volatility level"
+    },
+    "momentum_direction": {
+      "type": "string",
+      "description": "Cached market momentum direction"
+    },
+    "trend_strength": {
+      "type": "string",
+      "description": "Cached market trend strength"
+    },
+    "short_term_outlook": {
+      "type": "string",
+      "description": "Cached short-term outlook"
+    },
+    "trading_recommendation": {
+      "type": "string",
+      "description": "Cached overall trading recommendation"
+    },
+    "best_opportunities_json": {
+      "type": "string",
+      "description": "JSON stringified list of best opportunity symbols"
+    },
+    "avoid_list_json": {
+      "type": "string",
+      "description": "JSON stringified list of symbols to avoid"
+    },
+    "hot_signals_json": {
+      "type": "string",
+      "description": "JSON stringified list of hot signal summaries"
+    },
+    "market_summary": {
+      "type": "string",
+      "description": "Cached human-readable market summary"
+    },
+    "upcoming_catalysts_json": {
+      "type": "string",
+      "description": "JSON stringified list of upcoming catalysts"
+    },
+    "cached_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache record was written"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache record expires"
+    }
+  },
+  "required": [
+    "cache_key",
+    "symbols_json",
+    "cached_at",
+    "expires_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
