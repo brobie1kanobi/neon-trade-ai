@@ -298,7 +298,7 @@ function LayoutContent({ children, currentPageName }) {
         {/* Bottom Navigation with safe area padding */}
         <nav className="fixed bottom-0 left-0 right-0 z-50 border-t select-none"
         style={{
-          backgroundColor: 'rgba(var(--primary-bg-rgb), 0.3)',
+          backgroundColor: 'var(--primary-bg)',
           borderColor: 'var(--border-color)',
           backdropFilter: 'blur(20px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
