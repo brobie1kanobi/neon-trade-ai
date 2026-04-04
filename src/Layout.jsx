@@ -323,8 +323,8 @@ function LayoutContent({ children, currentPageName }) {
           backdropFilter: 'blur(20px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
-          <div className="flex items-center justify-center pt-2 pb-6 px-4">
-            <div className="w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[78px]">
+          <div className="flex items-center justify-center pt-2 pb-6 px-3 sm:px-4">
+            <div className="w-full max-w-sm md:max-w-2xl lg:max-w-3xl xl:max-w-4xl relative h-[74px] sm:h-[78px]">
               {navigationItems.map((item) => {
                 const isActive = location.pathname === item.url;
 
@@ -354,34 +354,37 @@ function LayoutContent({ children, currentPageName }) {
                 const Component = item.url ? Link : 'button';
                 const props = item.url ? { to: item.url } : { onClick: item.action };
                 const positionClass = {
-                  'far-left': 'absolute left-[1%] bottom-0 sm:left-[4%]',
-                  'left': 'absolute left-[18%] bottom-0 sm:left-[22%]',
-                  'right-near': 'absolute left-[34%] bottom-0 sm:left-[38%]',
-                  'right-mid': 'absolute left-[62%] bottom-0 sm:left-[64%]',
-                  'right-far': 'absolute left-[78%] bottom-0 sm:left-[79%]',
-                  'right-edge': 'absolute left-[90%] bottom-3 -translate-x-1/2 sm:left-[92%]'
+                  'far-left': 'absolute left-[2%] bottom-0 md:left-[8%] lg:left-[12%]',
+                  'left': 'absolute left-[21%] bottom-0 md:left-[25%] lg:left-[29%]',
+                  'right-near': 'absolute left-[40%] bottom-0 md:left-[41%] lg:left-[45%]',
+                  'right-mid': 'absolute left-[62%] bottom-0 md:left-[59%] lg:left-[63%]',
+                  'right-far': 'absolute left-[82%] bottom-0 md:left-[75%] lg:left-[79%]',
+                  'right-edge': 'absolute right-[2%] bottom-4 md:right-[8%] lg:right-[12%]'
                 }[item.navPosition || 'right-mid'];
+                const buttonSizeClass = isNotification
+                  ? 'w-10 h-10 p-1.5 sm:w-10 sm:h-10'
+                  : 'w-[50px] h-[50px] p-1.5 text-[11px] sm:w-16 sm:h-16 sm:p-2 sm:text-base';
+                const iconSizeClass = isNotification ? 'w-4 h-4' : 'w-4 h-4 sm:w-5 sm:h-5';
+                const labelClass = 'text-[10px] leading-tight sm:text-xs font-medium';
 
                 return (
                   <Component
                     key={item.title}
                     {...props}
-                    className={`${positionClass} flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
-                      isNotification ? "w-10 h-10 p-1.5" : "w-16 h-16 p-2 text-base"
-                    }`}
+                    className={`${positionClass} flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${buttonSizeClass}`}
                     style={{
                       color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                       backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                     }}>
                     <div className="relative">
-                      <item.icon className={`${isNotification ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'neon-glow' : ''}`} />
+                      <item.icon className={`${iconSizeClass} ${isActive ? 'neon-glow' : ''}`} />
                       {isNotification && unreadCount > 0 && (
                         <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
                           {unreadCount > 9 ? '9+' : unreadCount}
                         </span>
                       )}
                     </div>
-                    {!isNotification && <span className="text-xs font-medium">{item.title}</span>}
+                    {!isNotification && <span className={labelClass}>{item.title}</span>}
                   </Component>);
               })}
             </div>
