@@ -354,12 +354,12 @@ function LayoutContent({ children, currentPageName }) {
                 const Component = item.url ? Link : 'button';
                 const props = item.url ? { to: item.url } : { onClick: item.action };
                 const positionClass = {
-                  'far-left': 'absolute left-0 bottom-0',
-                  'left': 'absolute left-[16%] bottom-0',
-                  'right-near': 'absolute left-[58%] bottom-0',
-                  'right-mid': 'absolute left-[72%] bottom-0',
-                  'right-far': 'absolute left-[86%] bottom-0',
-                  'right-edge': 'absolute right-0 bottom-3'
+                  'far-left': 'absolute left-[1%] bottom-0 sm:left-[4%]',
+                  'left': 'absolute left-[18%] bottom-0 sm:left-[22%]',
+                  'right-near': 'absolute left-[34%] bottom-0 sm:left-[38%]',
+                  'right-mid': 'absolute left-[62%] bottom-0 sm:left-[64%]',
+                  'right-far': 'absolute left-[78%] bottom-0 sm:left-[79%]',
+                  'right-edge': 'absolute left-[90%] bottom-3 -translate-x-1/2 sm:left-[92%]'
                 }[item.navPosition || 'right-mid'];
 
                 return (
