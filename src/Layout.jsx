@@ -152,24 +152,23 @@ function LayoutContent({ children, currentPageName }) {
 
   const darkMode = settings?.dark_mode !== false; // Default to dark mode
 
-  const navigationItems = [
-  {
-    title: "Dashboard",
-    url: createPageUrl("Dashboard"),
-    icon: Home,
-    navPosition: 'far-left'
-  },
-  {
-    title: "Portfolio",
-    url: createPageUrl("Portfolio"),
-    icon: PieChart,
-    navPosition: 'left'
-  },
-  {
+  // Left-side nav items (before mic)
+  const leftNavItems = [
+    { title: "Dashboard", url: createPageUrl("Dashboard"), icon: Home },
+    { title: "Portfolio", url: createPageUrl("Portfolio"), icon: PieChart },
+    { title: "AI Trader", action: () => {}, icon: Bot },
+  ];
+
+  // Right-side nav items (after mic)
+  const rightNavItems = [
+    { title: "Wallet", url: createPageUrl("Wallet"), icon: Wallet },
+    { title: "Settings", url: createPageUrl("Settings"), icon: Settings },
+  ];
+
+  const micItem = {
     title: "AI",
     action: () => {
       setIsAssistantOpen(true);
-      // Start mic automatically after modal renders
       setTimeout(() => {
         if (window && window.__assistantMic && typeof window.__assistantMic.start === 'function') {
           window.__assistantMic.start();
@@ -177,32 +176,13 @@ function LayoutContent({ children, currentPageName }) {
       }, 400);
     },
     icon: Mic,
-    isCentral: true
-  },
-  {
-    title: "AI Trader",
-    action: () => {},
-    icon: Bot,
-    navPosition: 'right-near'
-  },
-  {
-    title: "Wallet",
-    url: createPageUrl("Wallet"),
-    icon: Wallet,
-    navPosition: 'right-mid'
-  },
-  {
-    title: "Settings",
-    url: createPageUrl("Settings"),
-    icon: Settings,
-    navPosition: 'right-far'
-  },
-  {
+  };
+
+  const notificationItem = {
     title: "Notifications",
     action: () => setIsNotificationsOpen(true),
     icon: Bell,
-    navPosition: 'right-edge'
-  }];
+  };
 
   // Show the initial loading splash screen ONLY on the first load of a session
   if (showInitialSplash) {
@@ -323,67 +303,110 @@ function LayoutContent({ children, currentPageName }) {
           backdropFilter: 'blur(20px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
-          <div className="flex items-center justify-center pt-2 pb-6 px-4">
-            <div className="w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[78px]">
-              {navigationItems.map((item) => {
-                const isActive = location.pathname === item.url;
+          <div className="relative mx-auto w-full max-w-lg px-2 sm:px-4 md:max-w-xl lg:max-w-2xl">
+            {/* Mic button - always centered, raised above bar */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-20">
+              <LongPressTooltip
+                content={(
+                  <>
+                    <p className="font-semibold text-yellow-400 mb-1">Help, I'm trapped in a microphone button!</p>
+                    <p className="text-xs mb-1">I'm Neo, your AI assistant. Click me to release my market wisdom..</p>
+                    <p className="text-xs text-gray-300">Or, just ask me some questions, I'm here to help!</p>
+                  </>
+                )}
+                className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center"
+              >
+                <button
+                  onClick={micItem.action}
+                  className="bg-slate-950 text-lime-400 neon-glow flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-2xl select-none">
+                  <Mic className="w-6 h-6" />
+                </button>
+              </LongPressTooltip>
+            </div>
 
-                if (item.isCentral) {
+            {/* Notification button - mobile: top-right corner of bar; tablet/desktop: inline right */}
+            <button
+              onClick={notificationItem.action}
+              className="sm:hidden absolute right-2 top-1 z-20 flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 hover:shadow-lg select-none"
+              style={{
+                color: 'var(--text-secondary)',
+                backgroundColor: 'rgba(255, 255, 255, 0.05)'
+              }}>
+              <div className="relative">
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {/* Main button row */}
+            <div className="flex items-end pt-2 pb-4 sm:pb-5">
+              {/* LEFT group */}
+              <div className="flex items-end justify-end gap-1 sm:gap-3 md:gap-4 flex-1 pr-1 sm:pr-3">
+                {leftNavItems.map((item) => {
+                  const isActive = location.pathname === item.url;
+                  const Component = item.url ? Link : 'button';
+                  const props = item.url ? { to: item.url } : { onClick: item.action };
                   return (
-                    <LongPressTooltip
+                    <Component
                       key={item.title}
-                      content={(
-                        <>
-                          <p className="font-semibold text-yellow-400 mb-1">Help, I'm trapped in a microphone button!</p>
-                          <p className="text-xs mb-1">I'm Neo, your AI assistant. Click me to release my market wisdom..</p>
-                          <p className="text-xs text-gray-300">Or, just ask me some questions, I'm here to help!</p>
-                        </>
-                      )}
-                      className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center"
-                    >
-                      <button
-                        onClick={item.action}
-                        className="bg-slate-950 text-lime-400 absolute left-1/2 top-0 -translate-x-1/2 -translate-y-4 neon-glow flex flex-col items-center justify-center w-16 h-16 rounded-full shadow-2xl z-10 select-none">
-                        <item.icon className="w-6 h-6" />
-                      </button>
-                    </LongPressTooltip>
+                      {...props}
+                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 p-1 sm:p-2"
+                      style={{
+                        color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
+                        backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
+                      }}>
+                      <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
+                      <span className="text-[10px] sm:text-xs font-medium leading-tight">{item.title}</span>
+                    </Component>
                   );
-                }
+                })}
+              </div>
 
-                const isNotification = item.title === "Notifications";
-                const Component = item.url ? Link : 'button';
-                const props = item.url ? { to: item.url } : { onClick: item.action };
-                const positionClass = {
-                  'far-left': 'absolute left-[1%] bottom-0 sm:left-[4%]',
-                  'left': 'absolute left-[18%] bottom-0 sm:left-[22%]',
-                  'right-near': 'absolute left-[34%] bottom-0 sm:left-[38%]',
-                  'right-mid': 'absolute left-[62%] bottom-0 sm:left-[64%]',
-                  'right-far': 'absolute left-[78%] bottom-0 sm:left-[79%]',
-                  'right-edge': 'absolute left-[90%] bottom-3 -translate-x-1/2 sm:left-[92%]'
-                }[item.navPosition || 'right-mid'];
+              {/* CENTER spacer for mic */}
+              <div className="w-14 sm:w-16 flex-shrink-0" />
 
-                return (
-                  <Component
-                    key={item.title}
-                    {...props}
-                    className={`${positionClass} flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
-                      isNotification ? "w-10 h-10 p-1.5" : "w-16 h-16 p-2 text-base"
-                    }`}
-                    style={{
-                      color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
-                      backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
-                    }}>
-                    <div className="relative">
-                      <item.icon className={`${isNotification ? 'w-4 h-4' : 'w-5 h-5'} ${isActive ? 'neon-glow' : ''}`} />
-                      {isNotification && unreadCount > 0 && (
-                        <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
-                          {unreadCount > 9 ? '9+' : unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    {!isNotification && <span className="text-xs font-medium">{item.title}</span>}
-                  </Component>);
-              })}
+              {/* RIGHT group */}
+              <div className="flex items-end justify-start gap-1 sm:gap-3 md:gap-4 flex-1 pl-1 sm:pl-3">
+                {rightNavItems.map((item) => {
+                  const isActive = location.pathname === item.url;
+                  const Component = item.url ? Link : 'button';
+                  const props = item.url ? { to: item.url } : { onClick: item.action };
+                  return (
+                    <Component
+                      key={item.title}
+                      {...props}
+                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 p-1 sm:p-2"
+                      style={{
+                        color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
+                        backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
+                      }}>
+                      <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
+                      <span className="text-[10px] sm:text-xs font-medium leading-tight">{item.title}</span>
+                    </Component>
+                  );
+                })}
+                {/* Notification button - tablet/desktop inline */}
+                <button
+                  onClick={notificationItem.action}
+                  className="hidden sm:flex flex-col items-center justify-center rounded-lg transition-all duration-200 hover:shadow-lg shadow-sm select-none w-10 h-10 sm:w-10 sm:h-10 md:w-11 md:h-11 p-1.5 self-center"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                  }}>
+                  <div className="relative">
+                    <Bell className="w-4 h-4" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </nav>
