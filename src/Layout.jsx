@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell, Activity } from "lucide-react";
+import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AssistantModal from "./components/ai/AssistantModal";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
@@ -183,11 +183,6 @@ function LayoutContent({ children, currentPageName }) {
     icon: Wallet
   },
   {
-    title: "AI Trader",
-    action: () => {},
-    icon: Activity
-  },
-  {
     title: "Settings",
     url: createPageUrl("Settings"),
     icon: Settings
@@ -318,7 +313,7 @@ function LayoutContent({ children, currentPageName }) {
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
           <div className="flex items-center justify-center pt-2 pb-6 px-4">
-            <div className="flex items-end justify-between w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[70px] px-2 sm:px-4">
+            <div className="flex items-end justify-around w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[70px]">
               {navigationItems.map((item) => {
                 const isActive = location.pathname === item.url;
 
@@ -352,7 +347,7 @@ function LayoutContent({ children, currentPageName }) {
                     key={item.title}
                     {...props}
                     className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
-                      isNotification ? "w-10 h-10 p-1.5" : item.title === "AI Trader" ? "w-14 h-14 p-2 text-base" : "w-16 h-16 p-2 text-base"
+                      isNotification ? "w-10 h-10 p-1.5 ml-1" : "w-16 h-16 p-2 text-base"
                     }`}
                     style={{
                       color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
@@ -366,7 +361,7 @@ function LayoutContent({ children, currentPageName }) {
                         </span>
                       )}
                     </div>
-                    {!isNotification && <span className="text-[10px] font-medium text-center leading-tight">{item.title}</span>}
+                    {!isNotification && <span className="text-xs font-medium">{item.title}</span>}
                   </Component>);
               })}
             </div>
