@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell } from "lucide-react";
+import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell, Bot } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import AssistantModal from "./components/ai/AssistantModal";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
@@ -156,12 +156,14 @@ function LayoutContent({ children, currentPageName }) {
   {
     title: "Dashboard",
     url: createPageUrl("Dashboard"),
-    icon: Home
+    icon: Home,
+    navPosition: 'far-left'
   },
   {
     title: "Portfolio",
     url: createPageUrl("Portfolio"),
-    icon: PieChart
+    icon: PieChart,
+    navPosition: 'left'
   },
   {
     title: "AI",
@@ -178,19 +180,28 @@ function LayoutContent({ children, currentPageName }) {
     isCentral: true
   },
   {
+    title: "AI Trader",
+    action: () => {},
+    icon: Bot,
+    navPosition: 'right-near'
+  },
+  {
     title: "Wallet",
     url: createPageUrl("Wallet"),
-    icon: Wallet
+    icon: Wallet,
+    navPosition: 'right-mid'
   },
   {
     title: "Settings",
     url: createPageUrl("Settings"),
-    icon: Settings
+    icon: Settings,
+    navPosition: 'right-far'
   },
   {
     title: "Notifications",
     action: () => setIsNotificationsOpen(true),
-    icon: Bell
+    icon: Bell,
+    navPosition: 'right-edge'
   }];
 
   // Show the initial loading splash screen ONLY on the first load of a session
@@ -313,7 +324,7 @@ function LayoutContent({ children, currentPageName }) {
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
           <div className="flex items-center justify-center pt-2 pb-6 px-4">
-            <div className="flex items-end justify-around w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[70px]">
+            <div className="w-full max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl relative h-[78px]">
               {navigationItems.map((item) => {
                 const isActive = location.pathname === item.url;
 
@@ -331,7 +342,8 @@ function LayoutContent({ children, currentPageName }) {
                       className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center"
                     >
                       <button
-                        onClick={item.action} className="bg-slate-950 text-lime-400 mx-auto my-12 absolute left-1/2 transform -translate-x-1/2 neon-glow flex flex-col items-center justify-center -mt-6 from-green-400 to-green-500 w-16 h-16 rounded-full shadow-2xl z-10 select-none">
+                        onClick={item.action}
+                        className="bg-slate-950 text-lime-400 absolute left-1/2 top-0 -translate-x-1/2 -translate-y-4 neon-glow flex flex-col items-center justify-center w-16 h-16 rounded-full shadow-2xl z-10 select-none">
                         <item.icon className="w-6 h-6" />
                       </button>
                     </LongPressTooltip>
@@ -341,13 +353,21 @@ function LayoutContent({ children, currentPageName }) {
                 const isNotification = item.title === "Notifications";
                 const Component = item.url ? Link : 'button';
                 const props = item.url ? { to: item.url } : { onClick: item.action };
-                
+                const positionClass = {
+                  'far-left': 'absolute left-0 bottom-0',
+                  'left': 'absolute left-[16%] bottom-0',
+                  'right-near': 'absolute left-[58%] bottom-0',
+                  'right-mid': 'absolute left-[72%] bottom-0',
+                  'right-far': 'absolute left-[86%] bottom-0',
+                  'right-edge': 'absolute right-0 bottom-3'
+                }[item.navPosition || 'right-mid'];
+
                 return (
                   <Component
                     key={item.title}
                     {...props}
-                    className={`flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
-                      isNotification ? "w-10 h-10 p-1.5 ml-1" : "w-16 h-16 p-2 text-base"
+                    className={`${positionClass} flex flex-col items-center gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none ${
+                      isNotification ? "w-10 h-10 p-1.5" : "w-16 h-16 p-2 text-base"
                     }`}
                     style={{
                       color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
