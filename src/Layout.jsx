@@ -392,7 +392,7 @@ function LayoutContent({ children, currentPageName }) {
                 {/* Notification button - tablet/desktop inline */}
                 <button
                   onClick={notificationItem.action}
-                  className="hidden md:flex flex-col items-center justify-center rounded-lg transition-all duration-200 hover:shadow-lg shadow-sm select-none w-10 h-10 md:w-11 md:h-11 p-1.5 self-center"
+                  className="hidden md:flex flex-col items-center justify-center rounded-lg transition-all duration-200 hover:shadow-lg shadow-sm select-none w-10 h-10 md:w-11 md:h-11 p-1.5 self-center ml-auto"
                   style={{
                     color: 'var(--text-secondary)',
                     backgroundColor: 'rgba(255, 255, 255, 0.05)'
