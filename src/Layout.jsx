@@ -298,11 +298,10 @@ function LayoutContent({ children, currentPageName }) {
         {/* Bottom Navigation with safe area padding */}
         <nav className="fixed bottom-0 left-0 right-0 z-50 border-t select-none"
         style={{
-          backgroundColor: darkMode ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: 'rgba(var(--primary-bg-rgb), 0.3)',
           borderColor: 'var(--border-color)',
           backdropFilter: 'blur(20px)',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          minHeight: '72px'
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
           <div className="relative mx-auto w-full max-w-[95%] sm:max-w-xl md:max-w-2xl lg:max-w-3xl px-2 sm:px-4">
             {/* Mic button - always centered, raised above bar */}
