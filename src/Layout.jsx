@@ -303,7 +303,7 @@ function LayoutContent({ children, currentPageName }) {
           backdropFilter: 'blur(20px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}>
-          <div className="relative mx-auto w-full max-w-lg px-2 sm:px-4 md:max-w-xl lg:max-w-2xl">
+          <div className="relative mx-auto w-full max-w-[95%] sm:max-w-xl md:max-w-2xl lg:max-w-3xl px-2 sm:px-4">
             {/* Mic button - always centered, raised above bar */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-20">
               <LongPressTooltip
@@ -324,16 +324,16 @@ function LayoutContent({ children, currentPageName }) {
               </LongPressTooltip>
             </div>
 
-            {/* Notification button - mobile: top-right corner of bar; tablet/desktop: inline right */}
+            {/* Notification button - mobile only: top-right corner of bar */}
             <button
               onClick={notificationItem.action}
-              className="sm:hidden absolute right-2 top-1 z-20 flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 hover:shadow-lg select-none"
+              className="md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 rounded-md transition-all duration-200 hover:shadow-lg select-none"
               style={{
                 color: 'var(--text-secondary)',
                 backgroundColor: 'rgba(255, 255, 255, 0.05)'
               }}>
               <div className="relative">
-                <Bell className="w-4 h-4" />
+                <Bell className="w-3.5 h-3.5" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
                     {unreadCount > 9 ? '9+' : unreadCount}
@@ -370,7 +370,7 @@ function LayoutContent({ children, currentPageName }) {
               <div className="w-14 sm:w-16 flex-shrink-0" />
 
               {/* RIGHT group */}
-              <div className="flex items-end justify-start gap-1 sm:gap-3 md:gap-4 flex-1 pl-1 sm:pl-3">
+              <div className="flex items-end justify-start gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3">
                 {rightNavItems.map((item) => {
                   const isActive = location.pathname === item.url;
                   const Component = item.url ? Link : 'button';
@@ -392,7 +392,7 @@ function LayoutContent({ children, currentPageName }) {
                 {/* Notification button - tablet/desktop inline */}
                 <button
                   onClick={notificationItem.action}
-                  className="hidden sm:flex flex-col items-center justify-center rounded-lg transition-all duration-200 hover:shadow-lg shadow-sm select-none w-10 h-10 sm:w-10 sm:h-10 md:w-11 md:h-11 p-1.5 self-center"
+                  className="hidden md:flex flex-col items-center justify-center rounded-lg transition-all duration-200 hover:shadow-lg shadow-sm select-none w-10 h-10 md:w-11 md:h-11 p-1.5 self-center"
                   style={{
                     color: 'var(--text-secondary)',
                     backgroundColor: 'rgba(255, 255, 255, 0.05)'
