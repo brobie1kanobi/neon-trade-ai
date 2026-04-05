@@ -15,10 +15,10 @@ export default function AITraderSettings() {
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>AI Trader Settings</h1>
+      <AutoTraderHealth />
       <AITraderSettingsCard />
       <AutoBuyPreferences />
       <RiskManagementSettings />
-      <AutoTraderHealth />
       <TradingStrategiesSettings
         settings={settings}
         onToggle={(key, value) => updateSetting(key, value)}
