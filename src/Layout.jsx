@@ -281,7 +281,7 @@ function LayoutContent({ children, currentPageName }) {
         </header>
 
         {/* Main Content with page transitions */}
-        <main className="flex-1 overflow-auto pb-20">
+        <main className="flex-1 overflow-auto">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -296,7 +296,7 @@ function LayoutContent({ children, currentPageName }) {
         </main>
 
         {/* Bottom Navigation with safe area padding */}
-        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t select-none"
+        <nav className="sticky bottom-0 left-0 right-0 z-50 border-t select-none w-full"
         style={{
           backgroundColor: 'var(--primary-bg)',
           borderColor: 'var(--border-color)',
