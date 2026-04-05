@@ -248,7 +248,7 @@ function LayoutContent({ children, currentPageName }) {
       <NotificationDrawer isOpen={isNotificationsOpen} onOpenChange={setIsNotificationsOpen} />
       <PushManager />
 
-      <div className="flex flex-col min-h-screen" style={{ backgroundColor: 'var(--primary-bg)' }}>
+      <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: 'var(--primary-bg)' }}>
         {/* Header with safe area padding */}
         <header className="sticky top-0 z-50 px-4 py-3 border-b"
         style={{
