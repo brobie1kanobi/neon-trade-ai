@@ -220,10 +220,12 @@ export default function AutoTraderProspects() {
         <div className="flex items-center justify-center py-12">
           <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
         </div>
-      </div>);
-
+      </div>
+    );
   }
 
+  return (
+    <div className="p-4 space-y-4">
       {prospects.length === 0 ?
       <Card className="border-yellow-300">
           <CardContent className="py-12 text-center">
@@ -339,7 +341,6 @@ export default function AutoTraderProspects() {
                 `AI confidence ${prospect.confidence_score}% - analyzing entry opportunity...`}
                       </p>
 
-                      {/* Enhanced Intelligence Display */}
                       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                         {prospect.technical_pattern &&
                 <Badge variant="outline" className="text-xs flex items-center gap-1">
@@ -460,19 +461,16 @@ export default function AutoTraderProspects() {
               variant="outline"
               onClick={() => setSelectedProspect(null)}
               disabled={executing} className="bg-red-600 text-gray-300 px-4 py-2 text-sm font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border shadow-sm h-9 border-gray-700 hover:bg-gray-800 hover:text-white">
-
               Cancel
             </Button>
             <Button
               onClick={() => handleExecuteOrder(selectedProspect)}
               disabled={executing} className="bg-primary text-lime-400 px-4 py-2 text-sm font-medium rounded-md inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 shadow hover:bg-primary/90 h-9">
-
               {executing ?
               <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   Executing...
                 </> :
-
               <>
                   <CheckCircle className="w-4 h-4 mr-2" />
                   Execute Now
@@ -482,6 +480,7 @@ export default function AutoTraderProspects() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       {/* AI Trader Configuration Cards */}
       <AITraderSettingsCard />
       <AutoBuyPreferences />
@@ -494,7 +493,7 @@ export default function AutoTraderProspects() {
       {settings && !settings.sim_trading_mode && <SystemHealthPanel />}
       <AIPerformancePanel />
       {settings && !settings.sim_trading_mode && <KrakenArchitectureSection />}
-
-    </div>);
+    </div>
+  );
 
 }
