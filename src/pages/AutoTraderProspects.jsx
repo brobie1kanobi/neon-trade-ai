@@ -2,6 +2,14 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import AITraderSettingsCard from "@/components/portfolio/AITraderSettingsCard";
+import AutoBuyPreferences from "@/components/portfolio/AutoBuyPreferences";
+import RiskManagementSettings from "@/components/portfolio/RiskManagementSettings";
+import AutoTraderHealth from "@/components/settings/AutoTraderHealth";
+import TradingStrategiesSettings from "@/components/settings/TradingStrategiesSettings";
+import SystemHealthPanel from "@/components/settings/SystemHealthPanel";
+import AIPerformancePanel from "@/components/settings/AIPerformancePanel";
+import KrakenArchitectureSection from "@/components/settings/KrakenArchitectureSection";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, TrendingUp, AlertCircle, Send, RefreshCw, Lock, CheckCircle, Wifi, Activity, BarChart3, Target, Clock, Zap, TrendingDown, Brain } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -20,7 +28,7 @@ import { useWallet } from "@/components/hooks/useWallet";
 
 export default function AutoTraderProspects() {
   const navigate = useNavigate();
-  const { settings } = useSettings();
+  const { settings, updateSetting } = useSettings();
   const { isConnected: wsConnected, usdBalance: wsUsdBalance } = useKrakenWebSocket();
   const { wallet } = useWallet();
 
@@ -215,53 +223,6 @@ export default function AutoTraderProspects() {
       </div>);
 
   }
-
-  return (
-    <div className="p-4 space-y-4 pb-24">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">Auto-Trader Prospects</h1>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => fetchProspects(true)} disabled={isRefreshing}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-          {isRefreshing ? 'Updating...' : 'Refresh'}
-        </Button>
-      </div>
-
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          {!isSimMode && totalPortfolioValue > 0 && (
-            <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-sm font-medium">Total Portfolio</span>
-              <p className="font-bold text-lg">${totalPortfolioValue.toFixed(2)}</p>
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Cash</span>
-            <p className="font-semibold">${cashAvailable.toFixed(2)}</p>
-          </div>
-          {!isSimMode && assetsValue > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Assets Value</span>
-              <p className="font-semibold">${assetsValue.toFixed(2)}</p>
-            </div>
-          )}
-          <div className="flex items-center gap-2 justify-end pt-1">
-            <Badge variant="outline" className={isSimMode ? "text-xs" : "text-xs bg-green-50 text-green-700 border-green-200"}>
-              {isSimMode ? "💎 Demo" : "🟢 LIVE"}
-            </Badge>
-            {!isSimMode && wsConnected &&
-              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 flex items-center gap-1">
-                <Wifi className="w-3 h-3" />
-                Live
-              </Badge>
-            }
-          </div>
-        </CardContent>
-      </Card>
 
       {prospects.length === 0 ?
       <Card className="border-yellow-300">
@@ -521,6 +482,19 @@ export default function AutoTraderProspects() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* AI Trader Configuration Cards */}
+      <AITraderSettingsCard />
+      <AutoBuyPreferences />
+      <RiskManagementSettings />
+      <AutoTraderHealth />
+      <TradingStrategiesSettings
+        settings={settings}
+        onToggle={(key, value) => updateSetting(key, value)}
+      />
+      {settings && !settings.sim_trading_mode && <SystemHealthPanel />}
+      <AIPerformancePanel />
+      {settings && !settings.sim_trading_mode && <KrakenArchitectureSection />}
+
     </div>);
 
 }

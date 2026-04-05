@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 
 import ThemeSettings from "../components/settings/ThemeSettings";
 import TradingSettings from "../components/settings/TradingSettings";
-import TradingStrategiesSettings from "../components/settings/TradingStrategiesSettings";
 import AccountSettings from "../components/settings/AccountSettings";
 import NotificationSettings from "../components/settings/NotificationSettings";
 import CurrencySettings from "../components/settings/CurrencySettings";
@@ -13,9 +12,7 @@ import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
 
-import KrakenArchitectureSection from "../components/settings/KrakenArchitectureSection";
-import SystemHealthPanel from "../components/settings/SystemHealthPanel";
-import AIPerformancePanel from "../components/settings/AIPerformancePanel";
+
 import { useSettings } from "../components/utils/SettingsContext";
 
 export default function Settings() {
@@ -60,34 +57,7 @@ export default function Settings() {
         />
       </motion.div>
 
-      {/* 2a) Trading Strategies */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
-        <TradingStrategiesSettings
-          settings={settings}
-          onToggle={(key, value) => updateSetting(key, value)}
-        />
-      </motion.div>
 
-
-
-      {/* 2b) System Health (LIVE mode only) */}
-      {settings && !settings.sim_trading_mode && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <SystemHealthPanel />
-        </motion.div>
-      )}
-
-      {/* 2c) AI Performance */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.055 }}>
-        <AIPerformancePanel />
-      </motion.div>
-
-      {/* 2d) Kraken Architecture & Testing (LIVE mode only) */}
-      {settings && !settings.sim_trading_mode && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
-          <KrakenArchitectureSection />
-        </motion.div>
-      )}
 
 
 
