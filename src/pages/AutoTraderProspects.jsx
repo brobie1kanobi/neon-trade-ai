@@ -2,14 +2,6 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import AITraderSettingsCard from "@/components/portfolio/AITraderSettingsCard";
-import AutoBuyPreferences from "@/components/portfolio/AutoBuyPreferences";
-import RiskManagementSettings from "@/components/portfolio/RiskManagementSettings";
-import AutoTraderHealth from "@/components/settings/AutoTraderHealth";
-import TradingStrategiesSettings from "@/components/settings/TradingStrategiesSettings";
-import SystemHealthPanel from "@/components/settings/SystemHealthPanel";
-import AIPerformancePanel from "@/components/settings/AIPerformancePanel";
-import KrakenArchitectureSection from "@/components/settings/KrakenArchitectureSection";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, TrendingUp, AlertCircle, Send, RefreshCw, Lock, CheckCircle, Wifi, Activity, BarChart3, Target, Clock, Zap, TrendingDown, Brain } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -481,18 +473,6 @@ export default function AutoTraderProspects() {
         </DialogContent>
       </Dialog>
 
-      {/* AI Trader Configuration Cards */}
-      <AITraderSettingsCard />
-      <AutoBuyPreferences />
-      <RiskManagementSettings />
-      <AutoTraderHealth />
-      <TradingStrategiesSettings
-        settings={settings}
-        onToggle={(key, value) => updateSetting(key, value)}
-      />
-      {settings && !settings.sim_trading_mode && <SystemHealthPanel />}
-      <AIPerformancePanel />
-      {settings && !settings.sim_trading_mode && <KrakenArchitectureSection />}
     </div>
   );
 

@@ -156,7 +156,7 @@ function LayoutContent({ children, currentPageName }) {
   const leftNavItems = [
     { title: "Dashboard", url: createPageUrl("Dashboard"), icon: Home },
     { title: "Portfolio", url: createPageUrl("Portfolio"), icon: PieChart },
-    { title: "AI Trader", action: () => {}, icon: Bot },
+    { title: "AI Trader", url: "/AITraderSettings", icon: Bot },
   ];
 
   // Right-side nav items (after mic)
