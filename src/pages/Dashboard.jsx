@@ -686,24 +686,44 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               } catch (krakenError) {
                 const errorMsg = krakenError.message || 'Unknown Kraken error';
                 console.error('[AutoTrader] ❌ Kraken sell failed:', errorMsg);
-                const isRateLimit = errorMsg && /rate limit|429/i.test(errorMsg);
-                if (isRateLimit) {
-                  failureCountRef.current++;
-                  backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
-                }
                 
-                // Store the error in the order for display
-                if (order.id) {
-                  await ConditionalOrder.update(order.id, { 
-                    error_message: `Kraken sell failed: ${errorMsg}`,
-                    closure_reason: `${tradeType} triggered but Kraken order failed: ${errorMsg}`
-                  }).catch(() => {});
-                }
+                // CRITICAL: Detect PERMANENT errors that will never succeed on retry
+                // These should cancel the order immediately to stop wasting integration credits
+                const isPermanentError = /volume minimum not met|minimum not met|insufficient funds|EOrder:Insufficient funds|insufficient margin|EOrder:Insufficient margin|invalid volume|EOrder:Invalid volume|invalid arguments|EGeneral:Invalid arguments|too small|below minimum/i.test(errorMsg);
                 
-                toast.error("🔴 LIVE Trade Failed", { 
-                  description: `Failed to sell ${symU} on Kraken: ${errorMsg}`, 
-                  duration: 10000 
-                });
+                if (isPermanentError) {
+                  console.log(`[AutoTrader] ⛔ PERMANENT error for ${symU} - cancelling order to prevent retries: ${errorMsg}`);
+                  if (order.id) {
+                    await ConditionalOrder.update(order.id, { 
+                      status: "cancelled",
+                      error_message: `Permanently cancelled: ${errorMsg}`,
+                      closure_reason: `${tradeType} triggered but order cannot be fulfilled: ${errorMsg}`
+                    }).catch(() => {});
+                  }
+                  toast.error(`🔴 LIVE Trade Cancelled - ${symU}`, { 
+                    description: `Order permanently cancelled: ${errorMsg}`, 
+                    duration: 10000 
+                  });
+                } else {
+                  // Transient error (rate limit, timeout, etc.) - keep order active for retry
+                  const isRateLimit = errorMsg && /rate limit|429/i.test(errorMsg);
+                  if (isRateLimit) {
+                    failureCountRef.current++;
+                    backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
+                  }
+                  
+                  if (order.id) {
+                    await ConditionalOrder.update(order.id, { 
+                      error_message: `Kraken sell failed (will retry): ${errorMsg}`,
+                      closure_reason: `${tradeType} triggered but Kraken order failed: ${errorMsg}`
+                    }).catch(() => {});
+                  }
+                  
+                  toast.error("🔴 LIVE Trade Failed", { 
+                    description: `Failed to sell ${symU} on Kraken: ${errorMsg}`, 
+                    duration: 10000 
+                  });
+                }
                 // DO NOT execute locally - in LIVE mode, only Kraken orders count
                 continue;
               }
@@ -990,14 +1010,29 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
               if (remainingCash < 1.0) break;
               
             } catch (krakenError) {
-              console.error(`[AutoTrader] ❌ Kraken buy failed:`, krakenError.message);
-              const isRateLimit = krakenError.message && /rate limit|429/i.test(krakenError.message);
+              const buyErrorMsg = krakenError.message || 'Unknown error';
+              console.error(`[AutoTrader] ❌ Kraken buy failed:`, buyErrorMsg);
+              
+              // CRITICAL: Detect permanent errors - don't retry or break the whole loop for these
+              const isPermanentBuyError = /volume minimum not met|minimum not met|insufficient funds|EOrder:Insufficient funds|insufficient margin|invalid volume|EOrder:Invalid volume|invalid arguments|EGeneral:Invalid arguments|too small|below minimum/i.test(buyErrorMsg);
+              
+              if (isPermanentBuyError) {
+                console.log(`[AutoTrader] ⛔ PERMANENT buy error for ${sym} - skipping (won't retry): ${buyErrorMsg}`);
+                toast.error(`🔴 Buy Skipped - ${sym}`, { 
+                  description: `Cannot buy: ${buyErrorMsg}`, 
+                  duration: 8000 
+                });
+                // Don't break - try other symbols
+                continue;
+              }
+              
+              const isRateLimit = /rate limit|429/i.test(buyErrorMsg);
               if (isRateLimit) {
                 failureCountRef.current++;
                 backoffUntilRef.current = Date.now() + (Math.min(30, Math.pow(2, failureCountRef.current) * 2) * 60 * 1000);
               }
               toast.error("🔴 LIVE Trade Failed", { 
-                description: `Failed to buy ${sym} on Kraken: ${krakenError.message}`, 
+                description: `Failed to buy ${sym} on Kraken: ${buyErrorMsg}`, 
                 duration: 10000 
               });
               // DO NOT create local order - in LIVE mode, only Kraken orders count

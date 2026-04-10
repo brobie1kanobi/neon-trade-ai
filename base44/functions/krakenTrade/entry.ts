@@ -732,6 +732,11 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5, 
       if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
       if (/unknown order/i.test(msg) || /EOrder:Unknown order/i.test(msg)) { throw e; }
       if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
+      // CRITICAL: Catch "volume minimum not met" and EGeneral errors - never retryable
+      if (/minimum not met/i.test(msg) || /EGeneral:Invalid arguments/i.test(msg) || /too small/i.test(msg) || /below minimum/i.test(msg)) {
+        console.error('[krakenTrade] Permanent error (minimum/arguments) - not retrying:', msg);
+        throw e;
+      }
 
       const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(msg);
       if (!shouldRetry) { throw e; }

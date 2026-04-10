@@ -374,24 +374,25 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
       if (data?.success === false) {
         const msg = String(data?.error || '');
         
-        // CRITICAL: Don't retry on insufficient funds - this won't resolve
+        // CRITICAL: Don't retry on PERMANENT errors - these will never resolve
+        // This prevents wasting integration credits on impossible orders
         if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) {
-          console.error('[runAutoTrader] Insufficient funds - aborting order');
-          return data; // Return the error response, don't retry
-        }
-        if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) {
-          console.error('[runAutoTrader] Insufficient margin - aborting order');
+          console.error('[runAutoTrader] Insufficient funds - aborting order (permanent)');
           return data;
         }
-        // Don't retry other order-specific errors
+        if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) {
+          console.error('[runAutoTrader] Insufficient margin - aborting order (permanent)');
+          return data;
+        }
         if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { return data; }
         if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { return data; }
         if (/unknown order/i.test(msg) || /EOrder:Unknown order/i.test(msg)) { return data; }
-        
-        if (/permission denied/i.test(msg)) {
-          await base44.functions.invoke('krakenApi', { action: 'getWebSocketUrl', payload: { keyType: 'trade', forceRefresh: true } });
-          wsToken = null; // force refetch on next loop
+        // CRITICAL: Catch "volume minimum not met" and similar EGeneral errors
+        if (/minimum not met/i.test(msg) || /EGeneral:Invalid arguments/i.test(msg) || /too small/i.test(msg) || /below minimum/i.test(msg)) {
+          console.error('[runAutoTrader] Permanent order error (minimum/arguments) - aborting:', msg);
+          return data;
         }
+        
         if (/rate limit|429|timeout|websocket|nonce/i.test(msg)) { throw new Error(msg); }
       }
       return data;
@@ -399,11 +400,13 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
       lastErr = e;
       const msg = String(e?.message || e || '');
       
-      // CRITICAL: Don't retry on insufficient funds or order errors - throw immediately
+      // CRITICAL: Don't retry on PERMANENT errors - throw immediately to stop wasting credits
       if (/insufficient funds/i.test(msg) || /EOrder:Insufficient funds/i.test(msg)) { throw e; }
       if (/insufficient margin/i.test(msg) || /EOrder:Insufficient margin/i.test(msg)) { throw e; }
       if (/invalid volume/i.test(msg) || /EOrder:Invalid volume/i.test(msg)) { throw e; }
       if (/invalid price/i.test(msg) || /EOrder:Invalid price/i.test(msg)) { throw e; }
+      // CRITICAL: Catch "volume minimum not met" and EGeneral errors
+      if (/minimum not met/i.test(msg) || /EGeneral:Invalid arguments/i.test(msg) || /too small/i.test(msg) || /below minimum/i.test(msg)) { throw e; }
       
       // Token refresh on permission denied
       if (/permission denied/i.test(msg)) {
