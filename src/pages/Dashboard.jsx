@@ -40,6 +40,34 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
   const highestPriceCache = useRef(new Map());
   const batchQueueRef = useRef({ creates: [], updates: [], lastFlush: Date.now() });
 
+  /**
+   * ORDER COALESCING GATE
+   * Before sending ANY buy order to Kraken, check if we recently sent an identical order
+   * for the same symbol+side within the dedup window. If so, skip it.
+   * Returns true if the order should proceed, false if it's a duplicate.
+   */
+  const shouldSendOrder = useCallback((symbol, side, quantity) => {
+    const dedupWindow = 30000; // 30 second dedup window
+    const key = `${symbol.toUpperCase()}:${side.toLowerCase()}`;
+    const recentOrders = window.__recentKrakenOrders;
+    const now = Date.now();
+    
+    // Clean up expired entries
+    for (const [k, entry] of recentOrders.entries()) {
+      if (now - entry.timestamp > dedupWindow) recentOrders.delete(k);
+    }
+    
+    const existing = recentOrders.get(key);
+    if (existing && (now - existing.timestamp) < dedupWindow) {
+      console.log(`[AutoTrader] ⚠️ DEDUP: Blocking duplicate ${side} order for ${symbol} (sent ${((now - existing.timestamp) / 1000).toFixed(1)}s ago, qty: ${existing.quantity})`);
+      return false;
+    }
+    
+    // Record this order
+    recentOrders.set(key, { timestamp: now, quantity, symbol: symbol.toUpperCase() });
+    return true;
+  }, []);
+
   const flushBatchQueue = useCallback(async () => {
     const queue = batchQueueRef.current;
     if (queue.creates.length === 0 && queue.updates.length === 0) return;
@@ -601,6 +629,13 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             // CRITICAL: In LIVE mode, ALL sells MUST go through Kraken - no local-only orders
             if (!isSimMode) {
               console.log('[AutoTrader] 🟢 LIVE MODE - Sending REAL sell order to Kraken for', symU);
+              
+              // CRITICAL: Dedup gate for sells too
+              if (!shouldSendOrder(symU, 'sell', sellQuantity)) {
+                console.log(`[AutoTrader] Skipping duplicate sell for ${symU} - already sent recently`);
+                continue;
+              }
+              
               try {
                 const krakenResponse = await Promise.race([
                   base44.functions.invoke('krakenTrade', { 
@@ -869,6 +904,14 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
           // CRITICAL: In LIVE mode, ALL buys MUST go through Kraken - no local-only orders
           if (!isSimMode) {
             console.log('[AutoTrader] 🟢 LIVE MODE - Sending REAL buy order to Kraken for', sym);
+            
+            // CRITICAL: Dedup gate - check if we already sent this order recently
+            if (!shouldSendOrder(sym, 'buy', finalQty)) {
+              console.log(`[AutoTrader] Skipping duplicate buy for ${sym} - already sent recently`);
+              toast.info(`Duplicate buy for ${sym} merged`, { description: 'Order already sent within dedup window', duration: 3000 });
+              continue;
+            }
+            
             try {
               const krakenResponse = await Promise.race([
                 base44.functions.invoke('krakenTrade', { 
@@ -1109,6 +1152,10 @@ if (typeof window !== 'undefined') {
     queue: [],
     lastTrade: null
   };
+
+  // GLOBAL ORDER DEDUP: Prevents identical Kraken orders from being sent within a short window
+  // Tracks recently sent orders by symbol+side and blocks duplicates
+  window.__recentKrakenOrders = window.__recentKrakenOrders || new Map();
 }
 
 export default function Dashboard() {

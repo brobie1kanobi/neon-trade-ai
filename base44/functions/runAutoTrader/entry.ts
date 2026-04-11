@@ -220,6 +220,35 @@ async function checkIdempotency(base44, idempotencyKey, userEmail) {
 }
 
 /**
+ * DEDUP: Check if a very recent trade already exists for the same symbol+side.
+ * Looks for trades created in the last 60 seconds with the same symbol and type.
+ * This prevents the backend auto-trader from duplicating orders that the frontend
+ * auto-trader (or a previous backend run) already placed.
+ */
+async function hasRecentDuplicateTrade(base44, userEmail, symbol, side, windowMs = 60000) {
+  try {
+    const recentTrades = await base44.entities.Trade.filter({
+      created_by: userEmail,
+      symbol: symbol.toUpperCase(),
+      type: side.toLowerCase(),
+      is_auto_trade: true
+    }, '-created_date', 5);
+    
+    const now = Date.now();
+    for (const t of recentTrades) {
+      const tradeTime = new Date(t.created_date || t.submitted_at || 0).getTime();
+      if ((now - tradeTime) < windowMs) {
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    console.warn('[runAutoTrader] Dedup check failed:', e.message);
+    return false; // Proceed if check fails
+  }
+}
+
+/**
  * Acquire distributed lock for user's auto-trader run
  */
 async function acquireLock(base44, userEmail, runId) {
@@ -1235,6 +1264,13 @@ Deno.serve(async (req) => {
       }
 
       log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
+      
+      // CRITICAL: Dedup check - skip if a very recent auto-trade already exists for this symbol
+      const isDuplicateRecent = await hasRecentDuplicateTrade(base44, user.email, sym, 'buy', 60000);
+      if (isDuplicateRecent) {
+        log(`DEDUP: Skipping ${sym} - a recent auto-buy already exists within 60s window`);
+        continue;
+      }
       
       // Track signal consumption
       const signal = signalMap.get(sym);
