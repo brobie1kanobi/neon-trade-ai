@@ -45,13 +45,14 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me().catch(() => null);
 
-    // Allow scheduled (no user). If there is a user, require admin/creator.
-    if (user) {
-      const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-      const isCreator = !!user?.is_creator;
-      if (!isAdmin && !isCreator) {
-        return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
-      }
+    if (!user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+    const isCreator = !!user?.is_creator;
+    if (!isAdmin && !isCreator) {
+      return Response.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));

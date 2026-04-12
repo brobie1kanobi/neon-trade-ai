@@ -92,7 +92,6 @@ async function handleRequest(req, startTime) {
   try {
     const base44 = createClientFromRequest(req);
 
-    // Read body first to determine if the action is public or private
     let body = {};
     try {
       body = await req.json();
@@ -101,32 +100,19 @@ async function handleRequest(req, startTime) {
     }
     const { action, payload = {} } = body;
 
-    // Actions that only call public APIs (no user auth required)
-    const PUBLIC_ACTIONS = new Set([
-      'getWatchlistData',
-      'getAssetChartData',
-      'getTopMovers',
-      'searchAssets',
-      'getAssetDetails',
-      'getTopStockMovers'
-    ]);
-    const requiresAuth = !PUBLIC_ACTIONS.has(action);
-
-    // Authenticate ONLY when required; return 401 on failure
+    // Authenticate ALL requests — no public exemptions
+    const authController = new AbortController();
+    const authTimeout = setTimeout(() => authController.abort(), AUTH_TIMEOUT);
     let user = null;
-    if (requiresAuth) {
-      const authController = new AbortController();
-      const authTimeout = setTimeout(() => authController.abort(), AUTH_TIMEOUT);
-      try {
-        user = await base44.auth.me();
-      } catch (_authErr) {
-        clearTimeout(authTimeout);
-        return Response.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+    try {
+      user = await base44.auth.me();
+    } catch (_authErr) {
       clearTimeout(authTimeout);
-      if (!user) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    clearTimeout(authTimeout);
+    if (!user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // ============================================

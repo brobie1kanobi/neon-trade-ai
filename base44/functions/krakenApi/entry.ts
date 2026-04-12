@@ -176,11 +176,10 @@ Deno.serve(async (req) => {
 
     let body = {};
     try { body = await req.json(); } catch (_) {}
-    const { action, payload, internal } = body || {};
+    const { action, payload } = body || {};
 
     const user = await base44.auth.me().catch(() => null);
-    const isInternal = internal === true;
-    if (!user && !isInternal) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
+    if (!user) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
     if (!action) return Response.json({ error: 'Missing action', success: false }, { status: 400 });
 
     // Status uses presence of secrets
