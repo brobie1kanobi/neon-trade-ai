@@ -28,7 +28,7 @@ function LayoutContent({ children, currentPageName }) {
 
   // This state controls the one-time splash screen for the session
   const [showInitialSplash, setShowInitialSplash] = useState(() => !sessionStorage.getItem('appInitialized'));
-  
+
   // Enforce SIM globally on app load (admin = all users, non-admin = self)
   // REMOVED: const [simNormalized, setSimNormalized] = useState(false);
 
@@ -57,9 +57,9 @@ function LayoutContent({ children, currentPageName }) {
     if (user) fetchUnreadCount();
 
     const handleNewNotification = () => {
-      setUnreadCount(prev => prev + 1);
+      setUnreadCount((prev) => prev + 1);
     };
-    
+
     // Also refetch when drawer is closed (user might have read some)
     if (!isNotificationsOpen && user) {
       fetchUnreadCount();
@@ -137,7 +137,7 @@ function LayoutContent({ children, currentPageName }) {
     await updateSetting('has_seen_biometrics_prompt', true);
     setShowBiometricsPrompt(false);
   };
-  
+
   const handleBiometricsDecline = async () => {
     await updateSetting('has_seen_biometrics_prompt', true);
     setShowBiometricsPrompt(false);
@@ -154,16 +154,16 @@ function LayoutContent({ children, currentPageName }) {
 
   // Left-side nav items (before mic)
   const leftNavItems = [
-    { title: "Dashboard", url: createPageUrl("Dashboard"), icon: Home },
-    { title: "Portfolio", url: createPageUrl("Portfolio"), icon: PieChart },
-    { title: "AI Trader", url: "/AITraderSettings", icon: Bot },
-  ];
+  { title: "Dashboard", url: createPageUrl("Dashboard"), icon: Home },
+  { title: "Portfolio", url: createPageUrl("Portfolio"), icon: PieChart },
+  { title: "AI Trader", url: "/AITraderSettings", icon: Bot }];
+
 
   // Right-side nav items (after mic)
   const rightNavItems = [
-    { title: "Wallet", url: createPageUrl("Wallet"), icon: Wallet },
-    { title: "Settings", url: createPageUrl("Settings"), icon: Settings },
-  ];
+  { title: "Wallet", url: createPageUrl("Wallet"), icon: Wallet },
+  { title: "Settings", url: createPageUrl("Settings"), icon: Settings }];
+
 
   const micItem = {
     title: "AI",
@@ -175,13 +175,13 @@ function LayoutContent({ children, currentPageName }) {
         }
       }, 400);
     },
-    icon: Mic,
+    icon: Mic
   };
 
   const notificationItem = {
     title: "Notifications",
     action: () => setIsNotificationsOpen(true),
-    icon: Bell,
+    icon: Bell
   };
 
   // Show the initial loading splash screen ONLY on the first load of a session
@@ -288,15 +288,15 @@ function LayoutContent({ children, currentPageName }) {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
-            >
+              transition={{ duration: 0.2, ease: "easeInOut" }}>
+              
               {children}
             </motion.div>
           </AnimatePresence>
         </main>
 
         {/* Bottom Navigation with safe area padding */}
-        <nav className="flex-shrink-0 z-50 border-t select-none w-full"
+        <nav className="opacity-100 flex-shrink-0 z-50 border-t select-none w-full"
         style={{
           backgroundColor: 'var(--primary-bg)',
           borderColor: 'var(--border-color)',
@@ -307,15 +307,15 @@ function LayoutContent({ children, currentPageName }) {
             {/* Mic button - always centered, raised above bar */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-20">
               <LongPressTooltip
-                content={(
-                  <>
+                content={
+                <>
                     <p className="font-semibold text-yellow-400 mb-1">Help, I'm trapped in a microphone button!</p>
                     <p className="text-xs mb-1">I'm Neo, your AI assistant. Click me to release my market wisdom..</p>
                     <p className="text-xs text-gray-300">Or, just ask me some questions, I'm here to help!</p>
                   </>
-                )}
-                className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center"
-              >
+                }
+                className="bg-gray-900 text-white p-3 rounded-lg shadow-lg max-w-xs text-center">
+                
                 <button
                   onClick={micItem.action}
                   className="bg-slate-950 text-lime-400 neon-glow flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-2xl select-none">
@@ -334,16 +334,16 @@ function LayoutContent({ children, currentPageName }) {
               }}>
               <div className="relative">
                 <Bell className="w-3.5 h-3.5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
+                {unreadCount > 0 &&
+                <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
-                )}
+                }
               </div>
             </button>
 
             {/* Main button row */}
-            <div className="flex items-end pt-2 pb-4 sm:pb-5">
+            <div className="pt-2 pb-4 opacity-95 flex items-end sm:pb-5">
               {/* LEFT group */}
               <div className="flex items-end justify-end gap-1 sm:gap-3 md:gap-4 flex-1 pr-1 sm:pr-3">
                 {leftNavItems.map((item) => {
@@ -361,8 +361,8 @@ function LayoutContent({ children, currentPageName }) {
                       }}>
                       <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
                       <span className="text-[10px] sm:text-xs font-medium leading-tight">{item.title}</span>
-                    </Component>
-                  );
+                    </Component>);
+
                 })}
               </div>
 
@@ -386,8 +386,8 @@ function LayoutContent({ children, currentPageName }) {
                       }}>
                       <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
                       <span className="text-[10px] sm:text-xs font-medium leading-tight">{item.title}</span>
-                    </Component>
-                  );
+                    </Component>);
+
                 })}
                 {/* Notification button - tablet/desktop inline */}
                 <button
@@ -399,11 +399,11 @@ function LayoutContent({ children, currentPageName }) {
                   }}>
                   <div className="relative">
                     <Bell className="w-4 h-4" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
+                    {unreadCount > 0 &&
+                    <span className="absolute -top-2 -right-2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] text-white font-bold ring-1 ring-white dark:ring-black">
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
-                    )}
+                    }
                   </div>
                 </button>
               </div>
@@ -420,6 +420,6 @@ export default function Layout({ children, currentPageName }) {
       <KrakenWebSocketProvider>
         <LayoutContent children={children} currentPageName={currentPageName} />
       </KrakenWebSocketProvider>
-    </SettingsProvider>
-  );
+    </SettingsProvider>);
+
 }
