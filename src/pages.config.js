@@ -52,9 +52,9 @@ import CryptoDetails from './pages/CryptoDetails';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import MarketAnalysis from './pages/MarketAnalysis';
-import PaymentSuccess from './pages/PaymentSuccess';
+
 import Portfolio from './pages/Portfolio';
-import RefundManagement from './pages/RefundManagement';
+
 import Settings from './pages/Settings';
 import StockDetails from './pages/StockDetails';
 import TradingStrategies from './pages/TradingStrategies';
@@ -71,9 +71,9 @@ export const PAGES = {
     "Dashboard": Dashboard,
     "Home": Home,
     "MarketAnalysis": MarketAnalysis,
-    "PaymentSuccess": PaymentSuccess,
+
     "Portfolio": Portfolio,
-    "RefundManagement": RefundManagement,
+
     "Settings": Settings,
     "StockDetails": StockDetails,
     "TradingStrategies": TradingStrategies,
