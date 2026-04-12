@@ -326,8 +326,8 @@ function LayoutContent({ children, currentPageName }) {
 
             {/* Notification button - mobile only: top-right corner of bar */}
             <button
-              onClick={notificationItem.action}
-              className="md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 rounded-md transition-all duration-200 hover:shadow-lg select-none"
+              onClick={notificationItem.action} className="px-4 rounded-md md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 transition-all duration-200 hover:shadow-lg select-none"
+
               style={{
                 color: 'var(--text-secondary)',
                 backgroundColor: 'rgba(255, 255, 255, 0.05)'
@@ -343,7 +343,7 @@ function LayoutContent({ children, currentPageName }) {
             </button>
 
             {/* Main button row */}
-            <div className="pt-2 pb-4 opacity-55 flex items-end sm:pb-5">
+            <div className="pt-2 pb-4 opacity-100 flex items-end sm:pb-5">
               {/* LEFT group */}
               <div className="pr-1 opacity-95 flex items-end justify-end gap-1 sm:gap-3 md:gap-4 flex-1 sm:pr-3">
                 {leftNavItems.map((item) => {
