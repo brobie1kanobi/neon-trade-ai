@@ -343,9 +343,9 @@ function LayoutContent({ children, currentPageName }) {
             </button>
 
             {/* Main button row */}
-            <div className="pt-2 pb-4 opacity-95 flex items-end sm:pb-5">
+            <div className="pt-2 pb-4 opacity-55 flex items-end sm:pb-5">
               {/* LEFT group */}
-              <div className="flex items-end justify-end gap-1 sm:gap-3 md:gap-4 flex-1 pr-1 sm:pr-3">
+              <div className="pr-1 opacity-95 flex items-end justify-end gap-1 sm:gap-3 md:gap-4 flex-1 sm:pr-3">
                 {leftNavItems.map((item) => {
                   const isActive = location.pathname === item.url;
                   const Component = item.url ? Link : 'button';
