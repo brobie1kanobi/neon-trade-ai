@@ -326,7 +326,7 @@ function LayoutContent({ children, currentPageName }) {
 
             {/* Notification button - mobile only: top-right corner of bar */}
             <button
-              onClick={notificationItem.action} className="px-4 rounded-md md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 transition-all duration-200 hover:shadow-lg select-none"
+              onClick={notificationItem.action} className="ml-32 px-4 rounded-md md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 transition-all duration-200 hover:shadow-lg select-none"
 
               style={{
                 color: 'var(--text-secondary)',
