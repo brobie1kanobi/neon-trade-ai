@@ -248,10 +248,6 @@ function buildOrderParams(orderConfig) {
     triggerReference = 'last' // 'last' or 'index'
   } = orderConfig;
 
-  // FIXED: Generate valid 32-bit userref (Kraken requirement)
-  // Use random number + last 6 digits of timestamp to ensure uniqueness
-  const userref = parseInt((Math.floor(Math.random() * 1000) * 1000000 + parseInt(Date.now().toString().slice(-6))).toString().slice(-9));
-  
   const formattedSymbol = formatKrakenSymbol(symbol);
   const parsedQty = parseFloat(quantity);
 
@@ -264,8 +260,7 @@ function buildOrderParams(orderConfig) {
       order_type: 'market',
       side: side.toLowerCase(),
       order_qty: parsedQty,
-      symbol: formattedSymbol,
-      order_userref: userref
+      symbol: formattedSymbol
     };
     console.log('[buildOrderParams] Market order params:', JSON.stringify(params));
     return params;
@@ -282,8 +277,7 @@ function buildOrderParams(orderConfig) {
       order_qty: parsedQty,
       symbol: formattedSymbol,
       limit_price: parseFloat(limitPrice),
-      time_in_force: timeInForce,
-      order_userref: userref
+      time_in_force: timeInForce
     };
     if (postOnly) params.post_only = true;
     
@@ -321,7 +315,6 @@ function buildOrderParams(orderConfig) {
       order_qty: parsedQty,
       symbol: formattedSymbol,
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: 'last',
         price: roundedPrice,
@@ -347,7 +340,6 @@ function buildOrderParams(orderConfig) {
       symbol: formattedSymbol,
       limit_price: parseFloat(limitPrice),
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: 'last',
         price: parseFloat(stopPrice),
@@ -386,7 +378,6 @@ function buildOrderParams(orderConfig) {
       order_qty: parsedQty,
       symbol: formattedSymbol,
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: 'last',       // Use last traded price as reference
         price: roundedTpPrice,   // Absolute price in USD (rounded)
@@ -414,7 +405,6 @@ function buildOrderParams(orderConfig) {
       symbol: formattedSymbol,
       limit_price: parseFloat(limitPrice),
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: 'last',
         price: parseFloat(tpPrice),
@@ -461,7 +451,6 @@ function buildOrderParams(orderConfig) {
       order_qty: parsedQty,
       symbol: formattedSymbol,
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: triggerReference, // 'last' or 'index'
         price: trailPrice,
@@ -526,7 +515,6 @@ function buildOrderParams(orderConfig) {
       limit_price: limitPriceValue,
       limit_price_type: limitPriceTypeValue,
       time_in_force: timeInForce,
-      order_userref: userref,
       triggers: {
         reference: triggerReference,
         price: trailPrice,
@@ -554,8 +542,7 @@ function buildOrderParams(orderConfig) {
       symbol: formattedSymbol,
       limit_price: parseFloat(limitPrice),
       display_qty: parseFloat(displayQty),
-      time_in_force: timeInForce,
-      order_userref: userref
+      time_in_force: timeInForce
     };
     console.log('[buildOrderParams] Iceberg order params:', JSON.stringify(params));
     return params;
@@ -567,8 +554,7 @@ function buildOrderParams(orderConfig) {
     order_type: 'market',
     side: side.toLowerCase(),
     order_qty: parsedQty,
-    symbol: formattedSymbol,
-    order_userref: userref
+    symbol: formattedSymbol
   };
 }
 
@@ -621,7 +607,6 @@ function executeKrakenTrade(token, orderParams) {
     let isResolved = false;
     
     const uniqueReqId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
-    const uniqueUserRef = parseInt(`${Math.floor(Math.random() * 100000)}${Date.now() % 10000}`.slice(0, 9));
     
     console.log('[krakenTrade] === SINGLE ORDER ===');
     console.log('[krakenTrade] Type:', orderParams.order_type, 'Symbol:', orderParams.symbol);
@@ -640,9 +625,17 @@ function executeKrakenTrade(token, orderParams) {
       
       ws.onopen = () => {
         console.log('[krakenTrade] ✅ Connected - sending order');
+        // CRITICAL: cl_ord_id and order_userref are MUTUALLY EXCLUSIVE per Kraken WS v2 docs.
+        // If cl_ord_id is present, do NOT send order_userref.
+        // If neither is present, we send nothing (Kraken assigns its own order_id).
+        const cleanParams = { ...orderParams };
+        if (cleanParams.cl_ord_id && cleanParams.order_userref) {
+          // cl_ord_id takes priority - remove order_userref
+          delete cleanParams.order_userref;
+        }
         const message = {
           method: 'add_order',
-          params: { token, ...orderParams, order_userref: uniqueUserRef },
+          params: { token, ...cleanParams },
           req_id: uniqueReqId
         };
         const jitter = 150 + Math.floor(Math.random() * 250); // 150-400ms
@@ -1637,11 +1630,14 @@ Deno.serve(async (req) => {
         conditionalCloseOrder
       });
 
-      // CRITICAL: Forward cl_ord_id from caller (runAutoTrader) for exchange-level idempotency
-      // Kraken rejects duplicate cl_ord_id within 24 hours, preventing double orders
+      // CRITICAL: cl_ord_id and order_userref are MUTUALLY EXCLUSIVE per Kraken WS v2 docs.
+      // If caller provides cl_ord_id, use it exclusively for exchange-level idempotency.
+      // Kraken rejects duplicate cl_ord_id within 24 hours, preventing double orders.
       if (requestBody.cl_ord_id) {
         orderParams.cl_ord_id = String(requestBody.cl_ord_id).substring(0, 18);
-        console.log('[krakenTrade] Using cl_ord_id:', orderParams.cl_ord_id);
+        // Remove order_userref to prevent "both present" error
+        delete orderParams.order_userref;
+        console.log('[krakenTrade] Using cl_ord_id (exclusive):', orderParams.cl_ord_id);
       }
 
       console.log('[krakenTrade] Order params:', JSON.stringify(orderParams, null, 2));
@@ -1757,7 +1753,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('[krakenTrade] ❌ Error:', error.message);
     
-    // Log error
+    // Log error with full context for debugging
     try {
       const base44 = createClientFromRequest(req);
       const user = await base44.auth.me();
@@ -1766,8 +1762,16 @@ Deno.serve(async (req) => {
         await base44.asServiceRole.entities.KrakenLog.create({
           event_type: requestBody?.action || 'unknown',
           status: 'error',
-          message: 'Failed to execute action',
-          details_json: JSON.stringify({ error: error.message, stack: error.stack }),
+          message: `Failed to execute action: ${(error.message || '').substring(0, 200)}`,
+          details_json: JSON.stringify({ 
+            error: error.message, 
+            stack: error.stack,
+            request_action: requestBody?.action,
+            request_symbol: requestBody?.symbol,
+            request_side: requestBody?.side,
+            request_orderType: requestBody?.orderType,
+            request_quantity: requestBody?.quantity
+          }),
           created_by: user.email
         });
       }

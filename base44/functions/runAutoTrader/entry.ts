@@ -1316,6 +1316,7 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
           // Step 1: Place market BUY order with Kraken cl_ord_id for exchange-level dedup
+          // CRITICAL: Only send cl_ord_id, NOT order_userref — they are mutually exclusive per Kraken WS v2 docs
           const buyClOrdId = generateKrakenClientOrderId(sym, 'buy');
           await ps(150);
           const buyData = await invokeKrakenTrade(base44, {
