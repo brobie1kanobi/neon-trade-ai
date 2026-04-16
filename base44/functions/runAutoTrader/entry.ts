@@ -205,6 +205,19 @@ function generateIdempotencyKey(userEmail, symbol, type, timestamp) {
 }
 
 /**
+ * Generate Kraken cl_ord_id (Client Order ID) for exchange-level idempotency.
+ * Kraken will reject a second order with the same cl_ord_id within 24 hours.
+ * Max 18 chars, alphanumeric + hyphen only.
+ */
+function generateKrakenClientOrderId(symbol, side) {
+  const sym = String(symbol).toUpperCase().substring(0, 5);
+  const s = String(side).charAt(0).toUpperCase(); // B or S
+  const ts = Date.now().toString(36); // compact timestamp
+  const rand = Math.random().toString(36).substring(2, 5);
+  return `NT-${sym}-${s}-${ts}${rand}`.substring(0, 18);
+}
+
+/**
  * Check if idempotency key already exists
  */
 async function checkIdempotency(base44, idempotencyKey, userEmail) {
@@ -249,7 +262,9 @@ async function hasRecentDuplicateTrade(base44, userEmail, symbol, side, windowMs
 }
 
 /**
- * Acquire distributed lock for user's auto-trader run
+ * Acquire distributed lock for user's auto-trader run.
+ * TIGHTENED: 60-second lock window (was 10 minutes) to prevent stale locks
+ * from blocking new runs for too long.
  */
 async function acquireLock(base44, userEmail, runId) {
   try {
@@ -260,20 +275,20 @@ async function acquireLock(base44, userEmail, runId) {
     });
     
     if (activeRuns.length > 0) {
-      // Check if stale (older than 10 minutes)
+      // Check if stale (older than 60 seconds - one run should never take this long)
       const oldestRun = activeRuns[0];
       const startedAt = new Date(oldestRun.started_at || oldestRun.created_date).getTime();
       const age = Date.now() - startedAt;
       
-      if (age < 10 * 60 * 1000) {
-        // Still running, can't acquire
+      if (age < 60 * 1000) {
+        // Still running within 60s window, can't acquire
         return { acquired: false, reason: 'Another run in progress', existingRunId: oldestRun.id };
       }
       
-      // Stale run, mark as failed
+      // Stale run (>60s), mark as failed and proceed
       await base44.entities.AutoTraderRun.update(oldestRun.id, {
         status: 'failed',
-        error_message: 'Timed out - marked as failed by new run',
+        error_message: 'Timed out (>60s) - marked as failed by new run',
         completed_at: new Date().toISOString()
       });
     }
@@ -1300,14 +1315,16 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📊 TP: $${takeProfitPrice} (+${gainMargin}%)`);
           console.log(`[runAutoTrader] 📊 Trailing SL: ${trailingMargin}% from peak (fallback static: $${staticStopLossPrice})`);
           
-          // Step 1: Place market BUY order (with pacing)
+          // Step 1: Place market BUY order with Kraken cl_ord_id for exchange-level dedup
+          const buyClOrdId = generateKrakenClientOrderId(sym, 'buy');
           await ps(150);
           const buyData = await invokeKrakenTrade(base44, {
             action: 'place_order',
             symbol: sym,
             side: 'buy',
             quantity: qty,
-            orderType: 'market'
+            orderType: 'market',
+            cl_ord_id: buyClOrdId
           }, orderAttempts, wsToken, user.email);
           if (!buyData?.success) {
             throw new Error(buyData?.error || 'Kraken buy failed');

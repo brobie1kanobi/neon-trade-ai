@@ -1637,6 +1637,13 @@ Deno.serve(async (req) => {
         conditionalCloseOrder
       });
 
+      // CRITICAL: Forward cl_ord_id from caller (runAutoTrader) for exchange-level idempotency
+      // Kraken rejects duplicate cl_ord_id within 24 hours, preventing double orders
+      if (requestBody.cl_ord_id) {
+        orderParams.cl_ord_id = String(requestBody.cl_ord_id).substring(0, 18);
+        console.log('[krakenTrade] Using cl_ord_id:', orderParams.cl_ord_id);
+      }
+
       console.log('[krakenTrade] Order params:', JSON.stringify(orderParams, null, 2));
 
       // Execute trade via WebSocket

@@ -323,9 +323,56 @@ async function getCryptoData(base44, cryptoSymbols) {
     const results = [];
     const foundMap = {};
 
-    // 1) Skip Kraken public API for watchlist prices to avoid impacting private rate limits
+    // 1) PRIMARY: Kraken public Ticker API (free, no auth, no rate limit impact on private API)
+    const krakenPairMapLocal = {
+      'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
+      'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
+      'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
+      'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
+      'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'TON': 'TONCOINUSD', 'HBAR': 'HBARUSD',
+      'SUI': 'SUIUSD', 'APT': 'APTUSD', 'ARB': 'ARBUSD', 'OP': 'OPUSD',
+      'INJ': 'INJUSD', 'NEAR': 'NEARUSD', 'FIL': 'FILUSD', 'ALGO': 'ALGOUSD'
+    };
+    const krakenPairsForBatch = upper.map(s => krakenPairMapLocal[s]).filter(Boolean);
+    if (krakenPairsForBatch.length > 0) {
+      try {
+        const pairsParam = krakenPairsForBatch.join(',');
+        const resp = await fetchWithTimeout(`https://api.kraken.com/0/public/Ticker?pair=${pairsParam}`, 3500);
+        if (resp && resp.ok) {
+          const data = await resp.json();
+          if (data?.result) {
+            for (const sym of upper) {
+              const pair = krakenPairMapLocal[sym];
+              if (!pair) continue;
+              const tickerData = data.result[pair];
+              if (tickerData) {
+                const price = parseFloat(tickerData.c?.[0] || '0');
+                const open24h = parseFloat(tickerData.o || '0');
+                const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
+                if (price > 0) {
+                  foundMap[sym] = {
+                    symbol: sym,
+                    name: sym,
+                    price,
+                    change: change24h,
+                    price_change_percentage_24h: change24h,
+                    percent_change: change24h,
+                    change_1h_percent: null,
+                    change_1h_value: null,
+                    icon_url: null
+                  };
+                }
+              }
+            }
+            console.log(`[getCryptoData] Kraken primary: found ${Object.keys(foundMap).length}/${upper.length} symbols`);
+          }
+        }
+      } catch (e) {
+        console.warn('[getCryptoData] Kraken primary fetch failed:', e.message);
+      }
+    }
 
-    // 2) Fallback to CoinGecko for any missing symbols
+    // 2) FALLBACK: CoinGecko for any symbols Kraken didn't have
     const missing = upper.filter(s => !foundMap[s]);
     if (missing.length > 0) {
       const coinGeckoKey = Deno.env.get('COINGECKO_API_KEY');
@@ -367,58 +414,7 @@ async function getCryptoData(base44, cryptoSymbols) {
       }
     }
 
-    // 3) Extra public fallbacks: Kraken public API and Binance
-    const stillMissing = upper.filter(s => !foundMap[s]);
-    if (stillMissing.length > 0) {
-      // Kraken public ticker API (no auth required)
-      // Kraken uses pairs like XXBTZUSD, XETHZUSD, etc.
-      const krakenPairMap = {
-        'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
-        'ADA': 'ADAUSD', 'DOGE': 'XDGUSD', 'DOT': 'DOTUSD', 'LINK': 'LINKUSD',
-        'MATIC': 'MATICUSD', 'AVAX': 'AVAXUSD', 'UNI': 'UNIUSD', 'ATOM': 'ATOMUSD',
-        'LTC': 'XLTCZUSD', 'BCH': 'BCHUSD', 'XLM': 'XXLMZUSD', 'TRX': 'TRXUSD',
-        'SHIB': 'SHIBUSD', 'PEPE': 'PEPEUSD', 'TON': 'TONCOINUSD', 'HBAR': 'HBARUSD'
-      };
-      
-      const krakenPairs = stillMissing.map(s => krakenPairMap[s]).filter(Boolean);
-      if (krakenPairs.length > 0) {
-        try {
-          const pairsParam = krakenPairs.join(',');
-          const resp = await fetchWithTimeout(`https://api.kraken.com/0/public/Ticker?pair=${pairsParam}`, 3000);
-          if (resp && resp.ok) {
-            const data = await resp.json();
-            if (data && data.result) {
-              for (const sym of stillMissing) {
-                const pair = krakenPairMap[sym];
-                // Kraken may return with slightly different key (e.g., XXBTZUSD or XBTUSD)
-                const tickerData = data.result[pair] || data.result[pair?.replace('X', '')?.replace('Z', '')];
-                if (tickerData) {
-                  const price = parseFloat(tickerData.c?.[0] || tickerData.a?.[0] || '0');
-                  const open24h = parseFloat(tickerData.o || '0');
-                  const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
-                  if (price > 0 && !foundMap[sym]) {
-                    foundMap[sym] = {
-                      symbol: sym,
-                      name: sym,
-                      price: price,
-                      change: change24h,
-                      price_change_percentage_24h: change24h,
-                      percent_change: change24h,
-                      change_1h_percent: null,
-                      change_1h_value: null,
-                      icon_url: null
-                    };
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[getCryptoData] Kraken public API error:', e.message);
-        }
-      }
-    }
-
+    // 3) Final fallback: Binance for anything still missing
     const stillMissing2 = upper.filter(s => !foundMap[s]);
     if (stillMissing2.length > 0) {
       // Binance ticker price (USDT pairs) as final fallback
