@@ -105,7 +105,7 @@ export default function BalanceCard({
                 {(changeValue >= 0 ? '+' : '-')}${Math.abs(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({changePct >= 0 ? '+' : '-'}{Math.abs(changePct).toFixed(2)}%)
               </span>
               <span className="text-xs ml-1" style={{ color: 'var(--text-secondary)' }}>
-                {changeLabel ? changeLabel : (isSimMode ? 'Demo Lifetime' : 'Live Lifetime')}
+                {changeLabel ? changeLabel : (isSimMode ? 'Demo Lifetime' : 'Lifetime PnL')}
               </span>
             </div>
           )}
