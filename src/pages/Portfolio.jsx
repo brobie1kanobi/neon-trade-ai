@@ -280,21 +280,24 @@ export default function Portfolio() {
           
           setDetailedHoldings(updated);
           
-          const currentTotalValue = updated.reduce((sum, h) => sum + h.currentValue, 0);
-          const totalCostBasis = updated.reduce((sum, h) => sum + h.costBasis, 0);
-          
-          // Calculate lifetime PnL
-          const lifetimePnL = currentTotalValue - totalCostBasis;
-          const lifetimePct = totalCostBasis > 0 ? (lifetimePnL / totalCostBasis) * 100 : 0;
-          
-          setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-          setPortfolio24hrChange({ value: 0, percentage: 0 }); // TODO: Calculate from Kraken if available
-          
-          console.log('[Portfolio] LIVE calculated:', {
-            totalValue: currentTotalValue.toFixed(2),
-            costBasis: totalCostBasis.toFixed(2),
-            pnl: lifetimePnL.toFixed(2)
-          });
+          // CRITICAL: Only set PnL here if krakenPnL is NOT available
+          // When krakenPnL is available, the dedicated useEffect below handles it with accurate data
+          if (!krakenPnL?.success) {
+            const currentTotalValue = updated.reduce((sum, h) => sum + h.currentValue, 0);
+            const totalCostBasis = updated.reduce((sum, h) => sum + h.costBasis, 0);
+            
+            const lifetimePnL = currentTotalValue - totalCostBasis;
+            const lifetimePct = totalCostBasis > 0 ? (lifetimePnL / totalCostBasis) * 100 : 0;
+            
+            setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
+            setPortfolio24hrChange({ value: 0, percentage: 0 });
+            
+            console.log('[Portfolio] LIVE calculated (no krakenPnL):', {
+              totalValue: currentTotalValue.toFixed(2),
+              costBasis: totalCostBasis.toFixed(2),
+              pnl: lifetimePnL.toFixed(2)
+            });
+          }
           
         } else {
           // SIM MODE: Fetch prices and calculate
@@ -344,7 +347,7 @@ export default function Portfolio() {
     } finally {
         setIsCalculatingValue(false);
     }
-  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData]);
+  }, [effectiveHoldings, priceData, trades, isSimMode, krakenData, krakenPnL]);
 
   // CRITICAL: Use centralized PnL from provider - no direct API calls needed
   React.useEffect(() => {
