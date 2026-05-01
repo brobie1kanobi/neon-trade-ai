@@ -848,12 +848,12 @@ export default function Dashboard() {
           <BalanceCard
             title="Total Balance"
             amount={balanceVisible ? (totalBalance ?? 0) : null}
-            change={lifetimeChange}
+            change={change24h}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}
             isSimMode={isSimMode}
-            changeLabel="Total PnL"
+            changeLabel="24h PnL"
             isLoading={liveBalancesLoading}
           />
         </motion.div>
@@ -863,10 +863,11 @@ export default function Dashboard() {
             <BalanceCard
               title="Cash Wallet"
               amount={balanceVisible ? (currentCashBalance ?? 0) : null}
+              change={lifetimeChange}
               icon={DollarSign}
               isVisible={balanceVisible}
               isSimMode={isSimMode}
-              changeLabel="Live Lifetime"
+              changeLabel="Lifetime PnL"
               linkTo={createPageUrl("Wallet")}
               isLoading={liveBalancesLoading}
             />
