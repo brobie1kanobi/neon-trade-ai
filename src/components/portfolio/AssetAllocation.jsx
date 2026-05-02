@@ -36,7 +36,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
     // REST snapshot has ALL assets with prices immediately on load
     bestHoldings: restHoldings,
     krakenBalance: krakenData,
-    hasData: hasKrakenData
+    hasData: hasKrakenData,
+    wsUpdateCounter
   } = useKrakenWebSocket();
 
   // CRITICAL: Refresh WebSocket data when trades complete
@@ -121,7 +122,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
     
     return null;
-  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices]);
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, wsUpdateCounter]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {

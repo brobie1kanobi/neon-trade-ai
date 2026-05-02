@@ -110,6 +110,10 @@ export function KrakenWebSocketProvider({ children }) {
   const restInFlightRef = useRef(false);
   const MIN_REST_INTERVAL = 60000; // Increased from 30s to 60s to reduce rate limits
 
+  // CRITICAL: Counter that increments on every WS balance/price update.
+  // Components that depend on live data can include this in their deps to re-render.
+  const [wsUpdateCounter, setWsUpdateCounter] = useState(0);
+
   // ── Merged state: WS real-time + REST snapshot ──
   const [state, setState] = useState({
     isConnected: false,
@@ -151,7 +155,10 @@ export function KrakenWebSocketProvider({ children }) {
     // Immediate first read
     setState(computeMetricsFromGlobal());
 
-    const handleUpdate = () => setState(computeMetricsFromGlobal());
+    const handleUpdate = () => {
+      setState(computeMetricsFromGlobal());
+      setWsUpdateCounter(c => c + 1);
+    };
 
     window.addEventListener('kraken:balance-update', handleUpdate);
     window.addEventListener('kraken:price-update', handleUpdate);
@@ -432,6 +439,8 @@ export function KrakenWebSocketProvider({ children }) {
 
   const value = {
     ...state,
+    // CRITICAL: Counter that increments on every WS event — use in dependency arrays
+    wsUpdateCounter,
     // Override connection status with global check
     isConnected: wsActuallyConnected,
     // Override with best-available merged values

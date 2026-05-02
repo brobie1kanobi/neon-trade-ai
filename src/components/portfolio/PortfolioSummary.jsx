@@ -14,7 +14,8 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
     usdBalance: wsUsdBalance,
     cryptoHoldingsValue: wsCryptoValue,
     totalPortfolioValue: wsTotalValue,
-    refresh: refreshWebSocket
+    refresh: refreshWebSocket,
+    wsUpdateCounter
   } = useKrakenWebSocket();
 
   // CRITICAL: Refresh data when trades complete OR Kraken orders fill/cancel
@@ -64,7 +65,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
       return wsUsdBalance;
     }
     return wallet?.real_cash_balance || 0;
-  }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData]);
+  }, [isSimMode, wallet, wsConnected, wsUsdBalance, krakenData, wsUpdateCounter]);
 
   // CRITICAL: Portfolio value = crypto holdings only (not including cash)
   // REST API is authoritative - it returns actual prices from Kraken
@@ -84,7 +85,7 @@ export default function PortfolioSummary({ wallet, trades, currentPortfolioValue
       return wsCryptoValue;
     }
     return currentPortfolioValue || 0;
-  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData]);
+  }, [isSimMode, currentPortfolioValue, wsConnected, wsCryptoValue, krakenData, wsUpdateCounter]);
 
   const totalValue = currentCashBalance + effectivePortfolioValue;
 

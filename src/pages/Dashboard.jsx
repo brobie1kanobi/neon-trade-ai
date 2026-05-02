@@ -138,7 +138,8 @@ export default function Dashboard() {
     krakenPnL: providerKrakenPnL,
     restDataLoading: providerLoading,
     fetchKrakenData,
-    fetchPnL: providerFetchPnL
+    fetchPnL: providerFetchPnL,
+    wsUpdateCounter
   } = useKrakenWebSocket();
   
   // CRITICAL: Also check global window state - provider React state can be stale
@@ -620,7 +621,7 @@ export default function Dashboard() {
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
 
     setChange24h({ value: totalDelta, percentage: pctChange });
-  }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance]);
+  }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance, wsUpdateCounter]);
 
   useEffect(() => {
     compute24hChange();
@@ -771,25 +772,27 @@ export default function Dashboard() {
 
   // CRITICAL: In LIVE mode, use provider's best-available values (REST > WS > 0)
   // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)
-  const currentCashBalance = isSimMode 
-    ? (wallet?.cash_balance || 0) 
-    : (hasKrakenSnapshot 
-        ? (providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0)
-        : (wsUsdBalance || 0));
+  // wsUpdateCounter is included so these re-derive on every WS balance/price push
+  const currentCashBalance = React.useMemo(() => {
+    if (isSimMode) return wallet?.cash_balance || 0;
+    if (hasKrakenSnapshot) return providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0;
+    return wsUsdBalance || 0;
+  }, [isSimMode, wallet?.cash_balance, hasKrakenSnapshot, providerKrakenBalance, wsUsdBalance, wsUpdateCounter]);
 
   const liveBalancesLoading = !isSimMode && !(hasKrakenSnapshot || (wsConnected && wsBalances && Object.keys(wsBalances || {}).length > 0));
-  const currentPortfolioValue = isSimMode 
-    ? portfolioMarketValue 
-    : (hasKrakenSnapshot 
-        ? (providerKrakenBalance?.total_crypto_value_usd ?? 0)
-        : (wsCryptoValue || 0));
+
+  const currentPortfolioValue = React.useMemo(() => {
+    if (isSimMode) return portfolioMarketValue;
+    if (hasKrakenSnapshot) return providerKrakenBalance?.total_crypto_value_usd ?? 0;
+    return wsCryptoValue || 0;
+  }, [isSimMode, portfolioMarketValue, hasKrakenSnapshot, providerKrakenBalance, wsCryptoValue, wsUpdateCounter]);
     
   // Total Balance = Cash + Portfolio (crypto)
-  const totalBalance = isSimMode 
-    ? (currentCashBalance + currentPortfolioValue)
-    : (hasKrakenSnapshot 
-        ? (providerKrakenBalance?.total_portfolio_value_usd ?? (currentCashBalance + currentPortfolioValue))
-        : ((wsUsdBalance || 0) + (wsCryptoValue || 0)));
+  const totalBalance = React.useMemo(() => {
+    if (isSimMode) return currentCashBalance + currentPortfolioValue;
+    if (hasKrakenSnapshot) return providerKrakenBalance?.total_portfolio_value_usd ?? (currentCashBalance + currentPortfolioValue);
+    return (wsUsdBalance || 0) + (wsCryptoValue || 0);
+  }, [isSimMode, currentCashBalance, currentPortfolioValue, hasKrakenSnapshot, providerKrakenBalance, wsUsdBalance, wsCryptoValue, wsUpdateCounter]);
 
   // Live mode uses provider's best-available data (WS > REST), no special zero-handling needed
 

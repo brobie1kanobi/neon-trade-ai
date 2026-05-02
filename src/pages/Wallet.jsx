@@ -45,7 +45,8 @@ export default function WalletPage() {
     // CRITICAL: Use centralized REST data instead of direct API calls
     krakenBalance: krakenData,
     fetchKrakenData,
-    restDataLoading
+    restDataLoading,
+    wsUpdateCounter
   } = useKrakenWebSocket();
 
   // CRITICAL: Also check global window state - provider React state can be stale
@@ -75,7 +76,7 @@ export default function WalletPage() {
     }
 
     return 0;
-  }, [isSimMode, wsConnected, wsCryptoValue, krakenData]);
+  }, [isSimMode, wsConnected, wsCryptoValue, krakenData, wsUpdateCounter]);
   
   // CRITICAL: Cash balance from Kraken REST API
   const krakenCashBalance = React.useMemo(() => {
@@ -93,7 +94,7 @@ export default function WalletPage() {
     }
     
     return 0;
-  }, [isSimMode, krakenData, wsConnected, wsUsdBalance]);
+  }, [isSimMode, krakenData, wsConnected, wsUsdBalance, wsUpdateCounter]);
 
   const loadData = useCallback(async (force = false) => {
     // CRITICAL: Don't load data until we know the mode from SettingsContext

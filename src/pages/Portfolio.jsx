@@ -55,7 +55,8 @@ export default function Portfolio() {
     krakenPnL,
     krakenOrders,
     restDataLoading: krakenLoading,
-    fetchKrakenData
+    fetchKrakenData,
+    wsUpdateCounter
   } = useKrakenWebSocket();
 
   // CRITICAL: krakenData from provider's REST snapshot (initial load)
@@ -242,7 +243,7 @@ export default function Portfolio() {
       // Final fallback: DB holdings for LIVE mode only
       return holdings.filter(h => h.is_simulation === false);
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData]);
+  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData, wsUpdateCounter]);
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
