@@ -405,19 +405,22 @@ export function KrakenWebSocketProvider({ children }) {
   const restHasBalance = restData.krakenBalance?.success;
   
   // CRITICAL: Best-available balance logic
-  // REST API (getKrakenBalance) is AUTHORITATIVE because it returns accurate prices + cost basis
-  // WS balances only have quantities (no prices until ticker data arrives)
-  // So: REST first (accurate), then WS only if REST is unavailable
+  // REST API (getKrakenBalance) is AUTHORITATIVE for initial load & cost basis.
+  // HOWEVER, once WS is connected and pushing balance/price updates, WS values
+  // are MORE CURRENT than the (potentially stale) REST snapshot.
+  // Priority: WS real-time (if connected & has data) > REST snapshot > 0
   
-  const bestUsdBalance = restHasBalance 
-    ? (restData.krakenBalance.usd_balance || 0)
-    : wsHasBalances ? state.usdBalance
-    : 0;
+  const bestUsdBalance = wsHasBalances
+    ? state.usdBalance
+    : restHasBalance 
+      ? (restData.krakenBalance.usd_balance || 0)
+      : 0;
 
-  const bestCryptoValue = restHasBalance 
-    ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : wsHasBalances ? state.cryptoHoldingsValue
-    : 0;
+  const bestCryptoValue = wsHasBalances
+    ? state.cryptoHoldingsValue
+    : restHasBalance 
+      ? (restData.krakenBalance.total_crypto_value_usd || 0)
+      : 0;
 
   const bestHoldings = restHasBalance
     ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
