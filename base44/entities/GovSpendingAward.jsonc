@@ -1,0 +1,112 @@
+{
+  "name": "GovSpendingAward",
+  "type": "object",
+  "properties": {
+    "recipient_name": {
+      "type": "string",
+      "description": "Company/organization that received the award"
+    },
+    "award_type": {
+      "type": "string",
+      "enum": [
+        "contract",
+        "grant",
+        "loan",
+        "direct_payment",
+        "other"
+      ],
+      "description": "Type of government award"
+    },
+    "total_obligation": {
+      "type": "number",
+      "description": "Total dollar amount obligated"
+    },
+    "awarding_agency": {
+      "type": "string",
+      "description": "Federal agency that awarded the funding"
+    },
+    "award_description": {
+      "type": "string",
+      "description": "Description of the award"
+    },
+    "naics_code": {
+      "type": "string",
+      "description": "NAICS industry code"
+    },
+    "naics_description": {
+      "type": "string",
+      "description": "NAICS industry description"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Award start/action date"
+    },
+    "recipient_uei": {
+      "type": "string",
+      "description": "Unique Entity Identifier for the recipient"
+    },
+    "recipient_state": {
+      "type": "string",
+      "description": "State where recipient is located"
+    },
+    "related_symbols_json": {
+      "type": "string",
+      "description": "JSON array of related tradeable symbols (crypto/stock) and reasoning"
+    },
+    "sector": {
+      "type": "string",
+      "description": "Industry sector (e.g., defense, healthcare, tech, energy)"
+    },
+    "signal_impact": {
+      "type": "string",
+      "enum": [
+        "bullish",
+        "bearish",
+        "neutral"
+      ],
+      "default": "neutral",
+      "description": "AI-assessed impact on related assets"
+    },
+    "impact_score": {
+      "type": "number",
+      "description": "Impact score 0-100 on related tradeable assets"
+    },
+    "ai_analysis": {
+      "type": "string",
+      "description": "AI analysis of how this award could affect markets"
+    },
+    "usaspending_award_id": {
+      "type": "string",
+      "description": "Original USASpending award ID for deduplication"
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this data was fetched"
+    }
+  },
+  "required": [
+    "recipient_name",
+    "award_type",
+    "total_obligation"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

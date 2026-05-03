@@ -250,6 +250,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fetch recent government spending data for signal enrichment
+    let govSpendingSection = '';
+    if (timeLeft() > 12000) {
+      try {
+        const recentAwards = await base44.asServiceRole.entities.GovSpendingAward.filter({}, '-created_date', 30);
+        const bullishAwards = recentAwards.filter(a => a.signal_impact === 'bullish' && (a.impact_score || 0) >= 30);
+        if (bullishAwards.length > 0) {
+          const awardLines = bullishAwards.slice(0, 10).map(a => {
+            const symbols = (() => { try { return JSON.parse(a.related_symbols_json || '[]'); } catch { return []; } })();
+            const amt = a.total_obligation >= 1e9 ? `$${(a.total_obligation / 1e9).toFixed(1)}B` : `$${(a.total_obligation / 1e6).toFixed(1)}M`;
+            return `- ${a.recipient_name}: ${amt} ${a.award_type} from ${a.awarding_agency} | Sector: ${a.sector} | Related: ${symbols.join(', ')} | Impact: ${a.impact_score}/100`;
+          });
+          govSpendingSection = `
+
+RECENT US GOVERNMENT SPENDING SIGNALS (from USASpending.gov):
+${awardLines.join('\n')}
+
+CRITICAL: Factor these government awards into your analysis:
+1. Large contracts/grants to companies signal future revenue growth for related stocks/sectors
+2. Heavy government spending in a sector may boost related crypto tokens (blockchain/AI/energy)
+3. Overall increased government spending can be bullish for BTC as an inflation hedge
+4. Use this data to adjust confidence scores upward for assets benefiting from gov spending`;
+        }
+      } catch (govErr) {
+        console.warn('[MarketIntelligence] Gov spending data fetch failed:', govErr.message);
+      }
+    }
+
     // Build comprehensive analysis prompt with market intelligence AND trade history
     const assetsSection = marketData.length > 0 
       ? marketData.map(asset => `- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%`).join('\n')
@@ -330,6 +358,7 @@ For each asset, predict:
 === ASSETS TO ANALYZE ===
 ${assetsSection}
 ${tradeHistorySection}
+${govSpendingSection}
 
 === ANALYSIS REQUIREMENTS ===
 
