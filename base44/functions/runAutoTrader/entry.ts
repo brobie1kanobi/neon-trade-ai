@@ -263,40 +263,85 @@ async function hasRecentDuplicateTrade(base44, userEmail, symbol, side, windowMs
 
 /**
  * Acquire distributed lock for user's auto-trader run.
- * TIGHTENED: 60-second lock window (was 10 minutes) to prevent stale locks
- * from blocking new runs for too long.
+ * 
+ * ATOMIC LOCK STRATEGY:
+ * 1. The caller has ALREADY created the AutoTraderRun record with status='pending'.
+ * 2. We query ALL pending/running records for this user.
+ * 3. Only the record with the LOWEST id (earliest DB insert) wins the lock.
+ * 4. All other records are immediately marked as 'canceled'.
+ * 5. Running records older than LOCK_TIMEOUT_MS are force-expired.
+ * 
+ * This eliminates the race condition where multiple concurrent requests
+ * all pass the "is anyone running?" check simultaneously.
  */
+const LOCK_TIMEOUT_MS = 45000; // 45s - generous but prevents permanent stale locks
+
 async function acquireLock(base44, userEmail, runId) {
   try {
-    // Check for existing running session
-    const activeRuns = await base44.entities.AutoTraderRun.filter({
+    // Step 1: Force-expire any stale 'running' records (older than timeout)
+    const runningRuns = await base44.entities.AutoTraderRun.filter({
       created_by: userEmail,
       status: 'running'
     });
     
-    if (activeRuns.length > 0) {
-      // Check if stale (older than 60 seconds - one run should never take this long)
-      const oldestRun = activeRuns[0];
-      const startedAt = new Date(oldestRun.started_at || oldestRun.created_date).getTime();
-      const age = Date.now() - startedAt;
-      
-      if (age < 60 * 1000) {
-        // Still running within 60s window, can't acquire
-        return { acquired: false, reason: 'Another run in progress', existingRunId: oldestRun.id };
+    const now = Date.now();
+    for (const run of runningRuns) {
+      const startedAt = new Date(run.started_at || run.created_date).getTime();
+      if (now - startedAt > LOCK_TIMEOUT_MS) {
+        await base44.entities.AutoTraderRun.update(run.id, {
+          status: 'failed',
+          error_message: `Timed out (>${LOCK_TIMEOUT_MS / 1000}s) - force-expired by new run`,
+          completed_at: new Date().toISOString()
+        });
+      } else {
+        // A legitimately running session exists - deny lock
+        return { acquired: false, reason: 'Another run in progress', existingRunId: run.id };
       }
-      
-      // Stale run (>60s), mark as failed and proceed
-      await base44.entities.AutoTraderRun.update(oldestRun.id, {
-        status: 'failed',
-        error_message: 'Timed out (>60s) - marked as failed by new run',
-        completed_at: new Date().toISOString()
-      });
     }
     
-    return { acquired: true };
+    // Step 2: Among all 'pending' records created in the last 10 seconds, 
+    // only the one with the LOWEST id wins. This is the atomic arbitration step.
+    const pendingRuns = await base44.entities.AutoTraderRun.filter({
+      created_by: userEmail,
+      status: 'pending'
+    });
+    
+    // Filter to only recent pending records (created within last 10s)
+    const recentPending = pendingRuns.filter(r => {
+      const createdAt = new Date(r.created_date).getTime();
+      return (now - createdAt) < 10000;
+    });
+    
+    if (recentPending.length <= 1) {
+      // We're the only pending record - we win
+      return { acquired: true };
+    }
+    
+    // Multiple pending records exist - sort by id (lexicographic = insertion order)
+    recentPending.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    
+    const winnerId = recentPending[0].id;
+    
+    if (winnerId === runId) {
+      // We won the race! Cancel all other pending records.
+      for (const run of recentPending.slice(1)) {
+        try {
+          await base44.entities.AutoTraderRun.update(run.id, {
+            status: 'canceled',
+            error_message: 'Lost lock arbitration to earlier run',
+            completed_at: new Date().toISOString()
+          });
+        } catch (_) {}
+      }
+      return { acquired: true };
+    } else {
+      // We lost the race - cancel ourselves
+      return { acquired: false, reason: 'Lost lock arbitration', existingRunId: winnerId };
+    }
   } catch (e) {
     console.warn('[runAutoTrader] Lock check failed:', e.message);
-    return { acquired: true }; // Proceed anyway
+    // On error, DENY the lock to be safe (prevents duplicate trades)
+    return { acquired: false, reason: 'Lock check error: ' + e.message };
   }
 }
 
@@ -727,6 +772,26 @@ Deno.serve(async (req) => {
       isSimMode = true;
     }
     
+    // PRE-FLIGHT: Check if there's already a running auto-trader within the lock window.
+    // This avoids creating unnecessary AutoTraderRun records when we know we'll lose.
+    try {
+      const existingRunning = await base44.entities.AutoTraderRun.filter({
+        created_by: user.email,
+        status: 'running'
+      });
+      const freshRunning = existingRunning.filter(r => {
+        const age = Date.now() - new Date(r.started_at || r.created_date).getTime();
+        return age < LOCK_TIMEOUT_MS;
+      });
+      if (freshRunning.length > 0) {
+        return Response.json({
+          success: false,
+          message: 'Another run in progress (pre-flight)',
+          existing_run_id: freshRunning[0].id
+        });
+      }
+    } catch (_) {}
+
     // Generate idempotency key for this run
     const runIdempotencyKey = `run_${user.email}_${Date.now()}`;
     
@@ -742,7 +807,7 @@ Deno.serve(async (req) => {
     
     log('AutoTraderRun created', { runId: autoTraderRunId, isSimMode });
     
-    // Acquire distributed lock
+    // Acquire distributed lock (atomic arbitration among concurrent pending records)
     const lockResult = await acquireLock(base44, user.email, autoTraderRunId);
     if (!lockResult.acquired) {
       log('Lock not acquired', lockResult);
@@ -1281,9 +1346,10 @@ Deno.serve(async (req) => {
       log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
       
       // CRITICAL: Dedup check - skip if a very recent auto-trade already exists for this symbol
-      const isDuplicateRecent = await hasRecentDuplicateTrade(base44, user.email, sym, 'buy', 60000);
+      // Widened to 120s window to catch trades from concurrent runs that slipped through
+      const isDuplicateRecent = await hasRecentDuplicateTrade(base44, user.email, sym, 'buy', 120000);
       if (isDuplicateRecent) {
-        log(`DEDUP: Skipping ${sym} - a recent auto-buy already exists within 60s window`);
+        log(`DEDUP: Skipping ${sym} - a recent auto-buy already exists within 120s window`);
         continue;
       }
       
