@@ -1208,10 +1208,10 @@ Deno.serve(async (req) => {
     const tradesPlaced = [];
     const tradesFailed = [];
     const tradesRejectedRisk = [];
-    // CRITICAL: Enforce minimum TP/SL for high win rate
-    // User settings are respected but floored at safe minimums
-    const defaultGainMargin = Math.max(settings.gain_margin || 5, 2); // Min 2% TP
-    const defaultLossMargin = Math.max(settings.loss_margin || 2.5, 1); // Min 1% SL
+    // Use user's configured TP/SL margins directly - no hardcoded floors
+    const defaultGainMargin = typeof settings.gain_margin === 'number' ? settings.gain_margin : 10;
+    const defaultLossMargin = typeof settings.loss_margin === 'number' ? settings.loss_margin : 5;
+    log('Using user TP/SL margins', { gainMargin: defaultGainMargin, lossMargin: defaultLossMargin });
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
     const defaultTrailingMargin = settings.trailing_takeprofit_margin || 3;
     const signalsConsumed = [];
@@ -1598,7 +1598,23 @@ Deno.serve(async (req) => {
       if (!isSimMode && executedQty < __minQtyCO) {
         log(`Skipping ConditionalOrder for ${sym} - executedQty ${executedQty} below Kraken minimum ${__minQtyCO}`);
       } else {
-        await base44.entities.ConditionalOrder.create(conditionalOrderData);
+        // IDEMPOTENCY: Check if a ConditionalOrder with this key already exists
+        const coIdempKey = `${idempotencyKey}_conditional`;
+        let coAlreadyExists = false;
+        try {
+          const existingCOs = await base44.entities.ConditionalOrder.filter({
+            created_by: user.email,
+            idempotency_key: coIdempKey
+          });
+          coAlreadyExists = existingCOs.length > 0;
+        } catch (_e) {}
+        
+        if (coAlreadyExists) {
+          log(`Skipping duplicate ConditionalOrder for ${sym} - idempotency key already exists: ${coIdempKey}`);
+        } else {
+          await base44.entities.ConditionalOrder.create(conditionalOrderData);
+          log(`Created ConditionalOrder for ${sym}`, { gainMargin, lossMargin, trailingEnabled, trailingMargin });
+        }
       }
 
       tradesPlaced.push({
