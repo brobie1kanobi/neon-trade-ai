@@ -1210,8 +1210,8 @@ Deno.serve(async (req) => {
     const tradesRejectedRisk = [];
     // CRITICAL: Enforce minimum TP/SL for high win rate
     // User settings are respected but floored at safe minimums
-    const defaultGainMargin = Math.max(settings.gain_margin || 5, 4); // Min 4% TP
-    const defaultLossMargin = Math.max(settings.loss_margin || 2.5, 2); // Min 2% SL
+    const defaultGainMargin = Math.max(settings.gain_margin || 5, 2); // Min 2% TP
+    const defaultLossMargin = Math.max(settings.loss_margin || 2.5, 1); // Min 1% SL
     const trailingEnabled = settings.trailing_takeprofit_enabled !== false;
     const defaultTrailingMargin = settings.trailing_takeprofit_margin || 3;
     const signalsConsumed = [];
