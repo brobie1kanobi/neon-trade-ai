@@ -403,8 +403,10 @@ export function KrakenWebSocketProvider({ children }) {
     };
 
     const pollPrices = async () => {
-      // Get symbols from current holdings (bestHoldings or state balances)
-      const holdingSymbols = bestHoldings.map(h => h.symbol).filter(Boolean);
+      // Get symbols from REST snapshot or WS balances (can't use bestHoldings — not yet defined)
+      const restSymbols = (restData.krakenBalance?.holdings || []).map(h => h.symbol);
+      const wsSymbols = Object.keys(state.balances).filter(a => a !== 'USD' && a !== 'ZUSD');
+      const holdingSymbols = [...new Set([...restSymbols, ...wsSymbols])].filter(Boolean);
       if (holdingSymbols.length === 0) return;
 
       const pairs = holdingSymbols
@@ -455,7 +457,7 @@ export function KrakenWebSocketProvider({ children }) {
     pollPrices();
     const id = setInterval(pollPrices, 30000);
     return () => clearInterval(id);
-  }, [shouldConnect, bestHoldings.length]);
+  }, [shouldConnect, restData.krakenBalance, state.balances]);
 
   // ── Recovery mode: poll REST while WS is down (conservative, 5 min) ──
   // CRITICAL: Only in LIVE mode (shouldConnect already gates on !isSimMode)
