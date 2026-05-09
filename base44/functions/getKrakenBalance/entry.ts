@@ -183,12 +183,29 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fetch cost basis from DB holdings (written by syncKrakenBalance)
+    let costBasisMap = {};
+    try {
+      const dbHoldings = await base44.entities.Holding.filter({
+        created_by: user.email,
+        is_simulation: false
+      });
+      for (const h of dbHoldings) {
+        if (h.symbol && h.average_cost_price > 0) {
+          costBasisMap[h.symbol] = h.average_cost_price;
+        }
+      }
+    } catch (_e) {
+      console.warn('[getKrakenBalance] Could not fetch cost basis from DB');
+    }
+
     const holdings = [];
     let totalCryptoValue = 0;
     const qtyBySymbol = rawHoldings.reduce((acc, h) => { acc[h.symbol] = (acc[h.symbol] || 0) + h.quantity; return acc; }, {});
     for (const [sym, qty] of Object.entries(qtyBySymbol)) {
       const p = prices[sym] || 0;
       const val = qty * p;
+      const avgCost = costBasisMap[sym] || 0;
       totalCryptoValue += val;
       holdings.push({
         symbol: sym,
@@ -196,6 +213,8 @@ Deno.serve(async (req) => {
         current_price: p,
         current_price_usd: p,
         total_value_usd: val,
+        avg_cost: avgCost,
+        cost_basis_total: avgCost > 0 ? avgCost * qty : 0,
         asset_type: 'crypto',
         is_simulation: false,
         price_available: p > 0

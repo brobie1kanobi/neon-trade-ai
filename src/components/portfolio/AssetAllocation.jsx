@@ -74,14 +74,15 @@ export default function AssetAllocation({ allocations, isLoading }) {
         const price = wsPrice || h.current_price_usd || 0;
         const qty = h.quantity || 0;
         const value = qty * price;
+        const avgCost = h.avg_cost || 0;
         
         return {
           symbol: h.symbol,
           quantity: qty,
           currentPrice: price,
           currentValue: value,
-          costBasis: (h.avg_cost || price) * qty,
-          average_cost_price: h.avg_cost || price,
+          costBasis: avgCost > 0 ? avgCost * qty : value,
+          average_cost_price: avgCost > 0 ? avgCost : price,
           asset_type: 'crypto',
           is_simulation: false
         };
@@ -316,24 +317,44 @@ export default function AssetAllocation({ allocations, isLoading }) {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
-                      <div>
-                        <span style={{ color: "var(--text-secondary)" }} className="">Current Price: </span>
-                        <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                          ${((asset.currentPrice || asset.average_cost_price || 0) >= 1 
-                            ? (asset.currentPrice || asset.average_cost_price || 0).toFixed(2) 
-                            : (asset.currentPrice || asset.average_cost_price || 0).toFixed(6))}
-                        </span>
-                        {!isSimMode && wsConnected && (
-                          <span className="ml-1 text-green-500">✅</span>
-                        )}
+                    <div className="pt-2 border-t space-y-1.5" style={{ borderColor: "var(--border-color)" }}>
+                      <div className="flex items-center justify-between text-xs">
+                        <div>
+                          <span style={{ color: "var(--text-secondary)" }}>Price: </span>
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                            ${((asset.currentPrice || 0) >= 1 
+                              ? (asset.currentPrice || 0).toFixed(2) 
+                              : (asset.currentPrice || 0).toFixed(6))}
+                          </span>
+                          {!isSimMode && wsConnected && (
+                            <span className="ml-1 text-green-500">✅</span>
+                          )}
+                        </div>
+                        <div className={`flex items-center gap-1 font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
+                          {gainLoss >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          <span title="Unrealized Profit/Loss since purchase (Lifetime PnL)">
+                            {gainLoss >= 0 ? "+" : ""}${Math.abs(gainLoss).toFixed(2)} ({gainLossPercent >= 0 ? "+" : ""}{gainLossPercent.toFixed(2)}%)
+                          </span>
+                        </div>
                       </div>
-                      <div className={`flex items-center gap-1 font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        {gainLoss >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        <span title="Unrealized Profit/Loss since purchase (Lifetime PnL)">
-                          {gainLoss >= 0 ? "+" : ""}${Math.abs(gainLoss).toFixed(2)} ({gainLossPercent >= 0 ? "+" : ""}{gainLossPercent.toFixed(2)}% Lifetime)
-                        </span>
-                      </div>
+                      {asset.average_cost_price > 0 && asset.average_cost_price !== asset.currentPrice && (
+                        <div className="flex items-center justify-between text-xs">
+                          <div>
+                            <span style={{ color: "var(--text-secondary)" }}>Avg Cost: </span>
+                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                              ${asset.average_cost_price >= 1 
+                                ? asset.average_cost_price.toFixed(2) 
+                                : asset.average_cost_price.toFixed(6)}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)" }}>Cost Basis: </span>
+                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                              ${(asset.costBasis || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-2 bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">

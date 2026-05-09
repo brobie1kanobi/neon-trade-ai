@@ -388,6 +388,75 @@ export function KrakenWebSocketProvider({ children }) {
     return () => clearInterval(id);
   }, [shouldConnect, fetchPnL]);
 
+  // ── FREE real-time price polling via Kraken public Ticker API (no integration credits) ──
+  // Updates prices every 30s even when WS is disconnected, keeping dashboard balances fresh
+  useEffect(() => {
+    if (!shouldConnect) return;
+
+    const KRAKEN_PAIR_MAP = {
+      BTC: 'XXBTZUSD', ETH: 'XETHZUSD', SOL: 'SOLUSD', XRP: 'XXRPZUSD',
+      ADA: 'ADAUSD', DOGE: 'XDGUSD', DOT: 'DOTUSD', LINK: 'LINKUSD',
+      LTC: 'XLTCZUSD', BCH: 'BCHUSD', XLM: 'XXLMZUSD', AVAX: 'AVAXUSD',
+      ATOM: 'ATOMUSD', UNI: 'UNIUSD', TRX: 'TRXUSD', PEPE: 'PEPEUSD',
+      SHIB: 'SHIBUSD', HBAR: 'HBARUSD', SUI: 'SUIUSD', NEAR: 'NEARUSD',
+      TRUMP: 'TRUMPUSD', BONK: 'BONKUSD', FLOKI: 'FLOKIUSD', BABY: 'BABYUSD'
+    };
+
+    const pollPrices = async () => {
+      // Get symbols from current holdings (bestHoldings or state balances)
+      const holdingSymbols = bestHoldings.map(h => h.symbol).filter(Boolean);
+      if (holdingSymbols.length === 0) return;
+
+      const pairs = holdingSymbols
+        .map(s => KRAKEN_PAIR_MAP[s] || `${s}USD`)
+        .filter(Boolean);
+      if (pairs.length === 0) return;
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(
+          `https://api.kraken.com/0/public/Ticker?pair=${pairs.join(',')}`,
+          { signal: controller.signal, headers: { 'User-Agent': 'NeonTrade/1.0' } }
+        );
+        clearTimeout(timeout);
+
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.error?.length) return;
+
+        let updated = false;
+        const priceWindow = typeof window !== 'undefined' ? (window.__krakenWsPrices || {}) : {};
+
+        for (const sym of holdingSymbols) {
+          const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
+          const ticker = data.result?.[pair];
+          if (!ticker?.c?.[0]) continue;
+          const price = parseFloat(ticker.c[0]);
+          if (price > 0) {
+            const wsPair = `${sym}/USD`;
+            if (!priceWindow[wsPair] || Math.abs(priceWindow[wsPair].price - price) > 0.001) {
+              priceWindow[wsPair] = { price, timestamp: Date.now() };
+              updated = true;
+            }
+          }
+        }
+
+        if (updated && typeof window !== 'undefined') {
+          window.__krakenWsPrices = priceWindow;
+          window.dispatchEvent(new CustomEvent('kraken:price-update'));
+        }
+      } catch (_e) {
+        // Non-critical — silent fail
+      }
+    };
+
+    // Poll immediately, then every 30s
+    pollPrices();
+    const id = setInterval(pollPrices, 30000);
+    return () => clearInterval(id);
+  }, [shouldConnect, bestHoldings.length]);
+
   // ── Recovery mode: poll REST while WS is down (conservative, 5 min) ──
   // CRITICAL: Only in LIVE mode (shouldConnect already gates on !isSimMode)
   useEffect(() => {
@@ -423,7 +492,7 @@ export function KrakenWebSocketProvider({ children }) {
       : 0;
 
   const bestHoldings = restHasBalance
-    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, is_simulation: false }))
+    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, avg_cost: h.avg_cost || 0, is_simulation: false }))
     : wsHasBalances
       ? Object.entries(state.balances)
           .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
