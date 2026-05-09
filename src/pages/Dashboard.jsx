@@ -784,16 +784,27 @@ export default function Dashboard() {
 
   const currentPortfolioValue = React.useMemo(() => {
     if (isSimMode) return portfolioMarketValue;
-    if (hasKrakenSnapshot) return providerKrakenBalance?.total_crypto_value_usd ?? 0;
+    // LIVE: Recompute crypto value from REST holdings + latest WS/poll prices
+    // This ensures the portfolio value updates every 30s with fresh prices
+    if (hasKrakenSnapshot && providerBestHoldings?.length > 0) {
+      let liveTotal = 0;
+      for (const h of providerBestHoldings) {
+        const qty = h.quantity || 0;
+        // Prefer real-time WS price, fall back to REST snapshot price
+        const wsPair = `${h.symbol}/USD`;
+        const livePrice = wsPrices?.[wsPair]?.price || h.current_price_usd || 0;
+        liveTotal += qty * livePrice;
+      }
+      return liveTotal > 0 ? liveTotal : (providerKrakenBalance?.total_crypto_value_usd ?? 0);
+    }
     return wsCryptoValue || 0;
-  }, [isSimMode, portfolioMarketValue, hasKrakenSnapshot, providerKrakenBalance, wsCryptoValue, wsUpdateCounter]);
+  }, [isSimMode, portfolioMarketValue, hasKrakenSnapshot, providerKrakenBalance, providerBestHoldings, wsPrices, wsCryptoValue, wsUpdateCounter]);
     
   // Total Balance = Cash + Portfolio (crypto)
+  // CRITICAL: Always sum cash + live-recomputed portfolio to stay in sync with price updates
   const totalBalance = React.useMemo(() => {
-    if (isSimMode) return currentCashBalance + currentPortfolioValue;
-    if (hasKrakenSnapshot) return providerKrakenBalance?.total_portfolio_value_usd ?? (currentCashBalance + currentPortfolioValue);
-    return (wsUsdBalance || 0) + (wsCryptoValue || 0);
-  }, [isSimMode, currentCashBalance, currentPortfolioValue, hasKrakenSnapshot, providerKrakenBalance, wsUsdBalance, wsCryptoValue, wsUpdateCounter]);
+    return currentCashBalance + currentPortfolioValue;
+  }, [currentCashBalance, currentPortfolioValue]);
 
   // Live mode uses provider's best-available data (WS > REST), no special zero-handling needed
 
