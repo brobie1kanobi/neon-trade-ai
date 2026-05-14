@@ -19,6 +19,7 @@ import { invalidateCache } from "@/components/hooks/useDataFetching";
 import { usePriceData } from "@/components/hooks/usePriceData";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useBracketOrderSync } from "@/components/hooks/useBracketOrderSync";
+import { useConditionalOrderMonitor } from "@/components/hooks/useConditionalOrderMonitor";
 
 import BalanceCard from "../components/dashboard/BalanceCard";
 import RecentTrades from "../components/dashboard/RecentTrades";
@@ -551,6 +552,9 @@ export default function Dashboard() {
 
   // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);
+  
+  // CRITICAL: Real-time TP/SL monitoring - checks conditional orders against live prices every ~30s
+  useConditionalOrderMonitor(user?.email);
   
   // CRITICAL: Use PnL from provider (already fetched, no duplicate call)
   const krakenPnL = React.useMemo(() => {

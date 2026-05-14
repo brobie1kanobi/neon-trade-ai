@@ -975,7 +975,9 @@ Deno.serve(async (req) => {
         const change24h = Number(sig.change_24h || q?.change_24h_percent || 0);
         if (!(signalType === 'buy' || signalType === 'strong_buy')) continue;
         if (confidence < minConf) continue;
-        if (change24h < -5) continue;
+        // ANTI-PUMP: Reject if price already extended (pumping or crashing)
+        if (change24h < -8 || change24h > 5) continue;
+        if (signalType === 'buy' && change24h > 3) continue; // Tighter for regular buys
         const userPct = Number(pref.percentage || 10) / 100;
         let total = spendable * userPct;
         const safetyMax = spendable * safetyMaxPct;
@@ -1156,10 +1158,12 @@ Deno.serve(async (req) => {
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
 
-      // Align trader execution with prospects logic: only block steep drops worse than -5%
+      // ANTI-PUMP FILTER: Block buys when price has already surged significantly
+      // For strong_buy (oversold bounce): allow wider range but still block extreme pumps
+      // For regular buy: only enter on flat or slightly negative 24h change
       const change24h = Number(p.market_trend || 0);
-      const trendOkForStrong = change24h > -5;
-      const trendOkForBuy = change24h > -5;
+      const trendOkForStrong = change24h > -8 && change24h < 5; // No buying into +5% pumps
+      const trendOkForBuy = change24h > -5 && change24h < 3;    // Tighter: no chasing +3% moves
 
       let meetsConfidence = false;
       if (signalType === 'strong_buy') {

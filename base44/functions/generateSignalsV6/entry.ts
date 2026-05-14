@@ -146,16 +146,35 @@ Deno.serve(async (req) => {
     for (const m of market) {
       const sym = m.symbol;
       const t = tech[sym] || {};
-      // Basic rules: prefer buy when RSI<65 and price >= SMA20 or RSI<40 (oversold bounce)
+      // ANTI-PUMP RULES: Only buy when conditions favor a good entry, not at highs
+      // - RSI < 35: oversold bounce opportunity (strong_buy)
+      // - RSI 35-50 AND price near/below SMA20: healthy pullback entry (buy)
+      // - RSI > 60 OR 24h change > 4%: price is extended, skip (hold)
+      // - RSI > 75: overbought, recommend sell
       let action = 'hold';
       if (t.rsi != null) {
-        if (t.rsi < 40) action = 'buy';
-        else if (t.rsi < 65 && t.last && t.sma20 && t.last >= t.sma20) action = 'buy';
-        else if (t.rsi > 75) action = 'sell';
+        if (t.rsi < 35 && m.change24h < 3) {
+          action = 'strong_buy'; // Oversold + not already pumping
+        } else if (t.rsi < 50 && t.last && t.sma20 && t.last <= t.sma20 * 1.02 && m.change24h < 4) {
+          action = 'buy'; // Near SMA support, not extended
+        } else if (t.rsi > 75 || m.change24h > 8) {
+          action = 'sell'; // Overbought or parabolic
+        }
+        // else: hold — RSI 50-75 with no clear pullback = don't chase
       } else {
-        action = m.change24h >= 0 ? 'buy' : 'hold';
+        // No technical data — only buy on dips, not pumps
+        action = m.change24h < -1 ? 'buy' : 'hold';
       }
-      const confidence = action === 'buy' ? (m.change24h > 1 ? 62 : 55) : action === 'sell' ? 58 : 50;
+      let confidence;
+      if (action === 'strong_buy') {
+        confidence = t.rsi < 30 ? 72 : 65;
+      } else if (action === 'buy') {
+        confidence = m.change24h < 0 ? 60 : 52; // Higher confidence on dips
+      } else if (action === 'sell') {
+        confidence = 58;
+      } else {
+        confidence = 45; // Hold = low confidence, won't trigger auto-trader
+      }
 
       const payload = {
         asset_symbol: sym,
