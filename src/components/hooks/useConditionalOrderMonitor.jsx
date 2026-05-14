@@ -19,15 +19,25 @@ import { toast } from 'sonner';
 const MIN_CHECK_INTERVAL_MS = 25000; // Don't check more often than every 25s
 const STALE_ORDERS_CACHE_MS = 60000; // Re-fetch orders from DB every 60s
 
+// Kraken minimum order sizes per asset
+const MIN_ORDER_SIZES = {
+  'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+  'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'ATOM': 0.5, 'AVAX': 0.1,
+  'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0, 'SHIB': 100000.0, 'XLM': 20.0,
+  'PEPE': 500000.0, 'SUI': 3.0, 'HBAR': 20.0, 'NEAR': 0.7, 'BONK': 500000.0,
+  'FLOKI': 105000.0, 'TRUMP': 0.2
+};
+
 export function useConditionalOrderMonitor(userEmail) {
   const { settings } = useSettings();
-  const { prices: wsPrices, wsUpdateCounter } = useKrakenWebSocket();
+  const { prices: wsPrices, wsUpdateCounter, balances: wsBalances } = useKrakenWebSocket();
   const isSimMode = settings?.sim_trading_mode !== false;
 
   const activeOrdersRef = useRef([]);
   const lastOrderFetchRef = useRef(0);
   const lastCheckRef = useRef(0);
   const processingRef = useRef(new Set());
+  const failedOrdersRef = useRef(new Set()); // Track orders that failed — don't retry
 
   // Fetch active conditional orders from DB (cached for 60s)
   const refreshOrders = useCallback(async () => {
@@ -123,6 +133,44 @@ export function useConditionalOrderMonitor(userEmail) {
       }
 
       if (!shouldSell) continue;
+
+      // PRE-FLIGHT: Check if this order already failed permanently — skip to avoid spam
+      if (failedOrdersRef.current.has(order.id)) continue;
+
+      // PRE-FLIGHT: Check quantity against Kraken minimum order size
+      const minQty = MIN_ORDER_SIZES[sym] || 0.00001;
+      if (quantity < minQty) {
+        console.log(`[OrderMonitor] Auto-cancelling ${sym} order #${order.id} — qty ${quantity} below Kraken min ${minQty}`);
+        failedOrdersRef.current.add(order.id);
+        try {
+          await base44.entities.ConditionalOrder.update(order.id, {
+            status: 'cancelled',
+            closure_reason: `Auto-cancelled: quantity ${quantity} below Kraken minimum ${minQty}`,
+            executed_at: new Date().toISOString()
+          });
+          activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
+        } catch (_) {}
+        continue;
+      }
+
+      // PRE-FLIGHT (LIVE): Check actual available balance from WS before attempting sell
+      if (!isSimMode && wsBalances) {
+        const balEntry = wsBalances[sym] || wsBalances[`X${sym}`];
+        const available = balEntry?.balance || balEntry?.available || 0;
+        if (available < minQty) {
+          console.log(`[OrderMonitor] Auto-cancelling ${sym} order #${order.id} — available ${available} below Kraken min ${minQty}`);
+          failedOrdersRef.current.add(order.id);
+          try {
+            await base44.entities.ConditionalOrder.update(order.id, {
+              status: 'cancelled',
+              closure_reason: `Auto-cancelled: insufficient ${sym} balance (${available.toFixed(8)}). Min: ${minQty}`,
+              executed_at: new Date().toISOString()
+            });
+            activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
+          } catch (_) {}
+          continue;
+        }
+      }
 
       // TRIGGER SELL
       processingRef.current.add(order.id);
@@ -239,7 +287,22 @@ export function useConditionalOrderMonitor(userEmail) {
 
       } catch (err) {
         console.error(`[OrderMonitor] Failed to execute sell for ${sym}:`, err.message);
-        toast.error(`Sell failed for ${sym}`, { description: err.message });
+        const errMsg = err.message || '';
+        // Permanent failures: mark order so we don't retry every 30s
+        if (/insufficient|minimum|invalid volume|too small|below minimum/i.test(errMsg)) {
+          failedOrdersRef.current.add(order.id);
+          try {
+            await base44.entities.ConditionalOrder.update(order.id, {
+              status: 'cancelled',
+              closure_reason: `Auto-cancelled: ${errMsg}`,
+              executed_at: new Date().toISOString()
+            });
+            activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
+          } catch (_) {}
+        } else {
+          // Transient error — show toast once but allow retry
+          toast.error(`Sell failed for ${sym}`, { description: errMsg });
+        }
       } finally {
         processingRef.current.delete(order.id);
       }
