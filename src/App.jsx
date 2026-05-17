@@ -8,6 +8,7 @@ import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import AITraderSettings from './pages/AITraderSettings';
+import GitHubConnect from './pages/GitHubConnect';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -62,6 +63,7 @@ const AuthenticatedApp = () => {
         />
       ))}
       <Route path="/AITraderSettings" element={<LayoutWrapper currentPageName="AI Trader Settings"><AITraderSettings /></LayoutWrapper>} />
+      <Route path="/github" element={<LayoutWrapper currentPageName="GitHub"><GitHubConnect /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
