@@ -14,6 +14,9 @@ import TimeSettings from "../components/settings/TimeSettings";
 
 
 import { useSettings } from "../components/utils/SettingsContext";
+import { Link } from "react-router-dom";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Github, ChevronRight } from "lucide-react";
 
 export default function Settings() {
   const { settings, user, isLoading, updateSetting } = useSettings();
@@ -113,7 +116,25 @@ export default function Settings() {
         />
       </motion.div>
 
-      {/* 10) Account */}
+      {/* 10) GitHub Integration */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
+        <Link to="/github">
+          <Card className="cursor-pointer hover:opacity-80 transition-opacity" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <CardHeader className="flex flex-row items-center gap-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.1)' }}>
+                <Github className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-base" style={{ color: 'var(--text-primary)' }}>GitHub Integration</CardTitle>
+                <CardDescription style={{ color: 'var(--text-secondary)' }}>Connect your GitHub account & manage repos</CardDescription>
+              </div>
+              <ChevronRight className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+            </CardHeader>
+          </Card>
+        </Link>
+      </motion.div>
+
+      {/* 11) Account */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
         <AccountSettings user={user} />
       </motion.div>
