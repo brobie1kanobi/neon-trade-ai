@@ -135,15 +135,15 @@ export default function PrivacyPolicyModal({ isOpen, onClose }) {
 
             {/* Legal Footer */}
             <div className="text-xs pt-2 border-t" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
-              <p>
-                This Privacy Policy & Disclaimer is effective as of May 2025 and may be updated at any time. 
-                Continued use of NeonTrade AI after changes constitutes acceptance of the revised policy.
-                This application is not a registered broker-dealer, investment advisor, or financial institution.
+              <p>This Privacy Policy & Disclaimer is effective as of May 2026 and may be updated at any time. Continued use of NeonTrade AI after changes constitutes acceptance of the revised policy. This application is not a registered broker-dealer, investment advisor, or financial institution.
+
+
+
               </p>
             </div>
           </div>
         </ScrollArea>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>);
+
 }
