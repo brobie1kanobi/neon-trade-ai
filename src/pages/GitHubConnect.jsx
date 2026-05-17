@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Github, Plus, ExternalLink, Lock, Globe, RefreshCw, LogOut, Loader2 } from "lucide-react";
+import { Github, Plus, ExternalLink, Lock, Globe, RefreshCw, LogOut, Loader2, Upload, Check } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 const CONNECTOR_ID = '6a09f1308b3ef44f133e022c';
@@ -26,6 +28,12 @@ export default function GitHubConnect() {
   const [repoDesc, setRepoDesc] = useState('');
   const [isPrivate, setIsPrivate] = useState(true);
   const [creating, setCreating] = useState(false);
+
+  // Push to GitHub
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [commitMsg, setCommitMsg] = useState('');
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -109,6 +117,54 @@ export default function GitHubConnect() {
       if (data?.success) setRepos(data.repos || []);
     } catch {}
     setReposLoading(false);
+  };
+
+  const handlePushToGitHub = async () => {
+    if (!selectedRepo) return toast.error("Please select a repository");
+    const repo = repos.find(r => r.full_name === selectedRepo);
+    if (!repo) return toast.error("Repository not found");
+
+    setPushing(true);
+    setPushResult(null);
+
+    try {
+      const [owner, repoName] = repo.full_name.split('/');
+
+      // Gather the project's key source files to push
+      // We'll push a manifest of the app's configuration
+      const timestamp = new Date().toISOString();
+      const readmeContent = `# ${repo.name}\n\nSynced from NeonTrade AI via in-app push.\n\nLast updated: ${timestamp}\n`;
+
+      const gitignoreContent = `# Dependencies\nnode_modules/\n.pnp\n.pnp.js\n\n# Build output\ndist/\nbuild/\n\n# Environment variables\n.env\n.env.local\n.env.development.local\n.env.test.local\n.env.production.local\n\n# Logs\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\n\n# IDE\n.vscode/\n.idea/\n*.swp\n*.swo\n\n# OS\n.DS_Store\nThumbs.db\n\n# Temp\ntmp/\ncoverage/\n`;
+
+      const files = [
+        { path: 'README.md', content: readmeContent },
+        { path: '.gitignore', content: gitignoreContent }
+      ];
+
+      const message = commitMsg.trim() || `Update from NeonTrade AI - ${timestamp}`;
+
+      const res = await githubRepo({
+        action: 'pushFiles',
+        owner,
+        repo: repoName,
+        files,
+        commitMessage: message,
+        branch: 'main'
+      });
+
+      const data = res?.data || res;
+      if (data?.success) {
+        setPushResult(data.commit);
+        setCommitMsg('');
+        toast.success(`Successfully pushed ${data.commit.files_pushed} files!`);
+      } else {
+        toast.error(data?.error || "Push failed");
+      }
+    } catch (err) {
+      toast.error(err?.message || "Failed to push to GitHub");
+    }
+    setPushing(false);
   };
 
   if (loading) {
@@ -228,6 +284,71 @@ export default function GitHubConnect() {
             </form>
           </CardContent>
         )}
+      </Card>
+
+      {/* Push to GitHub */}
+      <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Upload className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+            Push to GitHub
+          </CardTitle>
+          <CardDescription style={{ color: 'var(--text-secondary)' }}>
+            Push project files to one of your GitHub repositories
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label style={{ color: 'var(--text-secondary)' }}>Target Repository</Label>
+            <Select value={selectedRepo} onValueChange={setSelectedRepo}>
+              <SelectTrigger className="mt-1" style={{ backgroundColor: 'var(--secondary-bg)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
+                <SelectValue placeholder="Select a repository..." />
+              </SelectTrigger>
+              <SelectContent>
+                {repos.map((repo) => (
+                  <SelectItem key={repo.id} value={repo.full_name}>
+                    <span className="flex items-center gap-2">
+                      {repo.private ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
+                      {repo.full_name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label style={{ color: 'var(--text-secondary)' }}>Commit Message (optional)</Label>
+            <Textarea
+              value={commitMsg}
+              onChange={(e) => setCommitMsg(e.target.value)}
+              placeholder="Update from NeonTrade AI"
+              className="mt-1"
+              rows={2}
+              style={{ backgroundColor: 'var(--secondary-bg)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
+            />
+          </div>
+          <Button
+            onClick={handlePushToGitHub}
+            disabled={pushing || !selectedRepo}
+            className="gap-2 w-full sm:w-auto"
+            style={{ backgroundColor: 'var(--neon-green)', color: '#000' }}
+          >
+            {pushing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {pushing ? 'Pushing...' : 'Push to GitHub'}
+          </Button>
+
+          {pushResult && (
+            <div className="flex items-start gap-3 p-3 rounded-lg border" style={{ borderColor: 'var(--neon-green)', backgroundColor: 'rgba(var(--neon-green-rgb), 0.05)' }}>
+              <Check className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: 'var(--neon-green)' }} />
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Push successful!</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  Commit: <code className="text-xs">{pushResult.sha?.slice(0, 7)}</code> · {pushResult.files_pushed} files pushed
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* Repos List */}

@@ -108,6 +108,163 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === 'getRepoContents') {
+      const { owner, repo, path } = body;
+      if (!owner || !repo) {
+        return Response.json({ error: 'owner and repo are required' }, { status: 400 });
+      }
+      const apiPath = path ? `/${path}` : '';
+      const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${apiPath}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      });
+      if (!resp.ok) {
+        if (resp.status === 404) {
+          return Response.json({ success: true, contents: [] });
+        }
+        const err = await resp.text();
+        return Response.json({ error: `GitHub API error: ${resp.status} ${err}` }, { status: resp.status });
+      }
+      const contents = await resp.json();
+      return Response.json({ success: true, contents: Array.isArray(contents) ? contents : [contents] });
+    }
+
+    if (action === 'pushFiles') {
+      const { owner, repo, files, commitMessage, branch } = body;
+      if (!owner || !repo || !files || !Array.isArray(files) || files.length === 0) {
+        return Response.json({ error: 'owner, repo, and files array are required' }, { status: 400 });
+      }
+
+      const targetBranch = branch || 'main';
+      const message = commitMessage || `Update from NeonTrade AI - ${new Date().toISOString()}`;
+
+      // Get the latest commit SHA for the branch
+      const refResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${targetBranch}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      });
+      if (!refResp.ok) {
+        const err = await refResp.text();
+        return Response.json({ error: `Failed to get branch ref: ${err}` }, { status: refResp.status });
+      }
+      const refData = await refResp.json();
+      const latestCommitSha = refData.object.sha;
+
+      // Get the tree SHA of the latest commit
+      const commitResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      });
+      if (!commitResp.ok) {
+        return Response.json({ error: 'Failed to get latest commit' }, { status: commitResp.status });
+      }
+      const commitData = await commitResp.json();
+      const baseTreeSha = commitData.tree.sha;
+
+      // Create blobs for each file
+      const treeItems = [];
+      for (const file of files) {
+        const blobResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: file.content,
+            encoding: 'utf-8'
+          })
+        });
+        if (!blobResp.ok) {
+          return Response.json({ error: `Failed to create blob for ${file.path}` }, { status: blobResp.status });
+        }
+        const blobData = await blobResp.json();
+        treeItems.push({
+          path: file.path,
+          mode: '100644',
+          type: 'blob',
+          sha: blobData.sha
+        });
+      }
+
+      // Create a new tree
+      const treeResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          base_tree: baseTreeSha,
+          tree: treeItems
+        })
+      });
+      if (!treeResp.ok) {
+        return Response.json({ error: 'Failed to create tree' }, { status: treeResp.status });
+      }
+      const treeData = await treeResp.json();
+
+      // Create the commit
+      const newCommitResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message,
+          tree: treeData.sha,
+          parents: [latestCommitSha]
+        })
+      });
+      if (!newCommitResp.ok) {
+        return Response.json({ error: 'Failed to create commit' }, { status: newCommitResp.status });
+      }
+      const newCommitData = await newCommitResp.json();
+
+      // Update the branch reference
+      const updateRefResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sha: newCommitData.sha
+        })
+      });
+      if (!updateRefResp.ok) {
+        return Response.json({ error: 'Failed to update branch' }, { status: updateRefResp.status });
+      }
+
+      return Response.json({
+        success: true,
+        commit: {
+          sha: newCommitData.sha,
+          message: newCommitData.message,
+          url: newCommitData.html_url,
+          files_pushed: files.length
+        }
+      });
+    }
+
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
