@@ -6,12 +6,12 @@ import { HeartHandshake } from "lucide-react";
 import { toast } from "sonner";
 
 import { User } from "@/entities/User";
-import RefundPolicyModal from "./RefundPolicyModal";
+import PrivacyPolicyModal from "./PrivacyPolicyModal";
 
 export default function DonateSection() {
   const [amount, setAmount] = useState("");
   const [user, setUser] = useState(null);
-  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -40,14 +40,14 @@ export default function DonateSection() {
   };
 
   const handleViewPolicy = () => {
-    setShowRefundModal(true);
+    setShowPolicyModal(true);
   };
 
   return (
     <>
-      <RefundPolicyModal
-        isOpen={showRefundModal}
-        onClose={() => setShowRefundModal(false)} />
+      <PrivacyPolicyModal
+        isOpen={showPolicyModal}
+        onClose={() => setShowPolicyModal(false)} />
 
       
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
@@ -74,7 +74,7 @@ export default function DonateSection() {
               variant="outline"
               className="w-full sm:w-auto flex-grow">
 
-              View Refund Policy
+              Privacy Policy & Disclaimer
             </Button>
           </div>
         </CardContent>
