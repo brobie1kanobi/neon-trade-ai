@@ -17,6 +17,11 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Strategy not found' }, { status: 404 });
     }
     
+    // SECURITY: Verify the authenticated user owns this strategy or is an admin
+    if (strategy.created_by !== user.email && user.role !== 'admin') {
+      return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
+    }
+    
     // Fetch historical data for backtesting
     const results = [];
     let capital = initial_capital;
