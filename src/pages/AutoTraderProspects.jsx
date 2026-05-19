@@ -158,9 +158,35 @@ export default function AutoTraderProspects() {
         throw new Error(buyData?.error || 'Buy order failed');
       }
       
+      // Use ACTUAL executed quantity from Kraken response (may differ from proposed)
+      const actualQty = buyData.executed_qty || buyData.quantity || qty;
+      const actualPrice = buyData.avg_price || price;
+      const actualTotal = actualQty * actualPrice;
+      
       toast.success(`✅ BUY Executed`, {
-        description: `Bought ${qty.toFixed(4)} ${prospect.symbol} @ $${price.toFixed(2)}`
+        description: `Bought ${actualQty.toFixed(4)} ${prospect.symbol} @ $${actualPrice.toFixed(2)} ($${actualTotal.toFixed(2)})`
       });
+      
+      // CRITICAL: Record the Trade entity so it appears in Orders & History
+      try {
+        await base44.entities.Trade.create({
+          symbol: prospect.symbol,
+          type: 'buy',
+          asset_type: prospect.asset_type || 'crypto',
+          quantity: actualQty,
+          price: actualPrice,
+          total_value: actualTotal,
+          fee: buyData.fee || 0,
+          status: 'executed',
+          is_auto_trade: true,
+          is_simulation: false,
+          kraken_order_id: buyData.order_id || null,
+          submitted_at: new Date().toISOString(),
+          filled_at: new Date().toISOString()
+        });
+      } catch (tradeErr) {
+        console.error('[Prospects] Failed to record Trade entity:', tradeErr);
+      }
       
       // Skipping Kraken bracket orders; create app-managed ConditionalOrder instead
       await new Promise(res => setTimeout(res, 500));
@@ -168,8 +194,8 @@ export default function AutoTraderProspects() {
         await base44.entities.ConditionalOrder.create({
           symbol: prospect.symbol,
           asset_type: prospect.asset_type || 'crypto',
-          quantity: qty,
-          purchase_price: price,
+          quantity: actualQty,
+          purchase_price: actualPrice,
           gain_margin: tpPercent,
           loss_margin: slPercent,
           status: 'active',
@@ -189,6 +215,9 @@ export default function AutoTraderProspects() {
       }
 
       setSelectedProspect(null);
+      // Notify other components (e.g., Orders & History) that a trade was completed
+      window.dispatchEvent(new CustomEvent('trade:completed', { detail: { symbol: prospect.symbol } }));
+      window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'trade', source: 'prospects' } }));
       setTimeout(() => fetchProspects(), 3000);
       
     } catch (error) {
@@ -417,20 +446,21 @@ export default function AutoTraderProspects() {
           {selectedProspect &&
           <div className="space-y-3">
               <div className="bg-slate-700 p-4 rounded-lg dark:bg-gray-900 space-y-2">
+                <p className="text-xs text-gray-400 mb-1">Estimated — actual fill may differ at market price</p>
                 <div className="flex justify-between">
                   <span className="text-sm font-medium">Asset:</span>
                   <span className="font-semibold">{selectedProspect.symbol}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Quantity:</span>
-                  <span className="font-semibold">{selectedProspect.quantity.toFixed(4)}</span>
+                  <span className="text-sm font-medium">Est. Quantity:</span>
+                  <span className="font-semibold">~{selectedProspect.quantity.toFixed(4)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Price:</span>
+                  <span className="text-sm font-medium">Current Price:</span>
                   <span className="font-semibold">${selectedProspect.current_price.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm font-medium">Total:</span>
+                  <span className="text-sm font-medium">Budget:</span>
                   <span className="font-semibold">${selectedProspect.total_value.toFixed(2)}</span>
                 </div>
               </div>
