@@ -58,7 +58,7 @@ Before you begin, ensure you have:
 
 ### 4.1. Create Your Base44 App
 
-1.  Log in to your Base44.com account.
+1.  Log in to your Base44.com account and sign up for a "Builder" plan (needed for backend functionality).
 2.  Create a new application or import the NeonTrade AI template/codebase provided.
 3.  Your app will be automatically provisioned and the frontend/backend will be deployed.
 
@@ -75,16 +75,16 @@ If you wish to make local modifications to the code:
 Critical API keys and secrets must be securely stored as environment variables in your Base44 app.
 
 1.  Go to your Base44 app dashboard.
-2.  Navigate to "Settings" -> "Environment Variables".
+2.  Navigate to "Secrets" -> "Add Secret".
 3.  Add the following secrets:
-    *   **`Kraken_API_Key`**: Your Kraken API key with query and trading permissions.
-    *   **`Kraken_API_Secret`**: Your Kraken API secret (corresponding to the key above).
+    *   **`Kraken_API_Key` and `Trade_Key`**: Your Kraken API keys, 1 with query (balance requesting) only and 1 with all permissions enabled for trading.
+    *   **`Kraken_API_Secret` and `Trade_Secret`**: Your Kraken API secrets (corresponding to the keys above).
     *   (Optional) **`COINGECKO_API_KEY`**: If you have a CoinGecko API key for enhanced market data.
     *   (Optional, for GitHub Marketplace Webhooks) **`GITHUB_MARKETPLACE_WEBHOOK_SECRET`**: A strong, random string you generate. This must match the secret set in GitHub.
 
 ### 4.4. Connect Kraken Exchange
 
-The application will attempt to connect to Kraken using the `Kraken_API_Key` and `Kraken_API_Secret` you provided. Ensure these are correct for full functionality.
+The application will attempt to connect to Kraken using the `Kraken_API_Key`s and `Kraken_API_Secret`s you provided. Ensure these are correct for full functionality.
 
 ### 4.5. Set Up GitHub Integrations (Optional)
 
