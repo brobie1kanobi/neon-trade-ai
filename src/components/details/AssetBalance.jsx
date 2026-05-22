@@ -13,9 +13,11 @@ export default function AssetBalance({ holding, assetData }) {
         );
     }
 
-    const price = assetData?.price ?? 0;
-    const currentValue = holding.quantity * price;
-    const costBasis = holding.quantity * holding.average_cost_price;
+    const price = Number(assetData?.price) || 0;
+    const qty = Number(holding.quantity) || 0;
+    const avgCost = Number(holding.average_cost_price) || 0;
+    const currentValue = qty * price;
+    const costBasis = qty * avgCost;
     const pnl = currentValue - costBasis;
     const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
     const isPositive = pnl >= 0;
@@ -36,11 +38,11 @@ export default function AssetBalance({ holding, assetData }) {
 
                 <div className="flex justify-between items-center text-sm pt-2">
                     <span style={{ color: 'var(--text-secondary)' }}>Quantity Owned</span>
-                    <p className="font-semibold">{holding.quantity.toFixed(6)}</p>
+                    <p className="font-semibold">{qty.toFixed(6)}</p>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                     <span style={{ color: 'var(--text-secondary)' }}>Average Cost</span>
-                    <p className="font-semibold">${holding.average_cost_price.toFixed(2)}</p>
+                    <p className="font-semibold">${avgCost.toFixed(2)}</p>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span style={{ color: 'var(--text-secondary)' }}>Current Value</span>
