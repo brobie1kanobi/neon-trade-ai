@@ -5,8 +5,8 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
  * SECURITY FIX: Returns 401 for unauthorized users
  */
 
-const BALANCE_TIMEOUT_MS = 12000; // 12 seconds max (Kraken can be slow)
-const TRADES_TIMEOUT_MS = 12000; // 12 seconds max
+const BALANCE_TIMEOUT_MS = 20000; // 20 seconds max (Kraken can be slow)
+const TRADES_TIMEOUT_MS = 20000; // 20 seconds max
 
 function parseKrakenAsset(krakenCode) {
   const code = String(krakenCode || '').toUpperCase();
@@ -121,11 +121,11 @@ async function handleSync(req, startTime) {
   try {
     const base44 = createClientFromRequest(req);
     
-    // SECURITY FIX: 2-second timeout for auth - RETURN 401 IF UNAUTHORIZED
+    // SECURITY FIX: 5-second timeout for auth - RETURN 401 IF UNAUTHORIZED
     const userPromise = base44.auth.me();
     const user = await Promise.race([
       userPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 2000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
     ]);
     
     if (!user) {
@@ -262,7 +262,7 @@ async function handleSync(req, startTime) {
       
       const wallets = await Promise.race([
         walletsPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet query timeout')), 2000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet query timeout')), 5000))
       ]);
 
       if (wallets.length === 0) {
@@ -299,7 +299,7 @@ async function handleSync(req, startTime) {
       
       const existingHoldings = await Promise.race([
         existingPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings query timeout')), 2000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings query timeout')), 5000))
       ]);
       
       const deletePromises = existingHoldings.map(h => 

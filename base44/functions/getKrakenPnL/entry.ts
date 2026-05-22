@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     
     const user = await Promise.race([
       base44.auth.me(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 3000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
     ]);
 
     if (!user) {
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     try {
       const statusRes = await Promise.race([
         base44.asServiceRole.functions.invoke('krakenApi', { action: 'status', internal: true }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Status timeout')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Status timeout')), 8000))
       ]);
       const status = statusRes?.data || statusRes;
       if (status && status.connected === false) {
@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     // Fetch trades history to calculate realized PnL
     const tradesResponse = await Promise.race([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getTradesHistory', internal: true }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 8000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 12000))
     ]);
 
     const tradesData = tradesResponse?.data || tradesResponse;
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     // Fetch current balances and prices for unrealized PnL
     const balanceResponse = await Promise.race([
       base44.asServiceRole.functions.invoke('krakenApi', { action: 'getBalance', internal: true }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 5000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Balance timeout')), 10000))
     ]);
 
     const balanceData = balanceResponse?.data || balanceResponse;
