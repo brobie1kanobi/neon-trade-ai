@@ -116,10 +116,18 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
       try {
         const currentUser = user || await User.me();
         
-        // Fetch asset details (market data)
+        // Fetch asset details (metadata) AND current price in parallel
         const marketDataPromise = getMarketData({
           action: 'getAssetDetails',
           payload: { symbol: symbol, assetType: assetType }
+        });
+        
+        // Fetch live price from watchlist data endpoint (returns actual price)
+        const pricePromise = getMarketData({
+          action: 'getWatchlistData',
+          payload: assetType === 'crypto' 
+            ? { cryptoSymbols: [symbol.toUpperCase()], stockSymbols: [] }
+            : { cryptoSymbols: [], stockSymbols: [symbol.toUpperCase()] }
         });
         
         let holdingData = null;
@@ -164,8 +172,12 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
           }
         }
         
-        // Wait for market data
-        let { data: details } = await marketDataPromise;
+        // Wait for market data and price in parallel
+        const [detailsRes, priceRes] = await Promise.all([marketDataPromise, pricePromise]);
+        let details = detailsRes?.data;
+        const priceData = Array.isArray(priceRes?.data) ? priceRes.data[0] : null;
+        const livePrice = priceData?.price || 0;
+        const liveChange = priceData?.change ?? priceData?.price_change_percentage_24h ?? 0;
 
         setHolding(holdingData);
 
@@ -188,12 +200,12 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
           details = { name: symbol.toUpperCase(), symbol: symbol.toUpperCase() };
         }
 
-        // Base assetData
+        // Base assetData — use live price from watchlist data
         const baseData = {
           name: details.name,
           symbol: details.symbol,
-          price: 0,
-          change: 0
+          price: livePrice,
+          change: liveChange
         };
 
         // Enrich with Google → Yahoo → Web search
@@ -210,6 +222,11 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
         } : baseData;
 
         setAssetData(merged);
+        
+        // Set initial price change so header shows data immediately (before chart loads)
+        if (livePrice > 0) {
+          setDynamicPriceChange({ change: liveChange, label: '24H' });
+        }
 
       } catch (e) {
         console.error("Error fetching asset details:", e);
@@ -293,13 +310,8 @@ Prefer official site, Wikipedia, or reputable sources. Return: full_name, descri
         <>
           <AssetHeader asset={assetData} dynamicChange={dynamicPriceChange} isLoading={!dynamicPriceChange} />
           <div className="mt-6">
-            {tradesLoading ? (
-              <div className="h-64 rounded-lg border flex items-center justify-center" style={{ borderColor: 'var(--border-color)' }}>
-                <Loader2 className="w-6 h-6 animate-spin neon-text" />
-              </div>
-            ) : (
-              <AssetPriceChart symbol={assetData.symbol} onPriceUpdate={handlePriceUpdate} assetType={assetType} trades={trades} />
-            )}
+            {/* Render chart immediately — don't wait for trades to load */}
+            <AssetPriceChart symbol={assetData.symbol} onPriceUpdate={handlePriceUpdate} assetType={assetType} trades={tradesLoading ? [] : trades} />
           </div>
           <div className="mt-6">
             <AssetInfoTabs assetData={assetData} holding={holding} />

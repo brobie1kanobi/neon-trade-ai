@@ -1,4 +1,3 @@
-
 import React from "react";
 import { TrendingUp, TrendingDown, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -24,10 +23,11 @@ export default function AssetHeader({ asset, dynamicChange, isLoading }) {
             {asset.name ? `${asset.name} (${asset.symbol})` : `Loading ${asset.symbol}...`}
           </h1>
           <p className="text-3xl font-bold neon-text pt-2">
-            {isLoading && !asset.price ?
+            {(!asset.price && isLoading) ?
             <Loader2 className="w-8 h-8 animate-spin inline" /> :
-
-            `$${asset.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '...'}`
+            asset.price > 0 ?
+            `$${asset.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` :
+            '...'
             }
           </p>
         </div>
