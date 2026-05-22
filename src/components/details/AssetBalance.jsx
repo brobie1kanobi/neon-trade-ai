@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, TrendingUp, TrendingDown, DollarSign, PieChart } from "lucide-react";
@@ -14,7 +13,8 @@ export default function AssetBalance({ holding, assetData }) {
         );
     }
 
-    const currentValue = holding.quantity * assetData.price;
+    const price = assetData?.price ?? 0;
+    const currentValue = holding.quantity * price;
     const costBasis = holding.quantity * holding.average_cost_price;
     const pnl = currentValue - costBasis;
     const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
