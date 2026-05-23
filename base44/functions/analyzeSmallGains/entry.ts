@@ -191,8 +191,8 @@ Deno.serve(async (req) => {
       const recs = (marketData || []).map(m => {
         const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
         const price = Number(m.price ?? m.current_price ?? 0);
-        const action = ch >= 0 ? 'buy' : 'hold';
-        const confidence = ch >= 3 ? 65 : ch >= 0 ? 58 : 45;
+        const action = ch >= 2 ? 'buy' : ch >= 0 ? 'buy' : 'hold';
+        const confidence = ch >= 3 ? 68 : ch >= 1 ? 62 : ch >= 0 ? 55 : 42;
         return {
           symbol: (m.symbol || '').toUpperCase(),
           confidence_score: confidence,
@@ -209,10 +209,18 @@ Deno.serve(async (req) => {
         };
       });
       const avg = recs.reduce((a, r) => a + (r.current_24h_change || 0), 0) / (recs.length || 1);
+      const sorted = [...recs].sort((a, b) => b.current_24h_change - a.current_24h_change);
       const intel = {
-        market_sentiment_score: Math.max(0, Math.min(100, 50 + avg)),
-        market_regime: avg > 1 ? 'risk-on' : avg < -1 ? 'risk-off' : 'range',
+        market_sentiment_score: Math.max(5, Math.min(95, 50 + avg * 5)),
+        market_regime: avg > 0.5 ? 'risk-on' : avg < -0.5 ? 'risk-off' : 'range',
         volatility_level: Math.abs(avg) > 3 ? 'high' : Math.abs(avg) > 1 ? 'moderate' : 'low',
+        momentum_direction: avg > 0.5 ? 'bullish' : avg < -0.5 ? 'bearish' : 'neutral',
+        trend_strength: Math.abs(avg) > 3 ? 'strong' : Math.abs(avg) > 1 ? 'moderate' : 'weak',
+        short_term_outlook: `Market is ${avg > 0.5 ? 'bullish' : avg < -0.5 ? 'bearish' : 'mixed'} with ${Math.abs(avg).toFixed(1)}% avg 24h change.`,
+        trading_recommendation: avg > 1 ? 'Consider buying on momentum.' : avg < -1 ? 'Exercise caution.' : 'Hold positions.',
+        best_opportunities: sorted.filter(r => r.current_24h_change > 0).slice(0, 3).map(r => r.symbol),
+        avoid_list: sorted.filter(r => r.current_24h_change < -1).slice(-2).map(r => r.symbol),
+        hot_signals: sorted.slice(0, 2).map(r => ({ symbol: r.symbol, signal_type: r.current_24h_change > 1 ? 'Momentum' : 'Consolidation', predicted_move_pct: Math.abs(r.current_24h_change), timing: '4h' }))
       };
       return Response.json({
         success: true,
@@ -483,9 +491,23 @@ For each asset:
 
     const symbolsForIntel = (symbolRank.length ? symbolRank : targetSymbols.map(s => (s || '').toUpperCase())).slice(0, 4);
 
-    const intelPrompt = `You are a short-term crypto market analyst.
-    Focus ONLY on overall market context using news and social buzz for the next 1-6h.
-    Symbols of interest (prioritize if mentioned in news/social):\n${symbolsForIntel.map(s => '- ' + s).join('\n')}\n\nReturn: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), momentum_direction, trend_strength, short_term_outlook (1-2 sentences), trading_recommendation (one sentence), best_opportunities (up to 3 tickers), avoid_list (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
+    const intelPrompt = `You are an expert short-term crypto market analyst providing ACTIONABLE intelligence.
+IMPORTANT: Do NOT default to "neutral" or 50 for sentiment. Analyze the ACTUAL current conditions deeply.
+
+Current live market data for context:
+${marketData.map(m => `- ${m.symbol}: $${m.price}, 24h change: ${(m.change_24h_percent || 0).toFixed(2)}%`).join('\n')}
+
+Symbols of interest (prioritize if mentioned in news/social):
+${symbolsForIntel.map(s => '- ' + s).join('\n')}
+
+CRITICAL RULES:
+1. market_sentiment_score MUST reflect ACTUAL market conditions based on the price data above AND current news/social sentiment. If prices are mostly up, score should be 55-80. If prices are mostly down, score should be 20-45. Only use 45-55 range if prices are truly flat (< 0.3% average change).
+2. momentum_direction MUST be "bullish" if average 24h change > 0.5%, "bearish" if < -0.5%, only "neutral" if truly flat.
+3. hot_signals: Identify at least 1-2 assets with clear short-term setups based on the price action shown above.
+4. best_opportunities: Pick the top 2-3 assets showing the strongest positive momentum from the data.
+5. avoid_list: Pick assets showing weakness or overextension.
+
+Return JSON with: market_sentiment_score (0-100, BE SPECIFIC not 50), market_regime ('risk-on'|'risk-off'|'range'), volatility_level ('low'|'moderate'|'high'), momentum_direction ('bullish'|'bearish'|'neutral'), trend_strength ('strong'|'moderate'|'weak'), short_term_outlook (1-2 specific sentences about what to expect), trading_recommendation (one actionable sentence), best_opportunities (up to 3 tickers), avoid_list (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences with specific observations), upcoming_catalysts (0-3 bullets).`;
 
     let marketIntelResp;
     const cachedMarketIntel = includeMarketIntelligence ? await getCachedMarketIntelligence(marketIntelCacheKey) : null;
@@ -508,14 +530,17 @@ For each asset:
         console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
         try {
           // Fallback: use default model WITHOUT web context (faster, more reliable)
-          const fallbackIntelPrompt = `You are a short-term crypto market analyst.
-Analyze the current market conditions for these symbols based on your training data and general market knowledge.
-Symbols: ${symbolsForIntel.join(', ')}
+          const avgCh = marketData.length > 0 ? marketData.reduce((s, m) => s + (m.change_24h_percent || 0), 0) / marketData.length : 0;
+          const fallbackIntelPrompt = `You are a short-term crypto market analyst. Analyze these assets based on the ACTUAL price data below.
+CRITICAL: Do NOT return a neutral/50 sentiment score by default. The average 24h change is ${avgCh.toFixed(2)}% — use this to calibrate your sentiment score accurately.
 
 Current market data:
 ${marketData.map(m => `- ${m.symbol}: $${m.price}, 24h change: ${(m.change_24h_percent || 0).toFixed(2)}%`).join('\n')}
 
-Return: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-off', 'range'), volatility_level ('low'|'moderate'|'high'), momentum_direction, trend_strength, short_term_outlook (1-2 sentences), trading_recommendation (one sentence), best_opportunities (up to 3 tickers from the list), avoid_list (up to 3 tickers), hot_signals (up to 3 {symbol, signal_type, predicted_move_pct, timing}), market_summary (2-3 sentences), upcoming_catalysts (0-3 bullets).`;
+If average change > 0.5%, sentiment should be 55-75 (bullish). If < -0.5%, sentiment should be 25-45 (bearish). Only 45-55 if truly flat.
+Identify best_opportunities (top performing assets) and avoid_list (worst performing). Include at least 1 hot_signal.
+
+Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'|'range'), volatility_level, momentum_direction ('bullish'|'bearish'|'neutral'), trend_strength, short_term_outlook, trading_recommendation, best_opportunities (array), avoid_list (array), hot_signals (array of {symbol, signal_type, predicted_move_pct, timing}), market_summary, upcoming_catalysts (array).`;
 
           marketIntelResp = await invokeLLM({
             prompt: fallbackIntelPrompt,
@@ -531,7 +556,8 @@ Return: market_sentiment_score (0-100), market_regime (e.g., 'risk-on', 'risk-of
           const avgChange = marketData.length > 0
             ? marketData.reduce((sum, m) => sum + (m.change_24h_percent || 0), 0) / marketData.length
             : 0;
-          const sentimentScore = Math.max(0, Math.min(100, 50 + avgChange * 3));
+          // More aggressive scaling: 5x multiplier so small moves produce meaningful scores
+          const sentimentScore = Math.max(5, Math.min(95, 50 + avgChange * 5));
           const regime = avgChange > 1 ? 'risk-on' : avgChange < -1 ? 'risk-off' : 'range';
           const vol = Math.abs(avgChange) > 3 ? 'high' : Math.abs(avgChange) > 1 ? 'moderate' : 'low';
           const direction = avgChange > 0.5 ? 'bullish' : avgChange < -0.5 ? 'bearish' : 'neutral';

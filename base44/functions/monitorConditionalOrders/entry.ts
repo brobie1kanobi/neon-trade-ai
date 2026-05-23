@@ -21,6 +21,58 @@ const KRAKEN_PAIR_MAP = {
   'FLOKI': 'FLOKIUSD'
 };
 
+const MIN_ORDER_SIZES = {
+  'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
+  'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
+  'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0, 'SHIB': 100000.0,
+  'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'BABY': 50.0, 'FLOKI': 105000.0,
+  'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0,
+  'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0, 'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0,
+  'GRASS': 13.0, 'GOAT': 5.0, 'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6,
+  'ENA': 4.0, 'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0, 'POL': 10.0
+};
+
+// Normalize Kraken asset key (e.g., XXLM -> XLM, XBT -> BTC)
+function normalizeAssetKey(key) {
+  let s = String(key || '').toUpperCase();
+  if (s.startsWith('Z') && s.length === 4) s = s.slice(1);
+  if (s.startsWith('XX') && s.length <= 5) s = s.slice(1);
+  if (s.startsWith('X') && s.length === 4) s = s.slice(1);
+  const map = { XBT: 'BTC', XXBT: 'BTC', XDG: 'DOGE' };
+  return map[s] || s;
+}
+
+// Fetch available (free) holdings per asset from Kraken extended balance
+async function getAvailableMap(base44) {
+  try {
+    const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+    let data = resp?.data || resp;
+    if (data?.data) data = data.data;
+    const out = {};
+    const bal = data?.balance || data;
+    if (!bal) return out;
+    for (const [k, v] of Object.entries(bal)) {
+      const sym = normalizeAssetKey(k);
+      let qty = 0;
+      if (v && typeof v === 'object') {
+        const rawBal = parseFloat(v.balance ?? v.total ?? 0) || 0;
+        const heldTrade = parseFloat(v.hold_trade ?? v.hold ?? 0) || 0;
+        const heldFunding = parseFloat(v.hold_funding ?? 0) || 0;
+        const avail = parseFloat(v.available ?? (rawBal - heldTrade - heldFunding));
+        qty = isFinite(avail) ? avail : Math.max(0, rawBal - heldTrade - heldFunding);
+      } else {
+        qty = parseFloat(v || 0) || 0;
+      }
+      if (qty < 0) qty = 0;
+      if (!isNaN(qty)) out[sym] = qty;
+    }
+    return out;
+  } catch (_e) {
+    console.warn('[monitor] getAvailableMap failed:', _e.message);
+    return {};
+  }
+}
+
 async function fetchKrakenPrices(symbols) {
   const pairs = symbols.map(s => KRAKEN_PAIR_MAP[s] || `${s}USD`);
   const prices = {};
@@ -128,6 +180,35 @@ Deno.serve(async (req) => {
 
       console.log(`[monitor] TRIGGERED ${symbol} #${id}: ${reason} | price=$${price}`);
 
+      // Determine actual sellable quantity
+      let sellQuantity = quantity;
+      const minQty = MIN_ORDER_SIZES[symbol] || 0.00001;
+
+      if (!is_simulation) {
+        // Fetch real-time available balance from Kraken
+        const availMap = await getAvailableMap(base44);
+        const available = availMap[symbol] || 0;
+        sellQuantity = Math.min(quantity, available);
+        // Apply 0.5% haircut for fees/rounding
+        sellQuantity = Math.floor((sellQuantity * 0.995) * 1e8) / 1e8;
+
+        console.log(`[monitor] ${symbol}: order qty=${quantity}, available=${available.toFixed(8)}, adjusted=${sellQuantity.toFixed(8)}, min=${minQty}`);
+
+        if (sellQuantity < minQty) {
+          console.warn(`[monitor] ${symbol} #${id}: sell qty ${sellQuantity} below Kraken minimum ${minQty} (available: ${available.toFixed(8)}) - cancelling order`);
+          await base44.asServiceRole.entities.ConditionalOrder.update(id, {
+            status: 'cancelled', closure_reason: `Auto-cancelled: available ${symbol} (${available.toFixed(8)}) below Kraken minimum sell size (${minQty})`,
+            executed_at: new Date().toISOString()
+          });
+          await base44.asServiceRole.entities.Notification.create({
+            title: `Order Cancelled: ${symbol}`, message: `${reason} but available balance (${available.toFixed(8)}) is below Kraken minimum (${minQty})`,
+            type: 'warning', read: false, created_by
+          });
+          results.push({ id, symbol, reason, error: `Below minimum: ${available.toFixed(8)} < ${minQty}` });
+          continue;
+        }
+      }
+
       try {
         // Cancel any existing Kraken TP/SL orders to prevent double-sell
         const toCancel = [kraken_tp_order_id, kraken_sl_order_id].filter(Boolean);
@@ -146,7 +227,7 @@ Deno.serve(async (req) => {
           sellResult = { success: true, order_id: `sim_${Date.now()}` };
         } else {
           const res = await base44.asServiceRole.functions.invoke('krakenTrade', {
-            action: 'place_order', symbol, side: 'sell', quantity, orderType: 'market'
+            action: 'place_order', symbol, side: 'sell', quantity: sellQuantity, orderType: 'market'
           });
           sellResult = res?.data || res;
         }
@@ -160,7 +241,7 @@ Deno.serve(async (req) => {
           // Record Trade
           await base44.asServiceRole.entities.Trade.create({
             symbol, type: 'sell', asset_type: asset_type || 'crypto',
-            quantity, price, total_value: quantity * price,
+            quantity: sellQuantity, price, total_value: sellQuantity * price,
             status: 'filled', is_auto_trade: true, is_simulation,
             signal_id, kraken_order_id: sellResult.order_id,
             filled_at: new Date().toISOString(), created_by
@@ -169,7 +250,7 @@ Deno.serve(async (req) => {
           // Notify
           await base44.asServiceRole.entities.Notification.create({
             title: `${is_simulation ? 'SIM' : 'LIVE'} ${reason.split(' ')[0]}: ${symbol}`,
-            message: `Sold ${quantity} ${symbol} @ $${price.toFixed(2)} – ${reason}`,
+            message: `Sold ${sellQuantity} ${symbol} @ $${price.toFixed(2)} – ${reason}`,
             type: gainPct >= 0 ? 'success' : 'warning', read: false,
             details_json: JSON.stringify({ symbol, quantity, price, reason, is_simulation }),
             created_by
