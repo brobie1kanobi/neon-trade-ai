@@ -41,12 +41,12 @@ Deno.serve(async (req) => {
         // CRITICAL: Fetch Kraken balance for LIVE mode in parallel with local data
         const [settings, trades, orders, krakenBalanceResult] = await Promise.all([
           Promise.race([
-            base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
+            base44.entities.UserSettings.filter({ created_by: user.email }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
           ]).catch(() => []),
           
           Promise.race([
-            base44.asServiceRole.entities.Trade.filter({
+            base44.entities.Trade.filter({
               created_by: user.email,
               is_auto_trade: true
             }, '-created_date', 50),
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
           ]).catch(() => []),
           
           Promise.race([
-            base44.asServiceRole.entities.ConditionalOrder.filter({
+            base44.entities.ConditionalOrder.filter({
               created_by: user.email,
               status: 'active'
             }),
@@ -135,8 +135,8 @@ Deno.serve(async (req) => {
 
       try {
         const [settings, activeOrders] = await Promise.all([
-          base44.asServiceRole.entities.UserSettings.filter({ created_by: user.email }),
-          base44.asServiceRole.entities.ConditionalOrder.filter({
+          base44.entities.UserSettings.filter({ created_by: user.email }),
+          base44.entities.ConditionalOrder.filter({
             created_by: user.email,
             status: 'active'
           })
@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
 
         // Disable auto-trading
         if (settings.length > 0) {
-          await base44.asServiceRole.entities.UserSettings.update(settings[0].id, {
+          await base44.entities.UserSettings.update(settings[0].id, {
             auto_trading_enabled: false
           });
         }
@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
         // Cancel all active orders in parallel
         await Promise.all(
           activeOrders.map(order =>
-            base44.asServiceRole.entities.ConditionalOrder.update(order.id, {
+            base44.entities.ConditionalOrder.update(order.id, {
               status: 'cancelled'
             }).catch(() => {})
           )

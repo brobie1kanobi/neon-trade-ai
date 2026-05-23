@@ -32,11 +32,11 @@ Deno.serve(async (req) => {
 
     // 1. Fetch local trades defensively so this helper never hard-fails analyzeSmallGains
     const [localTrades, conditionalOrders] = await Promise.all([
-      base44.asServiceRole.entities.Trade.filter({ created_by: user.email }, '-created_date', 500).catch((err) => {
+      base44.entities.Trade.filter({ created_by: user.email }, '-created_date', 500).catch((err) => {
         console.warn('[TradeHistory] Local Trade fetch failed:', err.message);
         return [];
       }),
-      base44.asServiceRole.entities.ConditionalOrder.filter({ created_by: user.email }, '-created_date', 250).catch((err) => {
+      base44.entities.ConditionalOrder.filter({ created_by: user.email }, '-created_date', 250).catch((err) => {
         console.warn('[TradeHistory] Local ConditionalOrder fetch failed:', err.message);
         return [];
       })

@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const list = await base44.asServiceRole.entities.Wallet.filter(
+    const list = await base44.entities.Wallet.filter(
       { created_by: user.email },
       "-updated_date"
     );
