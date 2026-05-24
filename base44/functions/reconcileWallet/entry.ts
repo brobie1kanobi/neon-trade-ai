@@ -225,10 +225,9 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: e?.message || 'Unknown error',
-        stack: e?.stack 
+        error: 'Wallet reconciliation failed' 
       }), 
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 });
