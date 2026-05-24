@@ -11,50 +11,31 @@ import { notify } from "@/components/utils/notifications";
 import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function AITraderSettingsCard() {
-  const { settings: ctxSettings } = useSettings();
+  const { settings: ctxSettings, updateSetting, loadSettings } = useSettings();
   const [gainMargin, setGainMargin] = useState(10);
   const [lossMargin, setLossMargin] = useState(5);
   const [autoExecuteThreshold, setAutoExecuteThreshold] = useState(80);
   const [minSignalConfidence, setMinSignalConfidence] = useState(55);
-  const [settingsRecord, setSettingsRecord] = useState(null);
 
+  // Sync local state from context settings
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const list = await UserSettings.list('-updated_date', 1);
-        if (!cancelled && list.length > 0) {
-          const s = list[0];
-          setSettingsRecord(s);
-          setGainMargin(s.gain_margin || 10);
-          setLossMargin(s.loss_margin || 5);
-          setAutoExecuteThreshold(s.auto_execute_threshold ?? 70);
-          setMinSignalConfidence(s.min_signal_confidence ?? 55);
-        }
-      } catch (e) {
-        console.warn('[AITraderSettingsCard] Settings fetch failed:', e.message);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, []);
+    if (ctxSettings) {
+      setGainMargin(ctxSettings.gain_margin || 10);
+      setLossMargin(ctxSettings.loss_margin || 5);
+      setAutoExecuteThreshold(ctxSettings.auto_execute_threshold ?? 70);
+      setMinSignalConfidence(ctxSettings.min_signal_confidence ?? 55);
+    }
+  }, [ctxSettings?.id]);
 
   const handleSave = async () => {
-    const currentUser = await User.me();
-    const updated = {
-      gain_margin: parseFloat(gainMargin),
-      loss_margin: parseFloat(lossMargin),
-      auto_execute_threshold: autoExecuteThreshold,
-      min_signal_confidence: minSignalConfidence,
-    };
+    // Use updateSetting to persist AND sync SettingsContext
+    await updateSetting('gain_margin', parseFloat(gainMargin));
+    await updateSetting('loss_margin', parseFloat(lossMargin));
+    await updateSetting('auto_execute_threshold', autoExecuteThreshold);
+    await updateSetting('min_signal_confidence', minSignalConfidence);
 
-    if (settingsRecord?.id) {
-      await UserSettings.update(settingsRecord.id, updated);
-      setSettingsRecord(prev => ({ ...prev, ...updated }));
-    } else {
-      const newS = await UserSettings.create({ ...updated, created_by: currentUser.email });
-      setSettingsRecord(newS);
-    }
+    // Force-reload context so everything is in sync
+    await loadSettings(true);
 
     notify.success("Trader settings saved", {
       description: "AI trading margins updated successfully"
