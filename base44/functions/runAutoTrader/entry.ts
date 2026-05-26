@@ -853,6 +853,53 @@ Deno.serve(async (req) => {
     let cashAvailable = 0;
     let tradeHistoryData = null;
     
+    // CRITICAL: Fetch the latest MarketIntelligenceCache to get the AVOID list
+    // The auto-trader MUST respect the AI's avoid list — never buy assets marked as AVOID
+    let avoidList = [];
+    try {
+      const intelCaches = await base44.asServiceRole.entities.MarketIntelligenceCache.filter({}, '-cached_at', 1);
+      if (intelCaches.length > 0) {
+        const cache = intelCaches[0];
+        const nowIso = new Date().toISOString();
+        // Only use cache if not expired (or no expiry set)
+        if (!cache.expires_at || cache.expires_at > nowIso) {
+          try {
+            avoidList = JSON.parse(cache.avoid_list_json || '[]').map(s => String(s).toUpperCase());
+          } catch (_) { avoidList = []; }
+          
+          // CRITICAL: Also check market regime — block ALL buys in severe risk-off conditions
+          const sentiment = Number(cache.market_sentiment_score || 50);
+          const regime = String(cache.market_regime || '').toLowerCase();
+          const momentum = String(cache.momentum_direction || '').toLowerCase();
+          
+          if (sentiment <= 25 && (regime.includes('risk-off') || momentum === 'bearish')) {
+            log('MARKET REGIME BLOCK: Extreme fear detected — blocking all auto-buys', {
+              sentiment, regime, momentum
+            });
+            await releaseLock(base44, autoTraderRunId, 'completed', {
+              trades_attempted: 0,
+              trades_successful: 0,
+              logs_json: JSON.stringify(runLogs),
+              note: 'Blocked by extreme fear market regime'
+            });
+            return Response.json({
+              success: true,
+              message: 'Auto-trading paused: extreme market fear detected (sentiment ' + sentiment + ')',
+              trades_count: 0,
+              market_sentiment: sentiment,
+              market_regime: regime
+            });
+          }
+          
+          log('Market intelligence loaded', { avoidList, sentiment, regime, momentum });
+        } else {
+          log('Market intelligence cache expired, proceeding without avoid list');
+        }
+      }
+    } catch (e) {
+      log('Failed to fetch market intelligence cache', { error: e.message });
+    }
+    
     // Fetch active signals
     try {
       signals = await base44.asServiceRole.entities.AssetSignal.filter({
@@ -863,7 +910,21 @@ Deno.serve(async (req) => {
       const now = new Date();
       signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
       
-      log(`Found ${signals.length} active signals`);
+      // CRITICAL: Remove signals for assets on the AVOID list
+      const beforeCount = signals.length;
+      signals = signals.filter(s => {
+        const sym = String(s.asset_symbol || '').toUpperCase();
+        if (avoidList.includes(sym)) {
+          log(`BLOCKED signal for ${sym} — asset is on AVOID list`);
+          return false;
+        }
+        return true;
+      });
+      if (beforeCount !== signals.length) {
+        log(`Filtered out ${beforeCount - signals.length} signals for AVOIDED assets`);
+      }
+      
+      log(`Found ${signals.length} active signals (after avoid filter)`);
     } catch (e) {
       log('Failed to fetch signals', { error: e.message });
     }
@@ -893,10 +954,15 @@ Deno.serve(async (req) => {
         return pEnabled && (isSimMode ? pIsSim : !pIsSim);
       });
 
-      // Fallback: if no user preferences, derive from top active signals (live-only)
+      // Fallback: if no user preferences, derive from top active signals
+      // CRITICAL: Only use signals NOT on the avoid list (already filtered above)
       if (prefs.length === 0) {
         const topSigs = (signals || [])
-          .filter(s => (s.asset_type || 'crypto') === 'crypto' && ['buy','strong_buy'].includes(String(s.signal_type || '').toLowerCase()))
+          .filter(s => {
+            const sym = String(s.asset_symbol || '').toUpperCase();
+            if (avoidList.includes(sym)) return false; // Double-check avoid list
+            return (s.asset_type || 'crypto') === 'crypto' && ['buy','strong_buy'].includes(String(s.signal_type || '').toLowerCase());
+          })
           .sort((a,b) => (Number(b.confidence_score||0) - Number(a.confidence_score||0)))
           .slice(0, 3);
         if (topSigs.length > 0) {
@@ -965,6 +1031,13 @@ Deno.serve(async (req) => {
       const spendable = isSimMode ? tradingCash : tradingCash; // already buffered in live
       for (const pref of prefs) {
         const symbol = String(pref.symbol || '').toUpperCase();
+        
+        // CRITICAL: Skip assets on the AVOID list — never buy what AI says to avoid
+        if (avoidList.includes(symbol)) {
+          log(`Skipping ${symbol} — on market intelligence AVOID list`);
+          continue;
+        }
+        
         const q = quotes.find(r => (r.symbol || '').toUpperCase() === symbol);
         const price = q?.price || q?.current_price || 0;
         if (!price || price <= 0) continue;
@@ -1315,8 +1388,19 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // Skip external riskEngine to avoid 403s; rely on internal spend/qty/threshold checks below
-      log(`Risk engine skipped for ${sym} (using internal checks)`);
+      // INLINE RISK: Max asset exposure check (replaces external riskEngine to avoid 403s)
+      const maxExpPct = typeof settings.max_asset_exposure_percent === 'number' ? settings.max_asset_exposure_percent : 25;
+      const ptfTotal = availableCash + currentHoldings.reduce((s, h) => s + (h.quantity || 0) * (h.average_cost_price || 0), 0);
+      if (ptfTotal > 0) {
+        const exH = currentHoldings.find(h => h.symbol?.toUpperCase() === sym);
+        const exVal = (exH?.quantity || 0) * price;
+        const newExpPct = ((exVal + total_value) / ptfTotal) * 100;
+        if (newExpPct > maxExpPct) {
+          log(`RISK: ${sym} exposure ${newExpPct.toFixed(1)}% > max ${maxExpPct}% — skipping`);
+          tradesRejectedRisk.push({ symbol: sym, reason: `Exposure ${newExpPct.toFixed(1)}% > ${maxExpPct}%` });
+          continue;
+        }
+      }
       
       // Already refreshed balance earlier via direct Kraken API; just enforce minimal checks here
       if (!isSimMode) {
@@ -1687,6 +1771,12 @@ Deno.serve(async (req) => {
         if (availableCash < 5) break;
         
         const emergingSymbol = (emerging.symbol || '').toUpperCase();
+        
+        // CRITICAL: Skip emerging prospects on the AVOID list
+        if (avoidList.includes(emergingSymbol)) {
+          log(`Skipping emerging ${emergingSymbol} — on AVOID list`);
+          continue;
+        }
         
         // Fetch current price for emerging prospect (direct Kraken public API)
                   let emergingPrice = 0;

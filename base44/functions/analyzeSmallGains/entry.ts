@@ -856,19 +856,37 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
     console.log('[MarketIntelligence] Market regime:', marketIntelligence?.market_regime);
 
     // Persist actionable signals for auto-trader (global, short-lived)
+    // CRITICAL: Never persist buy signals for assets on the AVOID list
+    const aiAvoidList = (marketIntelligence?.avoid_list || []).map(s => String(s).toUpperCase());
+    if (aiAvoidList.length > 0) {
+      console.log('[MarketIntelligence] AVOID list for signal filtering:', aiAvoidList);
+    }
+    
     if (timeLeft() > 1500) {
       try {
-        const actionable = enhancedRecommendations.filter(r =>
-          (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50
-        );
+        const actionable = enhancedRecommendations.filter(r => {
+          const sym = String(r.symbol || '').toUpperCase();
+          // CRITICAL: Block persisting buy signals for assets the AI says to AVOID
+          if (aiAvoidList.includes(sym)) {
+            console.log(`[MarketIntelligence] BLOCKED signal persistence for ${sym} — on AVOID list`);
+            return false;
+          }
+          return (r.optimal_action === 'buy' || r.optimal_action === 'strong_buy') && r.confidence_score >= 50;
+        });
 
         // Deactivate existing active signals for these symbols (prevent duplicates)
+        // ALSO deactivate any existing buy signals for assets on the AVOID list
         const existing = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
         const symbolsSet = new Set(actionable.map(a => (a.symbol || '').toUpperCase()));
         for (const sig of existing) {
           try {
-            if (symbolsSet.has((sig.asset_symbol || '').toUpperCase())) {
+            const sigSym = (sig.asset_symbol || '').toUpperCase();
+            // Deactivate if: replacing with new signal OR asset is now on AVOID list
+            if (symbolsSet.has(sigSym) || aiAvoidList.includes(sigSym)) {
               await base44.asServiceRole.entities.AssetSignal.update(sig.id, { is_active: false });
+              if (aiAvoidList.includes(sigSym)) {
+                console.log(`[MarketIntelligence] Deactivated existing signal for AVOIDED asset: ${sigSym}`);
+              }
             }
           } catch (_e) {}
         }
