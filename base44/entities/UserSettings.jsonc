@@ -1,0 +1,256 @@
+{
+  "name": "UserSettings",
+  "type": "object",
+  "properties": {
+    "dark_mode": {
+      "type": "boolean",
+      "default": true
+    },
+    "auto_trading_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "notifications_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "notify_on_trade": {
+      "type": "boolean",
+      "default": true
+    },
+    "notify_on_deposit_withdrawal": {
+      "type": "boolean",
+      "default": true
+    },
+    "notify_on_market_news": {
+      "type": "boolean",
+      "default": false
+    },
+    "bank_connected": {
+      "type": "boolean",
+      "default": false
+    },
+    "bank_account_name": {
+      "type": "string"
+    },
+    "bank_account_id": {
+      "type": "string"
+    },
+    "preferred_currency": {
+      "type": "string",
+      "default": "USD"
+    },
+    "default_input_mode": {
+      "type": "string",
+      "enum": [
+        "quantity",
+        "currency"
+      ],
+      "default": "quantity"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "America/New_York"
+    },
+    "gain_margin": {
+      "type": "number",
+      "default": 10
+    },
+    "loss_margin": {
+      "type": "number",
+      "default": 5
+    },
+    "trailing_takeprofit_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "trailing_takeprofit_margin": {
+      "type": "number",
+      "default": 3
+    },
+    "profit_target_hours": {
+      "type": "number",
+      "default": 24
+    },
+    "reinvest_profit_percentage": {
+      "type": "number",
+      "default": 80
+    },
+    "watched_crypto": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "watched_stocks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sim_trading_mode": {
+      "type": "boolean",
+      "default": true
+    },
+    "has_seen_welcome": {
+      "type": "boolean",
+      "default": false
+    },
+    "tts_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "tts_voice_uri": {
+      "type": "string"
+    },
+    "tts_speech_rate": {
+      "type": "string",
+      "enum": [
+        "slow",
+        "normal",
+        "fast"
+      ],
+      "default": "normal"
+    },
+    "tts_speech_pitch": {
+      "type": "string",
+      "enum": [
+        "slow",
+        "normal",
+        "fast"
+      ],
+      "default": "normal"
+    },
+    "biometrics_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "has_seen_biometrics_prompt": {
+      "type": "boolean",
+      "default": false
+    },
+    "has_seen_assistant_tutorial": {
+      "type": "boolean",
+      "default": false
+    },
+    "time_format": {
+      "type": "string",
+      "enum": [
+        "12h",
+        "24h"
+      ],
+      "default": "12h"
+    },
+    "last_execution_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "risk_params": {
+      "type": "string"
+    },
+    "max_asset_exposure_percent": {
+      "type": "number",
+      "default": 25
+    },
+    "max_single_trade_percent": {
+      "type": "number",
+      "default": 20
+    },
+    "daily_loss_cap_percent": {
+      "type": "number",
+      "default": 5
+    },
+    "max_drawdown_percent": {
+      "type": "number",
+      "default": 15
+    },
+    "auto_execute_threshold": {
+      "type": "number",
+      "default": 70
+    },
+    "min_signal_confidence": {
+      "type": "number",
+      "default": 50
+    },
+    "bad_days_active": {
+      "type": "boolean",
+      "default": false
+    },
+    "bad_days_triggered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bad_days_reason": {
+      "type": "string"
+    },
+    "bad_days_override_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "loss_cap_halt_hours": {
+      "type": "number",
+      "default": 12
+    },
+    "strategy_rsi": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_macd": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_bollinger": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_trend": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_volume": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_sentiment": {
+      "type": "boolean",
+      "default": true
+    },
+    "strategy_history": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
