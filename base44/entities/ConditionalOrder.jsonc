@@ -1,0 +1,135 @@
+{
+  "name": "ConditionalOrder",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, AAPL)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "stock",
+        "crypto"
+      ],
+      "description": "Type of asset"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Quantity of the asset to sell when conditions are met"
+    },
+    "purchase_price": {
+      "type": "number",
+      "description": "The price at which the asset was originally purchased"
+    },
+    "gain_margin": {
+      "type": "number",
+      "description": "The percentage gain at which to trigger a sell"
+    },
+    "loss_margin": {
+      "type": "number",
+      "description": "The percentage loss at which to trigger a sell"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "triggered",
+        "executed",
+        "cancelled",
+        "failed",
+        "expired"
+      ],
+      "default": "active",
+      "description": "The status of the conditional order"
+    },
+    "trailing_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable trailing profit logic to maximize gains"
+    },
+    "highest_price": {
+      "type": "number",
+      "description": "Highest market price observed since purchase (for trailing stop)"
+    },
+    "trailing_margin": {
+      "type": "number",
+      "description": "Percent drop from highest price to trigger sell (trailing stop)"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this order is for simulation mode or live trading"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Unique key to prevent duplicate orders"
+    },
+    "kraken_order_id": {
+      "type": "string",
+      "description": "The Kraken exchange order ID for live trades"
+    },
+    "kraken_tp_order_id": {
+      "type": "string",
+      "description": "Kraken take-profit order ID"
+    },
+    "kraken_sl_order_id": {
+      "type": "string",
+      "description": "Kraken stop-loss order ID"
+    },
+    "signal_id": {
+      "type": "string",
+      "description": "Reference to AssetSignal that triggered this order"
+    },
+    "trade_id": {
+      "type": "string",
+      "description": "Reference to the buy Trade that created this order"
+    },
+    "closure_reason": {
+      "type": "string",
+      "description": "Reason why the order was executed or cancelled"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Detailed error message if the order failed"
+    },
+    "triggered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the condition was triggered"
+    },
+    "executed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the order was executed"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this conditional order expires"
+    }
+  },
+  "required": [
+    "symbol",
+    "asset_type",
+    "quantity",
+    "purchase_price",
+    "gain_margin",
+    "loss_margin"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

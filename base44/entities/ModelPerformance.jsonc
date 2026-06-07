@@ -1,0 +1,90 @@
+{
+  "name": "ModelPerformance",
+  "type": "object",
+  "properties": {
+    "signal_id": {
+      "type": "string",
+      "description": "Reference to AssetSignal that generated this trade"
+    },
+    "trade_id": {
+      "type": "string",
+      "description": "Reference to the Trade entity"
+    },
+    "asset_symbol": {
+      "type": "string",
+      "description": "Asset symbol traded"
+    },
+    "signal_type": {
+      "type": "string",
+      "enum": [
+        "strong_buy",
+        "buy",
+        "hold",
+        "sell",
+        "strong_sell"
+      ],
+      "description": "Original signal type"
+    },
+    "confidence_at_signal": {
+      "type": "number",
+      "description": "Confidence score when signal was generated"
+    },
+    "entry_price": {
+      "type": "number",
+      "description": "Price at entry"
+    },
+    "exit_price": {
+      "type": "number",
+      "description": "Price at exit (if closed)"
+    },
+    "outcome_percentage": {
+      "type": "number",
+      "description": "Percentage gain/loss on this trade"
+    },
+    "duration_held_minutes": {
+      "type": "number",
+      "description": "How long position was held in minutes"
+    },
+    "is_success": {
+      "type": "boolean",
+      "description": "Whether trade was profitable"
+    },
+    "exit_reason": {
+      "type": "string",
+      "enum": [
+        "take_profit",
+        "stop_loss",
+        "trailing_stop",
+        "manual",
+        "signal_expired",
+        "risk_limit"
+      ],
+      "description": "Why position was closed"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this was a simulation trade"
+    }
+  },
+  "required": [
+    "asset_symbol",
+    "entry_price"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

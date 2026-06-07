@@ -1,0 +1,138 @@
+{
+  "name": "AssetSignal",
+  "type": "object",
+  "properties": {
+    "asset_symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, ETH)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "crypto",
+        "stock"
+      ],
+      "description": "Type of asset"
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": [
+        "1h",
+        "4h",
+        "1d",
+        "1w"
+      ],
+      "default": "1d",
+      "description": "Analysis timeframe"
+    },
+    "signal_type": {
+      "type": "string",
+      "enum": [
+        "strong_buy",
+        "buy",
+        "hold",
+        "sell",
+        "strong_sell"
+      ],
+      "description": "Trading signal recommendation"
+    },
+    "confidence_score": {
+      "type": "number",
+      "description": "Confidence score 0-100"
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "AI reasoning for the signal"
+    },
+    "technical_pattern": {
+      "type": "string",
+      "description": "Detected technical pattern if any"
+    },
+    "sentiment_score": {
+      "type": "number",
+      "description": "Market sentiment score 0-100"
+    },
+    "price_at_signal": {
+      "type": "number",
+      "description": "Asset price when signal was generated"
+    },
+    "target_price": {
+      "type": "number",
+      "description": "AI predicted target price"
+    },
+    "stop_loss_price": {
+      "type": "number",
+      "description": "Recommended stop loss price"
+    },
+    "entry_zone_low": {
+      "type": "number",
+      "description": "Low end of recommended entry zone"
+    },
+    "entry_zone_high": {
+      "type": "number",
+      "description": "High end of recommended entry zone"
+    },
+    "take_profit_pct": {
+      "type": "number",
+      "description": "AI-recommended take profit percentage"
+    },
+    "stop_loss_pct": {
+      "type": "number",
+      "description": "AI-recommended stop loss percentage"
+    },
+    "momentum_strength": {
+      "type": "string",
+      "description": "Momentum strength: strong, moderate, weak"
+    },
+    "timing_window": {
+      "type": "string",
+      "description": "Timing window: 1h, 2h, 4h, 6h, 12h, 24h"
+    },
+    "predicted_gain_pct": {
+      "type": "number",
+      "description": "AI predicted gain percentage"
+    },
+    "change_24h": {
+      "type": "number",
+      "description": "24h price change percentage at signal time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this signal expires"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether signal is still valid"
+    },
+    "metadata_json": {
+      "type": "string",
+      "description": "JSON string of additional analysis data"
+    }
+  },
+  "required": [
+    "asset_symbol",
+    "asset_type",
+    "signal_type",
+    "confidence_score"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "AutoBuyPreference",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., AAPL, BTC)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "stock",
+        "crypto"
+      ],
+      "description": "Asset type"
+    },
+    "percentage": {
+      "type": "number",
+      "description": "Percent of wallet cash to buy for this asset (min 10%)",
+      "default": 10
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "If true, auto-buys are allowed for this asset",
+      "default": true
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this preference applies to simulation mode"
+    }
+  },
+  "required": [
+    "symbol",
+    "asset_type",
+    "percentage"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

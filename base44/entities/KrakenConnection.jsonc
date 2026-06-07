@@ -1,0 +1,99 @@
+{
+  "name": "KrakenConnection",
+  "type": "object",
+  "properties": {
+    "api_key": {
+      "type": "string",
+      "description": "Legacy primary Kraken API key (fallback)"
+    },
+    "api_secret_encrypted": {
+      "type": "string",
+      "description": "Legacy primary Kraken API secret (encrypted or base64)"
+    },
+    "balance_api_key": {
+      "type": "string",
+      "description": "Read-only/balance API key (Kraken_API_Key)"
+    },
+    "balance_api_secret_encrypted": {
+      "type": "string",
+      "description": "Read-only/balance API secret (encrypted or base64)"
+    },
+    "trade_api_key": {
+      "type": "string",
+      "description": "Trading API key (Trade_Key)"
+    },
+    "trade_api_secret_encrypted": {
+      "type": "string",
+      "description": "Trading API secret (encrypted or base64)"
+    },
+    "account_verified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the API credentials have been verified"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of verified API permissions"
+    },
+    "last_verified": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time credentials were verified"
+    },
+    "account_balance": {
+      "type": "string",
+      "description": "JSON string of account balances"
+    },
+    "tier_level": {
+      "type": "string",
+      "description": "Kraken account tier level"
+    },
+    "ws_token": {
+      "type": "string",
+      "description": "Cached Kraken WebSocket private token for TRADE key"
+    },
+    "ws_token_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the cached TRADE WebSocket token expires"
+    },
+    "ws_token_fingerprint": {
+      "type": "string",
+      "description": "Key fingerprint for which the TRADE WS token was issued"
+    },
+    "balance_ws_token": {
+      "type": "string",
+      "description": "Cached Kraken WebSocket private token for BALANCE key"
+    },
+    "balance_ws_token_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the cached BALANCE WebSocket token expires"
+    },
+    "balance_ws_token_fingerprint": {
+      "type": "string",
+      "description": "Key fingerprint for which the BALANCE WS token was issued"
+    }
+  },
+  "required": [
+    "api_key",
+    "api_secret_encrypted"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

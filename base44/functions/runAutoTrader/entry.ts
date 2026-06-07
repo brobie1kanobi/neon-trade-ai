@@ -257,23 +257,27 @@ async function hasRecentDuplicateTrade(base44, userEmail, symbol, side, windowMs
     return false;
   } catch (e) {
     console.warn('[runAutoTrader] Dedup check failed:', e.message);
-    return false; // Proceed if check fails
+    return false;
   }
 }
 
-/**
- * Acquire distributed lock for user's auto-trader run.
- * 
- * ATOMIC LOCK STRATEGY:
- * 1. The caller has ALREADY created the AutoTraderRun record with status='pending'.
- * 2. We query ALL pending/running records for this user.
- * 3. Only the record with the LOWEST id (earliest DB insert) wins the lock.
- * 4. All other records are immediately marked as 'canceled'.
- * 5. Running records older than LOCK_TIMEOUT_MS are force-expired.
- * 
- * This eliminates the race condition where multiple concurrent requests
- * all pass the "is anyone running?" check simultaneously.
- */
+// STOP-LOSS COOLDOWN: Block re-buying asset that hit SL within 12h
+async function hasRecentStopLoss(base44, userEmail, symbol) {
+  try {
+    const orders = await base44.entities.ConditionalOrder.filter({ created_by: userEmail, symbol: symbol.toUpperCase(), status: 'executed' }, '-executed_at', 8);
+    const now = Date.now(), cd = 12 * 3600000;
+    for (const o of orders) {
+      const r = String(o.closure_reason || '').toLowerCase();
+      if (!(r.includes('stop') || r.includes('loss') || r.includes('sl'))) continue;
+      if ((now - new Date(o.executed_at || o.updated_date || 0).getTime()) < cd) return { blocked: true, hours_ago: ((now - new Date(o.executed_at || o.updated_date || 0).getTime()) / 3600000).toFixed(1) };
+    }
+    const sells = await base44.entities.Trade.filter({ created_by: userEmail, symbol: symbol.toUpperCase(), type: 'sell', is_auto_trade: true }, '-created_date', 8);
+    for (const s of sells) { if ((now - new Date(s.created_date || s.filled_at || 0).getTime()) < cd) return { blocked: true, hours_ago: ((now - new Date(s.created_date || 0).getTime()) / 3600000).toFixed(1) }; }
+    return { blocked: false };
+  } catch (_e) { return { blocked: false }; }
+}
+
+// Acquire distributed lock — atomic arbitration among concurrent pending records
 const LOCK_TIMEOUT_MS = 45000; // 45s - generous but prevents permanent stale locks
 
 async function acquireLock(base44, userEmail, runId) {
@@ -1231,12 +1235,10 @@ Deno.serve(async (req) => {
       const notBlocked = !p.is_blocked;
       const wouldExecute = p.would_execute_now === true;
 
-      // ANTI-PUMP FILTER: Block buys when price has already surged significantly
-      // For strong_buy (oversold bounce): allow wider range but still block extreme pumps
-      // For regular buy: only enter on flat or slightly negative 24h change
+      // ANTI-PUMP FILTER: Block buys when price has already surged or is falling
       const change24h = Number(p.market_trend || 0);
-      const trendOkForStrong = change24h > -8 && change24h < 5; // No buying into +5% pumps
-      const trendOkForBuy = change24h > -5 && change24h < 3;    // Tighter: no chasing +3% moves
+      const trendOkForStrong = change24h > -3 && change24h < 4; // Tight: no falling >3% or pumped >4%
+      const trendOkForBuy = change24h > -2 && change24h < 3;    // Tighter: only stable or mildly positive
 
       let meetsConfidence = false;
       if (signalType === 'strong_buy') {
@@ -1433,13 +1435,11 @@ Deno.serve(async (req) => {
 
       log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
       
-      // CRITICAL: Dedup check - skip if a very recent auto-trade already exists for this symbol
-      // Widened to 120s window to catch trades from concurrent runs that slipped through
+      // Dedup + SL cooldown checks
       const isDuplicateRecent = await hasRecentDuplicateTrade(base44, user.email, sym, 'buy', 120000);
-      if (isDuplicateRecent) {
-        log(`DEDUP: Skipping ${sym} - a recent auto-buy already exists within 120s window`);
-        continue;
-      }
+      if (isDuplicateRecent) { log(`DEDUP: Skipping ${sym} - recent auto-buy exists`); continue; }
+      const slCooldown = await hasRecentStopLoss(base44, user.email, sym);
+      if (slCooldown.blocked) { log(`SL COOLDOWN: Skipping ${sym} - SL hit ${slCooldown.hours_ago}h ago`); tradesRejectedRisk.push({ symbol: sym, reason: `SL cooldown (${slCooldown.hours_ago}h ago)` }); continue; }
       
       // Track signal consumption
       const signal = signalMap.get(sym);

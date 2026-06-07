@@ -454,10 +454,14 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // TREND-FOLLOWING: Only skip if falling hard (>5%)
-      // Minor dips (-5% or less) are OK if the signal is actionable
-      if (change24h < -5) {
-        console.log('[Prospects] Skipping', symbol, '- steep negative trend:', change24h.toFixed(1), '%');
+      // TREND-FOLLOWING: Skip if price is falling — don't buy into a downtrend
+      if (change24h < -2) {
+        console.log('[Prospects] Skipping', symbol, '- negative trend:', change24h.toFixed(1), '%');
+        continue;
+      }
+      // ANTI-PUMP: Skip if price already surged >4% — likely chasing
+      if (change24h > 4) {
+        console.log('[Prospects] Skipping', symbol, '- already pumped:', change24h.toFixed(1), '%');
         continue;
       }
 

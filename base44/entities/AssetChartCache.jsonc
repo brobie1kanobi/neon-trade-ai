@@ -1,0 +1,56 @@
+{
+  "name": "AssetChartCache",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, AAPL)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "crypto",
+        "stocks"
+      ],
+      "description": "Asset type"
+    },
+    "days": {
+      "type": "number",
+      "description": "Days window of cached series"
+    },
+    "data_json": {
+      "type": "string",
+      "description": "JSON stringified array of {time, price}"
+    },
+    "cached_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the chart data was cached"
+    }
+  },
+  "required": [
+    "symbol",
+    "asset_type",
+    "days",
+    "data_json",
+    "cached_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "ProcessedSession",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Stripe session ID"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who made the payment"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "credits",
+        "subscription",
+        "deposit"
+      ],
+      "description": "Type of payment processed"
+    },
+    "processed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the session was processed"
+    },
+    "result": {
+      "type": "string",
+      "description": "JSON string of the processing result"
+    }
+  },
+  "required": [
+    "session_id",
+    "user_email",
+    "type",
+    "processed_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "$or": [
+        {
+          "data.user_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

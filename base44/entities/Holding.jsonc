@@ -1,0 +1,69 @@
+{
+  "name": "Holding",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, AAPL)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "stock",
+        "crypto"
+      ],
+      "description": "Type of asset"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Quantity of the asset owned"
+    },
+    "average_cost_price": {
+      "type": "number",
+      "description": "The average price paid for the asset"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this holding is from simulation mode trades"
+    }
+  },
+  "required": [
+    "symbol",
+    "asset_type",
+    "quantity",
+    "average_cost_price"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "StockMoversCache",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "gainers",
+        "losers"
+      ],
+      "description": "Which movers list this record stores"
+    },
+    "data_json": {
+      "type": "string",
+      "description": "JSON string of the movers array: [{symbol, name, price, change, icon_url}]"
+    },
+    "cached_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the list was cached"
+    }
+  },
+  "required": [
+    "type",
+    "data_json",
+    "cached_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

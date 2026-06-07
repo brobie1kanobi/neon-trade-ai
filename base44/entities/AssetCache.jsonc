@@ -1,0 +1,71 @@
+{
+  "name": "AssetCache",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, AAPL)"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "crypto",
+        "stocks"
+      ],
+      "description": "Type of asset"
+    },
+    "name": {
+      "type": "string",
+      "description": "Full name of the asset"
+    },
+    "icon_url": {
+      "type": "string",
+      "description": "URL to the cached icon/logo"
+    },
+    "description": {
+      "type": "string",
+      "description": "Asset description"
+    },
+    "market_cap_rank": {
+      "type": "number",
+      "description": "Market cap rank (for crypto)"
+    },
+    "exchange": {
+      "type": "string",
+      "description": "Stock exchange (for stocks)"
+    },
+    "cached_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this data was cached"
+    },
+    "last_verified": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time this cached data was verified as current"
+    }
+  },
+  "required": [
+    "symbol",
+    "asset_type",
+    "name"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

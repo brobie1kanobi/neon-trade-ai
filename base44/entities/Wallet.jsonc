@@ -1,0 +1,51 @@
+{
+  "name": "Wallet",
+  "type": "object",
+  "properties": {
+    "cash_balance": {
+      "type": "number",
+      "default": 0,
+      "description": "Mock cash wallet balance for simulation mode"
+    },
+    "total_deposits": {
+      "type": "number",
+      "default": 0,
+      "description": "Mock total amount deposited for simulation mode"
+    },
+    "total_withdrawals": {
+      "type": "number",
+      "default": 0,
+      "description": "Mock total amount withdrawn for simulation mode"
+    },
+    "real_cash_balance": {
+      "type": "number",
+      "default": 0,
+      "description": "Real cash wallet balance when not in simulation mode"
+    },
+    "real_total_deposits": {
+      "type": "number",
+      "default": 0,
+      "description": "Real total amount deposited when not in simulation mode"
+    },
+    "real_total_withdrawals": {
+      "type": "number",
+      "default": 0,
+      "description": "Real total amount withdrawn when not in simulation mode"
+    }
+  },
+  "required": [],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

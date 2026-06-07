@@ -1,0 +1,54 @@
+{
+  "name": "Authenticator",
+  "type": "object",
+  "properties": {
+    "credentialID": {
+      "type": "string",
+      "description": "The unique ID for the credential."
+    },
+    "credentialPublicKey": {
+      "type": "string",
+      "description": "The public key of the credential, stored as a string."
+    },
+    "counter": {
+      "type": "number",
+      "description": "The signature counter for the authenticator."
+    },
+    "credentialDeviceType": {
+      "type": "string",
+      "description": "The type of device the credential is on."
+    },
+    "credentialBackedUp": {
+      "type": "boolean",
+      "description": "Whether the credential is backed up."
+    },
+    "transports": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The transport methods supported by the authenticator (e.g., 'internal', 'usb')."
+    }
+  },
+  "required": [
+    "credentialID",
+    "credentialPublicKey",
+    "counter",
+    "credentialDeviceType",
+    "credentialBackedUp"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

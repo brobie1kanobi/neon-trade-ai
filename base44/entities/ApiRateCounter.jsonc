@@ -1,0 +1,47 @@
+{
+  "name": "ApiRateCounter",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Counter key (e.g., 'coingecko_global')"
+    },
+    "window_start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Start of the current time window"
+    },
+    "count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of calls in current window"
+    }
+  },
+  "required": [
+    "key",
+    "window_start",
+    "count"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "name": "LedgerEntry",
+  "type": "object",
+  "properties": {
+    "asset_symbol": {
+      "type": "string",
+      "description": "Asset symbol (e.g., BTC, USD)"
+    },
+    "entry_type": {
+      "type": "string",
+      "enum": [
+        "trade_buy",
+        "trade_sell",
+        "fee",
+        "deposit",
+        "withdrawal",
+        "adjustment"
+      ],
+      "description": "Type of ledger entry"
+    },
+    "quantity_delta": {
+      "type": "number",
+      "description": "Change in asset quantity (positive for increase, negative for decrease)"
+    },
+    "cash_delta": {
+      "type": "number",
+      "description": "Change in USD cash (positive for increase, negative for decrease)"
+    },
+    "unit_price": {
+      "type": "number",
+      "description": "Price per unit at time of entry"
+    },
+    "reference_id": {
+      "type": "string",
+      "description": "Reference to related entity (trade_id, transaction_id, etc.)"
+    },
+    "reference_type": {
+      "type": "string",
+      "enum": [
+        "trade",
+        "transaction",
+        "fee",
+        "reconciliation",
+        "kraken_execution"
+      ],
+      "description": "Type of reference entity"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Unique key to prevent duplicate entries"
+    },
+    "kraken_txid": {
+      "type": "string",
+      "description": "Kraken transaction ID if applicable"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this entry is for simulation mode"
+    },
+    "metadata_json": {
+      "type": "string",
+      "description": "JSON string of additional metadata"
+    }
+  },
+  "required": [
+    "asset_symbol",
+    "entry_type",
+    "idempotency_key"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

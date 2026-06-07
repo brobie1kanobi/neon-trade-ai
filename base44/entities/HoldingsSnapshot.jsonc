@@ -1,0 +1,41 @@
+{
+  "name": "HoldingsSnapshot",
+  "type": "object",
+  "properties": {
+    "is_simulation": {
+      "type": "boolean",
+      "description": "Whether this snapshot is for simulation mode"
+    },
+    "holdings_json": {
+      "type": "string",
+      "description": "JSON string of holdings at time of snapshot"
+    },
+    "note": {
+      "type": "string",
+      "description": "Optional note for why the snapshot was taken"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Snapshot timestamp"
+    }
+  },
+  "required": [
+    "is_simulation",
+    "holdings_json"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

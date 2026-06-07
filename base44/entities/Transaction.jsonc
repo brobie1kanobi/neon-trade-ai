@@ -1,0 +1,59 @@
+{
+  "name": "Transaction",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "deposit",
+        "withdrawal"
+      ],
+      "description": "Type of transaction"
+    },
+    "amount": {
+      "type": "number",
+      "description": "Transaction amount"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "completed",
+        "failed"
+      ],
+      "default": "completed",
+      "description": "Transaction status"
+    },
+    "bank_account": {
+      "type": "string",
+      "description": "Bank account used for transaction"
+    },
+    "reference_id": {
+      "type": "string",
+      "description": "Bank reference ID"
+    },
+    "is_real_money": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this transaction involves real money"
+    }
+  },
+  "required": [
+    "type",
+    "amount"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

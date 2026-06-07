@@ -1,0 +1,101 @@
+{
+  "name": "AutoTraderRun",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "canceled"
+      ],
+      "default": "pending",
+      "description": "Current run status"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Unique key to prevent duplicate runs"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the run started"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the run completed"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this run is in simulation mode"
+    },
+    "cash_available_start": {
+      "type": "number",
+      "description": "Cash available at start of run"
+    },
+    "cash_available_end": {
+      "type": "number",
+      "description": "Cash available at end of run"
+    },
+    "trades_attempted": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of trades attempted"
+    },
+    "trades_successful": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of trades successfully executed"
+    },
+    "trades_failed": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of trades that failed"
+    },
+    "trades_rejected_risk": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of trades rejected by risk engine"
+    },
+    "total_value_traded": {
+      "type": "number",
+      "default": 0,
+      "description": "Total USD value of all trades"
+    },
+    "logs_json": {
+      "type": "string",
+      "description": "JSON array of log entries"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error message if run failed"
+    },
+    "signals_consumed": {
+      "type": "string",
+      "description": "JSON array of AssetSignal IDs consumed"
+    }
+  },
+  "required": [
+    "idempotency_key"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

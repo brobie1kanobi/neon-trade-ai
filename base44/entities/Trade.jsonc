@@ -1,0 +1,139 @@
+{
+  "name": "Trade",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol (e.g., AAPL, BTC)"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ],
+      "description": "Type of trade"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": [
+        "stock",
+        "crypto"
+      ],
+      "description": "Type of asset being traded"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Number of shares/coins traded (EXACT from Kraken)"
+    },
+    "price": {
+      "type": "number",
+      "description": "Price per unit at trade execution (EXACT from Kraken)"
+    },
+    "total_value": {
+      "type": "number",
+      "description": "Total cost/proceeds of the trade (EXACT from Kraken 'cost' field)"
+    },
+    "fee": {
+      "type": "number",
+      "description": "Trading fee charged by exchange"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending_submission",
+        "submitted",
+        "partially_filled",
+        "filled",
+        "executed",
+        "cancelled",
+        "rejected",
+        "failed_retrying"
+      ],
+      "default": "pending_submission",
+      "description": "Status of the trade in state machine"
+    },
+    "filled_quantity": {
+      "type": "number",
+      "description": "Quantity filled so far (for partial fills)"
+    },
+    "remaining_quantity": {
+      "type": "number",
+      "description": "Quantity remaining to fill"
+    },
+    "is_auto_trade": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this was an automated trade"
+    },
+    "is_simulation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this trade was made in simulation mode"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Unique key to prevent duplicate trades"
+    },
+    "kraken_trade_id": {
+      "type": "string",
+      "description": "Kraken trade/transaction ID (txid)"
+    },
+    "kraken_order_id": {
+      "type": "string",
+      "description": "Kraken order ID (ordertxid)"
+    },
+    "signal_id": {
+      "type": "string",
+      "description": "Reference to AssetSignal that triggered this trade"
+    },
+    "auto_trader_run_id": {
+      "type": "string",
+      "description": "Reference to AutoTraderRun if auto-traded"
+    },
+    "ledger_entry_id": {
+      "type": "string",
+      "description": "Reference to LedgerEntry for this trade"
+    },
+    "risk_check_passed": {
+      "type": "boolean",
+      "description": "Whether trade passed risk engine checks"
+    },
+    "risk_rejection_reason": {
+      "type": "string",
+      "description": "Reason if rejected by risk engine"
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When order was submitted to exchange"
+    },
+    "filled_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When order was fully filled"
+    }
+  },
+  "required": [
+    "symbol",
+    "type",
+    "asset_type",
+    "quantity",
+    "price",
+    "total_value"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

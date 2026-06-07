@@ -610,17 +610,17 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
       });
     } catch (eR) {
       console.warn('[MarketIntelligence] Recs LLM error:', eR?.message || eR);
-      // Heuristic thin fallback if needed
+      // Heuristic fallback — CONSERVATIVE: only signal "buy" for strongly positive assets
       const heuristics = marketData.map(m => {
         const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
-        let action = ch >= 0 ? 'buy' : 'hold';
-        let confidence = ch >= 3 ? 65 : ch >= 0 ? 58 : 45;
+        let action = ch >= 2 ? 'buy' : 'hold'; // Only buy if clearly positive (>=2%)
+        let confidence = ch >= 4 ? 62 : ch >= 2 ? 55 : 45;
         return {
           symbol: m.symbol,
           confidence_score: confidence,
           predicted_direction: ch >= 0 ? 'up' : 'down',
           predicted_move_pct: 2,
-          reasoning: 'Heuristic based on 24h change and momentum proxy',
+          reasoning: 'Heuristic fallback — requires strong positive trend for buy signal',
           action,
           optimal_action: action,
           timing_window: '4h',
@@ -670,8 +670,8 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
     if (!llmResponse.recommendations || llmResponse.recommendations.length === 0) {
       llmResponse.recommendations = marketData.map((m) => {
         const change24h = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
-        const action = change24h >= 0 ? 'buy' : 'hold';
-        const confidence = change24h >= 3 ? 65 : change24h >= 0 ? 58 : 45;
+        const action = change24h >= 2 ? 'buy' : 'hold'; // Only buy if clearly positive
+        const confidence = change24h >= 4 ? 62 : change24h >= 2 ? 55 : 45;
         return {
           symbol: String(m.symbol || '').toUpperCase(),
           confidence_score: confidence,
@@ -758,27 +758,24 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
         let adjustedConfidence = r.confidence_score;
         let adjustedAction = r.optimal_action || r.action || 'hold';
         
-        // RULE 1: For "strong_buy" signals - allow if not crashing
-        // REMOVED the +2% gate that was filtering out nearly everything
-        // The LLM already factors in momentum when deciding strong_buy
-        if (adjustedAction === 'strong_buy' && change24h < -3) {
-          // Only downgrade if actually falling significantly
-          adjustedAction = 'buy';
-          adjustedConfidence = Math.min(adjustedConfidence, 65);
-          console.log(`[MarketIntelligence] ${r.symbol}: Downgraded strong_buy to buy - 24h change ${change24h.toFixed(1)}% (falling)`);
+        // RULE 1: strong_buy requires positive 24h momentum — don't buy falling assets
+        if (adjustedAction === 'strong_buy' && change24h < 0.5) {
+          adjustedAction = change24h < -2 ? 'hold' : 'buy';
+          adjustedConfidence = Math.min(adjustedConfidence, change24h < -2 ? 45 : 60);
+          console.log(`[MarketIntelligence] ${r.symbol}: Downgraded strong_buy (24h change ${change24h.toFixed(1)}%)`);
         }
         
-        // RULE 2: For "buy" signals - cap confidence only if crashing hard
-        if (change24h < -5 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
-          console.log(`[MarketIntelligence] ${r.symbol}: Price crashing ${change24h.toFixed(1)}%, reducing to hold`);
+        // RULE 2: buy signals need non-negative trend — don't buy into any downtrend
+        if (adjustedAction === 'buy' && change24h < -2) {
+          console.log(`[MarketIntelligence] ${r.symbol}: Price falling ${change24h.toFixed(1)}%, reducing to hold`);
           adjustedConfidence = Math.min(adjustedConfidence, 45);
           adjustedAction = 'hold';
         }
         
-        // RULE 3: Boost confidence for assets with strong positive momentum
-        if (change24h >= 3 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
-          adjustedConfidence = Math.min(95, adjustedConfidence + 5);
-          console.log(`[MarketIntelligence] ${r.symbol}: Strong momentum +${change24h.toFixed(1)}%, boosting confidence`);
+        // RULE 3: Don't chase pumps — cap if already up significantly
+        if (change24h > 4 && (adjustedAction === 'buy' || adjustedAction === 'strong_buy')) {
+          adjustedConfidence = Math.min(adjustedConfidence, 60);
+          console.log(`[MarketIntelligence] ${r.symbol}: Already pumped +${change24h.toFixed(1)}%, capping confidence`);
         }
         
         // RULE 4: Historical performance adjustment

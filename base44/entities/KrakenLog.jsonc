@@ -1,0 +1,44 @@
+{
+  "name": "KrakenLog",
+  "type": "object",
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "description": "auth|balance|deposit|withdraw|open_orders|closed_orders|create_order|cancel_order|error"
+    },
+    "status": {
+      "type": "string",
+      "description": "success|error|info"
+    },
+    "message": {
+      "type": "string",
+      "description": "Short message"
+    },
+    "details_json": {
+      "type": "string",
+      "description": "Raw payload/response/error JSON"
+    }
+  },
+  "required": [
+    "event_type",
+    "status"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

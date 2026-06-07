@@ -286,27 +286,27 @@ function computeCompositeScore(indicators, sentiment, history, strategies = {}) 
 
 /**
  * Convert composite score to signal type and confidence
+ * CONSERVATIVE thresholds — strong_buy requires overwhelmingly bullish indicators,
+ * buy requires clearly positive conditions. This prevents false entries.
  */
 function scoreToSignal(compositeScore) {
   let signalType, confidence;
 
-  // Highly relaxed thresholds: buy at 2+, strong_buy at 8+
-  // This allows signals to reach the Prospector even in mixed market conditions
-  if (compositeScore >= 8) {
+  if (compositeScore >= 35) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 70 + (compositeScore - 8));
-  } else if (compositeScore >= 2) {
+    confidence = Math.min(95, 72 + Math.min(20, compositeScore - 35));
+  } else if (compositeScore >= 18) {
     signalType = 'buy';
-    confidence = 55 + Math.min(20, compositeScore - 2);
-  } else if (compositeScore >= -20) {
+    confidence = 55 + Math.min(15, compositeScore - 18);
+  } else if (compositeScore >= -15) {
     signalType = 'hold';
     confidence = 50;
-  } else if (compositeScore >= -45) {
+  } else if (compositeScore >= -40) {
     signalType = 'sell';
-    confidence = 55 + (-compositeScore - 20);
+    confidence = 55 + (-compositeScore - 15);
   } else {
     signalType = 'strong_sell';
-    confidence = Math.min(95, 70 + (-compositeScore - 45));
+    confidence = Math.min(95, 70 + (-compositeScore - 40));
   }
 
   return { signalType, confidence: Math.round(confidence) };
@@ -887,58 +887,76 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
         const aiAction = (aiRec.optimal_action || 'hold').toLowerCase();
         const aiConf = aiRec.confidence_score || 50;
 
-        // Weighted blend: 20% ML model, 80% LLM <--- This is where you change the LLM:ML ratio <---
-        finalConfidence = Math.round(mlConfidence * 0.2 + aiConf * 0.8);
+        // Weighted blend: 50% ML model, 50% LLM — balanced, neither dominates
+        finalConfidence = Math.round(mlConfidence * 0.5 + aiConf * 0.5);
 
-        // CRITICAL: Use the MORE BULLISH of the two signals
-        // The old logic let a single "sell" from LLM override an ML "buy" — this killed all trades
+        // CONSERVATIVE: Use the MORE CONSERVATIVE (lower) of the two signals
+        // BOTH must agree on a buy for it to be a buy. This prevents false entries.
         const signalRank = { 'strong_buy': 5, 'buy': 4, 'hold': 3, 'sell': 2, 'strong_sell': 1 };
         const mlRank = signalRank[mlSignal] || 3;
         const aiRank = signalRank[aiAction] || 3;
 
-        // Take the HIGHER (more bullish) of the two signals
-        // Only let BOTH agreeing on sell/strong_sell produce a sell signal
-        if (mlRank >= 4 && aiRank >= 4) {
-          // Both say buy or strong_buy
-          finalSignalType = (mlRank === 5 || aiRank === 5) ? 'strong_buy' : 'buy';
+        // Take the LOWER (more conservative) of the two signals
+        // strong_buy only if BOTH agree on strong_buy
+        if (mlRank >= 5 && aiRank >= 5) {
+          finalSignalType = 'strong_buy';
           finalConfidence = Math.min(95, finalConfidence + 5);
-        } else if (mlRank >= 4 || aiRank >= 4) {
-          // At least ONE says buy — respect it
-          finalSignalType = (mlRank >= 5 || aiRank >= 5) ? 'strong_buy' : 'buy';
-          // Cap confidence if the other disagrees
-          if (mlRank < 3 || aiRank < 3) {
-            finalConfidence = Math.min(finalConfidence, 65);
-          }
-        } else if (mlRank <= 2 && aiRank <= 2) {
-          // BOTH say sell — only then produce sell
-          finalSignalType = (mlRank === 1 || aiRank === 1) ? 'strong_sell' : 'sell';
+        } else if (mlRank >= 4 && aiRank >= 4) {
+          // Both say at least buy
+          finalSignalType = 'buy';
+          finalConfidence = Math.min(finalConfidence, 75);
+        } else if (mlRank >= 4 && aiRank === 3) {
+          // One says buy, other says hold — downgrade to hold
+          finalSignalType = 'hold';
+          finalConfidence = Math.min(finalConfidence, 55);
+        } else if (mlRank === 3 && aiRank >= 4) {
+          // Same but reversed
+          finalSignalType = 'hold';
+          finalConfidence = Math.min(finalConfidence, 55);
+        } else if (mlRank <= 2 || aiRank <= 2) {
+          // Either says sell — respect it
+          finalSignalType = (mlRank <= 1 || aiRank <= 1) ? 'strong_sell' : 'sell';
         } else {
-          // Mixed: one hold + one sell, or similar — default to hold
-          finalSignalType = mlRank >= aiRank ? mlSignal : aiAction;
-          finalConfidence = Math.min(finalConfidence, 60);
+          // Default to hold for any other mixed case
+          finalSignalType = 'hold';
+          finalConfidence = Math.min(finalConfidence, 55);
         }
       }
 
-      // ── Hard filter: strong_buy data validation ──
-      // Highly relaxed: only downgrade for critical, undeniable bearish conditions
-      if (finalSignalType === 'strong_buy') {
+      // ── Hard filter: strong_buy AND buy data validation ──
+      // STRICT: Require genuinely bullish conditions. Any red flag downgrades.
+      if (finalSignalType === 'strong_buy' || finalSignalType === 'buy') {
         const violations = [];
 
-        if (ti.rsi_1h != null && ti.rsi_1h > 80) violations.push(`RSI extremely overbought ${ti.rsi_1h.toFixed(0)}`);
-        if (ti.bb_1h && ti.bb_1h.percentB > 95) violations.push('At extreme upper BB');
-        if (ti.trend_6h != null && ti.trend_6h < -2.0) violations.push('Severe 6h downtrend');
-        if (hist && hist.total_trades >= 5 && hist.win_rate < 30) violations.push('Terrible history');
+        if (ti.rsi_1h != null && ti.rsi_1h > 70) violations.push(`RSI overbought ${ti.rsi_1h.toFixed(0)}`);
+        if (ti.bb_1h && ti.bb_1h.percentB > 80) violations.push(`Near upper BB (${ti.bb_1h.percentB.toFixed(0)}%)`);
+        if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push(`Negative 6h trend (${ti.trend_6h.toFixed(1)}%)`);
+        if (ti.trend_12h != null && ti.trend_12h < -1.0) violations.push(`Negative 12h trend (${ti.trend_12h.toFixed(1)}%)`);
+        if (change24h < -2) violations.push(`24h price drop (${change24h.toFixed(1)}%)`);
+        if (ti.macd_1h && ti.macd_1h.bearishCross) violations.push('MACD bearish crossover');
+        if (hist && hist.total_trades >= 5 && hist.win_rate < 45) violations.push(`Poor history (${hist.win_rate.toFixed(0)}% win)`);
+        if (!ti.volume_increasing && ti.trend_6h != null && ti.trend_6h < 0.5) violations.push('No volume confirmation on weak trend');
 
-        if (violations.length >= 3) {
-          console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
-          finalSignalType = 'hold';
-          finalConfidence = Math.min(finalConfidence, 55);
-        } else if (violations.length >= 2) {
-          console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
-          finalSignalType = 'buy';
-          finalConfidence = Math.min(finalConfidence, 70);
+        if (finalSignalType === 'strong_buy') {
+          if (violations.length >= 2) {
+            console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→hold: ${violations.join(', ')}`);
+            finalSignalType = 'hold';
+            finalConfidence = Math.min(finalConfidence, 50);
+          } else if (violations.length >= 1) {
+            console.log(`[generateSignals] DOWNGRADE ${sym} strong_buy→buy: ${violations.join(', ')}`);
+            finalSignalType = 'buy';
+            finalConfidence = Math.min(finalConfidence, 65);
+          }
+        } else if (finalSignalType === 'buy') {
+          if (violations.length >= 2) {
+            console.log(`[generateSignals] DOWNGRADE ${sym} buy→hold: ${violations.join(', ')}`);
+            finalSignalType = 'hold';
+            finalConfidence = Math.min(finalConfidence, 50);
+          } else if (violations.length >= 1) {
+            // Keep as buy but cap confidence
+            finalConfidence = Math.min(finalConfidence, 60);
+          }
         }
-        // 0-1 violations = stays strong_buy
       }
 
       // Confidence floor for signal types — uses user's settings

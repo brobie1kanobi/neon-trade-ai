@@ -1,0 +1,91 @@
+{
+  "name": "SystemHealth",
+  "type": "object",
+  "properties": {
+    "component": {
+      "type": "string",
+      "enum": [
+        "kraken_api",
+        "kraken_ws",
+        "auto_trader",
+        "market_data",
+        "ai_signals"
+      ],
+      "description": "System component being monitored"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "healthy",
+        "degraded",
+        "unhealthy",
+        "paused"
+      ],
+      "default": "healthy",
+      "description": "Current health status"
+    },
+    "error_count_1h": {
+      "type": "number",
+      "default": 0,
+      "description": "Error count in last hour"
+    },
+    "error_count_24h": {
+      "type": "number",
+      "default": 0,
+      "description": "Error count in last 24 hours"
+    },
+    "last_success_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last successful operation timestamp"
+    },
+    "last_error_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last error timestamp"
+    },
+    "last_error_message": {
+      "type": "string",
+      "description": "Most recent error message"
+    },
+    "is_auto_paused": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether component was auto-paused due to errors"
+    },
+    "pause_reason": {
+      "type": "string",
+      "description": "Reason for auto-pause"
+    },
+    "metrics_json": {
+      "type": "string",
+      "description": "JSON object of additional metrics"
+    }
+  },
+  "required": [
+    "component",
+    "status"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
