@@ -1576,17 +1576,22 @@ Deno.serve(async (req) => {
           console.log(`[runAutoTrader] 📋 Order IDs saved: ${krakenOrderIds}`);
 
         } catch (krakenError) {
-          log(`Kraken buy failed for ${sym}`, { error: krakenError.message });
-          tradesFailed.push({ symbol: sym, error: krakenError.message });
+          const errMsg = String(krakenError.message || '');
+          log(`Kraken buy failed for ${sym}`, { error: errMsg });
+          tradesFailed.push({ symbol: sym, error: errMsg });
           
-          // Record health error
-          try {
-            await base44.functions.invoke('systemHealthMonitor', {
-                      action: 'recordError',
-                      component: 'kraken_api',
-                      error_message: krakenError.message
-                    });
-          } catch (e) {}
+          // CRITICAL: Only report SYSTEM-LEVEL errors to health monitor.
+          // Per-trade errors (volume minimum, insufficient funds) must NEVER block all trading.
+          const isPerTradeErr = /minimum not met|egeneral:invalid arguments|too small|below minimum|insufficient funds|eorder:insufficient|invalid volume|invalid price/i.test(errMsg);
+          if (!isPerTradeErr) {
+            try {
+              await base44.functions.invoke('systemHealthMonitor', {
+                action: 'recordError', component: 'kraken_api', error_message: errMsg
+              });
+            } catch (e) {}
+          } else {
+            log(`Per-trade error for ${sym} — NOT blocking system: ${errMsg}`);
+          }
           
           continue;
         }

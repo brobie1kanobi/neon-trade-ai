@@ -104,6 +104,27 @@ Deno.serve(async (req) => {
           return Response.json({ error: 'Missing component' }, { status: 400 });
         }
         
+        // CRITICAL: "volume minimum not met" and similar per-trade errors are NOT system health issues.
+        // They indicate a single trade had invalid parameters — NOT that the API is broken.
+        // These should NEVER block all trading or increment error counters.
+        const msg = String(error_message || '').toLowerCase();
+        const isPerTradeError = (
+          /volume minimum not met/i.test(msg) ||
+          /minimum not met/i.test(msg) ||
+          /egeneral:invalid arguments/i.test(msg) ||
+          /too small/i.test(msg) ||
+          /below minimum/i.test(msg) ||
+          /insufficient funds/i.test(msg) ||
+          /eorder:insufficient/i.test(msg) ||
+          /invalid volume/i.test(msg) ||
+          /invalid price/i.test(msg)
+        );
+        
+        if (isPerTradeError) {
+          console.log(`[systemHealthMonitor] Ignoring per-trade error (not a system issue): ${error_message}`);
+          return Response.json({ success: true, ignored: true, reason: 'Per-trade error, not system health issue' });
+        }
+        
         const existing = await base44.asServiceRole.entities.SystemHealth.filter({
           component
         });
