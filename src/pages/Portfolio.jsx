@@ -193,9 +193,10 @@ export default function Portfolio() {
   }, [loadData]);
 
   // Build cost price lookup with multiple sources:
-  // PRIORITY 1: krakenPnL positions (from actual Kraken trade history - most accurate)
-  // PRIORITY 2: getKrakenBalance avg_cost (from Holding entities in REST snapshot)
-  // PRIORITY 3: Holding entities from DB (user-scoped)
+  // PRIORITY 1: getKrakenBalance avg_cost (from Kraken API + Holding entities — most accurate)
+  // PRIORITY 2: Holding entities from DB (user-scoped)
+  // NOTE: krakenPnL positions are NOT used for cost basis — they compute avg cost from trade
+  // history which diverges from Kraken's own reported avg entry price.
   const holdingCostMap = React.useMemo(() => {
     const map = {};
     
@@ -209,7 +210,7 @@ export default function Portfolio() {
       }
     }
     
-    // Layer 2: OVERRIDE with getKrakenBalance avg_cost (may include service-role Holdings)
+    // Layer 2: OVERRIDE with getKrakenBalance avg_cost (Kraken-reported values)
     if (krakenData?.success && Array.isArray(krakenData.holdings)) {
       for (const kh of krakenData.holdings) {
         const sym = (kh.symbol || '').toUpperCase();
@@ -219,18 +220,8 @@ export default function Portfolio() {
       }
     }
     
-    // Layer 3: OVERRIDE with krakenPnL positions (source of truth from actual Kraken trades)
-    if (krakenPnL?.success && Array.isArray(krakenPnL.positions)) {
-      for (const pos of krakenPnL.positions) {
-        const sym = (pos.symbol || '').toUpperCase();
-        if (sym && pos.avgPrice > 0) {
-          map[sym] = { avgCost: pos.avgPrice, qty: pos.quantity || map[sym]?.qty || 0 };
-        }
-      }
-    }
-    
     return map;
-  }, [holdings, krakenPnL, krakenData]);
+  }, [holdings, krakenData]);
 
   // CRITICAL: Build holdings - Kraken REST for live prices, Holding entities for cost basis
   const effectiveHoldings = React.useMemo(() => {
@@ -407,27 +398,20 @@ export default function Portfolio() {
     }
   }, [effectiveHoldings, priceData, trades, isSimMode, krakenData, krakenPnL]);
 
-  // CRITICAL: Use centralized PnL from provider - no direct API calls needed
+  // Use krakenPnL only for 24h realized PnL (the one metric we can't compute locally).
+  // Lifetime PnL is already computed from holdings cost basis above — don't override it
+  // with krakenPnL which uses a different (less accurate) avg cost calculation.
   React.useEffect(() => {
     if (isSimMode || !krakenPnL?.success) return;
     
     const pnl24h = krakenPnL.pnl_24h || 0;
-    const lifetimePnL = krakenPnL.pnl_lifetime || 0;
-    
-    // Calculate percentages based on current portfolio value
-    const currentValue = wsCryptoValue > 0 ? wsCryptoValue : 
-      (krakenData?.total_crypto_value || effectiveHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
-    const costBasis = currentValue - lifetimePnL;
-    const lifetimePct = costBasis > 0 ? (lifetimePnL / costBasis) * 100 : 0;
-    
-    setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-    setPortfolio24hrChange({ value: pnl24h, percentage: costBasis > 0 ? (pnl24h / costBasis) * 100 : 0 });
-    
-    console.log('[Portfolio] Kraken PnL from provider:', {
-      pnl_24h: pnl24h.toFixed(2),
-      lifetime: lifetimePnL.toFixed(2)
-    });
-  }, [isSimMode, krakenPnL, wsCryptoValue, krakenData, effectiveHoldings]);
+    if (pnl24h !== 0) {
+      const currentValue = wsCryptoValue > 0 ? wsCryptoValue : 
+        (krakenData?.total_crypto_value || effectiveHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
+      const costBasis = currentValue > 0 ? currentValue - (lifetimeChange.value || 0) : 1;
+      setPortfolio24hrChange({ value: pnl24h, percentage: costBasis > 0 ? (pnl24h / costBasis) * 100 : 0 });
+    }
+  }, [isSimMode, krakenPnL, wsCryptoValue, krakenData]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;

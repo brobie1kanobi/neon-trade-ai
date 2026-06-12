@@ -40,11 +40,12 @@ export default function AssetAllocation({ allocations, isLoading }) {
     wsUpdateCounter
   } = useKrakenWebSocket();
 
-  // Build cost price map: krakenPnL positions (from actual Kraken trade history) > allocations prop
+  // Build cost price map from allocations prop ONLY (Portfolio page already resolves the correct source)
+  // NOTE: krakenPnL positions are NOT used here — they calculate avg cost from trade history
+  // which is less accurate than what Kraken itself reports via getKrakenBalance/Holding entities.
   const costPriceMap = useMemo(() => {
     const map = {};
     
-    // First: from allocations prop (may have cost basis from Portfolio page)
     if (Array.isArray(allocations)) {
       for (const a of allocations) {
         const sym = (a.symbol || '').toUpperCase();
@@ -54,18 +55,8 @@ export default function AssetAllocation({ allocations, isLoading }) {
       }
     }
     
-    // Second: OVERRIDE with krakenPnL positions (source of truth from actual Kraken trades)
-    if (krakenPnL?.success && Array.isArray(krakenPnL.positions)) {
-      for (const pos of krakenPnL.positions) {
-        const sym = (pos.symbol || '').toUpperCase();
-        if (sym && pos.avgPrice > 0) {
-          map[sym] = { avgCost: pos.avgPrice, qty: pos.quantity || map[sym]?.qty || 0 };
-        }
-      }
-    }
-    
     return map;
-  }, [allocations, krakenPnL]);
+  }, [allocations]);
 
   // CRITICAL: Refresh WebSocket data when trades complete
   React.useEffect(() => {
