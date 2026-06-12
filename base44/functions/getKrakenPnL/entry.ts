@@ -96,40 +96,21 @@ Deno.serve(async (req) => {
       return Response.json({ success: false, error: 'Kraken not connected', pnl_24h: 0, pnl_lifetime: 0, realized_pnl: 0, unrealized_pnl: 0 }, { status: 200 });
     }
 
-    // CRITICAL: Fetch ALL trades (paginate) for accurate cost basis
-    // krakenApi getTradesHistory returns max 50 trades per page
-    let allTradesEntries = [];
-    let offset = 0;
-    let hasMore = true;
-    const MAX_PAGES = 10; // Safety limit (500 trades max)
-    let page = 0;
-    
-    while (hasMore && page < MAX_PAGES) {
-      const tradesResponse = await Promise.race([
-        base44.functions.invoke('krakenApi', { 
-          action: 'getTradesHistory', 
-          payload: { ofs: offset },
-          internal: true 
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 12000))
-      ]);
+    // Fetch trades from Kraken (single page — most recent 50 trades)
+    // Avoids pagination loops that cause Kraken rate limiting
+    const tradesResponse = await Promise.race([
+      base44.functions.invoke('krakenApi', { 
+        action: 'getTradesHistory', 
+        internal: true 
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Trades timeout')), 12000))
+    ]);
 
-      const tradesData = tradesResponse?.data || tradesResponse;
-      const tradesArray = tradesData?.trades || [];
-      const entries = Array.isArray(tradesArray)
-        ? tradesArray.map(t => [t.trade_id || t.txid, t])
-        : Object.entries(tradesArray);
-      
-      if (entries.length === 0) {
-        hasMore = false;
-      } else {
-        allTradesEntries = allTradesEntries.concat(entries);
-        offset += entries.length;
-        // Kraken returns exactly 50 per page; if less, we've got all
-        if (entries.length < 50) hasMore = false;
-      }
-      page++;
-    }
+    const tradesData = tradesResponse?.data || tradesResponse;
+    const tradesArray = tradesData?.trades || [];
+    const allTradesEntries = Array.isArray(tradesArray)
+      ? tradesArray.map(t => [t.trade_id || t.txid, t])
+      : Object.entries(tradesArray);
     
     // Sort trades by time ascending (oldest first) for correct avg cost calculation
     allTradesEntries.sort((a, b) => {

@@ -192,25 +192,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch cost basis from DB holdings
-    // CRITICAL: Try user-scoped first, then fall back to service role
-    // Holdings may have been created by auto-trader (service role), not the user directly
+    // Fetch cost basis from DB holdings (user-scoped)
     let costBasisMap = {};
     try {
-      let dbHoldings = await base44.entities.Holding.filter({
-        created_by: user.email,
+      const dbHoldings = await base44.entities.Holding.filter({
         is_simulation: false
       });
-      // If user-scoped returns nothing, try service role (auto-trader created holdings)
-      if (!dbHoldings || dbHoldings.length === 0) {
-        try {
-          dbHoldings = await base44.asServiceRole.entities.Holding.filter({
-            is_simulation: false
-          });
-        } catch (_e2) {
-          // Service role may not be available in all contexts
-        }
-      }
       for (const h of (dbHoldings || [])) {
         if (h.symbol && h.average_cost_price > 0) {
           costBasisMap[h.symbol] = h.average_cost_price;
