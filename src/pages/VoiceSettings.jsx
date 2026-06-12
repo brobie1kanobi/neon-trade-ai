@@ -1,18 +1,16 @@
-
 import React, { useState, useEffect } from 'react';
-import { UserSettings } from "@/entities/UserSettings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Volume2, PlayCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useSettings } from "@/components/utils/SettingsContext";
 
 export default function VoiceSettings() {
+    const { settings, isLoading, updateSetting } = useSettings();
     const [voices, setVoices] = useState([]);
     const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
-    const [settings, setSettings] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [speechRate, setSpeechRate] = useState('normal');
     const [speechPitch, setSpeechPitch] = useState('normal');
@@ -26,27 +24,20 @@ export default function VoiceSettings() {
         };
 
         loadVoices();
-        // Voices may load asynchronously
         window.speechSynthesis.onvoiceschanged = loadVoices;
-
-        const loadSettings = async () => {
-            setIsLoading(true);
-            const userSettings = await UserSettings.list();
-            if (userSettings.length > 0) {
-                setSettings(userSettings[0]);
-                setSelectedVoiceURI(userSettings[0].tts_voice_uri || '');
-                setSpeechRate(userSettings[0].tts_speech_rate || 'normal');
-                setSpeechPitch(userSettings[0].tts_speech_pitch || 'normal');
-            }
-            setIsLoading(false);
-        };
-
-        loadSettings();
         
         return () => {
             window.speechSynthesis.onvoiceschanged = null;
         };
     }, []);
+
+    useEffect(() => {
+        if (settings) {
+            setSelectedVoiceURI(settings.tts_voice_uri || '');
+            setSpeechRate(settings.tts_speech_rate || 'normal');
+            setSpeechPitch(settings.tts_speech_pitch || 'normal');
+        }
+    }, [settings]);
 
     const getSpeechSettings = (setting) => {
         const settingsMap = {
@@ -80,20 +71,9 @@ export default function VoiceSettings() {
     const handleSaveChanges = async () => {
         setIsSaving(true);
         try {
-            const settingsData = {
-                tts_voice_uri: selectedVoiceURI,
-                tts_speech_rate: speechRate,
-                tts_speech_pitch: speechPitch
-            };
-            
-            if (settings?.id) {
-                await UserSettings.update(settings.id, settingsData);
-            } else {
-                // If no settings exist, create a new entry.
-                // It's important to include the current selectedVoiceURI, speechRate, and speechPitch
-                // in the creation, even if they are default, so a record is established.
-                await UserSettings.create(settingsData);
-            }
+            await updateSetting('tts_voice_uri', selectedVoiceURI);
+            await updateSetting('tts_speech_rate', speechRate);
+            await updateSetting('tts_speech_pitch', speechPitch);
             toast.success("Voice settings saved!");
         } catch (error) {
             console.error("Failed to save voice settings:", error);
