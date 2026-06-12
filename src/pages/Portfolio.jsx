@@ -192,50 +192,90 @@ export default function Portfolio() {
     }
   }, [loadData]);
 
-  // CRITICAL: Build holdings - REST API is PRIMARY in LIVE mode (has accurate prices + cost basis)
-  // WebSocket only has raw quantities without prices - not useful for display
+  // Build a cost price lookup from Holding entities (source of truth for average_cost_price)
+  const holdingCostMap = React.useMemo(() => {
+    const map = {};
+    if (!Array.isArray(holdings)) return map;
+    for (const h of holdings) {
+      const sym = (h.symbol || '').toUpperCase();
+      if (sym && h.average_cost_price > 0) {
+        if (map[sym]) {
+          const existingQty = map[sym].qty;
+          const existingCost = map[sym].avgCost * existingQty;
+          const newQty = existingQty + (h.quantity || 0);
+          map[sym] = {
+            avgCost: newQty > 0 ? (existingCost + h.average_cost_price * (h.quantity || 0)) / newQty : 0,
+            qty: newQty
+          };
+        } else {
+          map[sym] = { avgCost: h.average_cost_price, qty: h.quantity || 0 };
+        }
+      }
+    }
+    return map;
+  }, [holdings]);
+
+  // CRITICAL: Build holdings - Kraken REST for live prices, Holding entities for cost basis
   const effectiveHoldings = React.useMemo(() => {
     if (isSimMode) {
       return holdings;
     } else {
-      // LIVE MODE: REST snapshot is PRIMARY (has accurate prices from Kraken Ticker API)
+      // Helper: get actual purchase cost from Holding entities
+      const getAvgCost = (symbol, fallback) => {
+        const entry = holdingCostMap[(symbol || '').toUpperCase()];
+        return entry?.avgCost > 0 ? entry.avgCost : fallback;
+      };
+
+      // LIVE MODE: REST snapshot for prices, Holding entities for cost basis
       if (krakenData?.success && krakenData?.holdings && krakenData.holdings.length > 0) {
-        console.log('[Portfolio] Using REST snapshot holdings (authoritative)');
-        return krakenData.holdings.map(kh => ({
-          symbol: kh.symbol,
-          quantity: kh.quantity,
-          average_cost_price: kh.avg_cost || kh.current_price_usd || 0,
-          asset_type: 'crypto',
-          currentPrice: kh.current_price_usd,
-          costBasis: (kh.avg_cost || kh.current_price_usd) * kh.quantity,
-          currentValue: kh.total_value_usd,
-          gainLoss: kh.unrealized_pnl || 0,
-          gainLossPercent: kh.pnl_percent || 0,
-          is_simulation: false
-        }));
+        return krakenData.holdings.map(kh => {
+          const price = kh.current_price_usd || 0;
+          const qty = kh.quantity || 0;
+          const avgCost = getAvgCost(kh.symbol, price);
+          const costBasis = avgCost * qty;
+          const currentValue = price * qty;
+          const gainLoss = currentValue - costBasis;
+          const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+
+          return {
+            symbol: kh.symbol,
+            quantity: qty,
+            average_cost_price: avgCost,
+            asset_type: 'crypto',
+            currentPrice: price,
+            costBasis,
+            currentValue,
+            gainLoss,
+            gainLossPercent,
+            is_simulation: false
+          };
+        });
       }
-      // Fallback to WebSocket (only has quantities, prices may be 0 or stale)
+      // Fallback to WebSocket
       if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-        console.log('[Portfolio] Using WebSocket balances (fallback - no REST data yet)');
         return Object.entries(wsBalances)
           .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
           .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
           .map(([asset, balance]) => {
             const pair = `${asset}/USD`;
-            const priceInfo = wsPrices?.[pair];
-            const price = priceInfo?.price || 0;
+            const price = wsPrices?.[pair]?.price || 0;
             const qty = balance.balance || 0;
-            
+            const avgCost = getAvgCost(asset, price);
+            const costBasis = avgCost * qty;
+            const currentValue = qty * price;
+            const gainLoss = currentValue - costBasis;
+            const gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+
             return {
               symbol: asset,
               quantity: qty,
-              average_cost_price: price,
+              average_cost_price: avgCost,
               asset_type: 'crypto',
               currentPrice: price,
-              costBasis: qty * price,
-              currentValue: qty * price,
-              gainLoss: 0,
-              gainLossPercent: 0,
+              costBasis,
+              currentValue,
+              gainLoss,
+              gainLossPercent,
               is_simulation: false
             };
           });
@@ -243,7 +283,7 @@ export default function Portfolio() {
       // Final fallback: DB holdings for LIVE mode only
       return holdings.filter(h => h.is_simulation === false);
     }
-  }, [isSimMode, holdings, wsConnected, wsBalances, wsPrices, krakenData, wsUpdateCounter]);
+  }, [isSimMode, holdings, holdingCostMap, wsConnected, wsBalances, wsPrices, krakenData, wsUpdateCounter]);
 
   // Get all symbols for price fetching
   const allSymbols = React.useMemo(() => {
