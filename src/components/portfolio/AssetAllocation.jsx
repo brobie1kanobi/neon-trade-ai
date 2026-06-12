@@ -7,7 +7,6 @@ import AssetDetailModal from "./AssetDetailModal";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
-import { useHoldings } from "@/components/hooks/useHoldings";
 
 const usePrevious = (value) => {
   const ref = useRef();
@@ -27,33 +26,6 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
 
-  // CRITICAL: Fetch actual Holding entities to get real average_cost_price for PnL
-  const { holdings: holdingEntities } = useHoldings(isSimMode);
-  
-  // Build a lookup map: symbol -> average_cost_price from Holding entities
-  const costPriceMap = useMemo(() => {
-    const map = {};
-    if (!Array.isArray(holdingEntities)) return map;
-    for (const h of holdingEntities) {
-      const sym = (h.symbol || '').toUpperCase();
-      if (sym && h.average_cost_price > 0) {
-        // If multiple holdings for same symbol, compute weighted average
-        if (map[sym]) {
-          const existingQty = map[sym].qty;
-          const existingCost = map[sym].avgCost * existingQty;
-          const newQty = existingQty + (h.quantity || 0);
-          map[sym] = {
-            avgCost: newQty > 0 ? (existingCost + h.average_cost_price * (h.quantity || 0)) / newQty : 0,
-            qty: newQty
-          };
-        } else {
-          map[sym] = { avgCost: h.average_cost_price, qty: h.quantity || 0 };
-        }
-      }
-    }
-    return map;
-  }, [holdingEntities]);
-
   // CRITICAL: Use global WebSocket connection for real-time Kraken data
   const {
     isConnected: wsConnected,
@@ -61,12 +33,39 @@ export default function AssetAllocation({ allocations, isLoading }) {
     prices: wsPrices,
     cryptoHoldingsValue: wsCryptoValue,
     refresh: refreshWebSocket,
-    // REST snapshot has ALL assets with prices immediately on load
     bestHoldings: restHoldings,
     krakenBalance: krakenData,
+    krakenPnL,
     hasData: hasKrakenData,
     wsUpdateCounter
   } = useKrakenWebSocket();
+
+  // Build cost price map: krakenPnL positions (from actual Kraken trade history) > allocations prop
+  const costPriceMap = useMemo(() => {
+    const map = {};
+    
+    // First: from allocations prop (may have cost basis from Portfolio page)
+    if (Array.isArray(allocations)) {
+      for (const a of allocations) {
+        const sym = (a.symbol || '').toUpperCase();
+        if (sym && a.average_cost_price > 0 && a.average_cost_price !== a.currentPrice) {
+          map[sym] = { avgCost: a.average_cost_price, qty: a.quantity || 0 };
+        }
+      }
+    }
+    
+    // Second: OVERRIDE with krakenPnL positions (source of truth from actual Kraken trades)
+    if (krakenPnL?.success && Array.isArray(krakenPnL.positions)) {
+      for (const pos of krakenPnL.positions) {
+        const sym = (pos.symbol || '').toUpperCase();
+        if (sym && pos.avgPrice > 0) {
+          map[sym] = { avgCost: pos.avgPrice, qty: pos.quantity || map[sym]?.qty || 0 };
+        }
+      }
+    }
+    
+    return map;
+  }, [allocations, krakenPnL]);
 
   // CRITICAL: Refresh WebSocket data when trades complete
   React.useEffect(() => {
@@ -298,8 +297,17 @@ export default function AssetAllocation({ allocations, isLoading }) {
           <div className="space-y-3">
               {consolidatedHoldings.map((asset) => {
               const percentage = totalValue > 0 ? asset.currentValue / totalValue * 100 : 0;
-              const gainLoss = asset.currentValue - asset.costBasis;
-              const gainLossPercent = asset.costBasis > 0 ? gainLoss / asset.costBasis * 100 : 0;
+              
+              // CRITICAL: Always use costPriceMap for PnL (overrides stale prop data)
+              const sym = (asset.symbol || '').toUpperCase();
+              const pnlEntry = costPriceMap[sym];
+              const effectiveCostBasis = (pnlEntry?.avgCost > 0 && pnlEntry.avgCost !== asset.currentPrice)
+                ? pnlEntry.avgCost * (asset.quantity || 0)
+                : asset.costBasis;
+              const effectiveAvgCost = (pnlEntry?.avgCost > 0) ? pnlEntry.avgCost : asset.average_cost_price;
+              
+              const gainLoss = asset.currentValue - effectiveCostBasis;
+              const gainLossPercent = effectiveCostBasis > 0 ? gainLoss / effectiveCostBasis * 100 : 0;
               const priceChange = priceChanges[asset.symbol];
 
               return (
@@ -371,20 +379,20 @@ export default function AssetAllocation({ allocations, isLoading }) {
                           </span>
                         </div>
                       </div>
-                      {asset.average_cost_price > 0 && asset.average_cost_price !== asset.currentPrice && (
+                      {effectiveAvgCost > 0 && effectiveAvgCost !== asset.currentPrice && (
                         <div className="flex items-center justify-between text-xs">
                           <div>
                             <span style={{ color: "var(--text-secondary)" }}>Avg Cost: </span>
                             <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                              ${asset.average_cost_price >= 1 
-                                ? asset.average_cost_price.toFixed(2) 
-                                : asset.average_cost_price.toFixed(6)}
+                              ${effectiveAvgCost >= 1 
+                                ? effectiveAvgCost.toFixed(2) 
+                                : effectiveAvgCost.toFixed(6)}
                             </span>
                           </div>
                           <div>
                             <span style={{ color: "var(--text-secondary)" }}>Cost Basis: </span>
                             <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                              ${(asset.costBasis || 0).toFixed(2)}
+                              ${(effectiveCostBasis || 0).toFixed(2)}
                             </span>
                           </div>
                         </div>

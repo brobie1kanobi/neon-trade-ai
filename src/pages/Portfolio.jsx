@@ -192,28 +192,33 @@ export default function Portfolio() {
     }
   }, [loadData]);
 
-  // Build a cost price lookup from Holding entities (source of truth for average_cost_price)
+  // Build cost price lookup: PRIORITY 1: krakenPnL positions (from actual Kraken trade history)
+  //                          PRIORITY 2: Holding entities (may have avg_cost from auto-trader)
   const holdingCostMap = React.useMemo(() => {
     const map = {};
-    if (!Array.isArray(holdings)) return map;
-    for (const h of holdings) {
-      const sym = (h.symbol || '').toUpperCase();
-      if (sym && h.average_cost_price > 0) {
-        if (map[sym]) {
-          const existingQty = map[sym].qty;
-          const existingCost = map[sym].avgCost * existingQty;
-          const newQty = existingQty + (h.quantity || 0);
-          map[sym] = {
-            avgCost: newQty > 0 ? (existingCost + h.average_cost_price * (h.quantity || 0)) / newQty : 0,
-            qty: newQty
-          };
-        } else {
+    
+    // First: populate from Holding entities
+    if (Array.isArray(holdings)) {
+      for (const h of holdings) {
+        const sym = (h.symbol || '').toUpperCase();
+        if (sym && h.average_cost_price > 0) {
           map[sym] = { avgCost: h.average_cost_price, qty: h.quantity || 0 };
         }
       }
     }
+    
+    // Second: OVERRIDE with krakenPnL positions (source of truth from actual Kraken trades)
+    if (krakenPnL?.success && Array.isArray(krakenPnL.positions)) {
+      for (const pos of krakenPnL.positions) {
+        const sym = (pos.symbol || '').toUpperCase();
+        if (sym && pos.avgPrice > 0) {
+          map[sym] = { avgCost: pos.avgPrice, qty: pos.quantity || map[sym]?.qty || 0 };
+        }
+      }
+    }
+    
     return map;
-  }, [holdings]);
+  }, [holdings, krakenPnL]);
 
   // CRITICAL: Build holdings - Kraken REST for live prices, Holding entities for cost basis
   const effectiveHoldings = React.useMemo(() => {
