@@ -7,6 +7,7 @@ import AssetDetailModal from "./AssetDetailModal";
 import NumberDisplay from "@/components/ui/NumberDisplay";
 import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvider";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { useHoldings } from "@/components/hooks/useHoldings";
 
 const usePrevious = (value) => {
   const ref = useRef();
@@ -25,6 +26,33 @@ export default function AssetAllocation({ allocations, isLoading }) {
 
   const { settings } = useSettings();
   const isSimMode = settings?.sim_trading_mode !== false;
+
+  // CRITICAL: Fetch actual Holding entities to get real average_cost_price for PnL
+  const { holdings: holdingEntities } = useHoldings(isSimMode);
+  
+  // Build a lookup map: symbol -> average_cost_price from Holding entities
+  const costPriceMap = useMemo(() => {
+    const map = {};
+    if (!Array.isArray(holdingEntities)) return map;
+    for (const h of holdingEntities) {
+      const sym = (h.symbol || '').toUpperCase();
+      if (sym && h.average_cost_price > 0) {
+        // If multiple holdings for same symbol, compute weighted average
+        if (map[sym]) {
+          const existingQty = map[sym].qty;
+          const existingCost = map[sym].avgCost * existingQty;
+          const newQty = existingQty + (h.quantity || 0);
+          map[sym] = {
+            avgCost: newQty > 0 ? (existingCost + h.average_cost_price * (h.quantity || 0)) / newQty : 0,
+            qty: newQty
+          };
+        } else {
+          map[sym] = { avgCost: h.average_cost_price, qty: h.quantity || 0 };
+        }
+      }
+    }
+    return map;
+  }, [holdingEntities]);
 
   // CRITICAL: Use global WebSocket connection for real-time Kraken data
   const {
@@ -64,25 +92,31 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const wsAllocations = React.useMemo(() => {
     if (isSimMode) return null;
     
+    // Helper: get actual average cost from Holding entities (source of truth for PnL)
+    const getAvgCost = (symbol, fallbackPrice) => {
+      const sym = (symbol || '').toUpperCase();
+      const entry = costPriceMap[sym];
+      return entry?.avgCost > 0 ? entry.avgCost : fallbackPrice;
+    };
+    
     // PRIORITY 1: REST snapshot from provider (has ALL assets with accurate prices from Kraken Ticker API)
     if (restHoldings && restHoldings.length > 0) {
-      console.log('[AssetAllocation] Using REST snapshot holdings:', restHoldings.length, 'assets');
       const mapped = restHoldings.map(h => {
-        // Overlay real-time WS price if available (more current than REST)
         const pair = `${h.symbol}/USD`;
         const wsPrice = wsPrices?.[pair]?.price;
         const price = wsPrice || h.current_price_usd || 0;
         const qty = h.quantity || 0;
         const value = qty * price;
-        const avgCost = h.avg_cost || 0;
+        // CRITICAL: Use Holding entity's average_cost_price for real PnL, NOT Kraken's avg_cost
+        const avgCost = getAvgCost(h.symbol, price);
         
         return {
           symbol: h.symbol,
           quantity: qty,
           currentPrice: price,
           currentValue: value,
-          costBasis: avgCost > 0 ? avgCost * qty : value,
-          average_cost_price: avgCost > 0 ? avgCost : price,
+          costBasis: avgCost * qty,
+          average_cost_price: avgCost,
           asset_type: 'crypto',
           is_simulation: false
         };
@@ -94,7 +128,6 @@ export default function AssetAllocation({ allocations, isLoading }) {
     
     // PRIORITY 2: WebSocket balances (fallback if REST hasn't loaded yet)
     if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
-      console.log('[AssetAllocation] Using WebSocket balances (REST not yet available)');
       const wsAssets = Object.entries(wsBalances)
         .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
         .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
@@ -104,14 +137,15 @@ export default function AssetAllocation({ allocations, isLoading }) {
           const qty = balance.balance || 0;
           const price = priceInfo?.price || 0;
           const value = qty * price;
+          const avgCost = getAvgCost(asset, price);
           
           return {
             symbol: asset,
             quantity: qty,
             currentPrice: price,
             currentValue: value,
-            costBasis: value,
-            average_cost_price: price,
+            costBasis: avgCost * qty,
+            average_cost_price: avgCost,
             asset_type: 'crypto',
             is_simulation: false
           };
@@ -123,7 +157,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
     
     return null;
-  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, wsUpdateCounter]);
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, wsUpdateCounter, costPriceMap]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
