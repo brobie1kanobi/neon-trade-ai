@@ -229,7 +229,10 @@ Deno.serve(async (req) => {
     if (action === 'getTradesHistory') {
       const { apiKey, apiSecret } = credsFor('getTradesHistory');
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/TradesHistory'));
-      const result = await callKraken(apiKey, apiSecret, '/0/private/TradesHistory', { type: 'all' });
+      const params = { type: 'all' };
+      // Support pagination via ofs parameter
+      if (payload?.ofs) params.ofs = String(payload.ofs);
+      const result = await callKraken(apiKey, apiSecret, '/0/private/TradesHistory', params);
       const trades = [];
       for (const [txid, trade] of Object.entries(result.result?.trades || {})) {
         trades.push({ trade_id: txid, txid, ordertxid: trade.ordertxid, pair: trade.pair, time: trade.time, type: trade.type, ordertype: trade.ordertype, price: trade.price, cost: trade.cost, fee: trade.fee, vol: trade.vol, margin: trade.margin, misc: trade.misc, ...trade });

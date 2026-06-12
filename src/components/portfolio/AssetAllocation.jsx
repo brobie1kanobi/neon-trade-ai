@@ -301,7 +301,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
               // CRITICAL: Always use costPriceMap for PnL (overrides stale prop data)
               const sym = (asset.symbol || '').toUpperCase();
               const pnlEntry = costPriceMap[sym];
-              const effectiveCostBasis = (pnlEntry?.avgCost > 0 && pnlEntry.avgCost !== asset.currentPrice)
+              const effectiveCostBasis = (pnlEntry?.avgCost > 0)
                 ? pnlEntry.avgCost * (asset.quantity || 0)
                 : asset.costBasis;
               const effectiveAvgCost = (pnlEntry?.avgCost > 0) ? pnlEntry.avgCost : asset.average_cost_price;
@@ -379,7 +379,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
                           </span>
                         </div>
                       </div>
-                      {effectiveAvgCost > 0 && effectiveAvgCost !== asset.currentPrice && (
+                      {effectiveAvgCost > 0 && (
                         <div className="flex items-center justify-between text-xs">
                           <div>
                             <span style={{ color: "var(--text-secondary)" }}>Avg Cost: </span>

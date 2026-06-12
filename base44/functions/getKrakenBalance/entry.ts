@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 /**
  * Get Kraken Balance — Secrets-backed, direct Kraken call (no cross-function dependency)
@@ -13,27 +13,31 @@ const API_TIMEOUT = 15000;
 
 function parseKrakenAsset(krakenCode) {
   const code = String(krakenCode || '').toUpperCase();
+  
+  // Strip staking suffixes (e.g., DOT.S, ETH2.S)
+  const cleaned = code.replace(/\.\w+$/, '');
+  
   const map = {
-    'XXBT': 'BTC',
-    'XBT': 'BTC',
-    'XETH': 'ETH',
-    'ETH': 'ETH',
-    'XXRP': 'XRP',
-    'XRP': 'XRP',
-    'XXLM': 'XLM',
-    'XLM': 'XLM',
-    'XLTC': 'LTC',
-    'LTC': 'LTC',
-    'XDG': 'DOGE',
-    'XXDG': 'DOGE',
-    'ZUSD': 'USD',
-    'USD': 'USD'
+    'XXBT': 'BTC', 'XBT': 'BTC',
+    'XETH': 'ETH', 'ETH': 'ETH', 'ETH2': 'ETH',
+    'XXRP': 'XRP', 'XRP': 'XRP',
+    'XXLM': 'XLM', 'XLM': 'XLM',
+    'XLTC': 'LTC', 'LTC': 'LTC',
+    'XDG': 'DOGE', 'XXDG': 'DOGE', 'DOGE': 'DOGE',
+    'ZUSD': 'USD', 'USD': 'USD',
+    'SOL': 'SOL', 'ADA': 'ADA', 'DOT': 'DOT',
+    'LINK': 'LINK', 'AVAX': 'AVAX', 'ATOM': 'ATOM',
+    'UNI': 'UNI', 'MATIC': 'MATIC', 'BCH': 'BCH',
+    'TRX': 'TRX', 'PEPE': 'PEPE', 'SHIB': 'SHIB',
+    'NEAR': 'NEAR', 'ALGO': 'ALGO', 'ICP': 'ICP',
+    'SUI': 'SUI', 'HBAR': 'HBAR', 'TRUMP': 'TRUMP',
+    'BONK': 'BONK', 'FLOKI': 'FLOKI', 'BABY': 'BABY',
   };
-  if (map[code]) return map[code];
+  if (map[cleaned]) return map[cleaned];
 
-  let symbol = code;
-  if (symbol.startsWith('Z')) symbol = symbol.substring(1);
-  if (symbol.startsWith('X') && symbol.length > 3) symbol = symbol.substring(1);
+  let symbol = cleaned;
+  if (symbol.startsWith('Z') && symbol.length >= 4) symbol = symbol.substring(1);
+  if (symbol.startsWith('X') && symbol.length >= 4) symbol = symbol.substring(1);
   if (map[symbol]) return map[symbol];
   return symbol;
 }
@@ -42,9 +46,14 @@ function knownPair(symbol) {
   const map = {
     BTC: 'XXBTZUSD', ETH: 'XETHZUSD', XRP: 'XXRPZUSD', LTC: 'XLTCZUSD', SOL: 'SOLUSD', ADA: 'ADAUSD',
     DOT: 'DOTUSD', DOGE: 'XDGUSD', LINK: 'LINKUSD', UNI: 'UNIUSD', MATIC: 'MATICUSD', ATOM: 'ATOMUSD',
-    AVAX: 'AVAXUSD', BCH: 'BCHUSD', TRX: 'TRXUSD', PEPE: 'PEPEUSD', XLM: 'XXLMZUSD'
+    AVAX: 'AVAXUSD', BCH: 'BCHUSD', TRX: 'TRXUSD', PEPE: 'PEPEUSD', XLM: 'XXLMZUSD',
+    SHIB: 'SHIBUSD', NEAR: 'NEARUSD', ALGO: 'ALGOUSD', ICP: 'ICPUSD', FIL: 'FILUSD',
+    SAND: 'SANDUSD', MANA: 'MANAUSD', APE: 'APEUSD', OP: 'OPUSD', ARB: 'ARBUSD',
+    INJ: 'INJUSD', SUI: 'SUIUSD', TAO: 'TAOUSD', WIF: 'WIFUSD', FLOKI: 'FLOKIUSD',
+    BONK: 'BONKUSD', BABY: 'BABYUSD', HBAR: 'HBARUSD', TRUMP: 'TRUMPUSD',
   };
-  return map[symbol] || null;
+  // Fallback: try generic pair format
+  return map[symbol] || `${symbol}USD`;
 }
 
 let lastNonce = 0;
@@ -183,14 +192,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch cost basis from DB holdings (written by syncKrakenBalance)
+    // Fetch cost basis from DB holdings
+    // CRITICAL: Try user-scoped first, then fall back to service role
+    // Holdings may have been created by auto-trader (service role), not the user directly
     let costBasisMap = {};
     try {
-      const dbHoldings = await base44.entities.Holding.filter({
+      let dbHoldings = await base44.entities.Holding.filter({
         created_by: user.email,
         is_simulation: false
       });
-      for (const h of dbHoldings) {
+      // If user-scoped returns nothing, try service role (auto-trader created holdings)
+      if (!dbHoldings || dbHoldings.length === 0) {
+        try {
+          dbHoldings = await base44.asServiceRole.entities.Holding.filter({
+            is_simulation: false
+          });
+        } catch (_e2) {
+          // Service role may not be available in all contexts
+        }
+      }
+      for (const h of (dbHoldings || [])) {
         if (h.symbol && h.average_cost_price > 0) {
           costBasisMap[h.symbol] = h.average_cost_price;
         }
