@@ -1062,6 +1062,7 @@ Deno.serve(async (req) => {
         if (total < 1 && spendable >= 5) total = 5;
         if (total < 1) continue;
         const qty = total / price;
+        if (qty < (MIN_ORDER_SIZES[symbol] || 0.00001)) continue;
         prospects.push({
           symbol,
           asset_type: pref.asset_type || 'crypto',
@@ -1434,6 +1435,13 @@ Deno.serve(async (req) => {
       }
 
       log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
+      
+      // PRE-VALIDATION: Block orders Kraken would reject BEFORE sending them
+      const minQtyForAsset = MIN_ORDER_SIZES[sym] || 0.00001;
+      if (qty < minQtyForAsset || total_value < 5) {
+        log(`PRE-BLOCK: ${sym} qty=${qty} min=${minQtyForAsset} val=$${total_value.toFixed(2)} — not sent`);
+        continue;
+      }
       
       // Dedup + SL cooldown checks
       const isDuplicateRecent = await hasRecentDuplicateTrade(base44, user.email, sym, 'buy', 120000);
@@ -1813,8 +1821,9 @@ Deno.serve(async (req) => {
         const emergingAllocation = Math.min(emerging.max_allocation, availableCash * 0.1);
         const emergingQty = emergingAllocation / emergingPrice;
         
-        if (emergingAllocation < 5) {
-          console.log(`[runAutoTrader] Skipping emerging ${emergingSymbol} - allocation too small ($${emergingAllocation.toFixed(2)})`);
+        const emergingMinQty = MIN_ORDER_SIZES[emergingSymbol] || 0.00001;
+        if (emergingAllocation < 5 || emergingQty < emergingMinQty) {
+          log(`PRE-BLOCK emerging: ${emergingSymbol} alloc=$${emergingAllocation.toFixed(2)} qty=${emergingQty.toFixed(8)} min=${emergingMinQty}`);
           continue;
         }
         
@@ -1931,19 +1940,10 @@ Deno.serve(async (req) => {
               });
     } catch (e) {}
     
-    // Summary of advanced orders placed
     const advancedOrderSummary = tradesPlaced.map(t => ({
-      symbol: t.symbol,
-      qty: t.qty,
-      entry_price: t.price,
-      tp_target: round2(t.price * (1 + t.effective_gain_margin / 100)),
-      tp_percent: t.effective_gain_margin,
-      sl_percent: t.effective_loss_margin,
-      trailing_stop: trailingEnabled ? `${defaultTrailingMargin}% from peak` : `Static SL at ${round2(t.price * (1 - t.effective_loss_margin / 100))}`,
-      confidence: t.ai_confidence,
-      levels_source: t.dynamic_levels?.source || 'default',
-      historical_win_rate: t.dynamic_levels?.win_rate || null,
-      idempotency_key: t.idempotency_key
+      symbol: t.symbol, qty: t.qty, entry_price: t.price,
+      tp_percent: t.effective_gain_margin, sl_percent: t.effective_loss_margin,
+      confidence: t.ai_confidence, levels_source: t.dynamic_levels?.source || 'default'
     }));
 
     return Response.json({
