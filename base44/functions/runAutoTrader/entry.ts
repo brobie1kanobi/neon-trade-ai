@@ -1579,14 +1579,23 @@ Deno.serve(async (req) => {
           log(`Kraken buy failed for ${sym}`, { error: krakenError.message });
           tradesFailed.push({ symbol: sym, error: krakenError.message });
           
-          // Record health error
-          try {
-            await base44.functions.invoke('systemHealthMonitor', {
-                      action: 'recordError',
-                      component: 'kraken_api',
-                      error_message: krakenError.message
-                    });
-          } catch (e) {}
+          // CRITICAL: Only record health errors for INFRASTRUCTURE failures
+          // Do NOT count order validation rejections (minimum not met, invalid volume, 
+          // insufficient funds, invalid price, etc.) — these are expected and harmless.
+          const errMsg = String(krakenError.message || '');
+          const isValidationError = /minimum not met|EGeneral:Invalid arguments|volume minimum|invalid volume|EOrder:Invalid volume|insufficient funds|EOrder:Insufficient|invalid price|EOrder:Invalid price|too small|below minimum|order size|unknown order|EOrder:Unknown/i.test(errMsg);
+          
+          if (!isValidationError) {
+            try {
+              await base44.functions.invoke('systemHealthMonitor', {
+                action: 'recordError',
+                component: 'kraken_api',
+                error_message: krakenError.message
+              });
+            } catch (e) {}
+          } else {
+            log(`Skipping health error for ${sym} - validation rejection (not infrastructure): ${errMsg}`);
+          }
           
           continue;
         }
