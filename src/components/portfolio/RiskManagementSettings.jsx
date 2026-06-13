@@ -4,12 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Shield, Save, RotateCcw, Info, AlertTriangle, Clock } from "lucide-react";
+import { Shield, Save, RotateCcw, Info, Clock } from "lucide-react";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import LossCapHaltStatus from "../portfolio/LossCapHaltStatus";
 
 const DEFAULTS = {
@@ -17,8 +16,7 @@ const DEFAULTS = {
   max_single_trade_percent: 20,
   daily_loss_cap_percent: 5,
   max_drawdown_percent: 15,
-  loss_cap_halt_hours: 12,
-  bad_days_active: false
+  loss_cap_halt_hours: 12
 };
 
 export default function RiskManagementSettings() {
@@ -33,8 +31,7 @@ export default function RiskManagementSettings() {
       max_single_trade_percent: settings.max_single_trade_percent ?? DEFAULTS.max_single_trade_percent,
       daily_loss_cap_percent: settings.daily_loss_cap_percent ?? DEFAULTS.daily_loss_cap_percent,
       max_drawdown_percent: settings.max_drawdown_percent ?? DEFAULTS.max_drawdown_percent,
-      loss_cap_halt_hours: settings.loss_cap_halt_hours ?? DEFAULTS.loss_cap_halt_hours,
-      bad_days_active: settings.bad_days_active ?? DEFAULTS.bad_days_active
+      loss_cap_halt_hours: settings.loss_cap_halt_hours ?? DEFAULTS.loss_cap_halt_hours
     });
   }, [settings]);
 
@@ -119,23 +116,6 @@ export default function RiskManagementSettings() {
       <CardContent className="space-y-4">
         {/* Loss Cap Halt Status Banner */}
         <LossCapHaltStatus />
-
-        {/* Bad Days Mode Toggle */}
-        <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: "var(--border-color)", backgroundColor: "var(--secondary-bg)" }}>
-          <div className="space-y-0.5">
-            <Label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Bad Days Mode
-            </Label>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              Manually toggle the trading halt. When active, auto-trading is paused.
-            </p>
-          </div>
-          <Switch
-            checked={values.bad_days_active}
-            onCheckedChange={(checked) => setValues(prev => ({ ...prev, bad_days_active: checked }))}
-          />
-        </div>
 
         {fields.map(({ key, label, desc, suffix }) => (
           <div key={key} className="space-y-1">
