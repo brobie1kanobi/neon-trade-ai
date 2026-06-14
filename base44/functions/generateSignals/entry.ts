@@ -286,18 +286,19 @@ function computeCompositeScore(indicators, sentiment, history, strategies = {}) 
 
 /**
  * Convert composite score to signal type and confidence
- * CONSERVATIVE thresholds — strong_buy requires overwhelmingly bullish indicators,
- * buy requires clearly positive conditions. This prevents false entries.
+ * VERY CONSERVATIVE thresholds — strong_buy requires overwhelmingly bullish indicators,
+ * buy requires clearly positive conditions across multiple timeframes.
+ * TIGHTENED to prevent false entries that immediately hit stop-loss.
  */
 function scoreToSignal(compositeScore) {
   let signalType, confidence;
 
-  if (compositeScore >= 35) {
+  if (compositeScore >= 45) {
     signalType = 'strong_buy';
-    confidence = Math.min(95, 72 + Math.min(20, compositeScore - 35));
-  } else if (compositeScore >= 18) {
+    confidence = Math.min(95, 75 + Math.min(18, compositeScore - 45));
+  } else if (compositeScore >= 28) {
     signalType = 'buy';
-    confidence = 55 + Math.min(15, compositeScore - 18);
+    confidence = 55 + Math.min(12, compositeScore - 28);
   } else if (compositeScore >= -15) {
     signalType = 'hold';
     confidence = 50;
@@ -785,9 +786,10 @@ SELL — RSI > 65 + bearish MACD + negative trends
 STRONG_SELL — RSI > 70 + bearish cross + high volume selling
 
 === RISK PARAMETERS ===
-- SL: 1-3% (use ATR: 1.5x ATR as SL)
-- TP: 2-8% (min 2:1 reward-to-risk)
-- Entry zone: within 1% of current price
+- SL: 0.5-2% (TIGHT — user wants strict stop-losses. Use ATR: 1x ATR as SL, max 2%)
+- TP: 2-8% (min 2.5:1 reward-to-risk ratio)
+- Entry zone: within 0.5% of current price — only enter at optimal levels
+- CRITICAL: Only recommend BUY when the risk of immediate 1%+ drawdown is LOW
 
 === ASSETS ===
 ${assetsSection}
@@ -924,18 +926,21 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
       }
 
       // ── Hard filter: strong_buy AND buy data validation ──
-      // STRICT: Require genuinely bullish conditions. Any red flag downgrades.
+      // VERY STRICT: Require genuinely bullish conditions. Any red flag downgrades.
+      // TIGHTENED thresholds to prevent buying into any downtrend that will trigger SL
       if (finalSignalType === 'strong_buy' || finalSignalType === 'buy') {
         const violations = [];
 
-        if (ti.rsi_1h != null && ti.rsi_1h > 70) violations.push(`RSI overbought ${ti.rsi_1h.toFixed(0)}`);
-        if (ti.bb_1h && ti.bb_1h.percentB > 80) violations.push(`Near upper BB (${ti.bb_1h.percentB.toFixed(0)}%)`);
-        if (ti.trend_6h != null && ti.trend_6h < -0.5) violations.push(`Negative 6h trend (${ti.trend_6h.toFixed(1)}%)`);
-        if (ti.trend_12h != null && ti.trend_12h < -1.0) violations.push(`Negative 12h trend (${ti.trend_12h.toFixed(1)}%)`);
-        if (change24h < -2) violations.push(`24h price drop (${change24h.toFixed(1)}%)`);
+        if (ti.rsi_1h != null && ti.rsi_1h > 65) violations.push(`RSI elevated ${ti.rsi_1h.toFixed(0)}`);
+        if (ti.bb_1h && ti.bb_1h.percentB > 70) violations.push(`Near upper BB (${ti.bb_1h.percentB.toFixed(0)}%)`);
+        if (ti.trend_6h != null && ti.trend_6h < 0) violations.push(`Negative 6h trend (${ti.trend_6h.toFixed(1)}%)`);
+        if (ti.trend_12h != null && ti.trend_12h < -0.5) violations.push(`Negative 12h trend (${ti.trend_12h.toFixed(1)}%)`);
+        if (change24h < -1) violations.push(`24h price drop (${change24h.toFixed(1)}%)`);
         if (ti.macd_1h && ti.macd_1h.bearishCross) violations.push('MACD bearish crossover');
-        if (hist && hist.total_trades >= 5 && hist.win_rate < 45) violations.push(`Poor history (${hist.win_rate.toFixed(0)}% win)`);
-        if (!ti.volume_increasing && ti.trend_6h != null && ti.trend_6h < 0.5) violations.push('No volume confirmation on weak trend');
+        if (ti.macd_1h && ti.macd_1h.histogram < 0) violations.push('MACD histogram negative');
+        if (hist && hist.total_trades >= 5 && hist.win_rate < 50) violations.push(`Poor history (${hist.win_rate.toFixed(0)}% win)`);
+        if (!ti.volume_increasing && ti.trend_6h != null && ti.trend_6h < 0.3) violations.push('No volume confirmation on weak trend');
+        if (ti.trend_6h != null && ti.trend_12h != null && ti.trend_6h < 0 && ti.trend_12h < 0) violations.push('Both 6h and 12h trends negative');
 
         if (finalSignalType === 'strong_buy') {
           if (violations.length >= 2) {
@@ -974,15 +979,16 @@ BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "s
       let tp = aiRec?.take_profit_pct || 5;
       let sl = aiRec?.stop_loss_pct || 2.5;
 
-      // ATR-based SL if available
+      // ATR-based SL if available — signal SL is informational/suggested
+      // The ConditionalOrder uses the user's configured loss_margin as hard ceiling
       if (ti.atr_pct) {
         const atrSl = ti.atr_pct * 1.5;
-        sl = Math.max(2, Math.min(4, atrSl));
+        sl = Math.max(0.5, Math.min(3, atrSl));
       }
       if (tp / sl < 2.0) tp = sl * 2.5;
-      if (sl < 2) sl = 2;
-      if (tp < 4) tp = 4;
-      if (sl > 4) sl = 4;
+      if (sl < 0.5) sl = 0.5;
+      if (tp < 2) tp = 2;
+      if (sl > 3) sl = 3;
 
       // ── Build reasoning ──
       const indicators_summary = [];

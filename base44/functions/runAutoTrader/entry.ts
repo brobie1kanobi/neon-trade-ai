@@ -391,14 +391,15 @@ function calculateDynamicLevels(symbol, historyData, defaultGainMargin, defaultL
   dynamicGainMargin = Math.min(dynamicGainMargin, 15); // Cap at 15%
   
   // Dynamic loss margin based on win rate
-  // Higher win rate = can afford tighter stops, lower = need wider stops
+  // CRITICAL: Never WIDEN beyond user's configured stop-loss — only tighten or keep same
+  // User's stop-loss is a hard ceiling on acceptable risk
   let dynamicLossMargin = defaultLossMargin;
   if (winRate > 70) {
-    // High performer - tighter stop is ok
-    dynamicLossMargin = Math.max(1, defaultLossMargin * 0.8);
+    // High performer - tighter stop
+    dynamicLossMargin = Math.max(0.5, defaultLossMargin * 0.8);
   } else if (winRate < 50) {
-    // Lower performer - wider stop to give more room
-    dynamicLossMargin = Math.min(5, defaultLossMargin * 1.3);
+    // Lower performer - do NOT widen stop; tighter signal thresholds prevent bad entries
+    dynamicLossMargin = defaultLossMargin;
   }
   
   // Confidence boost based on historical performance
@@ -1053,8 +1054,10 @@ Deno.serve(async (req) => {
         if (!(signalType === 'buy' || signalType === 'strong_buy')) continue;
         if (confidence < minConf) continue;
         // ANTI-PUMP: Reject if price already extended (pumping or crashing)
-        if (change24h < -8 || change24h > 5) continue;
-        if (signalType === 'buy' && change24h > 3) continue; // Tighter for regular buys
+        // TIGHTENED: Block ANY negative 24h trend to prevent buying into dips that keep dipping
+        if (change24h < -1.5 || change24h > 4) continue;
+        if (signalType === 'buy' && change24h > 2.5) continue;
+        if (signalType === 'buy' && change24h < -0.5) continue; // Don't buy regular signals in any dip
         const userPct = Number(pref.percentage || 10) / 100;
         let total = spendable * userPct;
         const safetyMax = spendable * safetyMaxPct;
@@ -1237,9 +1240,10 @@ Deno.serve(async (req) => {
       const wouldExecute = p.would_execute_now === true;
 
       // ANTI-PUMP FILTER: Block buys when price has already surged or is falling
+      // TIGHTENED: Never buy into ANY falling market — prevents constant stop-loss hits
       const change24h = Number(p.market_trend || 0);
-      const trendOkForStrong = change24h > -3 && change24h < 4; // Tight: no falling >3% or pumped >4%
-      const trendOkForBuy = change24h > -2 && change24h < 3;    // Tighter: only stable or mildly positive
+      const trendOkForStrong = change24h > -1.5 && change24h < 3.5; // Only buy if not falling >1.5% or pumped >3.5%
+      const trendOkForBuy = change24h > -0.5 && change24h < 2.5;    // Very tight: only stable or mildly positive
 
       let meetsConfidence = false;
       if (signalType === 'strong_buy') {
@@ -1334,10 +1338,11 @@ Deno.serve(async (req) => {
       let confidence = prospect.confidence_score || 0;
       const userAllocationPct = prospect.user_allocation_pct || 10;
       
-      // ENHANCED: Calculate dynamic TP/SL based on trade history
+      // Calculate dynamic TP/SL — user's stop-loss is a HARD CEILING, never exceeded
       const dynamicLevels = calculateDynamicLevels(sym, tradeHistoryData, defaultGainMargin, defaultLossMargin);
       const gainMargin = dynamicLevels.gainMargin;
-      const lossMargin = dynamicLevels.lossMargin;
+      // CRITICAL: Loss margin must NEVER exceed user's configured value
+      const lossMargin = Math.min(defaultLossMargin, dynamicLevels.lossMargin);
       const trailingMargin = defaultTrailingMargin;
       
       // Adjust confidence based on historical performance
@@ -1829,9 +1834,9 @@ Deno.serve(async (req) => {
         
         console.log(`[runAutoTrader] 🌟 EMERGING: ${emergingSymbol} @ $${emergingPrice} - allocating $${emergingAllocation.toFixed(2)}`);
         
-        // Use conservative levels for emerging (untested) assets
+        // Use user's configured levels for emerging assets — never exceed user's SL
         const emergingGainMargin = defaultGainMargin;
-        const emergingLossMargin = Math.min(defaultLossMargin * 1.5, 5); // Wider stop for new assets
+        const emergingLossMargin = defaultLossMargin; // User's SL is the ceiling — never widen
         
         if (!isSimMode) {
           // LIVE: Execute via Kraken
