@@ -42,6 +42,23 @@ export default function useSpeechRecognition({
     setFinalText("");
   }, [onAutoSend]);
 
+  // Stop listening WITHOUT sending accumulated text (used when TTS starts)
+  const pause = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    const rec = recRef.current;
+    if (rec) {
+      try { rec.stop(); } catch (_) {}
+    }
+    recRef.current = null;
+    setIsListening(false);
+    setInterim("");
+    accumulatedTextRef.current = "";
+    setFinalText("");
+  }, []);
+
   const resetSilence = useCallback(() => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     silenceTimerRef.current = setTimeout(() => {
@@ -132,6 +149,7 @@ export default function useSpeechRecognition({
     error,
     start,
     stop,
+    pause,
     clear
   };
 }

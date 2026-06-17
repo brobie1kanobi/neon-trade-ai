@@ -30,8 +30,9 @@ export default function AssistantModalView({ isOpen, onClose }) {
   const messagesEndRef = useRef(null);
   const { toast } = useToast();
   const lastSpokenIdRef = useRef(null);
-  const sessionStartMsgCountRef = useRef(null);
+  const preExistingIdsRef = useRef(null); // Set of message IDs that existed before this session
   const tutorialSpokenRef = useRef(false);
+  const micWasListeningRef = useRef(false); // Track if mic was on before TTS paused it
   const { settings, updateSetting } = useSettings?.() || {};
 
   const extractProposal = (content) => extractTradeProposalFromText(content, () => {
@@ -79,6 +80,11 @@ export default function AssistantModalView({ isOpen, onClose }) {
   const stopSpeaking = () => {
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
     setIsTTSPlaying(false);
+    // If mic was paused for TTS, resume it
+    if (micWasListeningRef.current) {
+      micWasListeningRef.current = false;
+      setTimeout(() => { try { start(); } catch (_) {} }, 300);
+    }
   };
 
   const handleClose = () => { stopSpeaking(); try { stop(); } catch (_) {} setConnectionError(null); onClose(); };
@@ -99,7 +105,7 @@ export default function AssistantModalView({ isOpen, onClose }) {
   };
 
   const sendFromMic = async (text) => { const t = (text || "").trim(); if (t) await handleSendMessage(t); };
-  const { isSupported, isListening, interim, finalText, start, stop } = useSpeechRecognition({ silenceMs: 2000, onAutoSend: sendFromMic });
+  const { isSupported, isListening, interim, finalText, start, stop, pause } = useSpeechRecognition({ silenceMs: 2000, onAutoSend: sendFromMic });
 
   eff(() => { if (interim) setInputText(interim); }, [interim]);
   eff(() => { if (finalText && !interim) setInputText(""); }, [finalText, interim]);
@@ -109,18 +115,35 @@ export default function AssistantModalView({ isOpen, onClose }) {
     return () => { if (window.__assistantMic?.stop === stop) try { delete window.__assistantMic; } catch (_) {} try { stop(); } catch (_) {} };
   }, [start, stop]);
 
-  // TTS: Only speak NEW messages from this session
+  // TTS: Only speak genuinely NEW assistant messages from THIS session
   eff(() => {
     if (!settings || settings.tts_enabled === false || !isOpen) return;
-    if (sessionStartMsgCountRef.current === null) return;
+    if (!preExistingIdsRef.current) return; // Not initialized yet
     const latest = messages[messages.length - 1];
     if (!latest || latest.role !== 'assistant' || !latest.content || latest.stream_delta) return;
     if (lastSpokenIdRef.current === latest.id) return;
-    if (messages.length - 1 < sessionStartMsgCountRef.current) return;
+    // Skip pre-existing messages (loaded from history)
+    if (latest.id && preExistingIdsRef.current.has(latest.id)) return;
+    // Skip messages with tool call errors / system noise
+    if (latest.content.includes('<tool calls had no completed') || latest.content.includes('tool_calls had no completed')) return;
     lastSpokenIdRef.current = latest.id;
-    try { speakTextChunked(latest.content, settings, () => setIsTTSPlaying(true), () => setIsTTSPlaying(false)); }
-    catch (e) { console.error("TTS failed:", e); setIsTTSPlaying(false); }
-  }, [messages, isOpen, settings]);
+    // Pause mic before speaking to prevent TTS audio from being picked up
+    micWasListeningRef.current = isListening;
+    if (isListening) { try { pause(); } catch (_) {} }
+    try {
+      speakTextChunked(latest.content, settings,
+        () => setIsTTSPlaying(true),
+        () => {
+          setIsTTSPlaying(false);
+          // Resume mic after TTS finishes if it was listening before
+          if (micWasListeningRef.current) {
+            micWasListeningRef.current = false;
+            setTimeout(() => { try { start(); } catch (_) {} }, 300);
+          }
+        }
+      );
+    } catch (e) { console.error("TTS failed:", e); setIsTTSPlaying(false); }
+  }, [messages, isOpen, settings, isListening, pause, start]);
 
   const handleTradeConfirmation = async (td) => {
     if (!currentConversation) return;
@@ -140,10 +163,12 @@ export default function AssistantModalView({ isOpen, onClose }) {
         if (convos.length > 0) {
           convo = convos[0];
           const full = await agentSDK.getConversation(convo.id);
-          sessionStartMsgCountRef.current = (full?.messages || []).length;
+          const existingMsgs = full?.messages || [];
+          // Record all pre-existing message IDs so TTS won't read them
+          preExistingIdsRef.current = new Set(existingMsgs.map(m => m.id).filter(Boolean));
         } else {
           convo = await agentSDK.createConversation({ agent_name: "trader_agent", metadata: { name: "Trading Assistant", description: "AI Trading Assistant Conversation" } });
-          sessionStartMsgCountRef.current = 0;
+          preExistingIdsRef.current = new Set();
         }
         setMessages([]); setCurrentConversation(convo);
       } catch (error) { const m = error.message || 'Failed'; setConnectionError(m); toast({ variant: "destructive", title: "Connection Error", description: m }); }
