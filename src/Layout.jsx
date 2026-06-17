@@ -3,7 +3,7 @@ import { useLocation, Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Home, PieChart, Wallet, Settings, Mic, RefreshCw, Bell, Bot } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import AssistantModal from "./components/ai/AssistantModal";
+import AssistantModal from "./components/ai/AssistantModalView";
 import WelcomeScreen from "./components/welcome/WelcomeScreen";
 import BiometricsSetupModal from "./components/auth/BiometricsSetupModal";
 import PushManager from "./components/utils/PushManager";
