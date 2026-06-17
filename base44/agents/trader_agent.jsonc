@@ -50,8 +50,109 @@
     {
       "function_name": "getKrakenStatus",
       "description": "Check if Kraken is connected and when last synced"
+    },
+    {
+      "entity_name": "AutoBuyPreference",
+      "allowed_operations": [
+        "create",
+        "read",
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "entity_name": "AssetSignal",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "entity_name": "Notification",
+      "allowed_operations": [
+        "create",
+        "read",
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "entity_name": "Transaction",
+      "allowed_operations": [
+        "create",
+        "read"
+      ]
+    },
+    {
+      "entity_name": "KrakenConnection",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "entity_name": "AutoTraderRun",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "entity_name": "SystemHealth",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "entity_name": "AssetCache",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "entity_name": "LedgerEntry",
+      "allowed_operations": [
+        "read"
+      ]
+    },
+    {
+      "function_name": "krakenTrade",
+      "description": "Execute a trade on Kraken exchange (buy/sell crypto)"
+    },
+    {
+      "function_name": "runAutoTrader",
+      "description": "Manually trigger an auto-trader run cycle"
+    },
+    {
+      "function_name": "monitorConditionalOrders",
+      "description": "Check and process conditional orders"
+    },
+    {
+      "function_name": "getEffectiveSettings",
+      "description": "Get the user's effective combined settings"
+    },
+    {
+      "function_name": "syncKrakenBalance",
+      "description": "Sync the user's Kraken balance with the app"
+    },
+    {
+      "function_name": "reconcileWallet",
+      "description": "Reconcile wallet balances with trade history"
     }
   ],
+  "context_files": [],
+  "app_user_connector_configs": [],
+  "selected_skill_names": [],
+  "selected_workspace_skill_ids": [],
+  "model": "automatic",
   "whatsapp_greeting": "",
+  "telegram_greeting": null,
+  "line_greeting": null,
+  "memory_config": {
+    "enabled": true,
+    "scope": "both",
+    "include_other_conversation_context": false,
+    "instructions": null
+  },
+  "voice_config": {
+    "voice_id": null
+  },
   "name": "trader_agent"
 }

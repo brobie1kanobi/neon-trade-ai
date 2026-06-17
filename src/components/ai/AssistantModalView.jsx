@@ -32,7 +32,7 @@ export default function AssistantModalView({ isOpen, onClose }) {
   const lastSpokenIdRef = useRef(null);
   const preExistingIdsRef = useRef(null); // Set of message IDs that existed before this session
   const tutorialSpokenRef = useRef(false);
-  const micWasListeningRef = useRef(false); // Track if mic was on before TTS paused it
+  const isListeningRef = useRef(false); // Stable ref for mic state (avoids re-triggering TTS effect)
   const { settings, updateSetting } = useSettings?.() || {};
 
   const extractProposal = (content) => extractTradeProposalFromText(content, () => {
@@ -80,11 +80,7 @@ export default function AssistantModalView({ isOpen, onClose }) {
   const stopSpeaking = () => {
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
     setIsTTSPlaying(false);
-    // If mic was paused for TTS, resume it
-    if (micWasListeningRef.current) {
-      micWasListeningRef.current = false;
-      setTimeout(() => { try { start(); } catch (_) {} }, 300);
-    }
+    // Do NOT resume mic or send text — user explicitly cancelled
   };
 
   const handleClose = () => { stopSpeaking(); try { stop(); } catch (_) {} setConnectionError(null); onClose(); };
@@ -93,6 +89,10 @@ export default function AssistantModalView({ isOpen, onClose }) {
     const content = (typeof messageText === 'string' ? messageText : inputText).trim();
     if (!content && attachments.length === 0) return;
     if (!currentConversation) { toast({ variant: "destructive", title: "Error", description: "Not initialized." }); return; }
+    // IMMEDIATELY stop mic (without sending its buffer) and cancel any TTS
+    try { pause(); } catch (_) {}
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
+    setIsTTSPlaying(false);
     setInputText(""); setConnectionError(null); setIsThinking(true);
     try {
       setMessages(prev => [...prev, { id: Date.now(), role: 'user', content, timestamp: new Date() }]);
@@ -107,6 +107,9 @@ export default function AssistantModalView({ isOpen, onClose }) {
   const sendFromMic = async (text) => { const t = (text || "").trim(); if (t) await handleSendMessage(t); };
   const { isSupported, isListening, interim, finalText, start, stop, pause } = useSpeechRecognition({ silenceMs: 2000, onAutoSend: sendFromMic });
 
+  // Keep a stable ref of isListening so TTS effect doesn't re-fire on mic state changes
+  isListeningRef.current = isListening;
+
   eff(() => { if (interim) setInputText(interim); }, [interim]);
   eff(() => { if (finalText && !interim) setInputText(""); }, [finalText, interim]);
   eff(() => {
@@ -116,34 +119,29 @@ export default function AssistantModalView({ isOpen, onClose }) {
   }, [start, stop]);
 
   // TTS: Only speak genuinely NEW assistant messages from THIS session
+  // IMPORTANT: No isListening in deps — we use isListeningRef to avoid re-triggering
   eff(() => {
     if (!settings || settings.tts_enabled === false || !isOpen) return;
-    if (!preExistingIdsRef.current) return; // Not initialized yet
+    if (!preExistingIdsRef.current) return;
     const latest = messages[messages.length - 1];
     if (!latest || latest.role !== 'assistant' || !latest.content || latest.stream_delta) return;
     if (lastSpokenIdRef.current === latest.id) return;
-    // Skip pre-existing messages (loaded from history)
+    // Skip pre-existing messages
     if (latest.id && preExistingIdsRef.current.has(latest.id)) return;
-    // Skip messages with tool call errors / system noise
+    // Skip tool call error noise
     if (latest.content.includes('<tool calls had no completed') || latest.content.includes('tool_calls had no completed')) return;
+    // Also skip if still "thinking" (tool calls running, not final response yet)
+    // The message must have content and NOT be a streaming delta
     lastSpokenIdRef.current = latest.id;
-    // Pause mic before speaking to prevent TTS audio from being picked up
-    micWasListeningRef.current = isListening;
-    if (isListening) { try { pause(); } catch (_) {} }
+    // Pause mic before speaking (use ref, not state, to avoid effect re-triggers)
+    if (isListeningRef.current) { try { pause(); } catch (_) {} }
     try {
       speakTextChunked(latest.content, settings,
         () => setIsTTSPlaying(true),
-        () => {
-          setIsTTSPlaying(false);
-          // Resume mic after TTS finishes if it was listening before
-          if (micWasListeningRef.current) {
-            micWasListeningRef.current = false;
-            setTimeout(() => { try { start(); } catch (_) {} }, 300);
-          }
-        }
+        () => { setIsTTSPlaying(false); }
       );
     } catch (e) { console.error("TTS failed:", e); setIsTTSPlaying(false); }
-  }, [messages, isOpen, settings, isListening, pause, start]);
+  }, [messages, isOpen, settings]);
 
   const handleTradeConfirmation = async (td) => {
     if (!currentConversation) return;
