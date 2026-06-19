@@ -11,6 +11,7 @@ import DonateSection from "../components/settings/DonateSection";
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 import BiometricsSettings from "../components/settings/BiometricsSettings";
 import TimeSettings from "../components/settings/TimeSettings";
+import TradeSoundSettings from "../components/settings/TradeSoundSettings";
 
 
 import { useSettings } from "../components/utils/SettingsContext";
@@ -63,6 +64,14 @@ export default function Settings() {
 
 
 
+
+      {/* 3) Trade Sounds */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+        <TradeSoundSettings
+          settings={settings}
+          onToggle={updateSetting}
+        />
+      </motion.div>
 
       {/* 4) AI Voice & Speech */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>

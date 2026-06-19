@@ -3,6 +3,7 @@ import { useKrakenWebSocketManager } from '@/components/hooks/useKrakenWebSocket
 import { useSettings } from '@/components/utils/SettingsContext';
 import { base44 } from '@/api/base44Client';
 import { invalidateCache } from '@/components/hooks/useDataFetching';
+import { playTradeSound } from '@/components/utils/TradeSoundEngine';
 
 // Track last execution timestamp for recovery
 let lastExecutionTimestamp = null;
@@ -195,9 +196,9 @@ export function KrakenWebSocketProvider({ children }) {
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
 
-  // ── Trade / sync events: aggressive invalidation ──
+  // ── Trade / sync events: aggressive invalidation + sound triggers ──
   useEffect(() => {
-    const handleTradeCompleted = () => {
+    const handleTradeCompleted = (e) => {
       console.log('[KrakenWSProvider] Trade completed – invalidating caches');
       lastExecutionTimestamp = new Date().toISOString();
       invalidateCache();
@@ -206,6 +207,11 @@ export function KrakenWebSocketProvider({ children }) {
         refreshRef.current?.();
       }, 2000);
 
+      // Play trade sound based on type
+      const tradeType = e?.detail?.type || e?.detail?.trade_type;
+      if (tradeType === 'buy') playTradeSound('buy', settings);
+      else if (tradeType === 'sell') playTradeSound('sell', settings);
+      else playTradeSound('alert', settings);
     };
 
     const handleSync = () => {
@@ -216,17 +222,26 @@ export function KrakenWebSocketProvider({ children }) {
       }, 1500);
     };
 
-    const handleOrderPlaced = () => {
+    const handleOrderPlaced = (e) => {
       setTimeout(() => fetchRestDataRef.current?.(true), 2000);
+      const orderType = e?.detail?.type;
+      if (orderType === 'buy') playTradeSound('buy', settings);
+      else if (orderType === 'sell') playTradeSound('sell', settings);
     };
 
-    const handleOrderFilled = () => {
+    const handleOrderFilled = (e) => {
       console.log('[KrakenWSProvider] Order filled on Kraken – refreshing balances');
       invalidateCache();
       setTimeout(() => {
         fetchRestDataRef.current?.(true);
         refreshRef.current?.();
       }, 1500);
+
+      // Detect TP/SL fills
+      const reason = e?.detail?.reason || e?.detail?.closure_reason || '';
+      if (reason.includes('take_profit') || reason.includes('tp')) playTradeSound('take_profit', settings);
+      else if (reason.includes('stop_loss') || reason.includes('sl')) playTradeSound('stop_loss', settings);
+      else playTradeSound('sell', settings);
     };
 
     window.addEventListener('trade:completed', handleTradeCompleted);
@@ -242,7 +257,7 @@ export function KrakenWebSocketProvider({ children }) {
       window.removeEventListener('kraken:order-filled', handleOrderFilled);
       window.removeEventListener('kraken:order-canceled', handleOrderFilled);
     };
-  }, []);
+  }, [settings]);
 
   // ── WebSocket reconnect recovery ──
   useEffect(() => {

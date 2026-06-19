@@ -218,6 +218,29 @@
     "strategy_history": {
       "type": "boolean",
       "default": true
+    },
+    "sound_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "sound_volume": {
+      "type": "number",
+      "default": 0.5
+    },
+    "sound_buy_url": {
+      "type": "string"
+    },
+    "sound_sell_url": {
+      "type": "string"
+    },
+    "sound_tp_url": {
+      "type": "string"
+    },
+    "sound_sl_url": {
+      "type": "string"
+    },
+    "sound_alert_url": {
+      "type": "string"
     }
   },
   "required": [],
