@@ -207,11 +207,10 @@ export function KrakenWebSocketProvider({ children }) {
         refreshRef.current?.();
       }, 2000);
 
-      // Play trade sound based on type
-      const tradeType = e?.detail?.type || e?.detail?.trade_type;
+      // Play trade sound based on type — trade data is nested under e.detail.trade
+      const tradeType = e?.detail?.trade?.type || e?.detail?.type;
       if (tradeType === 'buy') playTradeSound('buy', settings);
       else if (tradeType === 'sell') playTradeSound('sell', settings);
-      else playTradeSound('alert', settings);
     };
 
     const handleSync = () => {
@@ -222,11 +221,8 @@ export function KrakenWebSocketProvider({ children }) {
       }, 1500);
     };
 
-    const handleOrderPlaced = (e) => {
+    const handleOrderPlaced = () => {
       setTimeout(() => fetchRestDataRef.current?.(true), 2000);
-      const orderType = e?.detail?.type;
-      if (orderType === 'buy') playTradeSound('buy', settings);
-      else if (orderType === 'sell') playTradeSound('sell', settings);
     };
 
     const handleOrderFilled = (e) => {
@@ -237,11 +233,10 @@ export function KrakenWebSocketProvider({ children }) {
         refreshRef.current?.();
       }, 1500);
 
-      // Detect TP/SL fills
-      const reason = e?.detail?.reason || e?.detail?.closure_reason || '';
-      if (reason.includes('take_profit') || reason.includes('tp')) playTradeSound('take_profit', settings);
-      else if (reason.includes('stop_loss') || reason.includes('sl')) playTradeSound('stop_loss', settings);
-      else playTradeSound('sell', settings);
+      // Play sound based on the fill's side (buy/sell) from Kraken WS data
+      const side = (e?.detail?.side || '').toLowerCase();
+      if (side === 'buy') playTradeSound('buy', settings);
+      else if (side === 'sell') playTradeSound('sell', settings);
     };
 
     window.addEventListener('trade:completed', handleTradeCompleted);
