@@ -365,57 +365,14 @@ async function releaseLock(base44, runId, status, stats) {
 }
 
 /**
- * Calculate dynamic TP/SL levels based on historical trade data
- * Uses actual win rates and average gains to optimize exit points
+ * User's TP/SL margins are the LAW — no dynamic overrides, no "optimization".
+ * Returns the user's exact configured values, period.
  */
-function calculateDynamicLevels(symbol, historyData, defaultGainMargin, defaultLossMargin) {
-  const assetHistory = historyData?.asset_analytics?.[symbol?.toUpperCase()];
-  
-  if (!assetHistory || assetHistory.total_trades < 3) {
-    // Not enough history - use defaults
-    return {
-      gainMargin: defaultGainMargin,
-      lossMargin: defaultLossMargin,
-      confidence_boost: 0,
-      source: 'default'
-    };
-  }
-  
-  const winRate = assetHistory.win_rate || 50;
-  const avgGain = assetHistory.avg_successful_gain_pct || defaultGainMargin;
-  const optimalBuyZone = assetHistory.optimal_buy_zone || {};
-  
-  // Dynamic gain margin based on historical average successful gains
-  // Use 80% of historical average to be conservative
-  let dynamicGainMargin = Math.max(defaultGainMargin, avgGain * 0.8);
-  dynamicGainMargin = Math.min(dynamicGainMargin, 15); // Cap at 15%
-  
-  // Dynamic loss margin based on win rate
-  // CRITICAL: Never WIDEN beyond user's configured stop-loss — only tighten or keep same
-  // User's stop-loss is a hard ceiling on acceptable risk
-  let dynamicLossMargin = defaultLossMargin;
-  if (winRate > 70) {
-    // High performer - tighter stop
-    dynamicLossMargin = Math.max(0.5, defaultLossMargin * 0.8);
-  } else if (winRate < 50) {
-    // Lower performer - do NOT widen stop; tighter signal thresholds prevent bad entries
-    dynamicLossMargin = defaultLossMargin;
-  }
-  
-  // Confidence boost based on historical performance
-  let confidenceBoost = 0;
-  if (winRate > 75) confidenceBoost = 10;
-  else if (winRate > 65) confidenceBoost = 5;
-  else if (winRate < 40 && assetHistory.total_trades > 5) confidenceBoost = -5;
-  
+function getUserMargins(defaultGainMargin, defaultLossMargin) {
   return {
-    gainMargin: round2(dynamicGainMargin),
-    lossMargin: round2(dynamicLossMargin),
-    confidence_boost: confidenceBoost,
-    win_rate: winRate,
-    historical_avg_gain: avgGain,
-    optimal_buy_zone: optimalBuyZone,
-    source: 'historical'
+    gainMargin: defaultGainMargin,
+    lossMargin: defaultLossMargin,
+    source: 'user_settings'
   };
 }
 
@@ -856,7 +813,6 @@ Deno.serve(async (req) => {
     
     let signals = [];
     let cashAvailable = 0;
-    let tradeHistoryData = null;
     
     // CRITICAL: Fetch the latest MarketIntelligenceCache to get the AVOID list
     // The auto-trader MUST respect the AI's avoid list — never buy assets marked as AVOID
@@ -1101,9 +1057,7 @@ Deno.serve(async (req) => {
     }
 
     
-    // Skip external trade history function to avoid cross-function 403s; use defaults
-    tradeHistoryData = null;
-    log('Skipping external trade history (no cross-function), using defaults');
+    log('Using user-configured margins directly (no dynamic overrides)');
     
     // Update run with initial cash
     await base44.entities.AutoTraderRun.update(autoTraderRunId, {
@@ -1338,15 +1292,11 @@ Deno.serve(async (req) => {
       let confidence = prospect.confidence_score || 0;
       const userAllocationPct = prospect.user_allocation_pct || 10;
       
-      // Calculate dynamic TP/SL — user's stop-loss is a HARD CEILING, never exceeded
-      const dynamicLevels = calculateDynamicLevels(sym, tradeHistoryData, defaultGainMargin, defaultLossMargin);
-      const gainMargin = dynamicLevels.gainMargin;
-      // CRITICAL: Loss margin must NEVER exceed user's configured value
-      const lossMargin = Math.min(defaultLossMargin, dynamicLevels.lossMargin);
+      // User's TP/SL margins — exactly as configured, no overrides
+      const margins = getUserMargins(defaultGainMargin, defaultLossMargin);
+      const gainMargin = margins.gainMargin;
+      const lossMargin = margins.lossMargin;
       const trailingMargin = defaultTrailingMargin;
-      
-      // Adjust confidence based on historical performance
-      confidence = Math.max(0, Math.min(100, confidence + dynamicLevels.confidence_boost));
       
       log(`Processing ${sym}`, { price, qty, total_value: total_value.toFixed(2), userAllocationPct, gainMargin, lossMargin });
       
@@ -1734,9 +1684,9 @@ Deno.serve(async (req) => {
         price,
         total_value,
         ai_confidence: confidence,
-        dynamic_levels: dynamicLevels,
         effective_gain_margin: gainMargin,
         effective_loss_margin: lossMargin,
+        margins_source: margins.source,
         idempotency_key: idempotencyKey,
         signal_id: signal?.id || null
       });
@@ -1948,7 +1898,7 @@ Deno.serve(async (req) => {
     const advancedOrderSummary = tradesPlaced.map(t => ({
       symbol: t.symbol, qty: t.qty, entry_price: t.price,
       tp_percent: t.effective_gain_margin, sl_percent: t.effective_loss_margin,
-      confidence: t.ai_confidence, levels_source: t.dynamic_levels?.source || 'default'
+      confidence: t.ai_confidence, margins_source: t.margins_source || 'user_settings'
     }));
 
     return Response.json({
@@ -1972,14 +1922,13 @@ Deno.serve(async (req) => {
       emerging_opportunities_found: emergingOpportunities.length,
       signals_consumed: signalsConsumed.length,
       order_settings: {
-        default_gain_margin: defaultGainMargin,
-        default_loss_margin: defaultLossMargin,
+        gain_margin: defaultGainMargin,
+        loss_margin: defaultLossMargin,
         trailing_enabled: trailingEnabled,
         trailing_margin: defaultTrailingMargin,
-        dynamic_levels_enabled: true
+        source: 'user_settings_only'
       },
       risk_tolerance: riskTolerance,
-      trade_history_used: !!tradeHistoryData?.success,
       duration_ms: Date.now() - startTime
     });
   } catch (error) {
