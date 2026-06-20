@@ -32,7 +32,7 @@ class TokenBucket {
     this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerSec);
     this.lastRefill = now;
   }
-  async remove(cost = 1, maxWaitMs = 2000) {
+  async remove(cost = 1, maxWaitMs = 8000) {
     const deadline = Date.now() + maxWaitMs;
     while (true) {
       this.refill();
@@ -57,8 +57,8 @@ const rateLimiters = new Map();
 function getLimiter(bucketKey, type = 'balance') {
   const key = `${bucketKey}:${type}`;
   if (!rateLimiters.has(key)) {
-    // More conservative limits to avoid Kraken 429s
-    const cfg = type === 'trade' ? { capacity: 4, refillPerSec: 1 } : { capacity: 6, refillPerSec: 1 };
+    // Conservative limits — Kraken allows ~15 tokens with 1/sec refill for Starter tier
+    const cfg = type === 'trade' ? { capacity: 3, refillPerSec: 0.5 } : { capacity: 4, refillPerSec: 0.33 };
     rateLimiters.set(key, new TokenBucket(cfg.capacity, cfg.refillPerSec));
   }
   return rateLimiters.get(key);

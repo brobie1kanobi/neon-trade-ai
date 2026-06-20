@@ -336,7 +336,7 @@ export function KrakenWebSocketProvider({ children }) {
         ordersSubscribedRef.current = true;
         setTimeout(() => {
           try { wsManager.refreshOrders?.(); } catch (_) {}
-        }, 5000);
+        }, 8000);
       }
 
       restInFlightRef.current = false;
@@ -370,13 +370,13 @@ export function KrakenWebSocketProvider({ children }) {
   // ── Initial REST snapshot (one-time) ──
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
-      // Fetch REST data immediately - it's our AUTHORITATIVE source for accurate balances
+      // Stagger initial REST fetch to let WS token request complete first (avoid rate limit burst)
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
-          setTimeout(() => fetchPnL(), 5000);
+          setTimeout(() => fetchPnL(), 8000);
         }
-      }, 300); // Faster first snapshot to populate balances quickly
+      }, 3000); // 3s delay — gives WS auth time to complete before REST balance call
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
@@ -385,7 +385,7 @@ export function KrakenWebSocketProvider({ children }) {
           hasInitialSnapshotRef.current = true;
           setRestData(prev => ({ ...prev, isLoading: false }));
         }
-      }, 15000);
+      }, 20000);
 
       return () => { clearTimeout(timer); clearTimeout(safetyTimer); };
     }

@@ -1,30 +1,27 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 /**
- * Sync Kraken Balance - WITH AGGRESSIVE TIMEOUT
- * SECURITY FIX: Returns 401 for unauthorized users
+ * Sync Kraken Balance — Routes ALL Kraken calls through krakenApi
+ * to respect the shared rate limiter. No direct Kraken API calls.
  */
-
-const BALANCE_TIMEOUT_MS = 20000; // 20 seconds max (Kraken can be slow)
-const TRADES_TIMEOUT_MS = 20000; // 20 seconds max
 
 function parseKrakenAsset(krakenCode) {
   const code = String(krakenCode || '').toUpperCase();
-  const symbolMap = {
-    'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH': 'ETH',
+  const cleaned = code.replace(/\.\w+$/, '');
+  const map = {
+    'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH': 'ETH', 'ETH2': 'ETH',
     'XXRP': 'XRP', 'XRP': 'XRP', 'XXLM': 'XLM', 'XLM': 'XLM',
-    'XLTC': 'LTC', 'LTC': 'LTC', 'XDG': 'DOGE', 'XXDG': 'DOGE',
+    'XLTC': 'LTC', 'LTC': 'LTC', 'XDG': 'DOGE', 'XXDG': 'DOGE', 'DOGE': 'DOGE',
     'SOL': 'SOL', 'ADA': 'ADA', 'DOT': 'DOT', 'LINK': 'LINK',
     'UNI': 'UNI', 'MATIC': 'MATIC', 'ATOM': 'ATOM', 'BCH': 'BCH',
     'AVAX': 'AVAX', 'BNB': 'BNB', 'TRX': 'TRX', 'USDT': 'USDT',
     'USDC': 'USDC', 'ZUSD': 'USD', 'USD': 'USD'
   };
-  if (symbolMap[code]) return symbolMap[code];
-
-  let symbol = code;
+  if (map[cleaned]) return map[cleaned];
+  let symbol = cleaned;
   if (symbol.startsWith('Z')) symbol = symbol.substring(1);
   if (symbol.startsWith('X') && symbol.length > 3) symbol = symbol.substring(1);
-  return symbolMap[symbol] || symbol;
+  return map[symbol] || symbol;
 }
 
 function extractBaseAsset(pair) {
@@ -34,362 +31,166 @@ function extractBaseAsset(pair) {
   return parseKrakenAsset(cleaned);
 }
 
-async function fetchWithTimeout(promise, timeoutMs, errorMessage) {
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-  );
-  return Promise.race([promise, timeoutPromise]);
-}
-
-let lastNonce = 0;
-function generateNonce() {
-  const now = Date.now() * 1000;
-  if (now <= lastNonce) lastNonce++;
-  else lastNonce = now;
-  return lastNonce.toString();
-}
-
-async function callKraken(apiKey, apiSecret, endpoint, data = {}) {
-  const cleanKey = String(apiKey || '').trim().replace(/\s+/g, '');
-  const cleanSecret = String(apiSecret || '').trim().replace(/\s+/g, '');
-  const nonce = generateNonce();
-  const postData = new URLSearchParams({ nonce, ...data }).toString();
-  const message = nonce + postData;
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
-  const hmacKey = await crypto.subtle.importKey(
-    'raw', Uint8Array.from(atob(cleanSecret), c => c.charCodeAt(0)), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
-  );
-  const pathBytes = new TextEncoder().encode(endpoint);
-  const combined = new Uint8Array(pathBytes.length + hash.byteLength);
-  combined.set(pathBytes);
-  combined.set(new Uint8Array(hash), pathBytes.length);
-  const signature = await crypto.subtle.sign('HMAC', hmacKey, combined);
-  const apiSign = btoa(String.fromCharCode(...new Uint8Array(signature)));
-
-  const response = await fetch(`https://api.kraken.com${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'API-Key': cleanKey,
-      'API-Sign': apiSign,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'NeonTrade-AI/1.0'
-    },
-    body: postData
-  });
-
-  const json = await response.json();
-  if (json?.error?.length) throw new Error(json.error.join(', '));
-  return json.result || {};
-}
-
 Deno.serve(async (req) => {
   const startTime = Date.now();
-  
-  // CRITICAL: 25-second HARD timeout for entire function (Kraken API can be slow)
-  const globalTimeout = setTimeout(() => {
-    console.error('[syncKrakenBalance] ⏰ GLOBAL TIMEOUT (25s)');
-  }, 25000);
-  
-  try {
-    const result = await Promise.race([
-      handleSync(req, startTime),
-      new Promise((resolve) => setTimeout(() => {
-        console.warn('[syncKrakenBalance] ⏰ Function timeout');
-        resolve(Response.json({ 
-          error: 'Sync timeout - please try again',
-          success: false,
-          duration: Date.now() - startTime
-        }, { status: 408 }));
-      }, 25000))
-    ]);
-    
-    clearTimeout(globalTimeout);
-    return result;
-    
-  } catch (error) {
-    clearTimeout(globalTimeout);
-    console.error('[syncKrakenBalance] Fatal error:', error);
-    return Response.json({ 
-      error: error.message || 'Internal error',
-      success: false,
-      duration: Date.now() - startTime
-    }, { status: 200 });
-  }
-});
-
-async function handleSync(req, startTime) {
   try {
     const base44 = createClientFromRequest(req);
-    
-    // SECURITY FIX: 5-second timeout for auth - RETURN 401 IF UNAUTHORIZED
-    const userPromise = base44.auth.me();
-    const user = await Promise.race([
-      userPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000))
-    ]);
-    
-    if (!user) {
-      return Response.json({ 
-        error: 'Unauthorized',
-        success: false 
-      }, { status: 401 }); // SECURITY FIX: Changed from 200 to 401
-    }
+    const user = await base44.auth.me();
+    if (!user) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
 
     console.log('[syncKrakenBalance] Starting for:', user.email);
 
-    // CRITICAL: 2-second timeout for connection check
-    const connectionsPromise = base44.asServiceRole.entities.KrakenConnection.filter({ created_by: user.email }, '-updated_date', 1);
-    
-    // Secrets-based; verify presence of balance secrets
     const hasBal = !!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'));
     if (!hasBal) {
-      console.log('[syncKrakenBalance] No balance secrets');
       return Response.json({ error: 'Kraken not connected', connected: false, success: false }, { status: 200 });
     }
 
-    // FETCH BALANCE
+    // STEP 1: Fetch balance via krakenApi (rate-limited)
     let krakenHoldings = [];
     let usdBalance = 0;
     try {
-      console.log('[syncKrakenBalance] Fetching balance...');
-      const balKey = Deno.env.get('Kraken_API_Key');
-      const balSecret = Deno.env.get('Kraken_API_Secret');
-      const balanceData = await fetchWithTimeout(
-        callKraken(balKey, balSecret, '/0/private/BalanceEx', {}),
-        BALANCE_TIMEOUT_MS,
-        'Balance fetch timeout'
-      );
+      console.log('[syncKrakenBalance] Fetching balance via krakenApi...');
+      const balanceRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+      const balanceData = balanceRes?.data || balanceRes;
 
-      for (const [asset, info] of Object.entries(balanceData || {})) {
-        const qty = typeof info === 'object' && info !== null
-          ? parseFloat(info.balance ?? info.total ?? 0)
-          : parseFloat(info || 0);
-        if (asset === 'USD' || asset === 'ZUSD') {
-          usdBalance = qty || 0;
+      if (!balanceData?.success) {
+        throw new Error(balanceData?.error || 'Failed to fetch balance');
+      }
+
+      for (const [asset, info] of Object.entries(balanceData.balance || {})) {
+        if (asset === 'USD') {
+          usdBalance = info.balance || info.total || 0;
           continue;
         }
-        if ((qty || 0) <= 0.00001) continue;
-        krakenHoldings.push({
-          symbol: parseKrakenAsset(asset),
-          quantity: qty
-        });
+        const qty = info.balance || info.total || 0;
+        if (qty <= 0.00001) continue;
+        krakenHoldings.push({ symbol: asset, quantity: qty });
       }
 
       console.log('[syncKrakenBalance] Balance OK -', Date.now() - startTime, 'ms');
     } catch (balanceError) {
       console.error('[syncKrakenBalance] Balance failed:', balanceError.message);
-      return Response.json({ 
+      return Response.json({
         error: 'Failed to fetch balance: ' + balanceError.message,
-        success: false,
-        duration: Date.now() - startTime
+        success: false, duration: Date.now() - startTime
       }, { status: 200 });
     }
 
-    // FETCH TRADES
+    // STEP 2: Fetch trades via krakenApi (rate-limited) — with a small delay to avoid burst
     let costBasisMap = {};
     try {
-      console.log('[syncKrakenBalance] Fetching trades...');
-      const tradesResponse = await fetchWithTimeout(
-        base44.functions.invoke('krakenApi', { action: 'getTradesHistory' }),
-        TRADES_TIMEOUT_MS,
-        'Trades fetch timeout'
-      );
+      console.log('[syncKrakenBalance] Fetching trades via krakenApi...');
+      // Small delay between consecutive Kraken API calls
+      await new Promise(r => setTimeout(r, 1500));
 
-      let tradesData = tradesResponse?.data || tradesResponse;
-      if (tradesData?.data) {
-        tradesData = tradesData.data;
-      }
-      
-      let tradesObject = {};
-      
-      if (tradesData?.success && tradesData?.trades) {
-        tradesObject = tradesData.trades.trades || tradesData.trades || {};
-      } else if (tradesData?.trades) {
-        tradesObject = tradesData.trades;
-      } else if (typeof tradesData === 'object' && !tradesData.success && !tradesData.error) {
-        tradesObject = tradesData;
-      }
-      
-      const tradesCount = Object.keys(tradesObject).length;
-      console.log('[syncKrakenBalance] Processing', tradesCount, 'trades');
+      const tradesRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+      const tradesData = tradesRes?.data || tradesRes;
 
-      for (const [txid, trade] of Object.entries(tradesObject)) {
-        const pair = trade.pair || '';
-        const type = trade.type || '';
-        const vol = parseFloat(trade.vol) || 0;
-        const cost = parseFloat(trade.cost) || 0;
-        
-        if (!pair || vol === 0) continue;
-        
-        const symbol = extractBaseAsset(pair);
-        
-        if (!costBasisMap[symbol]) {
-          costBasisMap[symbol] = { totalCost: 0, totalQuantity: 0, avgPrice: 0 };
-        }
-        
-        if (type === 'buy') {
-          costBasisMap[symbol].totalCost += cost;
-          costBasisMap[symbol].totalQuantity += vol;
-        } else if (type === 'sell') {
-          if (costBasisMap[symbol].totalQuantity > 0) {
-            const sellRatio = vol / costBasisMap[symbol].totalQuantity;
-            costBasisMap[symbol].totalCost -= costBasisMap[symbol].totalCost * sellRatio;
-            costBasisMap[symbol].totalQuantity -= vol;
+      if (tradesData?.success && Array.isArray(tradesData.trades)) {
+        console.log('[syncKrakenBalance] Processing', tradesData.trades.length, 'trades');
+        for (const trade of tradesData.trades) {
+          const pair = trade.pair || '';
+          const type = trade.type || '';
+          const vol = parseFloat(trade.vol) || 0;
+          const cost = parseFloat(trade.cost) || 0;
+          if (!pair || vol === 0) continue;
+          const symbol = extractBaseAsset(pair);
+          if (!costBasisMap[symbol]) {
+            costBasisMap[symbol] = { totalCost: 0, totalQuantity: 0, avgPrice: 0 };
+          }
+          if (type === 'buy') {
+            costBasisMap[symbol].totalCost += cost;
+            costBasisMap[symbol].totalQuantity += vol;
+          } else if (type === 'sell') {
+            if (costBasisMap[symbol].totalQuantity > 0) {
+              const sellRatio = vol / costBasisMap[symbol].totalQuantity;
+              costBasisMap[symbol].totalCost -= costBasisMap[symbol].totalCost * sellRatio;
+              costBasisMap[symbol].totalQuantity -= vol;
+            }
           }
         }
-      }
-      
-      for (const symbol in costBasisMap) {
-        const data = costBasisMap[symbol];
-        if (data.totalQuantity > 0) {
-          data.avgPrice = data.totalCost / data.totalQuantity;
+        for (const symbol in costBasisMap) {
+          const data = costBasisMap[symbol];
+          if (data.totalQuantity > 0) data.avgPrice = data.totalCost / data.totalQuantity;
         }
+        console.log('[syncKrakenBalance] Cost basis calculated');
       }
-
-      console.log('[syncKrakenBalance] Cost basis calculated');
     } catch (tradesError) {
       console.warn('[syncKrakenBalance] Trades failed (continuing):', tradesError.message);
     }
 
-    // UPDATE WALLET
+    // STEP 3: Update Wallet
     console.log('[syncKrakenBalance] USD:', usdBalance);
-
     try {
-      // CRITICAL: 2-second timeout for wallet query
-      const walletsPromise = base44.asServiceRole.entities.Wallet.filter({
-        created_by: user.email
-      });
-      
-      const wallets = await Promise.race([
-        walletsPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet query timeout')), 5000))
-      ]);
-
+      const wallets = await base44.asServiceRole.entities.Wallet.filter({ created_by: user.email });
       if (wallets.length === 0) {
         await base44.asServiceRole.entities.Wallet.create({
-          cash_balance: 10000,
-          total_deposits: 0,
-          total_withdrawals: 0,
-          real_cash_balance: usdBalance,
-          real_total_deposits: 0,
-          real_total_withdrawals: 0,
+          cash_balance: 10000, total_deposits: 0, total_withdrawals: 0,
+          real_cash_balance: usdBalance, real_total_deposits: 0, real_total_withdrawals: 0,
           created_by: user.email
         });
       } else {
-        await base44.asServiceRole.entities.Wallet.update(wallets[0].id, {
-          real_cash_balance: usdBalance
-        });
+        await base44.asServiceRole.entities.Wallet.update(wallets[0].id, { real_cash_balance: usdBalance });
       }
     } catch (walletError) {
       console.error('[syncKrakenBalance] Wallet update failed:', walletError);
-      return Response.json({ 
+      return Response.json({
         error: 'Wallet update failed: ' + walletError.message,
-        success: false,
-        duration: Date.now() - startTime
+        success: false, duration: Date.now() - startTime
       }, { status: 200 });
     }
 
-    // UPDATE HOLDINGS
+    // STEP 4: Update Holdings
     try {
-      // CRITICAL: 2-second timeout for holdings query
-      const existingPromise = base44.asServiceRole.entities.Holding.filter({
-        created_by: user.email,
-        is_simulation: false
+      const existingHoldings = await base44.asServiceRole.entities.Holding.filter({
+        created_by: user.email, is_simulation: false
       });
-      
-      const existingHoldings = await Promise.race([
-        existingPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Holdings query timeout')), 5000))
-      ]);
-      
-      const deletePromises = existingHoldings.map(h => 
-        base44.asServiceRole.entities.Holding.delete(h.id).catch(() => {})
-      );
-      await Promise.all(deletePromises);
-      
+      await Promise.all(existingHoldings.map(h => base44.asServiceRole.entities.Holding.delete(h.id).catch(() => {})));
       console.log('[syncKrakenBalance] Deleted', existingHoldings.length, 'holdings');
-      
+
       const holdings = [];
       const createPromises = [];
-      
       for (const holding of krakenHoldings) {
         const qty = parseFloat(holding.quantity) || 0;
         if (qty <= 0.00001) continue;
-
         const symbol = parseKrakenAsset(holding.symbol);
-        const costBasis = costBasisMap[symbol]?.avgPrice || holding.average_cost_price || 0;
-
+        const costBasis = costBasisMap[symbol]?.avgPrice || 0;
         holdings.push({ symbol, balance: qty, avgCost: costBasis });
-
         createPromises.push(
           base44.asServiceRole.entities.Holding.create({
-            symbol,
-            asset_type: 'crypto',
-            quantity: qty,
-            average_cost_price: costBasis,
-            is_simulation: false,
-            created_by: user.email
-          }).catch(e => {
-            console.error('[syncKrakenBalance] Create holding failed for', symbol, ':', e.message);
-          })
+            symbol, asset_type: 'crypto', quantity: qty, average_cost_price: costBasis,
+            is_simulation: false, created_by: user.email
+          }).catch(e => console.error('[syncKrakenBalance] Create holding failed for', symbol, ':', e.message))
         );
       }
-
       await Promise.all(createPromises);
       console.log('[syncKrakenBalance] Created', holdings.length, 'holdings');
 
       await base44.asServiceRole.entities.KrakenLog.create({
-        event_type: 'balance',
-        status: 'success',
+        event_type: 'balance', status: 'success',
         message: `Synced ${holdings.length} holdings, $${usdBalance.toFixed(2)} USD`,
-        details_json: JSON.stringify({ 
-          usdBalance, 
-          holdings,
-          costBasis: Object.entries(costBasisMap).map(([sym, data]) => ({
-            symbol: sym,
-            avgPrice: data.avgPrice
-          })),
-          duration: Date.now() - startTime
-        }),
+        details_json: JSON.stringify({ usdBalance, holdings, duration: Date.now() - startTime }),
         created_by: user.email
-      }).catch(() => {}); // Don't fail if logging fails
+      }).catch(() => {});
 
       console.log('[syncKrakenBalance] ✅ Success in', Date.now() - startTime, 'ms');
-
       return Response.json({
-        success: true,
-        usdBalance,
-        holdings,
-        balance: { USD: usdBalance },
-        costBasis: costBasisMap,
+        success: true, usdBalance, holdings,
+        balance: { USD: usdBalance }, costBasis: costBasisMap,
         duration: Date.now() - startTime
       });
-
     } catch (holdingsError) {
       console.error('[syncKrakenBalance] Holdings update failed:', holdingsError);
-      return Response.json({ 
+      return Response.json({
         error: 'Holdings update failed: ' + holdingsError.message,
-        success: false,
-        duration: Date.now() - startTime
+        success: false, duration: Date.now() - startTime
       }, { status: 200 });
     }
-
   } catch (error) {
     console.error('[syncKrakenBalance] ❌ Fatal:', error);
-    
-    // SECURITY FIX: Return 401 for auth errors, 500 for others
     if (error.message?.includes('Unauthorized') || error.message?.includes('Auth')) {
-      return Response.json({ 
-        error: 'Unauthorized',
-        success: false,
-        duration: Date.now() - startTime
-      }, { status: 401 });
+      return Response.json({ error: 'Unauthorized', success: false, duration: Date.now() - startTime }, { status: 401 });
     }
-    
-    return Response.json({ 
-      error: error.message || 'Internal error',
-      success: false,
-      duration: Date.now() - startTime
-    }, { status: 200 });
+    return Response.json({ error: error.message || 'Internal error', success: false, duration: Date.now() - startTime }, { status: 200 });
   }
-}
+});
