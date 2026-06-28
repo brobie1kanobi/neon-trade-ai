@@ -29,7 +29,7 @@ import TradeDetailsModal from "../components/dashboard/TradeDetailsModal";
 import CryptoMarketOverview from "../components/dashboard/CryptoMarketOverview";
 import CryptoPriceChart from "../components/dashboard/CryptoPriceChart";
 import StockPriceChart from "../components/dashboard/StockPriceChart";
-import GovSpendingInsights from "../components/dashboard/GovSpendingInsights";
+
 
 /**
  * useAutoTrader - CENTRALIZED BACKEND TRIGGER
@@ -928,10 +928,6 @@ export default function Dashboard() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
-        <GovSpendingInsights />
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }}>
         <RecentTrades trades={trades} onTradeSelect={handleSelectTrade} />
       </motion.div>
     </div >
