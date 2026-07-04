@@ -50,8 +50,8 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
     const triggerBackendAutoTrader = async () => {
       if (isRunningRef.current) return;
       const now = Date.now();
-      // 120s cooldown between triggers to avoid hammering the backend
-      if (now < backoffUntilRef.current || (lastRunRef.current && now - lastRunRef.current < 120000)) return;
+      // 240s cooldown between triggers to avoid hammering the backend
+      if (now < backoffUntilRef.current || (lastRunRef.current && now - lastRunRef.current < 240000)) return;
       isRunningRef.current = true;
 
       console.log('[AutoTrader] Triggering backend runAutoTrader...');
@@ -94,12 +94,13 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
       }
     };
 
-    // Trigger once on mount
-    triggerBackendAutoTrader();
+    // Trigger once on mount (with a small delay to let settings load)
+    const mountDelay = setTimeout(triggerBackendAutoTrader, 5000);
 
-    // Then every 5 minutes (backend has its own lock to prevent overlapping runs)
+    // Then every 5 minutes — the ONLY trigger source for auto-trading.
+    // Entity automations were removed to prevent burst-firing on signal batches.
     const interval = setInterval(triggerBackendAutoTrader, 300000);
-    return () => clearInterval(interval);
+    return () => { clearTimeout(mountDelay); clearInterval(interval); };
   }, [settings?.auto_trading_enabled, user?.email, isSimMode]);
 };
 
