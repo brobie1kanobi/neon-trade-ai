@@ -989,7 +989,9 @@ Deno.serve(async (req) => {
       } catch (_e) {}
 
       // 5) Build prospects
-      const minConf = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
+      // CRITICAL: Use auto_execute_threshold as the floor for prospect building too.
+      // min_signal_confidence is only for signal generation filtering, NOT for execution gating.
+      const minConf = AUTO_EXECUTE_THRESHOLD;
       const safetyMaxPct = 0.40;
       const spendable = isSimMode ? tradingCash : tradingCash; // already buffered in live
       for (const pref of prefs) {
@@ -1165,15 +1167,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Confidence thresholds from user settings
+    // CRITICAL: Confidence thresholds from user settings
+    // If auto_execute_threshold is missing/undefined on the settings record, BLOCK all auto-execution.
+    // This prevents stale/duplicate settings records from silently allowing trades.
     const AUTO_EXECUTE_THRESHOLD = typeof settings.auto_execute_threshold === 'number'
       ? settings.auto_execute_threshold
-      : 70; // for strong_buy
-    const BUY_THRESHOLD = typeof settings.min_signal_confidence === 'number'
-      ? settings.min_signal_confidence
-      : 50; // for buy
+      : null; // null = BLOCK, do not default to a permissive value
+    
+    if (AUTO_EXECUTE_THRESHOLD === null) {
+      log('CRITICAL: auto_execute_threshold is missing/undefined on settings record — BLOCKING all auto-execution to protect user funds', {
+        settings_id: settings.id,
+        settings_updated: settings.updated_date
+      });
+      await releaseLock(base44, autoTraderRunId, 'failed', {
+        error_message: 'auto_execute_threshold missing on settings record — trades blocked for safety',
+        logs_json: JSON.stringify(runLogs)
+      });
+      return Response.json({
+        success: false,
+        error: 'auto_execute_threshold missing on settings record — trades blocked for safety',
+        settings_id: settings.id
+      });
+    }
 
-    log('Confidence thresholds', { strong_buy: AUTO_EXECUTE_THRESHOLD, buy: BUY_THRESHOLD });
+    // CRITICAL: ALL auto-executed trades (both buy AND strong_buy) must meet the auto_execute_threshold.
+    // min_signal_confidence is only a pre-filter for signal generation, NOT an execution gate.
+    // This prevents low-confidence "buy" signals from bypassing the user's execution threshold.
+    log('Confidence threshold for ALL auto-execution', { threshold: AUTO_EXECUTE_THRESHOLD });
     
     // Build signal map for quick lookup
     const signalMap = new Map();
@@ -1201,11 +1221,13 @@ Deno.serve(async (req) => {
       const trendOkForStrong = change24h > -1.5 && change24h < 3.5; // Only buy if not falling >1.5% or pumped >3.5%
       const trendOkForBuy = change24h > -0.5 && change24h < 2.5;    // Very tight: only stable or mildly positive
 
+      // CRITICAL: ALL auto-executed trades must meet the user's auto_execute_threshold.
+      // There is no separate lower gate for "buy" vs "strong_buy" — the threshold is the threshold.
       let meetsConfidence = false;
       if (signalType === 'strong_buy') {
         meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD && trendOkForStrong;
       } else if (signalType === 'buy') {
-        meetsConfidence = confidenceScore >= BUY_THRESHOLD && trendOkForBuy;
+        meetsConfidence = confidenceScore >= AUTO_EXECUTE_THRESHOLD && trendOkForBuy;
       }
 
       const eligible = (signalType === 'strong_buy' || signalType === 'buy') && meetsConfidence && notBlocked && wouldExecute;

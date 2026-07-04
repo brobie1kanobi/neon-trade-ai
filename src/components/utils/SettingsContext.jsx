@@ -141,7 +141,20 @@ export const SettingsProvider = ({ children }) => {
       if (settings?.id) {
         await UserSettings.update(settings.id, { [key]: value });
       } else {
+        // CRITICAL: Before creating, re-check the database for an existing record.
+        // This prevents duplicate creation when settings state is stale/null.
         const me = user || await base44.auth.me();
+        const existing = await UserSettings.filter({ created_by: me.email }, "-updated_date", 1);
+        if (existing.length > 0) {
+          // Found an existing record — update it instead of creating a duplicate
+          await UserSettings.update(existing[0].id, { [key]: value });
+          // Fix local state to include the id for future updates
+          const newSettings = { ...settings, ...existing[0], [key]: value };
+          setSettings(newSettings);
+          try { localStorage.setItem('nt_settings_cache', JSON.stringify(newSettings)); } catch (_e) {}
+          if (user?.email) invalidateCache(`settings:${user.email}`);
+          return;
+        }
         await UserSettings.create({
           ...settings,
           [key]: value,
