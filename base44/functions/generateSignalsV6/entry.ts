@@ -263,35 +263,89 @@ const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 async function callHuggingFace(systemPrompt, userPrompt, timeoutMs = 15000) {
   const token = Deno.env.get('HUGGINGFACE_API_TOKEN');
   if (!token) throw new Error('HUGGINGFACE_API_TOKEN not set');
-  const ac = new AbortController();
-  const to = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    const res = await fetch(HF_URL, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: HF_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 2048
-      }),
-      signal: ac.signal
-    });
-    clearTimeout(to);
-    if (!res.ok) throw new Error(`HF API ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content || '';
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
-    if (!jsonMatch) throw new Error('No JSON in HF response');
-    return JSON.parse(jsonMatch[1].trim());
-  } catch (e) {
-    clearTimeout(to);
-    throw e;
+
+  const MAX_RETRIES = 2;
+  const hfPayload = JSON.stringify({
+    model: HF_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.3,
+    max_tokens: 2048
+  });
+
+  const callStart = Date.now();
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const elapsed = Date.now() - callStart;
+    const remainingMs = timeoutMs - elapsed;
+    if (remainingMs < 3000) {
+      throw new Error(`HF: insufficient time for attempt ${attempt + 1} (${remainingMs}ms left)`);
+    }
+
+    const ac = new AbortController();
+    const perAttemptTimeout = Math.min(remainingMs - 500, 15000);
+    const to = setTimeout(() => ac.abort(), perAttemptTimeout);
+
+    try {
+      const res = await fetch(HF_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: hfPayload,
+        signal: ac.signal
+      });
+      clearTimeout(to);
+
+      if (res.status === 503) {
+        const bodyText = await res.text();
+        let waitSec = 5;
+        try { const e = JSON.parse(bodyText); if (e.estimated_time) waitSec = Math.min(Math.ceil(e.estimated_time), 15); } catch (_) {}
+        console.warn(`[HF-v7] 503 cold-start (attempt ${attempt + 1}): wait ${waitSec}s`);
+        if (attempt < MAX_RETRIES && (timeoutMs - (Date.now() - callStart)) > (waitSec * 1000 + 3000)) {
+          await new Promise(r => setTimeout(r, waitSec * 1000));
+          continue;
+        }
+        throw new Error(`HF 503 after ${attempt + 1} attempts`);
+      }
+
+      if (res.status === 429) {
+        let waitMs = 3000 * Math.pow(2, attempt);
+        const retryAfter = res.headers.get('retry-after');
+        if (retryAfter) { const p = parseInt(retryAfter, 10); if (!isNaN(p)) waitMs = Math.min(p * 1000, 15000); }
+        console.warn(`[HF-v7] 429 rate limited (attempt ${attempt + 1}): wait ${waitMs}ms`);
+        if (attempt < MAX_RETRIES && (timeoutMs - (Date.now() - callStart)) > (waitMs + 3000)) {
+          await new Promise(r => setTimeout(r, waitMs));
+          continue;
+        }
+        throw new Error(`HF 429 rate limited after ${attempt + 1} attempts`);
+      }
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[HF-v7] HTTP ${res.status} (attempt ${attempt + 1}): ${errText.substring(0, 200)}`);
+        if (res.status === 401 || res.status === 403) throw new Error(`HF auth error (${res.status})`);
+        if (attempt < MAX_RETRIES) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        throw new Error(`HF API ${res.status} after ${attempt + 1} attempts`);
+      }
+
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content || '';
+      const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+      if (!jsonMatch) throw new Error('No JSON in HF response');
+      console.log(`[HF-v7] ✅ Success on attempt ${attempt + 1}`);
+      return JSON.parse(jsonMatch[1].trim());
+    } catch (e) {
+      clearTimeout(to);
+      if (e.name === 'AbortError') {
+        console.error(`[HF-v7] Timeout (attempt ${attempt + 1})`);
+        if (attempt < MAX_RETRIES) continue;
+        throw new Error(`HF timed out after ${attempt + 1} attempts`);
+      }
+      if (attempt >= MAX_RETRIES) throw e;
+      console.warn(`[HF-v7] Attempt ${attempt + 1} failed: ${e.message} — retrying...`);
+    }
   }
+  throw new Error('HF: exhausted all retry attempts');
 }
 
 // ==================== SENTIMENT ANALYSIS (HF LLM) ====================

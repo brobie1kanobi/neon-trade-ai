@@ -33,6 +33,76 @@ Deno.serve(async (req) => {
 
     console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence, 'trade history:', includeTradeHistory);
 
+    // ── DEDUP GUARD: Skip full analysis if signals were generated very recently ──
+    // This prevents rapid-fire HF calls from overlapping frontend loads,
+    // entity-automation cascades, and dashboard auto-refresh
+    const SIGNAL_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
+    try {
+      const recentSignals = await base44.asServiceRole.entities.AssetSignal.filter(
+        { is_active: true }, '-created_date', 5
+      );
+      if (recentSignals.length > 0) {
+        const newestAge = Date.now() - new Date(recentSignals[0].created_date).getTime();
+        if (newestAge < SIGNAL_COOLDOWN_MS) {
+          console.log(`[MarketIntelligence] DEDUP: Signals generated ${(newestAge/1000).toFixed(0)}s ago (< ${SIGNAL_COOLDOWN_MS/1000}s cooldown). Returning cached signals.`);
+          // Return cached data instead of re-running HF
+          const cachedRecs = recentSignals.map(s => ({
+            symbol: s.asset_symbol,
+            confidence_score: s.confidence_score,
+            optimal_action: s.signal_type,
+            action: s.signal_type,
+            reasoning: s.reasoning || 'Cached signal (cooldown active)',
+            current_price: s.price_at_signal || 0,
+            current_24h_change: s.change_24h || 0,
+            technical_pattern: s.technical_pattern || 'No clear pattern',
+            sentiment_score: s.sentiment_score || 50,
+            momentum_strength: s.momentum_strength || 'moderate',
+            predicted_move_pct: s.predicted_gain_pct || 0,
+            timing_window: '4h',
+            stop_loss_pct: s.stop_loss_pct || 2,
+            take_profit_pct: s.take_profit_pct || 3,
+            auto_tradeable: (s.signal_type === 'strong_buy' || s.signal_type === 'strong_sell') && s.confidence_score >= 60,
+            is_cached: true
+          }));
+          // Also return cached market intelligence if available
+          let cachedIntel = null;
+          try {
+            const intelCaches = await base44.asServiceRole.entities.MarketIntelligenceCache.filter({}, '-cached_at', 1);
+            if (intelCaches.length > 0) {
+              const c = intelCaches[0];
+              cachedIntel = {
+                market_sentiment_score: c.market_sentiment_score ?? 50,
+                market_regime: c.market_regime || 'range',
+                volatility_level: c.volatility_level || 'moderate',
+                momentum_direction: c.momentum_direction || 'neutral',
+                trend_strength: c.trend_strength || 'moderate',
+                short_term_outlook: c.short_term_outlook || '',
+                trading_recommendation: c.trading_recommendation || '',
+                best_opportunities: JSON.parse(c.best_opportunities_json || '[]'),
+                avoid_list: JSON.parse(c.avoid_list_json || '[]'),
+                hot_signals: JSON.parse(c.hot_signals_json || '[]')
+              };
+            }
+          } catch (_) {}
+          return Response.json({
+            success: true,
+            recommendations: cachedRecs,
+            market_intelligence: cachedIntel,
+            market_summary: 'Using recently generated signals (cooldown active)',
+            upcoming_catalysts: [],
+            analyzed_count: cachedRecs.length,
+            trade_history_summary: null,
+            top_historical_performers: [],
+            timestamp: new Date().toISOString(),
+            dedup_cooldown: true,
+            cooldown_remaining_sec: Math.round((SIGNAL_COOLDOWN_MS - newestAge) / 1000)
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[MarketIntelligence] Dedup check failed, proceeding:', e.message);
+    }
+
     const parseJsonString = (value, fallback = []) => {
       if (!value) return fallback;
       try {
@@ -181,11 +251,25 @@ Deno.serve(async (req) => {
           // Handle other non-OK statuses with detailed logging
           if (!res.ok) {
             const errText = await res.text();
-            console.error(`[HF] API error ${res.status} (attempt ${attempt + 1}): ${errText.substring(0, 300)}`);
-            // 429 rate limit — no retry, throw immediately
-            if (res.status === 429) throw new Error(`HF rate limited (429): ${errText.substring(0, 200)}`);
+            console.error(`[HF] HTTP ${res.status} (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${errText.substring(0, 300)}`);
             // 401/403 auth errors — no retry
             if (res.status === 401 || res.status === 403) throw new Error(`HF auth error (${res.status}): ${errText.substring(0, 200)}`);
+            // 429 rate limit — retry with exponential backoff if time permits
+            if (res.status === 429) {
+              // Parse Retry-After header if present
+              let waitMs = 3000 * Math.pow(2, attempt); // 3s, 6s, 12s
+              const retryAfter = res.headers.get('retry-after');
+              if (retryAfter) {
+                const parsed = parseInt(retryAfter, 10);
+                if (!isNaN(parsed)) waitMs = Math.min(parsed * 1000, 15000);
+              }
+              console.warn(`[HF] 429 rate limited (attempt ${attempt + 1}/${MAX_RETRIES + 1}): waiting ${waitMs}ms before retry`);
+              if (attempt < MAX_RETRIES && (timeoutMs - (Date.now() - callStart)) > (waitMs + 3000)) {
+                await new Promise(r => setTimeout(r, waitMs));
+                continue;
+              }
+              throw new Error(`HF rate limited (429) after ${attempt + 1} attempts: ${errText.substring(0, 200)}`);
+            }
             // Other errors: retry if attempts remain
             if (attempt < MAX_RETRIES) {
               await new Promise(r => setTimeout(r, 2000));
