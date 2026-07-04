@@ -135,9 +135,10 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
   }
 }
 
-// Live cash fetcher tries KrakenConnection first, then env keys
+// Live cash fetcher: KrakenConnection → env keys → Wallet entity (real_cash_balance)
 async function fetchLiveCash(base44, userEmail) {
   let rawUsd = 0; let reserved = 0; let source = 'none';
+  // Step 1: Per-user KrakenConnection entity (highest fidelity — user's own API keys)
   try {
     const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
     if (conns.length > 0) {
@@ -164,6 +165,7 @@ async function fetchLiveCash(base44, userEmail) {
       }
     }
   } catch (_) {}
+  // Step 2: Shared env-var Kraken keys (app-level keys)
   try {
     const envKey = (Deno.env.get('Kraken_API_Key') || '').trim();
     const envSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
@@ -183,6 +185,18 @@ async function fetchLiveCash(base44, userEmail) {
         } catch (_) {}
         source = 'env';
         return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
+      }
+    }
+  } catch (_) {}
+  // Step 3: Wallet entity real_cash_balance — synced from Kraken by other processes.
+  // This is the critical fallback when API calls fail (rate limited, no KrakenConnection, etc.)
+  try {
+    const wallets = await base44.asServiceRole.entities.Wallet.filter({ created_by: userEmail }, '-updated_date', 1);
+    if (wallets.length > 0) {
+      const walletCash = Number(wallets[0].real_cash_balance || 0);
+      if (walletCash > 0) {
+        source = 'wallet';
+        return { rawUsd: walletCash, reserved: 0, available: Math.max(0, walletCash * 0.98), source };
       }
     }
   } catch (_) {}
@@ -1328,18 +1342,13 @@ Deno.serve(async (req) => {
       try {
         if (!isSimMode) {
           try {
-            const apiKey = (Deno.env.get('Kraken_API_Key') || '').trim();
-            const apiSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
-            if (apiKey && apiSecret) {
-              const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-              if (!bal?.error?.length && bal?.result) {
-                const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-                const freshAvailable = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-                availableCash = Math.max(0, freshAvailable * 0.90);
-                portfolioState = portfolioState || {};
-                portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshAvailable };
-                console.log(`[runAutoTrader] Using fresh cash for checks: $${freshAvailable.toFixed(2)} (90% eff: $${availableCash.toFixed(2)})`);
-              }
+            // Re-use fetchLiveCash which has full waterfall: KrakenConnection → env keys → Wallet entity
+            const freshLive = await fetchLiveCash(base44, user.email);
+            if (freshLive.source !== 'none' && freshLive.rawUsd > 0) {
+              availableCash = Math.max(0, freshLive.available);
+              portfolioState = portfolioState || {};
+              portfolioState.wallet = { ...(portfolioState.wallet || {}), real_cash_balance: freshLive.rawUsd };
+              console.log(`[runAutoTrader] Using fresh cash for checks (${freshLive.source}): $${freshLive.rawUsd.toFixed(2)} (eff: $${availableCash.toFixed(2)})`);
             }
           } catch (_e) {
             // Keep previous availableCash
