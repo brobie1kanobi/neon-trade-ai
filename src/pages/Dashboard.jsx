@@ -38,21 +38,49 @@ import StockPriceChart from "../components/dashboard/StockPriceChart";
  * This hook ONLY triggers the backend at a controlled interval and displays results.
  * This eliminates duplicate orders caused by both frontend and backend placing trades.
  */
-const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange, isSimMode) => {
-  const isRunningRef = useRef(false);
-  const lastRunRef = useRef(0);
-  const backoffUntilRef = useRef(0);
-  const failureCountRef = useRef(0);
+/**
+ * useAutoTrader — SINGLETON trigger for the backend auto-trader.
+ *
+ * Cooldown is enforced at THREE levels to prevent rapid-fire runs:
+ * 1. Module-level state (survives React re-renders within a single tab)
+ * 2. localStorage (coordinates across multiple browser tabs)
+ * 3. Backend-side cooldown (rejects runs < 4 min after the last completed one)
+ */
+const AUTO_TRADER_COOLDOWN_MS = 300000; // 5 minutes between runs
+const AUTO_TRADER_INTERVAL_MS = 300000; // 5 minute polling interval
+const LS_KEY = 'autoTrader_lastRunTs';
 
+// Module-level state (per-tab singleton)
+let _atIsRunning = false;
+let _atMountCount = 0;
+
+function getLastRunTs() {
+  try {
+    return parseInt(localStorage.getItem(LS_KEY) || '0', 10) || 0;
+  } catch { return 0; }
+}
+function setLastRunTs(ts) {
+  try { localStorage.setItem(LS_KEY, String(ts)); } catch {}
+}
+
+const useAutoTrader = (settings, user) => {
   useEffect(() => {
     if (!settings?.auto_trading_enabled || !user?.email) return;
 
+    _atMountCount++;
+    const thisMountId = _atMountCount;
+
     const triggerBackendAutoTrader = async () => {
-      if (isRunningRef.current) return;
+      if (_atIsRunning) return;
       const now = Date.now();
-      // 240s cooldown between triggers to avoid hammering the backend
-      if (now < backoffUntilRef.current || (lastRunRef.current && now - lastRunRef.current < 240000)) return;
-      isRunningRef.current = true;
+      const lastRun = getLastRunTs();
+      if (lastRun && (now - lastRun) < AUTO_TRADER_COOLDOWN_MS) {
+        console.log(`[AutoTrader] Cooldown active (${Math.round((AUTO_TRADER_COOLDOWN_MS - (now - lastRun)) / 1000)}s remaining)`);
+        return;
+      }
+      _atIsRunning = true;
+      // Optimistically stamp BEFORE the call so other tabs see it immediately
+      setLastRunTs(now);
 
       console.log('[AutoTrader] Triggering backend runAutoTrader...');
 
@@ -74,34 +102,25 @@ const useAutoTrader = (settings, user, onTrade, wallet, holdings, lifetimeChange
             duration: 5000
           });
 
-          // Refresh local data after backend trades
           invalidateCache();
           window.dispatchEvent(new CustomEvent('trade:completed', { detail: { timestamp: Date.now() } }));
         }
-
-        failureCountRef.current = 0;
       } catch (e) {
         const msg = (e?.message || e?.toString()) || '';
         console.error('[AutoTrader] Backend trigger failed:', msg);
-
-        if (/429|rate limit/i.test(msg)) {
-          failureCountRef.current++;
-          backoffUntilRef.current = Date.now() + Math.min(300000, Math.pow(2, failureCountRef.current) * 30000);
-        }
       } finally {
-        isRunningRef.current = false;
-        lastRunRef.current = Date.now();
+        _atIsRunning = false;
+        setLastRunTs(Date.now());
       }
     };
 
-    // Trigger once on mount (with a small delay to let settings load)
-    const mountDelay = setTimeout(triggerBackendAutoTrader, 5000);
+    // First mount: 15s delay. Re-mounts: defer to next interval tick.
+    const initialDelay = thisMountId === 1 ? 15000 : AUTO_TRADER_COOLDOWN_MS;
+    const mountDelay = setTimeout(triggerBackendAutoTrader, initialDelay);
 
-    // Then every 5 minutes — the ONLY trigger source for auto-trading.
-    // Entity automations were removed to prevent burst-firing on signal batches.
-    const interval = setInterval(triggerBackendAutoTrader, 300000);
+    const interval = setInterval(triggerBackendAutoTrader, AUTO_TRADER_INTERVAL_MS);
     return () => { clearTimeout(mountDelay); clearInterval(interval); };
-  }, [settings?.auto_trading_enabled, user?.email, isSimMode]);
+  }, [settings?.auto_trading_enabled, user?.email]);
 };
 
 // GLOBAL TRADE LOCK: Prevent simultaneous trades (used by handleTradeExecuted for manual trades)
@@ -552,7 +571,7 @@ export default function Dashboard() {
     [user, settings, addTrade, refreshWallet, refreshHoldings, refreshPrices]
   );
 
-  useAutoTrader(settings, user, handleTradeExecuted, wallet, effectiveHoldings, lifetimeChange, isSimMode);
+  useAutoTrader(settings, user);
 
   // CRITICAL: Bracket order synchronization - cancels paired orders when one is filled
   useBracketOrderSync(isSimMode, user?.email);

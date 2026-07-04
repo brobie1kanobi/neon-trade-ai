@@ -331,7 +331,7 @@ async function acquireLock(base44, userEmail, runId) {
     });
     
     if (recentPending.length <= 1) {
-      // We're the only pending record - we win
+      // We're the only pending record - we win (but secondary check after 'running' will verify)
       return { acquired: true };
     }
     
@@ -748,23 +748,36 @@ Deno.serve(async (req) => {
       isSimMode = true;
     }
     
-    // PRE-FLIGHT: Check if there's already a running auto-trader within the lock window.
+    // PRE-FLIGHT: Check if there's already a running OR recently completed auto-trader.
     // This avoids creating unnecessary AutoTraderRun records when we know we'll lose.
+    // ALSO enforces a minimum 4-minute gap between runs to prevent rapid-fire triggering.
+    const MIN_RUN_GAP_MS = 240000; // 4 minutes minimum between runs
     try {
-      const existingRunning = await base44.entities.AutoTraderRun.filter({
-        created_by: user.email,
-        status: 'running'
-      });
-      const freshRunning = existingRunning.filter(r => {
-        const age = Date.now() - new Date(r.started_at || r.created_date).getTime();
-        return age < LOCK_TIMEOUT_MS;
-      });
-      if (freshRunning.length > 0) {
-        return Response.json({
-          success: false,
-          message: 'Another run in progress (pre-flight)',
-          existing_run_id: freshRunning[0].id
-        });
+      const recentRuns = await base44.entities.AutoTraderRun.filter({
+        created_by: user.email
+      }, '-created_date', 5);
+      
+      const now = Date.now();
+      for (const r of recentRuns) {
+        const age = now - new Date(r.started_at || r.created_date).getTime();
+        // Block if another run is currently running (and not stale)
+        if (r.status === 'running' && age < LOCK_TIMEOUT_MS) {
+          return Response.json({
+            success: false,
+            message: 'Another run in progress (pre-flight)',
+            existing_run_id: r.id
+          });
+        }
+        // Block if a run completed/failed recently (within MIN_RUN_GAP_MS)
+        // This prevents the rapid-fire pattern where runs complete in 1-2s then immediately retrigger
+        if ((r.status === 'completed' || r.status === 'failed') && age < MIN_RUN_GAP_MS) {
+          return Response.json({
+            success: true,
+            message: `Run skipped — last run was ${Math.round(age / 1000)}s ago (min gap: ${MIN_RUN_GAP_MS / 1000}s)`,
+            trades_count: 0,
+            cooldown_remaining_s: Math.round((MIN_RUN_GAP_MS - age) / 1000)
+          });
+        }
       }
     } catch (_) {}
 
@@ -801,6 +814,49 @@ Deno.serve(async (req) => {
     
     // Update status to running
     await base44.entities.AutoTraderRun.update(autoTraderRunId, { status: 'running' });
+    
+    // SECONDARY LOCK VERIFICATION: After setting ourselves to 'running', check that
+    // no OTHER record also set itself to 'running' (TOCTOU race in acquireLock).
+    // If two runs both see only themselves as pending, both get acquired=true.
+    // This secondary check catches that by re-querying 'running' records.
+    try {
+      await sleep(200); // Brief delay to let concurrent updates propagate
+      const runningNow = await base44.entities.AutoTraderRun.filter({
+        created_by: user.email,
+        status: 'running'
+      });
+      const otherRunning = runningNow.filter(r => r.id !== autoTraderRunId);
+      if (otherRunning.length > 0) {
+        // Another run also claimed the lock — the one with the lower ID wins
+        const allRunning = runningNow.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+        if (allRunning[0].id !== autoTraderRunId) {
+          log('SECONDARY LOCK CHECK: Lost to concurrent runner', { winnerId: allRunning[0].id });
+          await base44.entities.AutoTraderRun.update(autoTraderRunId, {
+            status: 'canceled',
+            error_message: 'Lost secondary lock check to concurrent runner',
+            completed_at: new Date().toISOString()
+          });
+          return Response.json({
+            success: false,
+            message: 'Lost secondary lock check',
+            existing_run_id: allRunning[0].id
+          });
+        }
+        // We won — cancel the other(s)
+        for (const other of otherRunning) {
+          try {
+            await base44.entities.AutoTraderRun.update(other.id, {
+              status: 'canceled',
+              error_message: 'Lost secondary lock check to earlier runner',
+              completed_at: new Date().toISOString()
+            });
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      log('Secondary lock check failed, proceeding', { error: e.message });
+    }
+    
     log('Lock acquired, status set to running');
     
     // Check system health before proceeding (direct entity read to avoid cross-function auth issues)
