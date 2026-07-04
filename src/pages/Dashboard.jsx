@@ -255,14 +255,17 @@ export default function Dashboard() {
     window.addEventListener('trade:completed', handleDataRefresh);
     window.addEventListener('kraken:order-filled', handleKrakenOrderEvent);
     window.addEventListener('kraken:order-canceled', handleKrakenOrderEvent);
-    window.addEventListener('kraken:balance-update', handleDataRefresh);
+    // NOTE: Do NOT listen to 'kraken:balance-update' here — it fires every ~10s
+    // from the WS provider and causes flickering by triggering DB refetches that
+    // return different values than the WS-computed ones. The provider context
+    // already pushes live balance data via its state; DB data is only needed
+    // on actual trade/sync events.
     
     return () => {
       window.removeEventListener('kraken:synced', handleDataRefresh);
       window.removeEventListener('trade:completed', handleDataRefresh);
       window.removeEventListener('kraken:order-filled', handleKrakenOrderEvent);
       window.removeEventListener('kraken:order-canceled', handleKrakenOrderEvent);
-      window.removeEventListener('kraken:balance-update', handleDataRefresh);
     };
   }, [refreshWallet, refreshHoldings, refreshPrices, isSimMode, fetchKrakenData]);
 

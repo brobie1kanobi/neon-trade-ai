@@ -166,8 +166,16 @@ export function KrakenWebSocketProvider({ children }) {
     window.addEventListener('kraken:connected', handleUpdate);
     window.addEventListener('kraken:disconnected', handleUpdate);
 
-    // Fallback interval at 10s for connection-state changes
-    const interval = setInterval(() => setState(computeMetricsFromGlobal()), 10000);
+    // Fallback interval at 30s for connection-state changes only.
+    // Use functional update to avoid setting identical state (prevents re-renders).
+    const interval = setInterval(() => {
+      setState(prev => {
+        const next = computeMetricsFromGlobal();
+        // Only update if connection state actually changed
+        if (prev.isConnected !== next.isConnected) return next;
+        return prev;
+      });
+    }, 30000);
 
     return () => {
       window.removeEventListener('kraken:balance-update', handleUpdate);
@@ -485,22 +493,24 @@ export function KrakenWebSocketProvider({ children }) {
   const wsHasBalances = wsActuallyConnected && Object.keys(state.balances).length > 0;
   const restHasBalance = restData.krakenBalance?.success;
   
-  // CRITICAL: Best-available balance logic
-  // REST API (getKrakenBalance) is AUTHORITATIVE for initial load & cost basis.
-  // HOWEVER, once WS is connected and pushing balance/price updates, WS values
-  // are MORE CURRENT than the (potentially stale) REST snapshot.
-  // Priority: WS real-time (if connected & has data) > REST snapshot > 0
+  // CRITICAL: Best-available balance logic — ANTI-FLICKER
+  // REST API (getKrakenBalance) is the STABLE baseline for balances and holdings.
+  // WS-derived crypto value is unreliable when WS doesn't have prices for ALL
+  // holdings (missing prices → $0 → total drops → flicker). So:
+  //   - USD balance: WS is accurate (it's a single number, not price-dependent)
+  //   - Crypto value: Stick to REST snapshot; Dashboard recomputes with WS prices itself
+  //   - Holdings list: Always prefer REST (has quantities + snapshot prices)
   
-  const bestUsdBalance = wsHasBalances
-    ? state.usdBalance
-    : restHasBalance 
-      ? (restData.krakenBalance.usd_balance || 0)
+  const bestUsdBalance = restHasBalance
+    ? (restData.krakenBalance.usd_balance || 0)
+    : wsHasBalances
+      ? state.usdBalance
       : 0;
 
-  const bestCryptoValue = wsHasBalances
-    ? state.cryptoHoldingsValue
-    : restHasBalance 
-      ? (restData.krakenBalance.total_crypto_value_usd || 0)
+  const bestCryptoValue = restHasBalance 
+    ? (restData.krakenBalance.total_crypto_value_usd || 0)
+    : wsHasBalances
+      ? state.cryptoHoldingsValue
       : 0;
 
   const bestHoldings = restHasBalance
