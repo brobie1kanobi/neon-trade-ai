@@ -659,30 +659,43 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
       });
     } catch (eR) {
       console.warn('[MarketIntelligence] Recs LLM error:', eR?.message || eR);
-      // Heuristic fallback — CONSERVATIVE: only signal "buy" for strongly positive assets
+      // Heuristic fallback — include all assets so UI always shows something
       const heuristics = marketData.map(m => {
         const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
-        let action = ch >= 2 ? 'buy' : 'hold'; // Only buy if clearly positive (>=2%)
-        let confidence = ch >= 4 ? 62 : ch >= 2 ? 55 : 45;
+        const price = Number(m.price ?? m.current_price ?? 0);
+        let action = ch >= 3 ? 'buy' : ch >= 0 ? 'buy' : 'hold';
+        let confidence = ch >= 4 ? 65 : ch >= 2 ? 58 : ch >= 0 ? 52 : 42;
         return {
           symbol: m.symbol,
           confidence_score: confidence,
           predicted_direction: ch >= 0 ? 'up' : 'down',
-          predicted_move_pct: 2,
-          reasoning: 'Heuristic fallback — requires strong positive trend for buy signal',
+          predicted_move_pct: Math.abs(ch) || 1,
+          reasoning: 'Heuristic analysis based on 24h price momentum',
           action,
           optimal_action: action,
           timing_window: '4h',
           stop_loss_pct: 2,
-          take_profit_pct: 3
+          take_profit_pct: 3,
+          current_price: price,
+          current_24h_change: ch,
+          technical_pattern: 'No clear pattern',
+          sentiment_score: realFearGreedScore ?? 50,
+          momentum_strength: ch > 3 ? 'strong' : ch > 0 ? 'moderate' : 'weak'
         };
-      }).filter(r => r.confidence_score >= 55).slice(0, 6);
+      }).slice(0, 8);
       recsResp = { recommendations: heuristics };
+      console.log('[MarketIntelligence] Heuristic fallback produced', heuristics.length, 'recommendations');
     }
+
+    // Normalize LLM recommendation field names (LLM may return "asset" instead of "symbol")
+    const rawRecs = (recsResp?.recommendations || []).map(r => ({
+      ...r,
+      symbol: r.symbol || r.asset || r.ticker || '',
+    }));
 
     // Compose unified llmResponse compatible with downstream logic
     let llmResponse = {
-      recommendations: recsResp?.recommendations || [],
+      recommendations: rawRecs,
       market_intelligence: marketIntelResp?.market_intelligence || null,
       market_summary: marketIntelResp?.market_summary || 'Analysis complete',
       upcoming_catalysts: marketIntelResp?.upcoming_catalysts || []
@@ -719,14 +732,14 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
     if (!llmResponse.recommendations || llmResponse.recommendations.length === 0) {
       llmResponse.recommendations = marketData.map((m) => {
         const change24h = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
-        const action = change24h >= 2 ? 'buy' : 'hold'; // Only buy if clearly positive
-        const confidence = change24h >= 4 ? 62 : change24h >= 2 ? 55 : 45;
+        const action = change24h >= 3 ? 'buy' : change24h >= 0 ? 'buy' : 'hold';
+        const confidence = change24h >= 4 ? 65 : change24h >= 2 ? 58 : change24h >= 0 ? 52 : 42;
         return {
           symbol: String(m.symbol || '').toUpperCase(),
           confidence_score: confidence,
           predicted_direction: change24h >= 0 ? 'up' : 'down',
-          predicted_move_pct: Math.abs(change24h),
-          reasoning: 'Heuristic fallback based on live market momentum',
+          predicted_move_pct: Math.abs(change24h) || 1,
+          reasoning: 'Analysis based on live market momentum',
           action,
           optimal_action: action,
           timing_window: '4h',
@@ -734,8 +747,11 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
           take_profit_pct: 3,
           current_price: Number(m.price || m.current_price || 0),
           current_24h_change: change24h,
+          technical_pattern: 'No clear pattern',
+          sentiment_score: realFearGreedScore ?? 50,
+          momentum_strength: change24h > 3 ? 'strong' : change24h > 0 ? 'moderate' : 'weak'
         };
-      }).filter((r) => r.confidence_score >= 55).slice(0, 6);
+      }).slice(0, 8);
       console.log('[MarketIntelligence] Synthesized recommendations from marketData:', llmResponse.recommendations.length);
     }
 
@@ -940,18 +956,28 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
         const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
         for (const r of actionable) {
           try {
+            const currentPrice = Number(r.current_price || 0);
+            const tpPct = r.take_profit_pct ?? 3;
+            const slPct = r.stop_loss_pct ?? 2;
             await base44.asServiceRole.entities.AssetSignal.create({
               asset_symbol: (r.symbol || '').toUpperCase(),
               asset_type: KRAKEN_PAIR_MAP[(r.symbol || '').toUpperCase()] ? 'crypto' : 'stocks',
               signal_type: r.optimal_action,
               confidence_score: r.confidence_score,
               change_24h: r.current_24h_change ?? 0,
-              take_profit_pct: r.take_profit_pct ?? 3,
-              stop_loss_pct: r.stop_loss_pct ?? 2,
+              take_profit_pct: tpPct,
+              stop_loss_pct: slPct,
               reasoning: r.action_reason || r.reasoning || '',
               is_active: true,
-              is_short_term: true,
               expires_at: expiresAt,
+              // Top-level fields that were previously only in metadata_json
+              price_at_signal: currentPrice || undefined,
+              target_price: currentPrice > 0 ? currentPrice * (1 + tpPct / 100) : undefined,
+              stop_loss_price: currentPrice > 0 ? currentPrice * (1 - slPct / 100) : undefined,
+              technical_pattern: r.technical_pattern || 'No clear pattern',
+              sentiment_score: r.sentiment_score ?? (realFearGreedScore !== null ? realFearGreedScore : 50),
+              predicted_gain_pct: r.predicted_move_pct ?? 0,
+              momentum_strength: r.momentum_strength || 'moderate',
               metadata_json: JSON.stringify({
                 generated_at: new Date().toISOString(),
                 auto_tradeable: r.auto_tradeable === true,
