@@ -1,0 +1,41 @@
+{
+  "name": "SyncState",
+  "type": "object",
+  "properties": {
+    "entity_name": {
+      "type": "string",
+      "description": "Name of the Base44 entity being synced"
+    },
+    "last_synced_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The max updated_date from the last successful sync batch"
+    }
+  },
+  "required": [
+    "entity_name",
+    "last_synced_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

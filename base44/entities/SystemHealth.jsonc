@@ -9,7 +9,8 @@
         "kraken_ws",
         "auto_trader",
         "market_data",
-        "ai_signals"
+        "ai_signals",
+        "supabase_sync"
       ],
       "description": "System component being monitored"
     },
