@@ -17,8 +17,9 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const role = (user.role || '').toLowerCase();
+    console.log(`[manualTestTrade] User: ${user.email}, role: ${user.role}, is_creator: ${user.is_creator}`);
     if (role !== 'admin' && !user.is_creator) {
-      return Response.json({ error: 'Admin only' }, { status: 403 });
+      return Response.json({ error: 'Admin only', user_role: user.role }, { status: 403 });
     }
 
     const body = await req.json();
@@ -78,8 +79,9 @@ Deno.serve(async (req) => {
     }
 
     // ---- Step 2: Execute via krakenTrade (the real pipeline) ----
+    // CRITICAL: Use user-scoped invoke (not asServiceRole) so krakenTrade sees the admin user token
     console.log(`[manualTestTrade] Invoking krakenTrade: ${action} ${quantity} ${symbol}`);
-    const tradeResp = await base44.asServiceRole.functions.invoke('krakenTrade', {
+    const tradeResp = await base44.functions.invoke('krakenTrade', {
       action: 'place_order',
       symbol,
       side: action,
