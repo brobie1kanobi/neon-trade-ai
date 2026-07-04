@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
         record,
         payload: {
           market_intelligence: {
-            market_sentiment_score: record.market_sentiment_score ?? 50,
+            market_sentiment_score: record.market_sentiment_score ?? (realFearGreedScore !== null ? realFearGreedScore : 50),
             market_regime: record.market_regime || 'range',
             volatility_level: record.volatility_level || 'moderate',
             momentum_direction: record.momentum_direction || 'neutral',
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       const cacheRecord = {
         cache_key: cacheKey,
         symbols_json: JSON.stringify([...new Set((symbolList || []).map((s) => String(s || '').toUpperCase()).filter(Boolean))].sort()),
-        market_sentiment_score: marketIntel.market_sentiment_score ?? 50,
+        market_sentiment_score: marketIntel.market_sentiment_score ?? (realFearGreedScore !== null ? realFearGreedScore : 50),
         market_regime: marketIntel.market_regime || 'range',
         volatility_level: marketIntel.volatility_level || 'moderate',
         momentum_direction: marketIntel.momentum_direction || 'neutral',
@@ -174,6 +174,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Fetch real Fear & Greed Index from free public API (no key, no LLM credits)
+    // This runs in parallel with Kraken price fetch below
+    let realFearGreedScore = null;
+    let realFearGreedLabel = null;
+    const fearGreedPromise = (async () => {
+      try {
+        const ac = new AbortController();
+        const to = setTimeout(() => ac.abort(), 4000);
+        const res = await fetch('https://api.alternative.me/fng/?limit=1', { signal: ac.signal });
+        clearTimeout(to);
+        if (res.ok) {
+          const json = await res.json();
+          const entry = json?.data?.[0];
+          if (entry?.value) {
+            realFearGreedScore = parseInt(entry.value, 10);
+            realFearGreedLabel = entry.value_classification || null;
+            console.log('[MarketIntelligence] Real Fear & Greed Index:', realFearGreedScore, realFearGreedLabel);
+          }
+        }
+      } catch (e) {
+        console.warn('[MarketIntelligence] Fear & Greed fetch failed:', e.message);
+      }
+    })();
+
     // Fetch current market data from Kraken public API directly (avoids function-to-function 403)
     const KRAKEN_PAIR_MAP = {
       'BTC': 'XXBTZUSD', 'ETH': 'XETHZUSD', 'SOL': 'SOLUSD', 'XRP': 'XXRPZUSD',
@@ -223,6 +247,15 @@ Deno.serve(async (req) => {
       console.error('[MarketIntelligence] Market data error:', err);
     }
 
+    // Await Fear & Greed result (was fetching in parallel with Kraken)
+    await fearGreedPromise;
+
+    // Helper: get the real Fear & Greed score, or compute a heuristic from price data
+    function getFearGreedScore(avgChange) {
+      if (realFearGreedScore !== null) return realFearGreedScore;
+      return Math.max(5, Math.min(95, 50 + avgChange * 5));
+    }
+
     // FAST PATH: If the remaining budget is tight, skip LLM and history to avoid 502s
     if (timeLeft() < 7000) {
       const recs = (marketData || []).map(m => {
@@ -248,7 +281,7 @@ Deno.serve(async (req) => {
       const avg = recs.reduce((a, r) => a + (r.current_24h_change || 0), 0) / (recs.length || 1);
       const sorted = [...recs].sort((a, b) => b.current_24h_change - a.current_24h_change);
       const intel = {
-        market_sentiment_score: Math.max(5, Math.min(95, 50 + avg * 5)),
+        market_sentiment_score: getFearGreedScore(avg),
         market_regime: avg > 0.5 ? 'risk-on' : avg < -0.5 ? 'risk-off' : 'range',
         volatility_level: Math.abs(avg) > 3 ? 'high' : Math.abs(avg) > 1 ? 'moderate' : 'low',
         momentum_direction: avg > 0.5 ? 'bullish' : avg < -0.5 ? 'bearish' : 'neutral',
@@ -565,8 +598,7 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
           const avgChange = marketData.length > 0
             ? marketData.reduce((sum, m) => sum + (m.change_24h_percent || 0), 0) / marketData.length
             : 0;
-          // More aggressive scaling: 5x multiplier so small moves produce meaningful scores
-          const sentimentScore = Math.max(5, Math.min(95, 50 + avgChange * 5));
+          const sentimentScore = getFearGreedScore(avgChange);
           const regime = avgChange > 1 ? 'risk-on' : avgChange < -1 ? 'risk-off' : 'range';
           const vol = Math.abs(avgChange) > 3 ? 'high' : Math.abs(avgChange) > 1 ? 'moderate' : 'low';
           const direction = avgChange > 0.5 ? 'bullish' : avgChange < -0.5 ? 'bearish' : 'neutral';
@@ -590,6 +622,14 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
             upcoming_catalysts: []
           };
         }
+      }
+
+      // CRITICAL: Override LLM's sentiment score with real Fear & Greed Index when available
+      // The LLM often defaults to ~50 — the real F&G API is authoritative for this metric
+      if (realFearGreedScore !== null && marketIntelResp?.market_intelligence) {
+        const llmScore = marketIntelResp.market_intelligence.market_sentiment_score;
+        marketIntelResp.market_intelligence.market_sentiment_score = realFearGreedScore;
+        console.log(`[MarketIntelligence] Overrode LLM sentiment ${llmScore} with real Fear & Greed: ${realFearGreedScore} (${realFearGreedLabel})`);
       }
 
       if (includeMarketIntelligence) {
