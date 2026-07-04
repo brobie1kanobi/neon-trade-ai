@@ -626,7 +626,7 @@ export default function Dashboard() {
     const pctChange = prevTotal > 0 ? (totalDelta / prevTotal) * 100 : 0;
 
     setChange24h({ value: totalDelta, percentage: pctChange });
-  }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance, wsUpdateCounter]);
+  }, [effectiveHoldings, wallet, priceData, isSimMode, wsUsdBalance]);
 
   useEffect(() => {
     compute24hChange();
@@ -780,29 +780,38 @@ export default function Dashboard() {
   // wsUpdateCounter is included so these re-derive on every WS balance/price push
   const currentCashBalance = React.useMemo(() => {
     if (isSimMode) return wallet?.cash_balance || 0;
+    // LIVE: REST snapshot is the stable source; only use WS if no snapshot yet
     if (hasKrakenSnapshot) return providerKrakenBalance?.available_usd_balance ?? providerKrakenBalance?.total_usd_balance ?? 0;
     return wsUsdBalance || 0;
-  }, [isSimMode, wallet?.cash_balance, hasKrakenSnapshot, providerKrakenBalance, wsUsdBalance, wsUpdateCounter]);
+  }, [isSimMode, wallet?.cash_balance, hasKrakenSnapshot, providerKrakenBalance, wsUsdBalance]);
 
   const liveBalancesLoading = !isSimMode && !(hasKrakenSnapshot || (wsConnected && wsBalances && Object.keys(wsBalances || {}).length > 0));
 
   const currentPortfolioValue = React.useMemo(() => {
     if (isSimMode) return portfolioMarketValue;
-    // LIVE: Recompute crypto value from REST holdings + latest WS/poll prices
-    // This ensures the portfolio value updates every 30s with fresh prices
+    // LIVE: Use REST snapshot as the stable baseline.
+    // Only layer on WS prices when ALL holdings can be priced (avoids flicker
+    // when WS has prices for some holdings but not others → partial $0 → jump).
+    const restTotal = providerKrakenBalance?.total_crypto_value_usd ?? 0;
     if (hasKrakenSnapshot && providerBestHoldings?.length > 0) {
       let liveTotal = 0;
+      let allPriced = true;
       for (const h of providerBestHoldings) {
         const qty = h.quantity || 0;
-        // Prefer real-time WS price, fall back to REST snapshot price
+        if (qty <= 0.00001) continue;
         const wsPair = `${h.symbol}/USD`;
-        const livePrice = wsPrices?.[wsPair]?.price || h.current_price_usd || 0;
-        liveTotal += qty * livePrice;
+        const livePrice = wsPrices?.[wsPair]?.price || 0;
+        const snapshotPrice = h.current_price_usd || 0;
+        const bestPrice = livePrice || snapshotPrice;
+        if (bestPrice <= 0) { allPriced = false; break; }
+        liveTotal += qty * bestPrice;
       }
-      return liveTotal > 0 ? liveTotal : (providerKrakenBalance?.total_crypto_value_usd ?? 0);
+      // Only use the live-recomputed total if every holding had a valid price;
+      // otherwise stick with the REST snapshot to avoid jarring drops.
+      return allPriced && liveTotal > 0 ? liveTotal : restTotal;
     }
-    return wsCryptoValue || 0;
-  }, [isSimMode, portfolioMarketValue, hasKrakenSnapshot, providerKrakenBalance, providerBestHoldings, wsPrices, wsCryptoValue, wsUpdateCounter]);
+    return restTotal || wsCryptoValue || 0;
+  }, [isSimMode, portfolioMarketValue, hasKrakenSnapshot, providerKrakenBalance, providerBestHoldings, wsPrices, wsCryptoValue]);
     
   // Total Balance = Cash + Portfolio (crypto)
   // CRITICAL: Always sum cash + live-recomputed portfolio to stay in sync with price updates
