@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
 
     // Global execution deadline to avoid 502 timeouts
     const start = Date.now();
-    const DEADLINE_MS = 24000; // keep below platform hard limit
+    const DEADLINE_MS = 28000; // keep below platform hard limit (~30s)
     const timeLeft = () => Math.max(0, DEADLINE_MS - (Date.now() - start));
     const ensureTime = (pad = 500) => Math.max(2000, timeLeft() - pad);
     
@@ -118,41 +118,116 @@ Deno.serve(async (req) => {
       ]);
     };
 
-    // ── Hugging Face LLM Helper ──
+    // ── Hugging Face LLM Helper with 503 cold-start retry ──
     const HF_MODEL = 'meta-llama/Llama-3.1-8B-Instruct';
     const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 
     async function callHuggingFace(systemPrompt, userPrompt, timeoutMs = 15000) {
       const token = Deno.env.get('HUGGINGFACE_API_TOKEN');
       if (!token) throw new Error('HUGGINGFACE_API_TOKEN not set');
-      const ac = new AbortController();
-      const to = setTimeout(() => ac.abort(), timeoutMs);
-      try {
-        const res = await fetch(HF_URL, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: HF_MODEL,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 2048
-          }),
-          signal: ac.signal
-        });
-        clearTimeout(to);
-        if (!res.ok) throw new Error(`HF API ${res.status}: ${await res.text()}`);
-        const data = await res.json();
-        const text = data?.choices?.[0]?.message?.content || '';
-        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
-        if (!jsonMatch) throw new Error('No JSON in HF response');
-        return JSON.parse(jsonMatch[1].trim());
-      } catch (e) {
-        clearTimeout(to);
-        throw e;
+
+      const MAX_RETRIES = 2; // up to 2 retries for 503 cold-start
+      const hfPayload = JSON.stringify({
+        model: HF_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2048
+      });
+
+      const callStart = Date.now();
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const elapsed = Date.now() - callStart;
+        const remainingMs = timeoutMs - elapsed;
+        if (remainingMs < 3000) {
+          throw new Error(`HF: insufficient time for attempt ${attempt + 1} (${remainingMs}ms left of ${timeoutMs}ms budget)`);
+        }
+
+        const ac = new AbortController();
+        const perAttemptTimeout = Math.min(remainingMs - 500, 15000); // leave 500ms buffer
+        const to = setTimeout(() => ac.abort(), perAttemptTimeout);
+
+        try {
+          const res = await fetch(HF_URL, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: hfPayload,
+            signal: ac.signal
+          });
+          clearTimeout(to);
+
+          // Handle 503 cold-start: HF returns {"error":"Model ... is currently loading","estimated_time":N}
+          if (res.status === 503) {
+            const bodyText = await res.text();
+            let waitSec = 5; // default wait
+            try {
+              const errBody = JSON.parse(bodyText);
+              if (errBody.estimated_time) {
+                waitSec = Math.min(Math.ceil(errBody.estimated_time), 15);
+              }
+            } catch (_) {}
+            console.warn(`[HF] 503 cold-start (attempt ${attempt + 1}/${MAX_RETRIES + 1}): model loading, estimated_time=${waitSec}s. Body: ${bodyText.substring(0, 200)}`);
+            
+            if (attempt < MAX_RETRIES && (timeoutMs - (Date.now() - callStart)) > (waitSec * 1000 + 3000)) {
+              // Wait for cold-start then retry
+              await new Promise(r => setTimeout(r, waitSec * 1000));
+              continue;
+            }
+            throw new Error(`HF 503 cold-start after ${attempt + 1} attempts: ${bodyText.substring(0, 200)}`);
+          }
+
+          // Handle other non-OK statuses with detailed logging
+          if (!res.ok) {
+            const errText = await res.text();
+            console.error(`[HF] API error ${res.status} (attempt ${attempt + 1}): ${errText.substring(0, 300)}`);
+            // 429 rate limit — no retry, throw immediately
+            if (res.status === 429) throw new Error(`HF rate limited (429): ${errText.substring(0, 200)}`);
+            // 401/403 auth errors — no retry
+            if (res.status === 401 || res.status === 403) throw new Error(`HF auth error (${res.status}): ${errText.substring(0, 200)}`);
+            // Other errors: retry if attempts remain
+            if (attempt < MAX_RETRIES) {
+              await new Promise(r => setTimeout(r, 2000));
+              continue;
+            }
+            throw new Error(`HF API ${res.status} after ${attempt + 1} attempts: ${errText.substring(0, 200)}`);
+          }
+
+          // Success — parse response
+          const data = await res.json();
+          const text = data?.choices?.[0]?.message?.content || '';
+          if (!text) {
+            console.warn(`[HF] Empty content in response (attempt ${attempt + 1}). Full response keys:`, Object.keys(data || {}));
+            throw new Error('HF returned empty content');
+          }
+
+          const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+          if (!jsonMatch) {
+            console.warn(`[HF] No JSON found in response (attempt ${attempt + 1}). Content preview: ${text.substring(0, 200)}`);
+            throw new Error(`No JSON in HF response. Preview: ${text.substring(0, 100)}`);
+          }
+          
+          const parsed = JSON.parse(jsonMatch[1].trim());
+          console.log(`[HF] ✅ Success on attempt ${attempt + 1}, parsed ${Object.keys(parsed).length} keys`);
+          return parsed;
+
+        } catch (e) {
+          clearTimeout(to);
+          if (e.name === 'AbortError') {
+            console.error(`[HF] Request timed out (attempt ${attempt + 1}/${MAX_RETRIES + 1}, timeout=${Math.min(timeoutMs, 15000)}ms)`);
+            if (attempt < MAX_RETRIES) continue;
+            throw new Error(`HF timed out after ${attempt + 1} attempts`);
+          }
+          // JSON parse error or other — log and rethrow on last attempt
+          if (attempt >= MAX_RETRIES) {
+            console.error(`[HF] Final failure (attempt ${attempt + 1}):`, e.message);
+            throw e;
+          }
+          console.warn(`[HF] Attempt ${attempt + 1} failed: ${e.message} — retrying...`);
+        }
       }
+      throw new Error('HF: exhausted all retry attempts');
     }
 
     // Get user's auto-buy preferences (check both sim and live)
@@ -508,17 +583,19 @@ For each asset:
       }
     };
 
-    async function invokeLLM({ prompt, model, withWeb, schema, label, timeoutMs }) {
+    async function invokeLLM({ prompt, label, timeoutMs }) {
       const baseMs = typeof timeoutMs === 'number' ? timeoutMs : 12000;
       const ms = Math.min(baseMs, ensureTime());
-      return await withTimeout(
-        callHuggingFace(
-          'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.',
-          prompt + '\n\nRespond with valid JSON only.',
-          ms
-        ),
-        ms,
-        label || 'HF invocation'
+      if (ms < 4000) {
+        console.warn(`[HF] Skipping ${label || 'LLM call'} — only ${ms}ms left, need ≥4000ms`);
+        throw new Error(`Insufficient time for ${label || 'LLM call'}: ${ms}ms`);
+      }
+      console.log(`[HF] Starting ${label || 'LLM call'} with ${ms}ms budget`);
+      // callHuggingFace handles its own per-attempt timeouts and retries
+      return await callHuggingFace(
+        'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.',
+        prompt + '\n\nRespond with valid JSON only.',
+        ms
       );
     }
 
@@ -569,7 +646,7 @@ Return JSON with: market_sentiment_score (0-100, BE SPECIFIC not 50), market_reg
               timeoutMs: ensureTime()
             });
       } catch (eA) {
-        console.warn('[MarketIntelligence] Intel LLM error (primary):', eA?.message || eA);
+        console.error('[MarketIntelligence] ❌ Intel LLM FAILED (primary HF call). Error:', eA?.message || eA);
         try {
           // Fallback: use default model WITHOUT web context (faster, more reliable)
           const avgCh = marketData.length > 0 ? marketData.reduce((s, m) => s + (m.change_24h_percent || 0), 0) / marketData.length : 0;
@@ -593,7 +670,7 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
             timeoutMs: ensureTime()
           });
         } catch (eB) {
-          console.warn('[MarketIntelligence] Intel LLM error (fallback):', eB?.message || eB);
+          console.error('[MarketIntelligence] ❌ Intel LLM FAILED (fallback HF call). Error:', eB?.message || eB);
           // Build heuristic from actual market data instead of showing "unavailable"
           const avgChange = marketData.length > 0
             ? marketData.reduce((sum, m) => sum + (m.change_24h_percent || 0), 0) / marketData.length
@@ -658,7 +735,7 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
         timeoutMs: ensureTime()
       });
     } catch (eR) {
-      console.warn('[MarketIntelligence] Recs LLM error:', eR?.message || eR);
+      console.error('[MarketIntelligence] ❌ Recs LLM FAILED — falling back to heuristic. Error:', eR?.message || eR);
       // Heuristic fallback — include all assets so UI always shows something
       const heuristics = marketData.map(m => {
         const ch = Number(m.change_24h_percent ?? m.price_change_percentage_24h ?? 0);
