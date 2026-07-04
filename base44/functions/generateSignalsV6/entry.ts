@@ -255,47 +255,69 @@ function applyBtcCorrelation(action, confidence, btcMomentum, isCorrelatedAlt) {
   return { action: adjAction, confidence: adjConf, reason_suffix: suffix };
 }
 
-// ==================== SENTIMENT ANALYSIS (LLM) ====================
+// ==================== HUGGING FACE LLM HELPER ====================
+
+const HF_MODEL = 'meta-llama/Llama-3.1-8B-Instruct';
+const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
+
+async function callHuggingFace(systemPrompt, userPrompt, timeoutMs = 15000) {
+  const token = Deno.env.get('HUGGINGFACE_API_TOKEN');
+  if (!token) throw new Error('HUGGINGFACE_API_TOKEN not set');
+  const ac = new AbortController();
+  const to = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(HF_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: HF_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2048
+      }),
+      signal: ac.signal
+    });
+    clearTimeout(to);
+    if (!res.ok) throw new Error(`HF API ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || '';
+    // Extract JSON from response (handle markdown code blocks)
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) throw new Error('No JSON in HF response');
+    return JSON.parse(jsonMatch[1].trim());
+  } catch (e) {
+    clearTimeout(to);
+    throw e;
+  }
+}
+
+// ==================== SENTIMENT ANALYSIS (HF LLM) ====================
 
 async function analyzeSentiment(base44, symbols, timeLeft) {
   if (timeLeft() < 8000) return {};
   const results = {};
   const symbolList = symbols.join(', ');
   try {
-    const resp = await base44.asServiceRole.integrations.Core.InvokeLLM({
-      prompt: `You are a crypto market analyst. For each of these assets: ${symbolList}
+    const resp = await callHuggingFace(
+      'You are a crypto market analyst. Always respond with valid JSON only, no extra text.',
+      `Analyze current market sentiment for these assets: ${symbolList}
 
-Analyze current market sentiment based on your knowledge of recent trends, news, and market conditions.
 For each asset provide:
-- sentiment_score: -100 (extreme fear/bearish) to +100 (extreme greed/bullish)  
+- sentiment_score: -100 (extreme fear/bearish) to +100 (extreme greed/bullish)
 - brief reasoning (1 sentence)
 
-Also provide an overall_market assessment with a score and brief summary.`,
-      response_json_schema: {
-        type: 'object',
-        properties: {
-          assets: {
-            type: 'object',
-            additionalProperties: {
-              type: 'object',
-              properties: {
-                sentiment_score: { type: 'number' },
-                reasoning: { type: 'string' }
-              }
-            }
-          },
-          overall_market: {
-            type: 'object',
-            properties: {
-              score: { type: 'number' },
-              summary: { type: 'string' }
-            }
-          }
-        }
-      },
-      model: 'gemini_3_flash',
-      add_context_from_internet: true
-    });
+Also provide an overall_market assessment with a score and brief summary.
+
+Respond with JSON in this exact format:
+{
+  "assets": { "BTC": { "sentiment_score": 25, "reasoning": "..." }, ... },
+  "overall_market": { "score": 30, "summary": "..." }
+}`,
+      Math.min(15000, timeLeft() - 1000)
+    );
     if (resp?.assets) {
       for (const [sym, data] of Object.entries(resp.assets)) {
         const key = sym.toUpperCase();
@@ -310,7 +332,7 @@ Also provide an overall_market assessment with a score and brief summary.`,
     }
     console.log('[v7] Sentiment analysis complete for', Object.keys(results).length, 'assets');
   } catch (e) {
-    console.warn('[v7] Sentiment analysis failed:', e?.message || e);
+    console.warn('[v7] Sentiment analysis failed (HF):', e?.message || e);
   }
   return results;
 }

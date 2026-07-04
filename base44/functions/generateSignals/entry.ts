@@ -314,6 +314,44 @@ function scoreToSignal(compositeScore) {
 }
 
 
+// ==================== HUGGING FACE LLM HELPER ====================
+
+const HF_MODEL = 'meta-llama/Llama-3.1-8B-Instruct';
+const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
+
+async function callHuggingFace(systemPrompt, userPrompt, timeoutMs = 15000) {
+  const token = Deno.env.get('HUGGINGFACE_API_TOKEN');
+  if (!token) throw new Error('HUGGINGFACE_API_TOKEN not set');
+  const ac = new AbortController();
+  const to = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(HF_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: HF_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2048
+      }),
+      signal: ac.signal
+    });
+    clearTimeout(to);
+    if (!res.ok) throw new Error(`HF API ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || '';
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) throw new Error('No JSON in HF response');
+    return JSON.parse(jsonMatch[1].trim());
+  } catch (e) {
+    clearTimeout(to);
+    throw e;
+  }
+}
+
 Deno.serve(async (req) => {
   const startTime = Date.now();
   const DEADLINE_MS = 28000;
@@ -631,66 +669,44 @@ Deno.serve(async (req) => {
       console.log('[generateSignals] Running sentiment analysis...');
       const sentimentSymbols = cryptoSymbols.join(', ');
 
-      // Primary: web-enabled, fast model with strict timeout
+      // Primary: Hugging Face Inference API
       let sentimentResponse = null;
       try {
         sentimentResponse = await withTimeout(
-          base44.integrations.Core.InvokeLLM({
-            prompt: `You are a financial sentiment analyst. Analyze relative sentiment for these assets: ${sentimentSymbols}. Return compact JSON with per-asset sentiment_score (0-100), label, and one-line reason.`,
-            add_context_from_internet: true,
-            response_json_schema: {
-              type: "object",
-              properties: {
-                overall_market_sentiment: { type: "number" },
-                overall_fear_greed: { type: "string" },
-                market_narrative: { type: "string" },
-                assets: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      symbol: { type: "string" },
-                      sentiment_score: { type: "number" },
-                      sentiment_label: { type: "string" },
-                      key_news: { type: "string" },
-                      social_buzz: { type: "string" },
-                      upcoming_catalyst: { type: "string" }
-                    }
-                  }
-                }
-              }
-            },
-            model: 'gemini_3_flash'
-          }),
+          callHuggingFace(
+            'You are a financial sentiment analyst. Always respond with valid JSON only.',
+            `Analyze relative sentiment for these crypto assets: ${sentimentSymbols}. Return JSON with:
+- overall_market_sentiment (0-100)
+- overall_fear_greed ("extreme_fear"|"fear"|"neutral"|"greed"|"extreme_greed")
+- market_narrative (1 sentence)
+- assets: array of {symbol, sentiment_score (0-100), sentiment_label, key_news, social_buzz, upcoming_catalyst}
+
+JSON only, no extra text.`,
+            12000
+          ),
           12000,
-          'sentiment LLM'
+          'sentiment HF'
         );
       } catch (primaryErr) {
-        console.warn('[generateSignals] Sentiment primary failed:', primaryErr.message);
+        console.warn('[generateSignals] Sentiment HF failed:', primaryErr.message);
       }
 
-      // Fallback: no web, faster JSON model
+      // Fallback: second attempt with simpler prompt
       if (!sentimentResponse?.assets) {
-        console.warn('[generateSignals] Sentiment primary empty, trying fallback model');
-        sentimentResponse = await withTimeout(
-          base44.integrations.Core.InvokeLLM({
-            prompt: `You are a financial sentiment analyst. Analyze relative sentiment for: ${sentimentSymbols}. Return numeric sentiment scores (0-100) only with brief reasoning.`,
-            add_context_from_internet: true,
-            response_json_schema: {
-              type: 'object',
-              properties: {
-                overall_market_sentiment: { type: 'number' },
-                assets: {
-                  type: 'array',
-                  items: { type: 'object', properties: { symbol: { type: 'string' }, sentiment_score: { type: 'number' }, sentiment_label: { type: 'string' } } }
-                }
-              }
-            },
-            model: 'gemini_3_flash'
-          }),
-          9000,
-          'sentiment LLM fallback'
-        );
+        console.warn('[generateSignals] Sentiment primary empty, trying HF fallback');
+        try {
+          sentimentResponse = await withTimeout(
+            callHuggingFace(
+              'You are a financial sentiment analyst. Always respond with valid JSON only.',
+              `Analyze sentiment for: ${sentimentSymbols}. Return JSON: {"overall_market_sentiment": 50, "assets": [{"symbol": "BTC", "sentiment_score": 55, "sentiment_label": "neutral"}]}`,
+              9000
+            ),
+            9000,
+            'sentiment HF fallback'
+          );
+        } catch (fbErr) {
+          console.warn('[generateSignals] Sentiment HF fallback failed:', fbErr.message);
+        }
       }
 
       if (sentimentResponse?.assets) {
@@ -757,98 +773,41 @@ Deno.serve(async (req) => {
 
     let aiRecommendations = [];
     try {
-      console.log('[generateSignals] Calling LLM with full technical + sentiment context...');
+      console.log('[generateSignals] Calling HF LLM with full technical + sentiment context...');
       let llmResponse;
       try {
         llmResponse = await withTimeout(
-          base44.integrations.Core.InvokeLLM({
-        prompt: `You are a CONSERVATIVE quantitative trading system optimized for 80%+ WIN RATE.
-You have access to real technical indicators (RSI, MACD, Bollinger Bands, ATR, VWAP, EMAs) computed from actual OHLC data.
+          callHuggingFace(
+            'You are a CONSERVATIVE quantitative trading system optimized for 80%+ WIN RATE. Always respond with valid JSON only.',
+            `Using the technical data below, provide trading recommendations.
 
 OVERALL MARKET: Sentiment ${overallSent.score || '?'}/100, Fear/Greed: ${overallSent.fear_greed || '?'}
-${overallSent.narrative || ''}
 
-=== STRICT SIGNAL RULES ===
-
-STRONG_BUY (auto-execute) — At LEAST 2 must be true (or strong momentum):
-1. RSI between 30-85 (not overbought)
-2. MACD histogram positive OR bullish crossover
-3. Price near or below Bollinger middle band (%B < 60)
-4. 6h AND 12h trends positive (even if the current pace is falling)
-5. Volume increasing or expected to be increasing
-6. Sentiment score > 50
-7. Historical win rate > 50% (if history exists)
-→ Confidence 50%+
-
-BUY — At least 1 of above criteria met, confidence 45-59%
-HOLD — Conflicting signals, RSI 40-60, no clear direction
-SELL — RSI > 65 + bearish MACD + negative trends
-STRONG_SELL — RSI > 70 + bearish cross + high volume selling
-
-=== RISK PARAMETERS ===
-- SL: 0.5-2% (TIGHT — user wants strict stop-losses. Use ATR: 1x ATR as SL, max 2%)
-- TP: 2-8% (min 2.5:1 reward-to-risk ratio)
-- Entry zone: within 0.5% of current price — only enter at optimal levels
-- CRITICAL: Only recommend BUY when the risk of immediate 1%+ drawdown is LOW
-
-=== ASSETS ===
+ASSETS:
 ${assetsSection}
 
-For each asset, provide:
-symbol, optimal_action, confidence_score (0-100), entry_zone_low, entry_zone_high,
-stop_loss_pct (1-3%), take_profit_pct (2-8%), momentum_strength (strong/moderate/weak),
-timing_window (1h/2h/4h/6h), predicted_gain_percent, sentiment_score (0-100),
-reasoning (cite specific indicator values), technical_pattern, trend_alignment,
-volume_confirmation (bool), correlation_group
+For each asset provide JSON: {"recommendations": [{"symbol", "optimal_action" (strong_buy/buy/hold/sell/strong_sell), "confidence_score" (0-100), "entry_zone_low", "entry_zone_high", "stop_loss_pct" (1-3), "take_profit_pct" (2-8), "momentum_strength" (strong/moderate/weak), "timing_window" (1h/2h/4h/6h), "predicted_gain_percent", "sentiment_score" (0-100), "reasoning", "technical_pattern", "trend_alignment", "volume_confirmation" (bool), "correlation_group"}]}
 
-BE cautiously optimistic, but SELECTIVE. "hold" is always better than a false "strong_buy".`,
-        add_context_from_internet: true,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            recommendations: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  symbol: { type: "string" },
-                  optimal_action: { type: "string" },
-                  confidence_score: { type: "number" },
-                  entry_zone_low: { type: "number" },
-                  entry_zone_high: { type: "number" },
-                  stop_loss_pct: { type: "number" },
-                  take_profit_pct: { type: "number" },
-                  momentum_strength: { type: "string" },
-                  timing_window: { type: "string" },
-                  predicted_gain_percent: { type: "number" },
-                  sentiment_score: { type: "number" },
-                  reasoning: { type: "string" },
-                  technical_pattern: { type: "string" },
-                  trend_alignment: { type: "string" },
-                  volume_confirmation: { type: "boolean" },
-                  correlation_group: { type: "string" }
-                }
-              }
-            }
-          }
-        },
-         model: 'gemini_3_flash'
-        }), Math.min(7000, timeLeft()-200), 'contextual LLM');
+Be conservative. "hold" is better than a false "strong_buy". JSON only.`,
+            Math.min(12000, timeLeft() - 200)
+          ),
+          Math.min(12000, timeLeft() - 200),
+          'contextual HF'
+        );
       } catch (e1) {
-        console.warn('[generateSignals] Contextual LLM primary failed:', e1.message);
+        console.warn('[generateSignals] Contextual HF primary failed:', e1.message);
         try {
           llmResponse = await withTimeout(
-            base44.integrations.Core.InvokeLLM({
-              prompt: `You are a CONSERVATIVE quantitative trading system. Using ONLY the assets listed below, output compact JSON recommendations with symbol, optimal_action, confidence_score, stop_loss_pct (1-3), take_profit_pct (2-8), momentum_strength, timing_window, predicted_gain_percent, sentiment_score, reasoning.\nASSETS (concise):\n${assetsSection}`,
-              add_context_from_internet: true,
-              response_json_schema: {
-                type: 'object',
-                properties: { recommendations: { type: 'array', items: { type: 'object', properties: { symbol: {type:'string'}, optimal_action:{type:'string'}, confidence_score:{type:'number'}, stop_loss_pct:{type:'number'}, take_profit_pct:{type:'number'}, momentum_strength:{type:'string'}, timing_window:{type:'string'}, predicted_gain_percent:{type:'number'}, sentiment_score:{type:'number'}, reasoning:{type:'string'} } } } }
-              },
-              model: 'gemini_3_flash'
-            }), Math.min(5000, timeLeft()-200), 'contextual LLM fallback');
+            callHuggingFace(
+              'You are a CONSERVATIVE quantitative trading system. Always respond with valid JSON only.',
+              `Output compact JSON recommendations for these assets. Format: {"recommendations": [{"symbol", "optimal_action", "confidence_score", "stop_loss_pct", "take_profit_pct", "momentum_strength", "timing_window", "predicted_gain_percent", "sentiment_score", "reasoning"}]}\n\nASSETS:\n${assetsSection}\n\nJSON only.`,
+              Math.min(8000, timeLeft() - 200)
+            ),
+            Math.min(8000, timeLeft() - 200),
+            'contextual HF fallback'
+          );
         } catch (e2) {
-          console.warn('[generateSignals] Contextual LLM fallback failed:', e2.message);
+          console.warn('[generateSignals] Contextual HF fallback failed:', e2.message);
           llmResponse = { recommendations: [] };
         }
       }

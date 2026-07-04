@@ -118,6 +118,43 @@ Deno.serve(async (req) => {
       ]);
     };
 
+    // ── Hugging Face LLM Helper ──
+    const HF_MODEL = 'meta-llama/Llama-3.1-8B-Instruct';
+    const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
+
+    async function callHuggingFace(systemPrompt, userPrompt, timeoutMs = 15000) {
+      const token = Deno.env.get('HUGGINGFACE_API_TOKEN');
+      if (!token) throw new Error('HUGGINGFACE_API_TOKEN not set');
+      const ac = new AbortController();
+      const to = setTimeout(() => ac.abort(), timeoutMs);
+      try {
+        const res = await fetch(HF_URL, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: HF_MODEL,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 2048
+          }),
+          signal: ac.signal
+        });
+        clearTimeout(to);
+        if (!res.ok) throw new Error(`HF API ${res.status}: ${await res.text()}`);
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content || '';
+        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+        if (!jsonMatch) throw new Error('No JSON in HF response');
+        return JSON.parse(jsonMatch[1].trim());
+      } catch (e) {
+        clearTimeout(to);
+        throw e;
+      }
+    }
+
     // Get user's auto-buy preferences (check both sim and live)
     const autoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
       created_by: user.email,
@@ -258,35 +295,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch recent government spending data for signal enrichment
-    let govSpendingSection = '';
-    if (timeLeft() > 12000) {
-      try {
-        const recentAwards = await base44.asServiceRole.entities.GovSpendingAward.filter({}, '-created_date', 30);
-        const bullishAwards = recentAwards.filter(a => a.signal_impact === 'bullish' && (a.impact_score || 0) >= 30);
-        if (bullishAwards.length > 0) {
-          const awardLines = bullishAwards.slice(0, 10).map(a => {
-            const symbols = (() => { try { return JSON.parse(a.related_symbols_json || '[]'); } catch { return []; } })();
-            const amt = a.total_obligation >= 1e9 ? `$${(a.total_obligation / 1e9).toFixed(1)}B` : `$${(a.total_obligation / 1e6).toFixed(1)}M`;
-            return `- ${a.recipient_name}: ${amt} ${a.award_type} from ${a.awarding_agency} | Sector: ${a.sector} | Related: ${symbols.join(', ')} | Impact: ${a.impact_score}/100`;
-          });
-          govSpendingSection = `
-
-RECENT US GOVERNMENT SPENDING SIGNALS (from USASpending.gov):
-${awardLines.join('\n')}
-
-CRITICAL: Factor these government awards into your analysis:
-1. Large contracts/grants to companies signal future revenue growth for related stocks/sectors
-2. Heavy government spending in a sector may boost related crypto tokens (blockchain/AI/energy)
-3. Overall increased government spending can be bullish for BTC as an inflation hedge
-4. Use this data to adjust confidence scores upward for assets benefiting from gov spending`;
-        }
-      } catch (govErr) {
-        console.warn('[MarketIntelligence] Gov spending data fetch failed:', govErr.message);
-      }
-    }
-
     // Build comprehensive analysis prompt with market intelligence AND trade history
+    let govSpendingSection = '';
     const assetsSection = marketData.length > 0 
       ? marketData.map(asset => `- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%`).join('\n')
       : targetSymbols.map(s => `- ${s}: (analyze based on your current knowledge)`).join('\n');
@@ -466,17 +476,16 @@ For each asset:
     };
 
     async function invokeLLM({ prompt, model, withWeb, schema, label, timeoutMs }) {
-      const baseMs = typeof timeoutMs === 'number' ? timeoutMs : (withWeb ? 14000 : 9000);
+      const baseMs = typeof timeoutMs === 'number' ? timeoutMs : 12000;
       const ms = Math.min(baseMs, ensureTime());
       return await withTimeout(
-        base44.integrations.Core.InvokeLLM({
-          prompt,
-          add_context_from_internet: !!withWeb,
-          response_json_schema: schema,
-          model
-        }),
+        callHuggingFace(
+          'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.',
+          prompt + '\n\nRespond with valid JSON only.',
+          ms
+        ),
         ms,
-        label || 'LLM invocation'
+        label || 'HF invocation'
       );
     }
 
