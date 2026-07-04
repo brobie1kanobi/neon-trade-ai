@@ -316,7 +316,31 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
         console.log('[TradingInterface] LIVE mode - sending order to Kraken:', tradeData);
         
         // Run risk engine check before executing
+        // CRITICAL: For LIVE mode, fetch real Kraken balance to pass to risk engine
+        // so it doesn't incorrectly reject due to stale/empty wallet DB records
         try {
+          let livePortfolioState = null;
+          try {
+            const balRes = await base44.functions.invoke('getKrakenBalance', {});
+            const bal = balRes?.data || balRes;
+            const krakenUsd = parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0);
+            const krakenHoldings = bal?.holdings || {};
+            const holdingsMap = {};
+            for (const [sym, info] of Object.entries(krakenHoldings)) {
+              holdingsMap[`${sym}_live`] = {
+                quantity: info?.quantity || 0,
+                current_price: info?.usd_value ? (info.usd_value / (info.quantity || 1)) : 0,
+                is_simulation: false
+              };
+            }
+            livePortfolioState = {
+              wallet: { real_cash_balance: krakenUsd },
+              holdings: holdingsMap
+            };
+          } catch (balErr) {
+            console.warn('[TradingInterface] Could not fetch Kraken balance for risk engine:', balErr.message);
+          }
+
           const riskResult = await base44.functions.invoke('riskEngine', {
             action: 'evaluateTrade',
             payload: {
@@ -328,7 +352,7 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
                 total_value: tradeData.total_value,
                 is_simulation: false
               },
-              portfolioState: null // Will be fetched by risk engine
+              portfolioState: livePortfolioState
             }
           });
           
