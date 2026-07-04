@@ -991,7 +991,7 @@ Deno.serve(async (req) => {
       // 5) Build prospects
       // CRITICAL: Use auto_execute_threshold as the floor for prospect building too.
       // min_signal_confidence is only for signal generation filtering, NOT for execution gating.
-      const minConf = AUTO_EXECUTE_THRESHOLD;
+      const minConf = typeof settings.auto_execute_threshold === 'number' ? settings.auto_execute_threshold : 999;
       const safetyMaxPct = 0.40;
       const spendable = isSimMode ? tradingCash : tradingCash; // already buffered in live
       for (const pref of prefs) {
