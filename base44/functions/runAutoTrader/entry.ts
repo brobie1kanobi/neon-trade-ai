@@ -792,9 +792,11 @@ Deno.serve(async (req) => {
     // Check system health before proceeding (direct entity read to avoid cross-function auth issues)
     try {
       const records = await base44.asServiceRole.entities.SystemHealth.filter({});
-      const anyPaused = records.some(r => r.is_auto_paused);
-      const anyUnhealthy = records.some(r => r.status === 'unhealthy');
-      const anyDegraded = records.some(r => r.status === 'degraded');
+      // Only block trading on TRADING-CRITICAL components — not auxiliary services like supabase_sync
+      const tradingCritical = records.filter(r => ['kraken_api', 'kraken_ws', 'auto_trader'].includes(r.component));
+      const anyPaused = tradingCritical.some(r => r.is_auto_paused);
+      const anyUnhealthy = tradingCritical.some(r => r.status === 'unhealthy');
+      const anyDegraded = tradingCritical.some(r => r.status === 'degraded');
       const overall = anyPaused || anyUnhealthy ? 'unhealthy' : (anyDegraded ? 'degraded' : 'healthy');
       if (overall === 'unhealthy') {
         log('Trading not allowed - system unhealthy (direct check)', { overall });
