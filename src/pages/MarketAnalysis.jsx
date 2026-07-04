@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { getRecentAnalysis, setRecentAnalysis } from "@/components/hooks/useGlobalDataStore";
+import useFearGreedIndex from "@/components/hooks/useFearGreedIndex";
 
 function SignalCard({ signal, onSendToTrader, onManualTrade }) {
   const isStrongBuy = signal.optimal_action === 'strong_buy';
@@ -158,16 +159,17 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
 
 }
 
-function MarketSentimentCard({ intelligence }) {
-  if (!intelligence) return null;
+function MarketSentimentCard({ intelligence, fearGreedData }) {
+  if (!intelligence && !fearGreedData) return null;
 
-  const sentimentScore = intelligence.market_sentiment_score || intelligence.sentiment_score || 50;
-  let sentimentLabel = 'Extreme Greed';
-  if (sentimentScore <= 25) sentimentLabel = 'Extreme Fear';
-  else if (sentimentScore <= 45) sentimentLabel = 'Fear';
-  else if (sentimentScore <= 54) sentimentLabel = 'Neutral';
-  else if (sentimentScore <= 75) sentimentLabel = 'Greed';
-  else if (sentimentScore <= 90) sentimentLabel = 'Extreme Greed';
+  const sentimentScore = fearGreedData?.score ?? intelligence?.market_sentiment_score ?? intelligence?.sentiment_score ?? 50;
+  const sentimentLabel = fearGreedData?.label ?? (
+    sentimentScore <= 25 ? 'Extreme Fear' :
+    sentimentScore <= 45 ? 'Fear' :
+    sentimentScore <= 54 ? 'Neutral' :
+    sentimentScore <= 75 ? 'Greed' :
+    'Extreme Greed'
+  );
 
   const sentimentColor = sentimentScore <= 30 ? 'text-red-500' :
   sentimentScore <= 50 ? 'text-orange-500' :
@@ -192,37 +194,37 @@ function MarketSentimentCard({ intelligence }) {
           <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Market Regime</p>
             <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-              {intelligence.market_regime
+              {intelligence?.market_regime
                 ? `${intelligence.market_regime}${intelligence.volatility_level ? ' • ' + (String(intelligence.volatility_level).charAt(0).toUpperCase() + String(intelligence.volatility_level).slice(1)) : ''}`
-                : (intelligence.volatility_level
+                : (intelligence?.volatility_level
                   ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility`
                   : 'Analyzing...')}
             </p>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {intelligence.momentum_direction || intelligence.trend_strength || (intelligence.volatility_level ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility` : (intelligence.trading_recommendation || 'Analyzing...'))}
+              {intelligence?.momentum_direction || intelligence?.trend_strength || (intelligence?.volatility_level ? `${String(intelligence.volatility_level).charAt(0).toUpperCase()}${String(intelligence.volatility_level).slice(1)} volatility` : (intelligence?.trading_recommendation || 'Analyzing...'))}
             </p>
           </div>
         </div>
 
-        {intelligence.short_term_outlook &&
+        {intelligence?.short_term_outlook &&
         <div className="p-3 rounded-lg border" style={{ borderColor: 'var(--neon-green)', backgroundColor: 'rgba(57, 255, 20, 0.05)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--neon-green)' }}>Short-Term Outlook (1-6h)</p>
             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-              {intelligence.short_term_outlook}
+              {intelligence?.short_term_outlook}
             </p>
           </div>
         }
 
-        {intelligence.trading_recommendation &&
+        {intelligence?.trading_recommendation &&
         <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--secondary-bg)' }}>
             <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>AI Recommendation</p>
             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-              {intelligence.trading_recommendation}
+              {intelligence?.trading_recommendation}
             </p>
           </div>
         }
 
-        {intelligence.hot_signals && intelligence.hot_signals.length > 0 &&
+        {intelligence?.hot_signals && intelligence.hot_signals.length > 0 &&
         <div>
             <p className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <Flame className="w-4 h-4 text-orange-500" />
@@ -250,7 +252,7 @@ function MarketSentimentCard({ intelligence }) {
         }
 
         <div className="grid grid-cols-2 gap-2">
-          {intelligence.best_opportunities && intelligence.best_opportunities.length > 0 &&
+          {intelligence?.best_opportunities && intelligence.best_opportunities.length > 0 &&
           <div>
               <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Best Opportunities</p>
               <div className="flex flex-wrap gap-1">
@@ -262,7 +264,7 @@ function MarketSentimentCard({ intelligence }) {
               </div>
             </div>
           }
-          {intelligence.avoid_list && intelligence.avoid_list.length > 0 &&
+          {intelligence?.avoid_list && intelligence.avoid_list.length > 0 &&
           <div>
               <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Avoid</p>
               <div className="flex flex-wrap gap-1">
@@ -349,6 +351,7 @@ export default function MarketAnalysis() {
   const [isExecuting, setIsExecuting] = useState(false);
 
   const isSimMode = settings?.sim_trading_mode !== false;
+  const fearGreedData = useFearGreedIndex();
 
   // Quick fallback if backend analysis times out (Kraken public API)
   const quickFallbackAnalysis = useCallback(async (symbols) => {
@@ -709,7 +712,7 @@ export default function MarketAnalysis() {
       }
 
       {/* Market Intelligence */}
-      <MarketSentimentCard intelligence={analysisData?.market_intelligence} />
+      <MarketSentimentCard intelligence={analysisData?.market_intelligence} fearGreedData={fearGreedData} />
 
       {/* Filter Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">

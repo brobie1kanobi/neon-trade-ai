@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { base44 } from "@/api/base44Client";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { getRecentAnalysis, setRecentAnalysis } from "@/components/hooks/useGlobalDataStore";
+import useFearGreedIndex from "@/components/hooks/useFearGreedIndex";
 
 function FearGreedGauge({ score }) {
   const label = score <= 20 ? 'Extreme Fear' :
@@ -109,9 +110,10 @@ export default function QuickActions() {
     return () => {cancelled = true;};
   }, [user?.email, settings?.watched_crypto, settings?.watched_stocks, isSimMode]);
 
+  const fearGreed = useFearGreedIndex();
   const intel = data?.market_intelligence;
   const recs = data?.recommendations || [];
-  const sentimentScore = intel?.market_sentiment_score || intel?.sentiment_score || null;
+  const sentimentScore = fearGreed?.score ?? intel?.market_sentiment_score ?? intel?.sentiment_score ?? null;
   const bestOpps = intel?.best_opportunities?.slice(0, 3) || [];
   const avoidList = intel?.avoid_list?.slice(0, 2) || [];
   const outlook = intel?.short_term_outlook || intel?.trading_recommendation || null;
