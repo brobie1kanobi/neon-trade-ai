@@ -84,14 +84,18 @@ Deno.serve(async (req) => {
     const totalUsd = usdInfo.total || usdInfo.balance || 0;
 
     // Build holdings and fetch prices
+    // CRITICAL: Normalize Kraken's internal symbols (XDG, XXBT, XETH, etc.) to
+    // standard symbols (DOGE, BTC, ETH) using parseKrakenAsset. This prevents
+    // flickering caused by symbol mismatches between REST and WS data sources.
     const rawHoldings = [];
     const symbols = [];
     for (const [asset, info] of Object.entries(ext)) {
-      if (asset === 'USD') continue;
+      const normalizedAsset = parseKrakenAsset(asset);
+      if (normalizedAsset === 'USD') continue;
       const qty = info.balance || info.total || 0;
       if (qty <= 0.00001) continue;
-      rawHoldings.push({ symbol: asset, quantity: qty });
-      symbols.push(asset);
+      rawHoldings.push({ symbol: normalizedAsset, quantity: qty });
+      symbols.push(normalizedAsset);
     }
 
     let prices = {};

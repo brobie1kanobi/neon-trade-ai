@@ -19,6 +19,27 @@ export const useKrakenWebSocket = () => {
 };
 
 /**
+ * Normalize Kraken's internal asset symbols to standard symbols.
+ * Kraken uses codes like XDG (Dogecoin), XXBT (Bitcoin), XETH (Ethereum), etc.
+ */
+const KRAKEN_SYMBOL_MAP = {
+  'XXBT': 'BTC', 'XBT': 'BTC',
+  'XETH': 'ETH', 'ETH2': 'ETH',
+  'XXRP': 'XRP', 'XXLM': 'XLM', 'XLTC': 'LTC',
+  'XDG': 'DOGE', 'XXDG': 'DOGE',
+  'ZUSD': 'USD'
+};
+
+function normalizeKrakenSymbol(sym) {
+  const upper = (sym || '').toUpperCase();
+  if (KRAKEN_SYMBOL_MAP[upper]) return KRAKEN_SYMBOL_MAP[upper];
+  // Strip staking suffixes like ".S", ".M"
+  const cleaned = upper.replace(/\.\w+$/, '');
+  if (KRAKEN_SYMBOL_MAP[cleaned]) return KRAKEN_SYMBOL_MAP[cleaned];
+  return cleaned;
+}
+
+/**
  * Helper: compute portfolio metrics from GLOBAL WS state directly.
  * CRITICAL: Reads from GLOBAL_WS_STATE, not from React state (avoids stale closures).
  */
@@ -58,11 +79,12 @@ function computeMetricsFromGlobal() {
     usdBalance = balances['USD']?.balance || balances['USD']?.available || balances['ZUSD']?.balance || balances['ZUSD']?.available || 0;
 
     Object.entries(balances).forEach(([asset, balance]) => {
-      if (asset === 'USD' || asset === 'ZUSD') return;
+      const normalized = normalizeKrakenSymbol(asset);
+      if (normalized === 'USD') return;
       const quantity = balance.balance || balance.available || 0;
       if (quantity <= 0.00001) return;
-      const pair = `${asset}/USD`;
-      const price = prices[pair]?.price || 0;
+      // Try both normalized and raw symbol for price lookup
+      const price = prices[`${normalized}/USD`]?.price || prices[`${asset}/USD`]?.price || 0;
       cryptoHoldingsValue += quantity * price;
       totalAssets++;
     });
@@ -422,8 +444,11 @@ export function KrakenWebSocketProvider({ children }) {
 
     const pollPrices = async () => {
       // Get symbols from REST snapshot or WS balances (can't use bestHoldings — not yet defined)
+      // Normalize WS symbols (e.g., XDG → DOGE) to match REST and price map keys
       const restSymbols = (restData.krakenBalance?.holdings || []).map(h => h.symbol);
-      const wsSymbols = Object.keys(state.balances).filter(a => a !== 'USD' && a !== 'ZUSD');
+      const wsSymbols = Object.keys(state.balances)
+        .map(normalizeKrakenSymbol)
+        .filter(a => a !== 'USD');
       const holdingSymbols = [...new Set([...restSymbols, ...wsSymbols])].filter(Boolean);
       if (holdingSymbols.length === 0) return;
 
@@ -449,12 +474,13 @@ export function KrakenWebSocketProvider({ children }) {
         const priceWindow = typeof window !== 'undefined' ? (window.__krakenWsPrices || {}) : {};
 
         for (const sym of holdingSymbols) {
-          const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
+          const normalized = normalizeKrakenSymbol(sym);
+          const pair = KRAKEN_PAIR_MAP[normalized] || `${normalized}USD`;
           const ticker = data.result?.[pair];
           if (!ticker?.c?.[0]) continue;
           const price = parseFloat(ticker.c[0]);
           if (price > 0) {
-            const wsPair = `${sym}/USD`;
+            const wsPair = `${normalized}/USD`;
             if (!priceWindow[wsPair] || Math.abs(priceWindow[wsPair].price - price) > 0.001) {
               priceWindow[wsPair] = { price, timestamp: Date.now() };
               updated = true;
@@ -517,16 +543,23 @@ export function KrakenWebSocketProvider({ children }) {
     ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, avg_cost: h.avg_cost || 0, is_simulation: false }))
     : wsHasBalances
       ? Object.entries(state.balances)
-          .filter(([a]) => a !== 'USD' && a !== 'ZUSD')
+          .filter(([a]) => {
+            const n = normalizeKrakenSymbol(a);
+            return n !== 'USD';
+          })
           .filter(([_, b]) => (b.balance || 0) > 0.00001)
-          .map(([asset, bal]) => ({
-            symbol: asset,
-            quantity: bal.balance || 0,
-            asset_type: 'crypto',
-            current_price_usd: state.prices[`${asset}/USD`]?.price || 0,
-            total_value_usd: (bal.balance || 0) * (state.prices[`${asset}/USD`]?.price || 0),
-            is_simulation: false
-          }))
+          .map(([asset, bal]) => {
+            const normalized = normalizeKrakenSymbol(asset);
+            const price = state.prices[`${normalized}/USD`]?.price || state.prices[`${asset}/USD`]?.price || 0;
+            return {
+              symbol: normalized,
+              quantity: bal.balance || 0,
+              asset_type: 'crypto',
+              current_price_usd: price,
+              total_value_usd: (bal.balance || 0) * price,
+              is_simulation: false
+            };
+          })
       : [];
 
   const hasData = !!(restHasBalance || wsHasBalances);

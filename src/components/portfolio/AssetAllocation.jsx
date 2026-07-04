@@ -126,20 +126,29 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
     
     // PRIORITY 2: WebSocket balances (fallback if REST hasn't loaded yet)
+    // Normalize Kraken's internal symbols (XDG → DOGE, XXBT → BTC, etc.)
+    const KRAKEN_SYM_MAP = {
+      'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH2': 'ETH',
+      'XXRP': 'XRP', 'XXLM': 'XLM', 'XLTC': 'LTC',
+      'XDG': 'DOGE', 'XXDG': 'DOGE', 'ZUSD': 'USD'
+    };
+    const normSym = (s) => KRAKEN_SYM_MAP[(s||'').toUpperCase()] || (s||'').toUpperCase().replace(/\.\w+$/, '');
+
     if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
       const wsAssets = Object.entries(wsBalances)
-        .filter(([asset]) => asset !== 'USD' && asset !== 'ZUSD')
+        .filter(([asset]) => { const n = normSym(asset); return n !== 'USD'; })
         .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
         .map(([asset, balance]) => {
-          const pair = `${asset}/USD`;
-          const priceInfo = wsPrices?.[pair];
+          const normalized = normSym(asset);
+          const pair = `${normalized}/USD`;
+          const priceInfo = wsPrices?.[pair] || wsPrices?.[`${asset}/USD`];
           const qty = balance.balance || 0;
           const price = priceInfo?.price || 0;
           const value = qty * price;
-          const avgCost = getAvgCost(asset, price);
+          const avgCost = getAvgCost(normalized, price);
           
           return {
-            symbol: asset,
+            symbol: normalized,
             quantity: qty,
             currentPrice: price,
             currentValue: value,
@@ -156,7 +165,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
     }
     
     return null;
-  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, wsUpdateCounter, costPriceMap]);
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, costPriceMap]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
