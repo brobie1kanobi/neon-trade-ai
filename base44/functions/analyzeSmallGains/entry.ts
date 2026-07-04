@@ -687,11 +687,36 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
       console.log('[MarketIntelligence] Heuristic fallback produced', heuristics.length, 'recommendations');
     }
 
-    // Normalize LLM recommendation field names (LLM may return "asset" instead of "symbol")
-    const rawRecs = (recsResp?.recommendations || []).map(r => ({
-      ...r,
-      symbol: r.symbol || r.asset || r.ticker || '',
-    }));
+    // Normalize LLM recommendation field names (HuggingFace often uses different keys)
+    const rawRecs = (recsResp?.recommendations || []).map(r => {
+      // Map symbol
+      const symbol = String(r.symbol || r.asset || r.ticker || '').toUpperCase();
+      // Map action: LLM may return "rating" instead of "action"/"optimal_action"
+      const rawAction = r.optimal_action || r.action || r.rating || 'hold';
+      // Map reasoning
+      const reasoning = r.reasoning || r.reason || r.action_reason || '';
+      // Map confidence: if missing, derive from action type
+      let confidence = Number(r.confidence_score || 0);
+      if (!confidence || confidence <= 0) {
+        const actionLower = String(rawAction).toLowerCase().replace(/\s+/g, '_');
+        if (actionLower === 'strong_buy' || actionLower === 'strong_sell') confidence = 72;
+        else if (actionLower === 'buy') confidence = 60;
+        else if (actionLower === 'sell' || actionLower === 'avoid') confidence = 55;
+        else confidence = 48; // hold/neutral
+      }
+      // Get current market data for enrichment
+      const mkt = marketData.find(m => (m.symbol || '').toUpperCase() === symbol);
+      return {
+        ...r,
+        symbol,
+        action: rawAction,
+        optimal_action: rawAction,
+        reasoning,
+        confidence_score: confidence,
+        current_price: r.current_price || Number(mkt?.price || mkt?.current_price || 0),
+        current_24h_change: r.current_24h_change ?? Number(mkt?.change_24h_percent || mkt?.price_change_percentage_24h || 0),
+      };
+    });
 
     // Compose unified llmResponse compatible with downstream logic
     let llmResponse = {
