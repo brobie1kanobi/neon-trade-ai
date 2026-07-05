@@ -165,30 +165,12 @@ async function fetchLiveCash(base44, userEmail) {
       }
     }
   } catch (_) {}
-  // Step 2: Shared env-var Kraken keys (app-level keys)
-  try {
-    const envKey = (Deno.env.get('Kraken_API_Key') || '').trim();
-    const envSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
-    if (envKey && envSecret) {
-      const bal = await __kr_callPrivate(envKey, envSecret, '/0/private/BalanceEx', {});
-      if (!bal?.error?.length && bal?.result) {
-        const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-        rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-        try {
-          const open = await __kr_callPrivate(envKey, envSecret, '/0/private/OpenOrders', { trades: 'true' });
-          if (open?.result?.open) {
-            for (const [, order] of Object.entries(open.result.open)) {
-              const side = (order.descr?.type || '').toLowerCase();
-              if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
-            }
-          }
-        } catch (_) {}
-        source = 'env';
-        return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
-      }
-    }
-  } catch (_) {}
-  // Step 3: Wallet entity real_cash_balance — synced from Kraken by other processes.
+  // Step 2 (REMOVED): Shared env-var Kraken keys were returning a DIFFERENT account's
+  // balance ($141 vs user's actual $82), causing inconsistent cash across runs.
+  // Now we fall through directly to the Wallet entity which is synced from the user's
+  // actual Kraken account by syncKrakenBalance.
+
+  // Step 2: Wallet entity real_cash_balance — synced from Kraken by other processes.
   // This is the critical fallback when API calls fail (rate limited, no KrakenConnection, etc.)
   try {
     const wallets = await base44.asServiceRole.entities.Wallet.filter({ created_by: userEmail }, '-updated_date', 1);
@@ -751,7 +733,7 @@ Deno.serve(async (req) => {
     // PRE-FLIGHT 1: Temporal cooldown — reject if a completed/running run exists within 4 minutes.
     // This is the ultimate server-side rate limit regardless of how many browser tabs or
     // clients are calling this function. Without this, multiple tabs each fire on mount.
-    const MIN_RUN_GAP_MS = 240000; // 4 minutes
+    const MIN_RUN_GAP_MS = 1500000; // 25 minutes — enforce ~30min cadence server-side
     try {
       const recentRuns = await base44.entities.AutoTraderRun.filter({
         created_by: user.email

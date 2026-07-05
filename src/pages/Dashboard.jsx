@@ -46,8 +46,8 @@ import StockPriceChart from "../components/dashboard/StockPriceChart";
  * 2. localStorage (coordinates across multiple browser tabs)
  * 3. Backend-side cooldown (rejects runs < 4 min after the last completed one)
  */
-const AUTO_TRADER_COOLDOWN_MS = 300000; // 5 minutes between runs
-const AUTO_TRADER_INTERVAL_MS = 300000; // 5 minute polling interval
+const AUTO_TRADER_COOLDOWN_MS = 1800000; // 30 minutes between runs
+const AUTO_TRADER_INTERVAL_MS = 1800000; // 30 minute polling interval
 const LS_KEY = 'autoTrader_lastRunTs';
 
 // Module-level state (per-tab singleton)
