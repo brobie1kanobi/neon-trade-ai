@@ -109,6 +109,10 @@
     "metadata_json": {
       "type": "string",
       "description": "JSON string of additional analysis data"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user this signal belongs to (for per-user attribution from external agents)"
     }
   },
   "required": [

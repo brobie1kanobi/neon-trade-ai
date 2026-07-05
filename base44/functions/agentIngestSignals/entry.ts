@@ -31,11 +31,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Verify user exists
+    // Verify user exists and grab their id for created_by_id stamping
     const users = await base44.asServiceRole.entities.User.filter({ email: user_email });
     if (users.length === 0) {
       return Response.json({ error: `No user found with email: ${user_email}` }, { status: 404 });
     }
+    const targetUser = users[0];
 
     const results = [];
     let totalSuperseded = 0;
@@ -56,8 +57,13 @@ Deno.serve(async (req) => {
         }
         totalSuperseded += superseded;
 
-        // Build the new record — only include fields that are actually provided
-        const record = { asset_symbol: symbol, is_active: true };
+        // Build the new record — stamp user_email for per-user attribution
+        // (created_by is auto-set by the platform to the service account and can't be overridden)
+        const record = {
+          asset_symbol: symbol,
+          is_active: true,
+          user_email: user_email
+        };
         const OPTIONAL_FIELDS = [
           'asset_type', 'timeframe', 'signal_type', 'confidence_score',
           'reasoning', 'technical_pattern', 'sentiment_score',
