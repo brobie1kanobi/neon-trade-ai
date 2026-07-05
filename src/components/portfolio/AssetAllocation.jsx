@@ -293,7 +293,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
             </p>
             <div className="flex items-center gap-2">
               <Label htmlFor="show-small" className="text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
-                Small amounts
+                Show small amounts
               </Label>
               <Switch
                 id="show-small"
