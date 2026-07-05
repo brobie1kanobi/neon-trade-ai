@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PieChart, Activity, TrendingUp, TrendingDown, Wifi } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import AssetDetailModal from "./AssetDetailModal";
@@ -21,6 +23,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [priceChanges, setPriceChanges] = useState({});
   const [cachedAllocations, setCachedAllocations] = useState([]);
+  const [showSmallAmounts, setShowSmallAmounts] = useState(false);
   const previousPrices = usePrevious(allocations);
 
   const { settings } = useSettings();
@@ -119,7 +122,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
           asset_type: 'crypto',
           is_simulation: false
         };
-      }).filter(a => a.currentValue > 0.01)
+      }).filter(a => showSmallAmounts || a.currentValue > 0.01)
         .sort((a, b) => b.currentValue - a.currentValue);
       
       return mapped.length > 0 ? mapped : null;
@@ -158,14 +161,14 @@ export default function AssetAllocation({ allocations, isLoading }) {
             is_simulation: false
           };
         })
-        .filter(a => a.currentValue > 0.01)
+        .filter(a => showSmallAmounts || a.currentValue > 0.01)
         .sort((a, b) => b.currentValue - a.currentValue);
       
       return wsAssets.length > 0 ? wsAssets : null;
     }
     
     return null;
-  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, costPriceMap]);
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, costPriceMap, showSmallAmounts]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
@@ -243,7 +246,7 @@ export default function AssetAllocation({ allocations, isLoading }) {
     return Object.values(grouped).
     filter((h) => h.quantity > 0.0000001).
     sort((a, b) => b.currentValue - a.currentValue);
-  }, [displayAllocations]);
+  }, [displayAllocations, showSmallAmounts]);
 
   useEffect(() => {
     if (consolidatedHoldings && consolidatedHoldings.length > 0) {
@@ -282,11 +285,24 @@ export default function AssetAllocation({ allocations, isLoading }) {
               </Badge>
             )}
           </CardTitle>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {!isSimMode && wsConnected 
-              ? 'Prices update in real-time via WebSocket connection' 
-              : 'Prices refresh every 60 seconds'}
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {!isSimMode && wsConnected 
+                ? 'Prices update in real-time via WebSocket connection' 
+                : 'Prices refresh every 60 seconds'}
+            </p>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="show-small" className="text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+                Small amounts
+              </Label>
+              <Switch
+                id="show-small"
+                checked={showSmallAmounts}
+                onCheckedChange={setShowSmallAmounts}
+                className="scale-75"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Only show skeleton if loading AND no cached data */}
