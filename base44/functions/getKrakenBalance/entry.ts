@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
       const normalizedAsset = parseKrakenAsset(asset);
       if (normalizedAsset === 'USD') continue;
       const qty = info.balance || info.total || 0;
-      if (qty <= 0.00001) continue;
+      if (qty <= 0) continue;
       rawHoldings.push({ symbol: normalizedAsset, quantity: qty });
       symbols.push(normalizedAsset);
     }

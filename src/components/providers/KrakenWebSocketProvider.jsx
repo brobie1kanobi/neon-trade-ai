@@ -82,7 +82,7 @@ function computeMetricsFromGlobal() {
       const normalized = normalizeKrakenSymbol(asset);
       if (normalized === 'USD') return;
       const quantity = balance.balance || balance.available || 0;
-      if (quantity <= 0.00001) return;
+      if (quantity <= 0) return;
       // Try both normalized and raw symbol for price lookup
       const price = prices[`${normalized}/USD`]?.price || prices[`${asset}/USD`]?.price || 0;
       cryptoHoldingsValue += quantity * price;
@@ -547,7 +547,7 @@ export function KrakenWebSocketProvider({ children }) {
             const n = normalizeKrakenSymbol(a);
             return n !== 'USD';
           })
-          .filter(([_, b]) => (b.balance || 0) > 0.00001)
+          .filter(([_, b]) => (b.balance || 0) > 0)
           .map(([asset, bal]) => {
             const normalized = normalizeKrakenSymbol(asset);
             const price = state.prices[`${normalized}/USD`]?.price || state.prices[`${asset}/USD`]?.price || 0;

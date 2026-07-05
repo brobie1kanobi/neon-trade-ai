@@ -88,9 +88,32 @@ export default function AssetAllocation({ allocations, isLoading }) {
     };
   }, [isSimMode, refreshWebSocket]);
 
+  // Stable price snapshot: only update when prices actually change meaningfully.
+  // This prevents DOGE/other assets from flickering due to rapid useMemo recalculations
+  // triggered by wsPrices reference changes on every WS tick.
+  const stablePricesRef = useRef({});
+  const stablePrices = useMemo(() => {
+    if (!wsPrices || Object.keys(wsPrices).length === 0) return stablePricesRef.current;
+    let changed = false;
+    const next = { ...stablePricesRef.current };
+    for (const [pair, info] of Object.entries(wsPrices)) {
+      const oldPrice = next[pair] || 0;
+      const newPrice = info?.price || 0;
+      if (newPrice > 0 && Math.abs(newPrice - oldPrice) > 0.0001) {
+        next[pair] = newPrice;
+        changed = true;
+      }
+    }
+    if (changed) {
+      stablePricesRef.current = next;
+      return next;
+    }
+    return stablePricesRef.current;
+  }, [wsPrices]);
+
   // CRITICAL: In LIVE mode, build allocations from Kraken data
-  // PRIORITY 1: REST snapshot (bestHoldings) — available immediately with ALL assets and prices
-  // PRIORITY 2: WebSocket balances+prices — arrives piecemeal (ticker-by-ticker), may show partial data
+  // PRIORITY 1: REST snapshot (bestHoldings) — stable baseline with ALL assets
+  // PRIORITY 2: WebSocket balances — fallback only when REST hasn't loaded
   const wsAllocations = React.useMemo(() => {
     if (isSimMode) return null;
     
@@ -101,15 +124,15 @@ export default function AssetAllocation({ allocations, isLoading }) {
       return entry?.avgCost > 0 ? entry.avgCost : fallbackPrice;
     };
     
-    // PRIORITY 1: REST snapshot from provider (has ALL assets with accurate prices from Kraken Ticker API)
+    // PRIORITY 1: REST snapshot from provider (has ALL assets with accurate prices)
     if (restHoldings && restHoldings.length > 0) {
       const mapped = restHoldings.map(h => {
         const pair = `${h.symbol}/USD`;
-        const wsPrice = wsPrices?.[pair]?.price;
+        // Use stable WS price if available, otherwise REST snapshot price
+        const wsPrice = stablePrices[pair] || 0;
         const price = wsPrice || h.current_price_usd || 0;
         const qty = h.quantity || 0;
         const value = qty * price;
-        // CRITICAL: Use Holding entity's average_cost_price for real PnL, NOT Kraken's avg_cost
         const avgCost = getAvgCost(h.symbol, price);
         
         return {
@@ -122,14 +145,17 @@ export default function AssetAllocation({ allocations, isLoading }) {
           asset_type: 'crypto',
           is_simulation: false
         };
-      }).filter(a => showSmallAmounts || a.currentValue > 0.01)
+      });
+      
+      // Filter: keep ALL assets with quantity > 0; only hide by value when toggle is off
+      const filtered = mapped
+        .filter(a => a.quantity > 0.0000001 && (showSmallAmounts || a.currentValue > 0.005))
         .sort((a, b) => b.currentValue - a.currentValue);
       
-      return mapped.length > 0 ? mapped : null;
+      return filtered.length > 0 ? filtered : null;
     }
     
     // PRIORITY 2: WebSocket balances (fallback if REST hasn't loaded yet)
-    // Normalize Kraken's internal symbols (XDG → DOGE, XXBT → BTC, etc.)
     const KRAKEN_SYM_MAP = {
       'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH2': 'ETH',
       'XXRP': 'XRP', 'XXLM': 'XLM', 'XLTC': 'LTC',
@@ -140,13 +166,12 @@ export default function AssetAllocation({ allocations, isLoading }) {
     if (wsConnected && wsBalances && Object.keys(wsBalances).length > 0) {
       const wsAssets = Object.entries(wsBalances)
         .filter(([asset]) => { const n = normSym(asset); return n !== 'USD'; })
-        .filter(([_, balance]) => (balance.balance || 0) > 0.00001)
+        .filter(([_, balance]) => (balance.balance || 0) > 0)
         .map(([asset, balance]) => {
           const normalized = normSym(asset);
           const pair = `${normalized}/USD`;
-          const priceInfo = wsPrices?.[pair] || wsPrices?.[`${asset}/USD`];
           const qty = balance.balance || 0;
-          const price = priceInfo?.price || 0;
+          const price = stablePrices[pair] || 0;
           const value = qty * price;
           const avgCost = getAvgCost(normalized, price);
           
@@ -161,14 +186,14 @@ export default function AssetAllocation({ allocations, isLoading }) {
             is_simulation: false
           };
         })
-        .filter(a => showSmallAmounts || a.currentValue > 0.01)
+        .filter(a => a.quantity > 0.0000001 && (showSmallAmounts || a.currentValue > 0.005))
         .sort((a, b) => b.currentValue - a.currentValue);
       
       return wsAssets.length > 0 ? wsAssets : null;
     }
     
     return null;
-  }, [isSimMode, restHoldings, wsConnected, wsBalances, wsPrices, costPriceMap, showSmallAmounts]);
+  }, [isSimMode, restHoldings, wsConnected, wsBalances, stablePrices, costPriceMap, showSmallAmounts]);
 
   // CRITICAL: Cache allocations so we keep showing them during refresh
   useEffect(() => {
