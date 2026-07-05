@@ -821,7 +821,7 @@ export default function Dashboard() {
       let allPriced = true;
       for (const h of providerBestHoldings) {
         const qty = h.quantity || 0;
-        if (qty <= 0.00001) continue;
+        if (qty <= 0) continue;
         const wsPair = `${h.symbol}/USD`;
         const livePrice = wsPrices?.[wsPair]?.price || 0;
         const snapshotPrice = h.current_price_usd || 0;
