@@ -38,7 +38,7 @@ const formatInTimezone = (date, timezone, is24h) => {
   try {
     // Ensure we have a valid timezone
     const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
-    
+
     // CRITICAL: Ensure date string is treated as UTC if missing timezone offset
     let dateObj;
     if (typeof date === 'string' && date.includes('T') && !date.endsWith('Z') && !date.match(/[+-]\d{2}:?\d{2}$/)) {
@@ -61,9 +61,9 @@ const formatInTimezone = (date, timezone, is24h) => {
   } catch (e) {
     console.error('[OrdersAndHistory] formatInTimezone error:', e);
     const d = new Date(date);
-    return is24h 
-      ? format(d, "MMM d, HH:mm") 
-      : format(d, "MMM d, h:mm a");
+    return is24h ?
+    format(d, "MMM d, HH:mm") :
+    format(d, "MMM d, h:mm a");
   }
 };
 
@@ -71,7 +71,7 @@ const formatInTimezone = (date, timezone, is24h) => {
 const formatFullInTimezone = (date, timezone, is24h) => {
   try {
     const tz = timezone && timezone.length > 0 ? timezone : 'America/New_York';
-    
+
     // CRITICAL: Ensure date string is treated as UTC if missing timezone offset
     let dateObj;
     if (typeof date === 'string' && date.includes('T') && !date.endsWith('Z') && !date.match(/[+-]\d{2}:?\d{2}$/)) {
@@ -94,9 +94,9 @@ const formatFullInTimezone = (date, timezone, is24h) => {
   } catch (e) {
     // Fallback if timezone is invalid
     const d = new Date(date);
-    return is24h 
-      ? format(d, "MMM d, yyyy HH:mm:ss") 
-      : format(d, "MMM d, yyyy h:mm:ss a");
+    return is24h ?
+    format(d, "MMM d, yyyy HH:mm:ss") :
+    format(d, "MMM d, yyyy h:mm:ss a");
   }
 };
 
@@ -146,27 +146,27 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
   // Merge lists without wiping UI — prepend new items, update existing in place
   const mergeLists = useCallback((prev, next) => {
-    const prevMap = new Map(prev.map(o => [o.id, o]));
-    const nextMap = new Map(next.map(o => [o.id, o]));
-    const newItems = next
-      .filter(o => !prevMap.has(o.id))
-      .sort((a, b) => new Date(b.created_date || b.updated_date || 0) - new Date(a.created_date || a.updated_date || 0));
-    const updatedExisting = prev
-      .filter(o => nextMap.has(o.id))
-      .map(o => ({ ...o, ...nextMap.get(o.id) }));
+    const prevMap = new Map(prev.map((o) => [o.id, o]));
+    const nextMap = new Map(next.map((o) => [o.id, o]));
+    const newItems = next.
+    filter((o) => !prevMap.has(o.id)).
+    sort((a, b) => new Date(b.created_date || b.updated_date || 0) - new Date(a.created_date || a.updated_date || 0));
+    const updatedExisting = prev.
+    filter((o) => nextMap.has(o.id)).
+    map((o) => ({ ...o, ...nextMap.get(o.id) }));
     return [...newItems, ...updatedExisting];
   }, []);
 
   const { settings, user, isLoading: settingsLoading } = useSettings();
   const is24h = (settings?.time_format || "12h") === "24h";
   // CRITICAL: Only use timezone after settings have loaded to avoid showing UTC times
-  const timezone = (!settingsLoading && settings?.timezone) ? settings.timezone : 'America/New_York';
-  
+  const timezone = !settingsLoading && settings?.timezone ? settings.timezone : 'America/New_York';
+
   console.log('[OrdersAndHistory] Settings loaded:', !settingsLoading, 'timezone:', timezone, 'raw:', settings?.timezone);
 
   // CRITICAL: Use CENTRALIZED WebSocket provider - prevents rate limits
-  const { 
-    orders: wsKrakenOrders, 
+  const {
+    orders: wsKrakenOrders,
     isConnected: wsConnected,
     // Use centralized REST data instead of direct API calls
     krakenOrders: providerKrakenOrders,
@@ -186,19 +186,19 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // Fetch trades history separately (less frequent, not part of main data loop)
   const fetchTradesHistory = useCallback(async () => {
     if (isSimMode) return [];
-    
+
     const now = Date.now();
     // CRITICAL: Only fetch trades every 120 seconds to avoid rate limits (was 90s)
     if (now - lastTradesFetch < 120000) {
       console.log('[OrdersAndHistory] Skipping trades fetch - too soon (', Math.round((now - lastTradesFetch) / 1000), 's ago)');
       return krakenTradesHistory;
     }
-    
+
     try {
       console.log('[OrdersAndHistory] Fetching trades history...');
       const tradesResponse = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
       const tradesData = tradesResponse?.data || tradesResponse;
-      
+
       if (tradesData?.trades) {
         setKrakenTradesHistory(tradesData.trades);
         setLastTradesFetch(now);
@@ -218,14 +218,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   // CRITICAL: Use provider data instead of making direct API calls
   const fetchKrakenData = useCallback(async () => {
     if (isSimMode) return { orders: [], trades: [] };
-    
+
     // CRITICAL: Don't trigger provider fetch here - it handles its own timing
     // Just return whatever data the provider has cached
     // This prevents components from overwhelming the rate limit
-    
+
     // Only fetch trades if enough time has passed (fetchTradesHistory has its own throttle)
     const trades = await fetchTradesHistory();
-    
+
     return {
       orders: providerKrakenOrders || [],
       trades: trades
@@ -241,7 +241,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
     console.log('[OrdersAndHistory] Starting loadOrders - isSimMode:', isSimMode);
     setIsLoading(true);
-    
+
     try {
       // CRITICAL: In LIVE mode, always fetch fresh from Kraken API
       let krakenOpenOrders = [];
@@ -249,14 +249,14 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       if (!isSimMode) {
         console.log('[OrdersAndHistory] LIVE MODE - Fetching Kraken data...');
-        
+
         try {
           const krakenData = await fetchKrakenData();
           krakenOpenOrders = krakenData.orders || [];
           krakenTrades = krakenData.trades || [];
           console.log('[OrdersAndHistory] ✅ Kraken fetch complete - Orders:', krakenOpenOrders.length, 'Trades:', krakenTrades.length);
           setKrakenTradesHistory(krakenTrades);
-          
+
           // If no orders from API but WebSocket has them, log warning
           if (krakenOpenOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
             console.warn('[OrdersAndHistory] ⚠️ API returned 0 orders but WebSocket has', Object.keys(krakenOrders).length, '- will use WebSocket');
@@ -290,108 +290,108 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       // CRITICAL: In LIVE mode, use Kraken API data (source of truth)
       let activeOrders = modeFilteredOrders.filter((o) => o.status === "active");
-      
+
       console.log('[OrdersAndHistory] Processing orders - isSimMode:', isSimMode, 'Kraken API:', krakenOpenOrders.length, 'WebSocket:', Object.keys(krakenOrders || {}).length, 'Local DB:', activeOrders.length);
-      
+
       if (!isSimMode) {
         console.log('[OrdersAndHistory] 🟢 LIVE MODE - Processing Kraken orders...');
         if (krakenOpenOrders.length > 0) {
           console.log('[OrdersAndHistory] Converting', krakenOpenOrders.length, 'Kraken API orders...');
         }
-        
+
         // Convert Kraken orders to our format
-        const krakenOrdersList = krakenOpenOrders
-          .map(ko => {
-            // Parse Kraken order format
-            const descr = ko.descr || {};
-            const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
-            const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
-            const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
-            const orderType = (descr.ordertype || ko.order_type || ko.ordertype || 'unknown').toLowerCase();
-            const side = (descr.type || ko.side || 'unknown').toLowerCase();
-            
-            return {
-              id: ko.order_id || ko.txid,
-              symbol: symbol,
-              quantity: volume,
-              purchase_price: price,
-              status: 'active',
-              asset_type: 'crypto',
-              is_simulation: false,
-              kraken_order_id: ko.order_id || ko.txid,
-              created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : new Date().toISOString(),
-              order_type: orderType,
-              side: side,
-              gain_margin: 10,
-              loss_margin: 5,
-              trailing_enabled: orderType.includes('trailing'),
-              // Extra Kraken info
-              kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
-              trigger_price: parseFloat(descr.price) || 0,
-              group_id: ko.group_id,
-              group_type: ko.group_type
-            };
-          })
-          .filter(o => o.quantity > 0.00000001); // Filter after mapping to ensure parsed volume is used
+        const krakenOrdersList = krakenOpenOrders.
+        map((ko) => {
+          // Parse Kraken order format
+          const descr = ko.descr || {};
+          const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+          const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+          const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+          const orderType = (descr.ordertype || ko.order_type || ko.ordertype || 'unknown').toLowerCase();
+          const side = (descr.type || ko.side || 'unknown').toLowerCase();
+
+          return {
+            id: ko.order_id || ko.txid,
+            symbol: symbol,
+            quantity: volume,
+            purchase_price: price,
+            status: 'active',
+            asset_type: 'crypto',
+            is_simulation: false,
+            kraken_order_id: ko.order_id || ko.txid,
+            created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : new Date().toISOString(),
+            order_type: orderType,
+            side: side,
+            gain_margin: 10,
+            loss_margin: 5,
+            trailing_enabled: orderType.includes('trailing'),
+            // Extra Kraken info
+            kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+            trigger_price: parseFloat(descr.price) || 0,
+            group_id: ko.group_id,
+            group_type: ko.group_type
+          };
+        }).
+        filter((o) => o.quantity > 0.00000001); // Filter after mapping to ensure parsed volume is used
 
         // CRITICAL: Always set activeOrders from Kraken in LIVE mode, even if empty
         // This ensures Orders & History shows accurate state (no orders = empty list)
         activeOrders = krakenOrdersList;
         console.log('[OrdersAndHistory] ✅ Set active orders from Kraken API:', activeOrders.length);
         setLastRefreshAt(Date.now());
-        
+
         // Clean up invalid local orders
-        const invalidLocalOrders = modeFilteredOrders.filter(o => 
-          o.status === 'active' && 
-          o.is_simulation === false &&
-          (o.quantity <= 0.00001 || o.purchase_price <= 0)
+        const invalidLocalOrders = modeFilteredOrders.filter((o) =>
+        o.status === 'active' &&
+        o.is_simulation === false && (
+        o.quantity <= 0.00001 || o.purchase_price <= 0)
         );
-        
+
         if (invalidLocalOrders.length > 0) {
           console.log('[OrdersAndHistory] Cleaning up', invalidLocalOrders.length, 'invalid local orders');
-          Promise.all(invalidLocalOrders.map(o => 
-            ConditionalOrder.update(o.id, { 
-              status: 'cancelled',
-              closure_reason: 'Invalid order: zero quantity or price',
-              error_message: 'Order validation failed - quantity or price was zero'
-            })
-          )).catch(err => console.error('[OrdersAndHistory] Cleanup error:', err));
+          Promise.all(invalidLocalOrders.map((o) =>
+          ConditionalOrder.update(o.id, {
+            status: 'cancelled',
+            closure_reason: 'Invalid order: zero quantity or price',
+            error_message: 'Order validation failed - quantity or price was zero'
+          })
+          )).catch((err) => console.error('[OrdersAndHistory] Cleanup error:', err));
         }
       }
-      
+
       // In LIVE mode, if Kraken API returned empty but WebSocket has orders, use WebSocket as backup
       if (!isSimMode && activeOrders.length === 0 && wsConnected && krakenOrders && Object.keys(krakenOrders).length > 0) {
         console.log('[OrdersAndHistory] ⚠️ API returned 0 orders, using WebSocket backup:', Object.keys(krakenOrders).length);
-        const krakenOrdersList = Object.values(krakenOrders)
-          .map(ko => {
-             const descr = ko.descr || {};
-             const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
-             const side = descr.type || ko.side || 'unknown';
-             const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
-             const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
-             const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
-             
-             return {
-               id: ko.order_id || ko.txid,
-               symbol: symbol,
-               quantity: volume,
-               purchase_price: price,
-               status: 'active',
-               asset_type: 'crypto',
-               is_simulation: false,
-               kraken_order_id: ko.order_id || ko.txid,
-               created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : (ko.created_at || new Date().toISOString()),
-               order_type: orderType,
-               side: side,
-               gain_margin: 10,
-               loss_margin: 5,
-               trailing_enabled: orderType.includes('trailing'),
-               kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
-               trigger_price: parseFloat(descr.price) || 0
-             };
-          })
-          .filter(ko => ko.quantity > 0.00000001);
-          
+        const krakenOrdersList = Object.values(krakenOrders).
+        map((ko) => {
+          const descr = ko.descr || {};
+          const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
+          const side = descr.type || ko.side || 'unknown';
+          const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+          const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+          const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+
+          return {
+            id: ko.order_id || ko.txid,
+            symbol: symbol,
+            quantity: volume,
+            purchase_price: price,
+            status: 'active',
+            asset_type: 'crypto',
+            is_simulation: false,
+            kraken_order_id: ko.order_id || ko.txid,
+            created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : ko.created_at || new Date().toISOString(),
+            order_type: orderType,
+            side: side,
+            gain_margin: 10,
+            loss_margin: 5,
+            trailing_enabled: orderType.includes('trailing'),
+            kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+            trigger_price: parseFloat(descr.price) || 0
+          };
+        }).
+        filter((ko) => ko.quantity > 0.00000001);
+
         activeOrders = krakenOrdersList;
         console.log('[OrdersAndHistory] ✅ Set active orders from WebSocket backup:', activeOrders.length);
         setLastRefreshAt(Date.now());
@@ -400,35 +400,35 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       // CRITICAL: Include ALL non-active orders in closed list
       // But EXCLUDE any local records whose Kraken order ID is still open on Kraken (prevents false "Cancelled")
       const openOrderIdSet = new Set(
-        (activeOrders || [])
-          .flatMap(o => (o.kraken_order_id || '').split(',').map(id => id.trim()))
-          .filter(Boolean)
+        (activeOrders || []).
+        flatMap((o) => (o.kraken_order_id || '').split(',').map((id) => id.trim())).
+        filter(Boolean)
       );
       const isStillOpenOnKraken = (o) => {
         if (!o?.kraken_order_id) return false;
-        return o.kraken_order_id.split(',').some(id => openOrderIdSet.has(id.trim()));
+        return o.kraken_order_id.split(',').some((id) => openOrderIdSet.has(id.trim()));
       };
 
-      const executed = modeFilteredOrders
-        .filter((o) => o.status === "executed")
-        .filter(o => !isStillOpenOnKraken(o));
+      const executed = modeFilteredOrders.
+      filter((o) => o.status === "executed").
+      filter((o) => !isStillOpenOnKraken(o));
 
-      const cancelled = modeFilteredOrders
-        .filter((o) => o.status === "cancelled")
-        .filter(o => !isStillOpenOnKraken(o));
+      const cancelled = modeFilteredOrders.
+      filter((o) => o.status === "cancelled").
+      filter((o) => !isStillOpenOnKraken(o));
 
-      const failed = modeFilteredOrders
-        .filter((o) => o.status === "failed")
-        .filter(o => !isStillOpenOnKraken(o));
+      const failed = modeFilteredOrders.
+      filter((o) => o.status === "failed").
+      filter((o) => !isStillOpenOnKraken(o));
 
       // In Live mode, include ALL orders with errors (even if locally 'active') because activeOrders comes from Kraken
       // In Sim mode, avoid duplicates by excluding active orders; also exclude those still open on Kraken
-      const withErrors = modeFilteredOrders
-        .filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode))
-        .filter(o => !isStillOpenOnKraken(o));
+      const withErrors = modeFilteredOrders.
+      filter((o) => !!o.error_message && (o.status !== "active" || !isSimMode)).
+      filter((o) => !isStillOpenOnKraken(o));
 
       // EXTRA: If API failed (e.g., permissions), fall back to local active orders so UI isn't empty
-      if (!isSimMode && (krakenOpenOrders.length === 0) && (activeOrders.length === 0)) {
+      if (!isSimMode && krakenOpenOrders.length === 0 && activeOrders.length === 0) {
         activeOrders = modeFilteredOrders.filter((o) => o.status === "active" && o.is_simulation === false);
         console.warn('[OrdersAndHistory] Fallback to local active orders:', activeOrders.length);
       }
@@ -436,38 +436,38 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       console.log('[OrdersAndHistory] Order breakdown - executed:', executed.length, 'cancelled:', cancelled.length, 'failed:', failed.length, 'withErrors:', withErrors.length);
 
       // If a local record says cancelled but the same kraken_order_id is open on Kraken, auto-correct it in UI
-      const locallyCancelledButOpen = modeFilteredOrders.filter(o => o.status === 'cancelled' && isStillOpenOnKraken(o));
+      const locallyCancelledButOpen = modeFilteredOrders.filter((o) => o.status === 'cancelled' && isStillOpenOnKraken(o));
       if (locallyCancelledButOpen.length > 0) {
-        console.log('[OrdersAndHistory] Correcting locally-cancelled orders that are still OPEN on Kraken:', locallyCancelledButOpen.map(o => o.id));
+        console.log('[OrdersAndHistory] Correcting locally-cancelled orders that are still OPEN on Kraken:', locallyCancelledButOpen.map((o) => o.id));
       }
 
       // CRITICAL: Separate conditional orders from regular open orders
       // Conditional = stop-loss, take-profit, trailing-stop orders
       // Open = limit, market orders
       // NOTE: Also verify if order.order_type exists, fallback to other properties
-      const conditionalOrdersList = activeOrders.filter(order => {
+      const conditionalOrdersList = activeOrders.filter((order) => {
         const orderType = (order.order_type || order.ordertype || '').toLowerCase();
         const description = (order.kraken_description || '').toLowerCase();
         return orderType.includes('stop') || orderType.includes('take-profit') || orderType.includes('take profit') || orderType.includes('trigger') || orderType.includes('conditional') || orderType.includes('oco') || orderType.includes('oco trigger') || orderType.includes('trailing') ||
-               description.includes('stop') || description.includes('take profit') || description.includes('trailing') || description.includes('oco');
+        description.includes('stop') || description.includes('take profit') || description.includes('trailing') || description.includes('oco');
       });
-      
-      const openOrdersList = activeOrders.filter(order => {
+
+      const openOrdersList = activeOrders.filter((order) => {
         const orderType = (order.order_type || order.ordertype || '').toLowerCase();
         const description = (order.kraken_description || '').toLowerCase();
-        return (!orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('take profit') && !orderType.includes('trailing') && !orderType.includes('oco') && !orderType.includes('conditional') && !orderType.includes('trigger')) &&
-               (!description.includes('stop') && !description.includes('take profit') && !description.includes('trailing') && !description.includes('oco'));
+        return !orderType.includes('stop') && !orderType.includes('take-profit') && !orderType.includes('take profit') && !orderType.includes('trailing') && !orderType.includes('oco') && !orderType.includes('conditional') && !orderType.includes('trigger') &&
+        !description.includes('stop') && !description.includes('take profit') && !description.includes('trailing') && !description.includes('oco');
       });
-      
+
       console.log('[OrdersAndHistory] ✅ Split orders - Conditional:', conditionalOrdersList.length, 'Open:', openOrdersList.length, 'Total active:', activeOrders.length);
 
-      setConditionalOrders(prev => sortByDateDesc(mergeLists(prev, conditionalOrdersList)));
-      setOpenOrders(prev => sortByDateDesc(mergeLists(prev, openOrdersList)));
+      setConditionalOrders((prev) => sortByDateDesc(mergeLists(prev, conditionalOrdersList)));
+      setOpenOrders((prev) => sortByDateDesc(mergeLists(prev, openOrdersList)));
 
       // Combine all closed orders - executed, cancelled, failed, and orders with errors
       // Use a Map to avoid duplicates (keyed by order ID)
       const closedOrdersMap = new Map();
-      [...executed, ...cancelled, ...failed, ...withErrors].forEach(order => {
+      [...executed, ...cancelled, ...failed, ...withErrors].forEach((order) => {
         closedOrdersMap.set(order.id, order);
       });
 
@@ -477,9 +477,9 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
       // Sort by date (most recent first) and merge so UI doesn't jump
       const sortedClosed = uniqueClosedOrders.sort((a, b) =>
-        new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
+      new Date(b.updated_date || b.created_date).getTime() - new Date(a.updated_date || a.created_date).getTime()
       );
-      setClosedOrders(prev => sortByDateDesc(mergeLists(prev, sortedClosed)));
+      setClosedOrders((prev) => sortByDateDesc(mergeLists(prev, sortedClosed)));
 
     } catch (err) {
       console.error("[OrdersAndHistory] Failed to load orders:", err);
@@ -524,52 +524,52 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   useEffect(() => {
     if (!isSimMode && providerKrakenOrders && providerKrakenOrders.length > 0) {
       console.log('[OrdersAndHistory] Provider orders updated:', providerKrakenOrders.length);
-      
-      const list = providerKrakenOrders
-        .map(ko => {
-          const descr = ko.descr || {};
-          const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
-          const side = descr.type || ko.side || 'unknown';
-          const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
-          const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
-          const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
-          return {
-            id: ko.order_id || ko.txid,
-            symbol,
-            quantity: volume,
-            purchase_price: price,
-            status: 'active',
-            asset_type: 'crypto',
-            is_simulation: false,
-            kraken_order_id: ko.order_id || ko.txid,
-            created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : (ko.created_at || new Date().toISOString()),
-            order_type: orderType,
-            side,
-            gain_margin: 10,
-            loss_margin: 5,
-            trailing_enabled: String(orderType).toLowerCase().includes('trailing'),
-            kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
-            trigger_price: parseFloat(descr.price) || 0
-          };
-        })
-        .filter(o => o.quantity > 0.00000001);
 
-      const conditionalList = list.filter(order => {
+      const list = providerKrakenOrders.
+      map((ko) => {
+        const descr = ko.descr || {};
+        const orderType = descr.ordertype || ko.order_type || ko.ordertype || 'unknown';
+        const side = descr.type || ko.side || 'unknown';
+        const volume = parseFloat(ko.vol) || parseFloat(ko.volume) || 0;
+        const price = parseFloat(descr.price) || parseFloat(ko.price) || parseFloat(ko.limit_price) || 0;
+        const symbol = normalizeKrakenSymbol(descr.pair || ko.symbol || ko.pair || '');
+        return {
+          id: ko.order_id || ko.txid,
+          symbol,
+          quantity: volume,
+          purchase_price: price,
+          status: 'active',
+          asset_type: 'crypto',
+          is_simulation: false,
+          kraken_order_id: ko.order_id || ko.txid,
+          created_date: ko.opentm ? new Date(ko.opentm * 1000).toISOString() : ko.created_at || new Date().toISOString(),
+          order_type: orderType,
+          side,
+          gain_margin: 10,
+          loss_margin: 5,
+          trailing_enabled: String(orderType).toLowerCase().includes('trailing'),
+          kraken_description: descr.order || `${side} ${volume} ${symbol} @ ${orderType} ${price}`,
+          trigger_price: parseFloat(descr.price) || 0
+        };
+      }).
+      filter((o) => o.quantity > 0.00000001);
+
+      const conditionalList = list.filter((order) => {
         const ot = (order.order_type || '').toLowerCase();
         const desc = (order.kraken_description || '').toLowerCase();
         return ot.includes('stop') || ot.includes('take-profit') || ot.includes('take profit') || ot.includes('trailing') || ot.includes('oco') || ot.includes('conditional') || ot.includes('trigger') ||
-               desc.includes('stop') || desc.includes('take profit') || desc.includes('trailing') || desc.includes('oco');
+        desc.includes('stop') || desc.includes('take profit') || desc.includes('trailing') || desc.includes('oco');
       });
 
-      const openList = list.filter(order => {
+      const openList = list.filter((order) => {
         const ot = (order.order_type || '').toLowerCase();
         const desc = (order.kraken_description || '').toLowerCase();
-        return (!ot.includes('stop') && !ot.includes('take-profit') && !ot.includes('take profit') && !ot.includes('trailing') && !ot.includes('oco') && !ot.includes('conditional') && !ot.includes('trigger')) &&
-               (!desc.includes('stop') && !desc.includes('take profit') && !desc.includes('trailing') && !desc.includes('oco'));
+        return !ot.includes('stop') && !ot.includes('take-profit') && !ot.includes('take profit') && !ot.includes('trailing') && !ot.includes('oco') && !ot.includes('conditional') && !ot.includes('trigger') &&
+        !desc.includes('stop') && !desc.includes('take profit') && !desc.includes('trailing') && !desc.includes('oco');
       });
 
-      setConditionalOrders(prev => sortByDateDesc(mergeLists(prev, conditionalList)));
-      setOpenOrders(prev => sortByDateDesc(mergeLists(prev, openList)));
+      setConditionalOrders((prev) => sortByDateDesc(mergeLists(prev, conditionalList)));
+      setOpenOrders((prev) => sortByDateDesc(mergeLists(prev, openList)));
       setLastRefreshAt(Date.now());
     }
   }, [providerKrakenOrders, isSimMode, mergeLists]);
@@ -595,11 +595,11 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const handleDismissFailedOrder = async (orderId) => {
     try {
       // Optimistically remove from UI immediately without triggering full reload spinner
-      setClosedOrders(prev => prev.filter(o => o.id !== orderId));
-      
+      setClosedOrders((prev) => prev.filter((o) => o.id !== orderId));
+
       await ConditionalOrder.delete(orderId);
       notify.success("Failed order dismissed");
-      
+
       // Notify parent to refresh balances/etc but don't force local loading spinner
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -614,12 +614,12 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     setCancellingOrderId(orderId);
     try {
       // Find the order to check for Kraken order IDs
-      const order = conditionalOrders.find(o => o.id === orderId) || openOrders.find(o => o.id === orderId);
-      
+      const order = conditionalOrders.find((o) => o.id === orderId) || openOrders.find((o) => o.id === orderId);
+
       // If in LIVE mode and has Kraken order IDs, cancel them on Kraken first
       if (!isSimMode && order?.kraken_order_id) {
-        const krakenOrderIds = order.kraken_order_id.split(',').filter(id => id.trim());
-        
+        const krakenOrderIds = order.kraken_order_id.split(',').filter((id) => id.trim());
+
         if (krakenOrderIds.length > 0) {
           try {
             console.log('[OrdersAndHistory] Cancelling Kraken orders:', krakenOrderIds);
@@ -627,7 +627,7 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
               action: 'cancel_order',
               orderIds: krakenOrderIds
             });
-            
+
             const cancelData = cancelResponse?.data || cancelResponse;
             if (cancelData?.success) {
               console.log('[OrdersAndHistory] ✅ Kraken orders cancelled:', cancelData.order_ids);
@@ -650,15 +650,15 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           }
         }
       }
-      
+
       // Update local order status
-      await ConditionalOrder.update(orderId, { 
+      await ConditionalOrder.update(orderId, {
         status: "cancelled",
-        closure_reason: !isSimMode && order?.kraken_order_id 
-          ? `Manually cancelled. Kraken order IDs: ${order.kraken_order_id}`
-          : "Manually cancelled by user"
+        closure_reason: !isSimMode && order?.kraken_order_id ?
+        `Manually cancelled. Kraken order IDs: ${order.kraken_order_id}` :
+        "Manually cancelled by user"
       });
-      
+
       notify.success("Order cancelled");
       loadOrders();
       if (onRefresh) onRefresh();
@@ -688,29 +688,29 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
     const localTrades = trades.filter((t) => t.is_simulation === isSimMode);
 
     // Add executed orders from Closed tab as trades (mostly SELL executions)
-    const executedFromClosed = closedOrders
-      .filter((o) => o.status === 'executed' && (o.is_simulation === isSimMode))
-      .map((o) => {
-        const execPrice = o.execution_price || o.trigger_price || o.purchase_price || 0;
-        return {
-          id: `exec-${o.id}`,
-          symbol: normalizeKrakenSymbol(o.symbol || ''),
-          type: 'sell',
-          quantity: Number(o.quantity) || 0,
-          price: execPrice,
-          total_value: (Number(o.quantity) || 0) * execPrice,
-          created_date: o.updated_date || o.created_date,
-          is_simulation: !!o.is_simulation,
-          is_auto_trade: true,
-          asset_type: 'crypto',
-          status: 'executed'
-        };
-      });
-    
+    const executedFromClosed = closedOrders.
+    filter((o) => o.status === 'executed' && o.is_simulation === isSimMode).
+    map((o) => {
+      const execPrice = o.execution_price || o.trigger_price || o.purchase_price || 0;
+      return {
+        id: `exec-${o.id}`,
+        symbol: normalizeKrakenSymbol(o.symbol || ''),
+        type: 'sell',
+        quantity: Number(o.quantity) || 0,
+        price: execPrice,
+        total_value: (Number(o.quantity) || 0) * execPrice,
+        created_date: o.updated_date || o.created_date,
+        is_simulation: !!o.is_simulation,
+        is_auto_trade: true,
+        asset_type: 'crypto',
+        status: 'executed'
+      };
+    });
+
     // In LIVE mode, merge with Kraken trades history
     if (!isSimMode && krakenTradesHistory.length > 0) {
       // Convert Kraken trades to our format
-      const krakenTradesList = krakenTradesHistory.map(kt => {
+      const krakenTradesList = krakenTradesHistory.map((kt) => {
         const symbol = normalizeKrakenSymbol(kt.pair || '');
         return {
           id: kt.trade_id || kt.ordertxid || `kraken-${kt.time}`,
@@ -730,27 +730,27 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           kraken_trade_id: kt.trade_id
         };
       });
-      
+
       // Merge and dedupe by checking if local trade matches Kraken trade (within time window)
       const base = [...localTrades, ...executedFromClosed];
       const mergedTrades = [...base];
-      krakenTradesList.forEach(kt => {
-        const isDupe = base.some(lt => 
-          lt.symbol === kt.symbol && 
-          Math.abs((lt.quantity || 0) - kt.quantity) < 0.0001 &&
-          Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
+      krakenTradesList.forEach((kt) => {
+        const isDupe = base.some((lt) =>
+        lt.symbol === kt.symbol &&
+        Math.abs((lt.quantity || 0) - kt.quantity) < 0.0001 &&
+        Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
         );
         if (!isDupe) {
           mergedTrades.push(kt);
         }
       });
-      
-      return sortByDateDesc(mergedTrades.map(t => ({...t})));
+
+      return sortByDateDesc(mergedTrades.map((t) => ({ ...t })));
     }
-    
+
     return sortByDateDesc([...localTrades, ...executedFromClosed]);
   }, [trades, isSimMode, krakenTradesHistory, closedOrders]);
-  
+
   const buyTrades = filteredTrades.filter((t) => t.type === "buy");
   const sellTrades = filteredTrades.filter((t) => t.type === "sell");
 
@@ -847,72 +847,72 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
 
             {/* OPEN ORDERS TAB */}
             <TabsContent value="open" className="mt-0">
-              {openOrders.length === 0 ? (
-                <EmptyState
-                  icon={Clock}
-                  message="No open orders. Your active limit and stop orders will appear here." />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {sortByDateDesc(openOrders).map((order) => (
-                    <OrderRow
-                      key={order.id}
-                      order={order}
-                      timezone={timezone}
-                      is24h={is24h}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onCancel={handleCancelOrder}
-                      isCancelling={cancellingOrderId === order.id}
-                      type="open" />
-                  ))}
+              {openOrders.length === 0 ?
+              <EmptyState
+                icon={Clock}
+                message="No open orders. Your active limit and stop orders will appear here." /> :
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {sortByDateDesc(openOrders).map((order) =>
+                <OrderRow
+                  key={order.id}
+                  order={order}
+                  timezone={timezone}
+                  is24h={is24h}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onCancel={handleCancelOrder}
+                  isCancelling={cancellingOrderId === order.id}
+                  type="open" />
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
 
             {/* CONDITIONAL ORDERS TAB */}
             <TabsContent value="conditional" className="mt-0">
-              {conditionalOrders.length === 0 ? (
-                <EmptyState
-                  icon={Target}
-                  message="No conditional orders. Auto-trader creates these when buying assets." />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {sortByDateDesc(conditionalOrders).map((order) => (
-                    <ConditionalOrderRow
-                      key={order.id}
-                      order={order}
-                      timezone={timezone}
-                      is24h={is24h}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onCancel={handleCancelOrder}
-                      isCancelling={cancellingOrderId === order.id} />
-                  ))}
+              {conditionalOrders.length === 0 ?
+              <EmptyState
+                icon={Target}
+                message="No conditional orders. Auto-trader creates these when buying assets." /> :
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {sortByDateDesc(conditionalOrders).map((order) =>
+                <ConditionalOrderRow
+                  key={order.id}
+                  order={order}
+                  timezone={timezone}
+                  is24h={is24h}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onCancel={handleCancelOrder}
+                  isCancelling={cancellingOrderId === order.id} />
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
 
             {/* CLOSED/FAILED ORDERS TAB */}
             <TabsContent value="closed" className="mt-0">
-              {closedOrders.length === 0 ? (
-                <EmptyState
-                  icon={CheckCircle2}
-                  message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." />
-              ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  {sortByDateDesc(closedOrders).slice(0, 50).map((order) => (
-                    <ClosedOrderRow
-                      key={order.id}
-                      order={order}
-                      timezone={timezone}
-                      is24h={is24h}
-                      formatDisplayQuantity={formatDisplayQuantity}
-                      formatPrice={formatPrice}
-                      onClick={() => setSelectedClosedOrder(order)}
-                      onDismiss={handleDismissFailedOrder} />
-                  ))}
+              {closedOrders.length === 0 ?
+              <EmptyState
+                icon={CheckCircle2}
+                message="No closed or failed orders yet. Executed, cancelled, and failed orders appear here." /> :
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {sortByDateDesc(closedOrders).slice(0, 50).map((order) =>
+                <ClosedOrderRow
+                  key={order.id}
+                  order={order}
+                  timezone={timezone}
+                  is24h={is24h}
+                  formatDisplayQuantity={formatDisplayQuantity}
+                  formatPrice={formatPrice}
+                  onClick={() => setSelectedClosedOrder(order)}
+                  onDismiss={handleDismissFailedOrder} />
+                )}
                 </div>
-              )}
+              }
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -1012,7 +1012,7 @@ function TradeRow({ trade, timezone, is24h, formatDisplayQuantity, formatPrice, 
 function OrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, onCancel, isCancelling, type }) {
   // Normalize the symbol for display
   const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
-  
+
   // Determine order type badge color
   const getOrderTypeBadge = () => {
     const orderType = (order.order_type || '').toLowerCase();
@@ -1030,7 +1030,7 @@ function OrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, 
     }
     return { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: 'Pending' };
   };
-  
+
   const typeBadge = getOrderTypeBadge();
 
   return (
@@ -1050,16 +1050,16 @@ function OrderRow({ order, timezone, is24h, formatDisplayQuantity, formatPrice, 
             <Badge className={`text-xs ${typeBadge.bg} ${typeBadge.text}`}>
               {typeBadge.label}
             </Badge>
-            {order.side && (
-              <Badge variant="outline" className="text-xs capitalize">
+            {order.side &&
+            <Badge variant="outline" className="text-xs capitalize">
                 {order.side}
               </Badge>
-            )}
-            {order.group_type === 'bracket' && (
-              <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+            }
+            {order.group_type === 'bracket' &&
+            <Badge className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                 Bracket
               </Badge>
-            )}
+            }
           </div>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {order.kraken_description || formatInTimezone(order.created_date, timezone, is24h)}
@@ -1177,7 +1177,7 @@ function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatP
   const isFailed = order.status === "failed" || !!order.error_message;
   // Normalize the symbol for display
   const displaySymbol = normalizeKrakenSymbol(order.symbol || '');
-  
+
   // Determine icon and styling based on status
   const getStatusStyle = () => {
     if (isFailed) {
@@ -1203,7 +1203,7 @@ function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatP
       label: 'Cancelled'
     };
   };
-  
+
   const statusStyle = getStatusStyle();
 
   return (
@@ -1212,23 +1212,23 @@ function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatP
       style={{ backgroundColor: 'var(--secondary-bg)', borderColor: isFailed ? undefined : 'var(--border-color)' }}>
       
       {/* Dismiss button for failed orders */}
-      {isFailed && onDismiss && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDismiss(order.id);
-          }}
-          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-md transition-colors z-10"
-          title="Dismiss failed order"
-        >
+      {isFailed && onDismiss &&
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss(order.id);
+        }}
+        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-md transition-colors z-10"
+        title="Dismiss failed order">
+        
           <X className="w-3 h-3 text-white" />
         </button>
-      )}
+      }
       
       <button
         onClick={onClick}
-        className="flex-1 flex items-center justify-between cursor-pointer"
-      >
+        className="flex-1 flex items-center justify-between cursor-pointer">
+        
         <div className="flex items-center gap-3">
           <div className={`w-8 h-8 rounded-full flex items-center justify-center ${statusStyle.bgClass}`}>
             {statusStyle.icon}
@@ -1246,11 +1246,11 @@ function ClosedOrderRow({ order, timezone, is24h, formatDisplayQuantity, formatP
             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               {formatInTimezone(order.updated_date || order.created_date, timezone, is24h)}
             </p>
-            {isFailed && order.error_message && (
-              <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
+            {isFailed && order.error_message &&
+            <p className="text-xs text-red-500 dark:text-red-400 truncate max-w-[200px]">
                 {order.error_message.slice(0, 50)}{order.error_message.length > 50 ? '...' : ''}
               </p>
-            )}
+            }
           </div>
         </div>
         
@@ -1284,7 +1284,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
       const errMsg = order.error_message.toLowerCase();
       let friendlyDescription = order.error_message;
       let title = "Order Failed";
-      
+
       if (errMsg.includes('insufficient funds') || errMsg.includes('insufficient balance')) {
         title = "Insufficient Funds";
         friendlyDescription = `The order could not be executed because there weren't enough funds in your account. Original error: ${order.error_message}`;
@@ -1304,7 +1304,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
         title = "Connection Error";
         friendlyDescription = `There was a connection issue with Kraken. The order may not have been placed. Original error: ${order.error_message}`;
       }
-      
+
       return {
         type: "error",
         title: title,
@@ -1313,7 +1313,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
         color: "text-red-500"
       };
     }
-    
+
     if (order.closure_reason) {
       // Parse the closure reason to determine icon and color
       const reason = order.closure_reason.toLowerCase();
@@ -1371,7 +1371,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
         color: isExecuted ? "text-green-500" : "text-gray-500"
       };
     }
-    
+
     if (isExecuted) {
       // Check if it was trailing stop, take profit, or stop loss
       if (order.highest_price && order.highest_price > order.purchase_price) {
@@ -1394,13 +1394,13 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
       };
     } else {
       // Cancelled - provide SPECIFIC reasons
-      
+
       // Check if there's a newer order for the same symbol (replaced by updated order)
       // This happens when auto-trader creates new conditional orders with updated prices
       const createdDate = new Date(order.created_date).getTime();
       const updatedDate = order.updated_date ? new Date(order.updated_date).getTime() : createdDate;
       const timeDiff = updatedDate - createdDate;
-      
+
       // Check for various cancellation scenarios
       if (order.quantity <= 0 || order.quantity < 0.00001) {
         return {
@@ -1411,7 +1411,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
           color: "text-yellow-500"
         };
       }
-      
+
       if (order.purchase_price <= 0) {
         return {
           type: "invalid-price",
@@ -1421,7 +1421,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
           color: "text-red-500"
         };
       }
-      
+
       // If order was cancelled very quickly after creation (within 5 minutes), likely replaced
       if (timeDiff > 0 && timeDiff < 5 * 60 * 1000) {
         return {
@@ -1432,7 +1432,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
           color: "text-blue-500"
         };
       }
-      
+
       // Check if it's a simulation order that was cancelled when switching modes
       if (order.is_simulation === true) {
         return {
@@ -1443,7 +1443,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
           color: "text-gray-500"
         };
       }
-      
+
       // Live order cancelled
       if (order.is_simulation === false) {
         if (order.kraken_order_id) {
@@ -1463,7 +1463,7 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
           color: "text-gray-500"
         };
       }
-      
+
       // Default fallback with more context
       return {
         type: "cancelled",
@@ -1491,11 +1491,11 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
         <div className="space-y-4 pt-2">
           {/* Reason Card */}
           <div className={`p-4 rounded-lg border ${
-            isFailed ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' :
-            isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 
-            'bg-slate-600 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-          }`}>
-            <h4 className={`mb-2 font-medium ${isFailed ? 'text-red-700 dark:text-red-300' : 'text-slate-50'}`}>{reason.title}</h4>
+          isFailed ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' :
+          isExecuted ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
+          'bg-slate-600 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`
+          }>
+            <h4 className={`mb-2 font-medium opacity-100 ${isFailed ? 'text-red-700 dark:text-red-300' : 'text-slate-50'}`}>{reason.title}</h4>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               {reason.description}
             </p>
@@ -1521,10 +1521,10 @@ function ClosedOrderDetailsModal({ order, isOpen, onClose, timezone, is24h, form
               <div className="p-2 rounded bg-slate-600 dark:bg-gray-800">
                 <span className="block text-xs" style={{ color: 'var(--text-secondary)' }}>Status</span>
                 <Badge className={`text-xs ${
-                  isFailed ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
-                  isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 
-                  'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                }`}>
+                isFailed ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+                isExecuted ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+                'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`
+                }>
                   {isFailed ? 'Failed' : isExecuted ? 'Executed' : 'Cancelled'}
                 </Badge>
               </div>
