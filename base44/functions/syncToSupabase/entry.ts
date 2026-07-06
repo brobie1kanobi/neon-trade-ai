@@ -69,11 +69,27 @@ Deno.serve(async (req) => {
         let syncedCount = 0;
         for (let i = 0; i < records.length; i += CHUNK) {
           const chunk = records.slice(i, i + CHUNK);
+
+          // PostgREST requires every object in a batch to have identical keys.
+          // Collect the union of all keys across this chunk, then normalize
+          // every record so missing fields are explicitly null.
+          const allKeys = new Set();
+          for (const rec of chunk) {
+            for (const k of Object.keys(rec)) allKeys.add(k);
+          }
+          const normalizedChunk = chunk.map(rec => {
+            const out = {};
+            for (const k of allKeys) {
+              out[k] = rec[k] !== undefined ? rec[k] : null;
+            }
+            return out;
+          });
+
           const url = `${SUPABASE_URL}/rest/v1/${entityName}?on_conflict=id`;
           const res = await fetch(url, {
             method: 'POST',
             headers: supabaseHeaders,
-            body: JSON.stringify(chunk)
+            body: JSON.stringify(normalizedChunk)
           });
           if (!res.ok) {
             const errText = await res.text();
