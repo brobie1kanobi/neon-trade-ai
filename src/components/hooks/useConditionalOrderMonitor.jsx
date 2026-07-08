@@ -153,17 +153,18 @@ export function useConditionalOrderMonitor(userEmail) {
         continue;
       }
 
-      // PRE-FLIGHT (LIVE): Check actual available balance from WS before attempting sell
+      // BUG FIX #2: PRE-FLIGHT (LIVE): Check available balance can cover THIS order's quantity
       if (!isSimMode && wsBalances) {
         const balEntry = wsBalances[sym] || wsBalances[`X${sym}`];
         const available = balEntry?.balance || balEntry?.available || 0;
-        if (available < minQty) {
-          console.log(`[OrderMonitor] Auto-cancelling ${sym} order #${order.id} — available ${available} below Kraken min ${minQty}`);
+        // If available < order qty, this position was already consumed by a stacked order
+        if (available < minQty || quantity > available * 1.05) {
+          console.log(`[OrderMonitor] Position consumed for ${sym} order #${order.id} — available ${available}, needed ${quantity}`);
           failedOrdersRef.current.add(order.id);
           try {
             await base44.entities.ConditionalOrder.update(order.id, {
               status: 'cancelled',
-              closure_reason: `Auto-cancelled: insufficient ${sym} balance (${available.toFixed(8)}). Min: ${minQty}`,
+              closure_reason: `Auto-cancelled: position consumed. Available ${sym}: ${typeof available === 'number' ? available.toFixed(8) : available}. Order needed: ${quantity}`,
               executed_at: new Date().toISOString()
             });
             activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
@@ -258,6 +259,31 @@ export function useConditionalOrderMonitor(userEmail) {
 
         // Remove from local cache
         activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
+
+        // BUG FIX #4: Write ModelPerformance record for analytics
+        try {
+          const outcomePct = ((price - purchase_price) / purchase_price) * 100;
+          const entryTime = new Date(order.created_date || order.updated_date).getTime();
+          const durationMin = Math.round((Date.now() - entryTime) / 60000);
+          let exitReason = 'manual';
+          if (reason.includes('Take-Profit')) exitReason = 'take_profit';
+          else if (reason.includes('Stop-Loss')) exitReason = 'stop_loss';
+          else if (reason.includes('Trailing')) exitReason = 'trailing_stop';
+
+          await base44.entities.ModelPerformance.create({
+            signal_id: order.signal_id || null,
+            trade_id: order.trade_id || null,
+            asset_symbol: sym,
+            entry_price: purchase_price,
+            exit_price: price,
+            outcome_percentage: Math.round(outcomePct * 100) / 100,
+            duration_held_minutes: durationMin,
+            is_success: outcomePct > 0,
+            exit_reason: exitReason,
+            is_simulation: isSimMode,
+            created_by: userEmail
+          });
+        } catch (_) {}
 
         // Notify
         const pnl = (price - purchase_price) * quantity;

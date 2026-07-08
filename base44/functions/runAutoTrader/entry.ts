@@ -1218,7 +1218,39 @@ Deno.serve(async (req) => {
     for (const sig of signals) {
       signalMap.set(sig.asset_symbol, sig);
     }
-    
+
+    // ═══════════════════════════════════════════════════════════════════
+    // BUG FIX #1: OPEN-POSITION & CONSUMED-SIGNAL GUARDS
+    // Prevent duplicate buys on the same symbol/signal across runs.
+    // ═══════════════════════════════════════════════════════════════════
+    let openConditionalOrders = [];
+    try {
+      openConditionalOrders = await base44.entities.ConditionalOrder.filter({
+        created_by: user.email,
+        status: 'active'
+      });
+      // Only consider orders matching current mode
+      openConditionalOrders = openConditionalOrders.filter(o =>
+        isSimMode ? o.is_simulation !== false : o.is_simulation === false
+      );
+    } catch (_e) {}
+    const symbolsWithOpenPosition = new Set(openConditionalOrders.map(o => (o.symbol || '').toUpperCase()));
+    log('Open positions check', { symbolsWithOpenPosition: [...symbolsWithOpenPosition] });
+
+    // Also load signal_ids already consumed by recent trades (last 7 days)
+    let consumedSignalIds = new Set();
+    try {
+      const recentAutoTrades = await base44.entities.Trade.filter({
+        created_by: user.email,
+        is_auto_trade: true,
+        type: 'buy'
+      }, '-created_date', 100);
+      for (const t of recentAutoTrades) {
+        if (t.signal_id) consumedSignalIds.add(t.signal_id);
+      }
+    } catch (_e) {}
+    log('Consumed signals check', { count: consumedSignalIds.size });
+
     // HIGH WIN-RATE FILTER: Only auto-execute trades that passed ALL validation layers:
     // 1. generateSignals v4 multi-timeframe + data validation (hard filters)
     // 2. Signal type MUST be "strong_buy" (no "buy" auto-execution)
@@ -1260,6 +1292,18 @@ Deno.serve(async (req) => {
         trendOkForBuy,
         eligible
       });
+
+      // BUG FIX #1a: Skip if we already have an open position (active ConditionalOrder) for this symbol
+      if (eligible && symbolsWithOpenPosition.has(p.symbol)) {
+        log(`POSITION GUARD: Skipping ${p.symbol} — already have an active ConditionalOrder`);
+        return false;
+      }
+
+      // BUG FIX #1b: Skip if this signal_id was already consumed by a previous trade
+      if (eligible && signal?.id && consumedSignalIds.has(signal.id)) {
+        log(`SIGNAL GUARD: Skipping ${p.symbol} — signal ${signal.id} already consumed`);
+        return false;
+      }
 
       return eligible;
     });
@@ -1445,6 +1489,13 @@ Deno.serve(async (req) => {
       const signal = signalMap.get(sym);
       if (signal?.id) {
         signalsConsumed.push(signal.id);
+      }
+
+      // BUG FIX #2: Ensure buy quantity is large enough to cleanly exit later
+      const exitMinQty = MIN_ORDER_SIZES[sym] || 0.00001;
+      if (qty < exitMinQty * 1.05) { // 5% buffer above exchange minimum
+        log(`EXIT-SIZE GUARD: Skipping ${sym} — buy qty ${qty.toFixed(8)} too close to Kraken min sell ${exitMinQty}`);
+        continue;
       }
       
       let krakenOrderIds = '';
@@ -1729,7 +1780,17 @@ Deno.serve(async (req) => {
       });
 
       log(`✅ Trade completed for ${sym}`);
-      
+
+      // BUG FIX #1c: Deactivate the consumed signal so it can't trigger another buy
+      if (signal?.id) {
+        try {
+          await base44.asServiceRole.entities.AssetSignal.update(signal.id, { is_active: false });
+          log(`Deactivated signal ${signal.id} for ${sym}`);
+        } catch (_e) {}
+      }
+      // Also add to our open-position set so next prospect in this same run is blocked
+      symbolsWithOpenPosition.add(sym);
+
       // Create notification for this AI trade with full financial details
       try {
         const modeLabel = isSimMode ? 'SIM' : 'LIVE';

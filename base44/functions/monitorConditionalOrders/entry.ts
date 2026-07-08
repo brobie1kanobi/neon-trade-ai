@@ -180,33 +180,46 @@ Deno.serve(async (req) => {
 
       console.log(`[monitor] TRIGGERED ${symbol} #${id}: ${reason} | price=$${price}`);
 
-      // Determine actual sellable quantity
+      // BUG FIX #2: Sell ONLY this order's tracked quantity, not the full account balance.
+      // This prevents stacked orders from eating each other's positions.
       let sellQuantity = quantity;
       const minQty = MIN_ORDER_SIZES[symbol] || 0.00001;
 
       if (!is_simulation) {
-        // Fetch real-time available balance from Kraken
+        // Verify there's enough available on Kraken to fill THIS order's quantity
         const availMap = await getAvailableMap(base44);
         const available = availMap[symbol] || 0;
-        sellQuantity = Math.min(quantity, available);
-        // Apply 0.5% haircut for fees/rounding
-        sellQuantity = Math.floor((sellQuantity * 0.995) * 1e8) / 1e8;
 
-        console.log(`[monitor] ${symbol}: order qty=${quantity}, available=${available.toFixed(8)}, adjusted=${sellQuantity.toFixed(8)}, min=${minQty}`);
-
-        if (sellQuantity < minQty) {
-          console.warn(`[monitor] ${symbol} #${id}: sell qty ${sellQuantity} below Kraken minimum ${minQty} (available: ${available.toFixed(8)}) - cancelling order`);
+        // CRITICAL: Only sell this order's quantity, NOT the full balance.
+        // If available < order qty, this order's position was already consumed
+        // (likely by a stacked duplicate order that fired first). Cancel cleanly.
+        if (available < minQty || quantity > available * 1.05) {
+          // Position already consumed — cancel this stale order
+          console.warn(`[monitor] ${symbol} #${id}: position consumed (available=${available.toFixed(8)}, order qty=${quantity}) — cancelling stale order`);
           await base44.asServiceRole.entities.ConditionalOrder.update(id, {
-            status: 'cancelled', closure_reason: `Auto-cancelled: available ${symbol} (${available.toFixed(8)}) below Kraken minimum sell size (${minQty})`,
+            status: 'cancelled',
+            closure_reason: `Auto-cancelled: position already consumed. Available ${symbol}: ${available.toFixed(8)}, order needed: ${quantity}`,
             executed_at: new Date().toISOString()
           });
-          await base44.asServiceRole.entities.Notification.create({
-            title: `Order Cancelled: ${symbol}`, message: `${reason} but available balance (${available.toFixed(8)}) is below Kraken minimum (${minQty})`,
-            type: 'warning', read: false, created_by
-          });
-          results.push({ id, symbol, reason, error: `Below minimum: ${available.toFixed(8)} < ${minQty}` });
+          results.push({ id, symbol, reason, error: `Position consumed: ${available.toFixed(8)} < ${quantity}` });
           continue;
         }
+
+        // Apply 0.5% haircut for fees/rounding but never exceed order quantity
+        sellQuantity = Math.min(quantity, available);
+        sellQuantity = Math.floor((sellQuantity * 0.995) * 1e8) / 1e8;
+
+        if (sellQuantity < minQty) {
+          console.warn(`[monitor] ${symbol} #${id}: adjusted sell qty ${sellQuantity} below Kraken minimum ${minQty} - cancelling`);
+          await base44.asServiceRole.entities.ConditionalOrder.update(id, {
+            status: 'cancelled', closure_reason: `Auto-cancelled: adjusted quantity (${sellQuantity.toFixed(8)}) below Kraken minimum (${minQty})`,
+            executed_at: new Date().toISOString()
+          });
+          results.push({ id, symbol, reason, error: `Below minimum after adjustment` });
+          continue;
+        }
+
+        console.log(`[monitor] ${symbol}: order qty=${quantity}, available=${available.toFixed(8)}, selling=${sellQuantity.toFixed(8)}`);
       }
 
       try {
@@ -255,6 +268,33 @@ Deno.serve(async (req) => {
             details_json: JSON.stringify({ symbol, quantity, price, reason, is_simulation }),
             created_by
           });
+
+          // BUG FIX #4: Write ModelPerformance record for analytics
+          try {
+            const outcomePct = ((price - purchase_price) / purchase_price) * 100;
+            const entryTime = new Date(order.created_date || order.updated_date).getTime();
+            const durationMin = Math.round((Date.now() - entryTime) / 60000);
+            let exitReason = 'manual';
+            if (reason.includes('Take-Profit')) exitReason = 'take_profit';
+            else if (reason.includes('Stop-Loss')) exitReason = 'stop_loss';
+            else if (reason.includes('Trailing')) exitReason = 'trailing_stop';
+
+            await base44.asServiceRole.entities.ModelPerformance.create({
+              signal_id: signal_id || null,
+              trade_id: sellResult.order_id || null,
+              asset_symbol: symbol,
+              entry_price: purchase_price,
+              exit_price: price,
+              outcome_percentage: Math.round(outcomePct * 100) / 100,
+              duration_held_minutes: durationMin,
+              is_success: outcomePct > 0,
+              exit_reason: exitReason,
+              is_simulation: is_simulation,
+              created_by
+            });
+          } catch (mpErr) {
+            console.warn(`[monitor] ModelPerformance write failed for ${symbol}:`, mpErr.message);
+          }
 
           results.push({ id, symbol, reason, price, success: true });
         } else {
