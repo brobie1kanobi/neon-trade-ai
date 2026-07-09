@@ -7,7 +7,7 @@ const ENTITIES_TO_SYNC = [
   'MarketIntelligenceCache', 'AssetCache', 'AssetChartCache', 'StockMoversCache',
   'Holding', 'HoldingsSnapshot', 'Trade', 'ConditionalOrder',
   'LedgerEntry', 'Transaction', 'KrakenLog', 'AutoTraderRun',
-  'SystemHealth', 'Notification', 'GovSpendingAward', 'ApiRateCounter'
+  'SystemHealth', 'Notification', 'ApiRateCounter'
 ];
 
 const UPSERT_CHUNK = 500;

@@ -492,7 +492,6 @@ Deno.serve(async (req) => {
     }
 
     // Build comprehensive analysis prompt with market intelligence AND trade history
-    let govSpendingSection = '';
     const assetsSection = marketData.length > 0 
       ? marketData.map(asset => `- ${asset.symbol}: Price: $${asset.price || asset.current_price}, 24h Change: ${asset.change_24h_percent || asset.price_change_percentage_24h || 0}%`).join('\n')
       : targetSymbols.map(s => `- ${s}: (analyze based on your current knowledge)`).join('\n');
@@ -572,7 +571,6 @@ For each asset, predict:
 === ASSETS TO ANALYZE ===
 ${assetsSection}
 ${tradeHistorySection}
-${govSpendingSection}
 
 === ANALYSIS REQUIREMENTS ===
 
