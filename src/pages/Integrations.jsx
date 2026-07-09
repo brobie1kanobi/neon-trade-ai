@@ -29,7 +29,7 @@ export default function Integrations() {
       <SupabaseCard />
 
       {/* GitHub Connect (embedded inline) */}
-      <GitHubConnect />
+      <GitHubConnect embedded />
 
       {/* GitHub Marketplace (admin only) */}
       {isAdmin && <GitHubMarketplace embedded />}

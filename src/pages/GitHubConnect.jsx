@@ -21,6 +21,7 @@ export default function GitHubConnect({ embedded = false }) {
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reposLoading, setReposLoading] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(false);
 
   // Create repo form
   const [showCreate, setShowCreate] = useState(false);
@@ -35,17 +36,33 @@ export default function GitHubConnect({ embedded = false }) {
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const checkConnection = useCallback(async () => {
     try {
-      const [userRes, reposRes] = await Promise.all([
-        githubRepo({ action: 'getUser' }),
-        githubRepo({ action: 'listRepos' })
-      ]);
-      const uData = userRes?.data || userRes;
-      const rData = reposRes?.data || reposRes;
-      if (uData?.success) setGhUser(uData.user);
-      if (rData?.success) setRepos(rData.repos || []);
-      setConnected(true);
+      const statusRes = await githubRepo({ action: 'checkConnection' });
+      const status = statusRes?.data || statusRes;
+      if (status?.is_connected) {
+        setConnected(true);
+        setNeedsReauth(false);
+        // Try to fetch GitHub profile data
+        try {
+          const userRes = await githubRepo({ action: 'getUser' });
+          const uData = userRes?.data || userRes;
+          if (uData?.success) setGhUser(uData.user);
+          else setNeedsReauth(true);
+        } catch {
+          setNeedsReauth(true);
+        }
+        // Try to fetch repos
+        try {
+          const reposRes = await githubRepo({ action: 'listRepos' });
+          const rData = reposRes?.data || reposRes;
+          if (rData?.success) setRepos(rData.repos || []);
+        } catch {
+          // Repos fetch failed but user is still connected
+        }
+      } else {
+        setConnected(false);
+      }
     } catch {
       setConnected(false);
     }
@@ -56,11 +73,11 @@ export default function GitHubConnect({ embedded = false }) {
       if (authed) {
         const me = await base44.auth.me();
         setUser(me);
-        await fetchData();
+        await checkConnection();
       }
       setLoading(false);
     });
-  }, [fetchData]);
+  }, [checkConnection]);
 
   const handleConnect = async () => {
     const url = await base44.connectors.connectAppUser(CONNECTOR_ID);
@@ -69,7 +86,7 @@ export default function GitHubConnect({ embedded = false }) {
       if (!popup || popup.closed) {
         clearInterval(timer);
         setLoading(true);
-        fetchData().finally(() => setLoading(false));
+        checkConnection().finally(() => setLoading(false));
       }
     }, 500);
   };
@@ -210,28 +227,52 @@ export default function GitHubConnect({ embedded = false }) {
       {/* GitHub User Info */}
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <CardHeader className="flex flex-row items-center gap-4">
-          {ghUser?.avatar_url && (
+          {ghUser?.avatar_url ? (
             <img src={ghUser.avatar_url} alt={ghUser.login} className="w-12 h-12 rounded-full" />
+          ) : (
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.1)' }}>
+              <Github className="w-6 h-6" style={{ color: 'var(--neon-green)' }} />
+            </div>
           )}
           <div className="flex-1">
-            <CardTitle style={{ color: 'var(--text-primary)' }}>
-              {ghUser?.name || ghUser?.login}
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle style={{ color: 'var(--text-primary)' }}>
+                {ghUser?.name || ghUser?.login || 'GitHub'}
+              </CardTitle>
+              <Badge className="text-[10px]" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.15)', color: 'var(--neon-green)', border: 'none' }}>
+                <Check className="w-3 h-3 mr-1" /> Connected
+              </Badge>
+            </div>
             <CardDescription style={{ color: 'var(--text-secondary)' }}>
-              @{ghUser?.login} · {ghUser?.public_repos} public repos
+              {ghUser ? `@${ghUser.login} · ${ghUser.public_repos} public repos` : 'GitHub account connected'}
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <a href={ghUser?.html_url} target="_blank" rel="noopener noreferrer" className="gap-1">
-                <ExternalLink className="w-3.5 h-3.5" /> Profile
-              </a>
-            </Button>
+            {ghUser?.html_url && (
+              <Button variant="outline" size="sm" asChild>
+                <a href={ghUser.html_url} target="_blank" rel="noopener noreferrer" className="gap-1">
+                  <ExternalLink className="w-3.5 h-3.5" /> Profile
+                </a>
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={handleDisconnect} className="text-red-500 hover:text-red-400 gap-1">
               <LogOut className="w-3.5 h-3.5" /> Disconnect
             </Button>
           </div>
         </CardHeader>
+        {needsReauth && (
+          <CardContent className="pt-0">
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-yellow-500/30" style={{ backgroundColor: 'rgba(234, 179, 8, 0.05)' }}>
+              <RefreshCw className="w-5 h-5 text-yellow-500 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-yellow-500">Token expired — reconnect to restore full access</p>
+              </div>
+              <Button size="sm" onClick={handleConnect} className="gap-1 shrink-0" style={{ backgroundColor: 'var(--neon-green)', color: '#000' }}>
+                <RefreshCw className="w-3.5 h-3.5" /> Reconnect
+              </Button>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Create Repo */}

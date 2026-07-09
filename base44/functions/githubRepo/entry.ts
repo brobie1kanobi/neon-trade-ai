@@ -13,6 +13,16 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action || 'listRepos';
 
+    // Quick connection check that doesn't hit GitHub API
+    if (action === 'checkConnection') {
+      try {
+        const { accessToken } = await base44.asServiceRole.connectors.getCurrentAppUserConnection(CONNECTOR_ID);
+        return Response.json({ success: true, is_connected: !!accessToken });
+      } catch {
+        return Response.json({ success: true, is_connected: false });
+      }
+    }
+
     const { accessToken } = await base44.asServiceRole.connectors.getCurrentAppUserConnection(CONNECTOR_ID);
 
     if (action === 'listRepos') {
