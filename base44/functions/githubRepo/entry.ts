@@ -1,6 +1,12 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 const CONNECTOR_ID = '6a09f1308b3ef44f133e022c';
+const GH_HEADERS = (token) => ({
+  'Authorization': `Bearer ${token}`,
+  'Accept': 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  'User-Agent': 'NeonTrade-AI'
+});
 
 Deno.serve(async (req) => {
   try {
@@ -27,11 +33,7 @@ Deno.serve(async (req) => {
 
     if (action === 'listRepos') {
       const resp = await fetch('https://api.github.com/user/repos?sort=updated&per_page=30', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: GH_HEADERS(accessToken)
       });
       if (!resp.ok) {
         const err = await resp.text();
@@ -61,12 +63,7 @@ Deno.serve(async (req) => {
 
       const resp = await fetch('https://api.github.com/user/repos', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           description: description || '',
@@ -96,11 +93,7 @@ Deno.serve(async (req) => {
 
     if (action === 'getUser') {
       const resp = await fetch('https://api.github.com/user', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: GH_HEADERS(accessToken)
       });
       if (!resp.ok) {
         return Response.json({ error: 'Failed to get GitHub user' }, { status: resp.status });
@@ -125,11 +118,7 @@ Deno.serve(async (req) => {
       }
       const apiPath = path ? `/${path}` : '';
       const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${apiPath}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: GH_HEADERS(accessToken)
       });
       if (!resp.ok) {
         if (resp.status === 404) {
@@ -153,11 +142,7 @@ Deno.serve(async (req) => {
 
       // Get the latest commit SHA for the branch
       const refResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${targetBranch}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: GH_HEADERS(accessToken)
       });
       if (!refResp.ok) {
         const err = await refResp.text();
@@ -168,11 +153,7 @@ Deno.serve(async (req) => {
 
       // Get the tree SHA of the latest commit
       const commitResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
+        headers: GH_HEADERS(accessToken)
       });
       if (!commitResp.ok) {
         return Response.json({ error: 'Failed to get latest commit' }, { status: commitResp.status });
@@ -185,12 +166,7 @@ Deno.serve(async (req) => {
       for (const file of files) {
         const blobResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28',
-            'Content-Type': 'application/json'
-          },
+          headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: file.content,
             encoding: 'utf-8'
@@ -211,12 +187,7 @@ Deno.serve(async (req) => {
       // Create a new tree
       const treeResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           base_tree: baseTreeSha,
           tree: treeItems
@@ -230,12 +201,7 @@ Deno.serve(async (req) => {
       // Create the commit
       const newCommitResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
           tree: treeData.sha,
@@ -250,12 +216,7 @@ Deno.serve(async (req) => {
       // Update the branch reference
       const updateRefResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sha: newCommitData.sha
         })
