@@ -10,6 +10,9 @@ const ENTITIES_TO_SYNC = [
   'SystemHealth', 'Notification', 'GovSpendingAward', 'ApiRateCounter'
 ];
 
+const UPSERT_CHUNK = 500;
+const CONCURRENCY = 5; // max parallel entity fetches
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -30,54 +33,61 @@ Deno.serve(async (req) => {
       'Prefer': 'resolution=merge-duplicates,return=minimal'
     };
 
-    // Load all SyncState cursors in one call
+    // 1. Load all SyncState cursors in one call
     const allCursors = await base44.asServiceRole.entities.SyncState.filter({});
     const cursorMap = {};
     for (const c of allCursors) {
       cursorMap[c.entity_name] = c;
     }
 
+    // 2. Fetch changed records for all entities in parallel (batched concurrency)
+    const fetchResults = [];
+    for (let i = 0; i < ENTITIES_TO_SYNC.length; i += CONCURRENCY) {
+      const batch = ENTITIES_TO_SYNC.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (entityName) => {
+          const cursor = cursorMap[entityName];
+          const lastSynced = cursor ? cursor.last_synced_at : null;
+          const filter = lastSynced ? { updated_date: { $gt: lastSynced } } : {};
+          const records = await base44.asServiceRole.entities[entityName].filter(filter, 'updated_date', 500);
+          return { entityName, records };
+        })
+      );
+      fetchResults.push(...results);
+    }
+
+    // 3. Upsert to Supabase — only entities with changed records
     const summary = [];
     let totalSynced = 0;
     let totalErrors = 0;
+    const cursorUpdates = []; // collect cursor changes for batch write
 
-    for (const entityName of ENTITIES_TO_SYNC) {
+    for (const result of fetchResults) {
+      if (result.status === 'rejected') {
+        totalErrors++;
+        summary.push({ entity: '?', synced: 0, status: 'error', error: result.reason?.message || String(result.reason) });
+        continue;
+      }
+
+      const { entityName, records } = result.value;
+
+      if (records.length === 0) {
+        summary.push({ entity: entityName, synced: 0, status: 'ok' });
+        continue;
+      }
+
       try {
-        const cursor = cursorMap[entityName];
-        const lastSynced = cursor ? cursor.last_synced_at : null;
-
-        // Build filter: if we have a cursor, only pull records updated after it
-        let records;
-        if (lastSynced) {
-          records = await base44.asServiceRole.entities[entityName].filter(
-            { updated_date: { $gt: lastSynced } },
-            'updated_date',
-            500
-          );
-        } else {
-          // First run — pull everything (up to 500 per cycle; subsequent runs catch the rest)
-          records = await base44.asServiceRole.entities[entityName].filter({}, 'updated_date', 500);
-        }
-
-        if (records.length === 0) {
-          summary.push({ entity: entityName, synced: 0, status: 'ok' });
-          continue;
-        }
-
-        // Upsert to Supabase in chunks of 100
-        const CHUNK = 100;
+        // Upsert in chunks (500 rows per POST to minimize round-trips)
         let syncedCount = 0;
-        for (let i = 0; i < records.length; i += CHUNK) {
-          const chunk = records.slice(i, i + CHUNK);
+        for (let i = 0; i < records.length; i += UPSERT_CHUNK) {
+          const chunk = records.slice(i, i + UPSERT_CHUNK);
 
-          // PostgREST requires every object in a batch to have identical keys.
-          // Collect the union of all keys across this chunk, then normalize
-          // every record so missing fields are explicitly null.
+          // PostgREST requires identical keys across all rows in a batch
           const allKeys = new Set();
           for (const rec of chunk) {
             for (const k of Object.keys(rec)) allKeys.add(k);
           }
-          const normalizedChunk = chunk.map(rec => {
+          const normalized = chunk.map(rec => {
             const out = {};
             for (const k of allKeys) {
               out[k] = rec[k] !== undefined ? rec[k] : null;
@@ -85,11 +95,10 @@ Deno.serve(async (req) => {
             return out;
           });
 
-          const url = `${SUPABASE_URL}/rest/v1/${entityName}?on_conflict=id`;
-          const res = await fetch(url, {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/${entityName}?on_conflict=id`, {
             method: 'POST',
             headers: supabaseHeaders,
-            body: JSON.stringify(normalizedChunk)
+            body: JSON.stringify(normalized)
           });
           if (!res.ok) {
             const errText = await res.text();
@@ -98,26 +107,40 @@ Deno.serve(async (req) => {
           syncedCount += chunk.length;
         }
 
-        // Update cursor to the max updated_date in the batch
+        // Queue cursor update (don't write individually)
         const maxDate = records[records.length - 1].updated_date;
-        if (cursor) {
-          await base44.asServiceRole.entities.SyncState.update(cursor.id, { last_synced_at: maxDate });
-        } else {
-          await base44.asServiceRole.entities.SyncState.create({ entity_name: entityName, last_synced_at: maxDate });
-        }
+        const existing = cursorMap[entityName];
+        cursorUpdates.push({ entityName, maxDate, existingId: existing?.id || null });
 
         totalSynced += syncedCount;
         summary.push({ entity: entityName, synced: syncedCount, status: 'ok' });
-        console.log(`[syncToSupabase] ${entityName}: ${syncedCount} rows synced`);
       } catch (entityErr) {
         totalErrors++;
-        const msg = entityErr.message || String(entityErr);
-        summary.push({ entity: entityName, synced: 0, status: 'error', error: msg });
-        console.error(`[syncToSupabase] ${entityName} FAILED:`, msg);
+        summary.push({ entity: entityName, synced: 0, status: 'error', error: entityErr.message || String(entityErr) });
+        console.error(`[syncToSupabase] ${entityName} FAILED:`, entityErr.message);
       }
     }
 
-    // Log to SystemHealth
+    // 4. Batch-write all cursor updates (one bulkUpdate + one bulkCreate)
+    try {
+      const toUpdate = cursorUpdates.filter(c => c.existingId);
+      const toCreate = cursorUpdates.filter(c => !c.existingId);
+
+      if (toUpdate.length > 0) {
+        await base44.asServiceRole.entities.SyncState.bulkUpdate(
+          toUpdate.map(c => ({ id: c.existingId, last_synced_at: c.maxDate }))
+        );
+      }
+      if (toCreate.length > 0) {
+        await base44.asServiceRole.entities.SyncState.bulkCreate(
+          toCreate.map(c => ({ entity_name: c.entityName, last_synced_at: c.maxDate }))
+        );
+      }
+    } catch (cursorErr) {
+      console.warn('[syncToSupabase] Failed to batch-update cursors:', cursorErr.message);
+    }
+
+    // 5. Single SystemHealth update
     try {
       const existing = await base44.asServiceRole.entities.SystemHealth.filter({ component: 'supabase_sync' }, '-updated_date', 1);
       const healthData = {
@@ -140,12 +163,8 @@ Deno.serve(async (req) => {
       console.warn('[syncToSupabase] Failed to update SystemHealth:', healthErr.message);
     }
 
-    return Response.json({
-      success: true,
-      total_synced: totalSynced,
-      total_errors: totalErrors,
-      summary
-    });
+    console.log(`[syncToSupabase] Done: ${totalSynced} synced, ${totalErrors} errors`);
+    return Response.json({ success: true, total_synced: totalSynced, total_errors: totalErrors, summary });
   } catch (error) {
     console.error('[syncToSupabase] Fatal error:', error.message);
     return Response.json({ error: error.message }, { status: 500 });
