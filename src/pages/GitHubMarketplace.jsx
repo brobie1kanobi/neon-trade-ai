@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Globe, ShieldCheck, RefreshCw, Copy, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-export default function GitHubMarketplace() {
+export default function GitHubMarketplace({ embedded = false }) {
   const { user, isLoading: settingsLoading } = useSettings();
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
@@ -18,10 +18,10 @@ export default function GitHubMarketplace() {
   const isAdmin = user?.role === "admin" || user?.is_creator;
 
   useEffect(() => {
-    if (!settingsLoading && !isAdmin) {
+    if (!embedded && !settingsLoading && !isAdmin) {
       navigate("/Settings");
     }
-  }, [settingsLoading, isAdmin, navigate]);
+  }, [embedded, settingsLoading, isAdmin, navigate]);
 
   useEffect(() => {
     if (isAdmin) fetchEvents();
@@ -52,7 +52,7 @@ export default function GitHubMarketplace() {
   // Build the webhook URL from the current origin
   const webhookUrl = `${window.location.origin}/api/githubMarketplaceWebhook`;
 
-  if (settingsLoading || !isAdmin) {
+  if (!embedded && (settingsLoading || !isAdmin)) {
     return (
       <div className="p-4 flex items-center justify-center min-h-[50vh]">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" />
@@ -60,19 +60,8 @@ export default function GitHubMarketplace() {
     );
   }
 
-  return (
-    <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: "var(--primary-bg)" }}>
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/Settings")}>
-          <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-primary)" }} />
-        </Button>
-        <div>
-          <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>GitHub Marketplace</h2>
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Webhook configuration & event log</p>
-        </div>
-      </div>
-
+  const content = (
+    <>
       {/* Setup Instructions */}
       <Card style={{ backgroundColor: "var(--card-bg)", borderColor: "var(--border-color)" }}>
         <CardHeader>
@@ -236,6 +225,24 @@ export default function GitHubMarketplace() {
           )}
         </CardContent>
       </Card>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className="p-4 space-y-6 pb-8" style={{ backgroundColor: "var(--primary-bg)" }}>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate("/Settings")}>
+          <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-primary)" }} />
+        </Button>
+        <div>
+          <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>GitHub Marketplace</h2>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Webhook configuration & event log</p>
+        </div>
+      </div>
+      {content}
     </div>
   );
 }

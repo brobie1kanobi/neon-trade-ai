@@ -10,6 +10,7 @@ import PageNotFound from './lib/PageNotFound';
 import AITraderSettings from './pages/AITraderSettings';
 import GitHubConnect from './pages/GitHubConnect';
 import GitHubMarketplace from './pages/GitHubMarketplace';
+import Integrations from './pages/Integrations';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
@@ -64,6 +65,7 @@ const AuthenticatedApp = () => {
         />
       ))}
       <Route path="/AITraderSettings" element={<LayoutWrapper currentPageName="AI Trader Settings"><AITraderSettings /></LayoutWrapper>} />
+      <Route path="/integrations" element={<LayoutWrapper currentPageName="Integrations"><Integrations /></LayoutWrapper>} />
       <Route path="/github" element={<LayoutWrapper currentPageName="GitHub"><GitHubConnect /></LayoutWrapper>} />
       <Route path="/github-marketplace" element={<LayoutWrapper currentPageName="GitHub Marketplace"><GitHubMarketplace /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />

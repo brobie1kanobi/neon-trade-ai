@@ -17,7 +17,7 @@ import TradeSoundSettings from "../components/settings/TradeSoundSettings";
 import { useSettings } from "../components/utils/SettingsContext";
 import { Link } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Github, ChevronRight, Store } from "lucide-react";
+import { Plug, ChevronRight } from "lucide-react";
 
 export default function Settings() {
   const { settings, user, isLoading, updateSetting } = useSettings();
@@ -125,43 +125,23 @@ export default function Settings() {
         />
       </motion.div>
 
-      {/* 10) GitHub Integration */}
+      {/* 10) Integrations */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
-        <Link to="/github">
+        <Link to="/integrations">
           <Card className="cursor-pointer hover:opacity-80 transition-opacity" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <CardHeader className="flex flex-row items-center gap-4">
               <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.1)' }}>
-                <Github className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
+                <Plug className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
               </div>
               <div className="flex-1">
-                <CardTitle className="text-base" style={{ color: 'var(--text-primary)' }}>GitHub Integration</CardTitle>
-                <CardDescription style={{ color: 'var(--text-secondary)' }}>Connect your GitHub account & manage repos</CardDescription>
+                <CardTitle className="text-base" style={{ color: 'var(--text-primary)' }}>Integrations</CardTitle>
+                <CardDescription style={{ color: 'var(--text-secondary)' }}>GitHub, Supabase & external services</CardDescription>
               </div>
               <ChevronRight className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
             </CardHeader>
           </Card>
         </Link>
       </motion.div>
-
-      {/* 11) GitHub Marketplace (admin only) */}
-      {(user?.role === "admin" || user?.is_creator) && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.78 }}>
-          <Link to="/github-marketplace">
-            <Card className="cursor-pointer hover:opacity-80 transition-opacity" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-              <CardHeader className="flex flex-row items-center gap-4">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.1)' }}>
-                  <Store className="w-5 h-5" style={{ color: 'var(--neon-green)' }} />
-                </div>
-                <div className="flex-1">
-                  <CardTitle className="text-base" style={{ color: 'var(--text-primary)' }}>GitHub Marketplace</CardTitle>
-                  <CardDescription style={{ color: 'var(--text-secondary)' }}>Webhook setup & event log</CardDescription>
-                </div>
-                <ChevronRight className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
-              </CardHeader>
-            </Card>
-          </Link>
-        </motion.div>
-      )}
 
       {/* 12) Account */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>

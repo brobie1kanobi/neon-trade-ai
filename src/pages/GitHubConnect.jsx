@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 const CONNECTOR_ID = '6a09f1308b3ef44f133e022c';
 
-export default function GitHubConnect() {
+export default function GitHubConnect({ embedded = false }) {
   const [user, setUser] = useState(null);
   const [connected, setConnected] = useState(false);
   const [ghUser, setGhUser] = useState(null);
@@ -169,7 +169,7 @@ export default function GitHubConnect() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className={embedded ? "flex items-center justify-center py-8" : "flex items-center justify-center min-h-[60vh]"}>
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--neon-green)' }} />
       </div>
     );
@@ -177,7 +177,7 @@ export default function GitHubConnect() {
 
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6">
+      <div className={embedded ? "flex flex-col items-center gap-4 p-6" : "flex flex-col items-center justify-center min-h-[60vh] gap-4 p-6"}>
         <Github className="w-16 h-16 text-gray-400" />
         <p style={{ color: 'var(--text-secondary)' }}>Please log in to connect your GitHub account.</p>
         <Button onClick={() => base44.auth.redirectToLogin()}>Log In</Button>
@@ -187,7 +187,7 @@ export default function GitHubConnect() {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-6">
+      <div className={embedded ? "flex flex-col items-center gap-6 p-6" : "flex flex-col items-center justify-center min-h-[60vh] gap-6 p-6"}>
         <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--neon-green-rgb), 0.1)' }}>
           <Github className="w-10 h-10" style={{ color: 'var(--neon-green)' }} />
         </div>
@@ -206,7 +206,7 @@ export default function GitHubConnect() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6 pb-32">
+    <div className={embedded ? "space-y-6" : "p-4 sm:p-6 max-w-4xl mx-auto space-y-6 pb-32"}>
       {/* GitHub User Info */}
       <Card style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <CardHeader className="flex flex-row items-center gap-4">
