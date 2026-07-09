@@ -135,11 +135,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check for existing awards to avoid duplicates
+    // Check for existing awards to avoid duplicates AND skip re-analyzing already-analyzed ones
     let existingIds = new Set();
+    let analyzedIds = new Set();
     try {
       const existing = await base44.asServiceRole.entities.GovSpendingAward.filter({}, '-created_date', 200);
       existingIds = new Set(existing.map(e => e.usaspending_award_id).filter(Boolean));
+      // Track which awards already have AI analysis so we don't re-run LLM on them
+      analyzedIds = new Set(existing.filter(e => e.ai_analysis && e.ai_analysis.length > 0).map(e => e.usaspending_award_id).filter(Boolean));
     } catch (_) {}
 
     // Process awards - detect sectors and prepare for AI analysis
@@ -174,9 +177,13 @@ Deno.serve(async (req) => {
 
     console.log('[GovSpending] Processing', processedAwards.length, 'new awards');
 
-    // Use AI to analyze market impact and map to tradeable symbols
-    if (processedAwards.length > 0 && timeLeft() > 8000) {
-      const summaryForAI = processedAwards.map(a => 
+    // Use AI to analyze market impact — only for NEW awards that haven't been analyzed yet
+    // FIXED: Previously re-analyzed all awards every fetch, wasting LLM credits
+    const unanalyzedAwards = processedAwards.filter(a => !analyzedIds.has(a.usaspending_award_id));
+    console.log('[GovSpending]', unanalyzedAwards.length, 'new awards need AI analysis,', processedAwards.length - unanalyzedAwards.length, 'already analyzed (skipped)');
+
+    if (unanalyzedAwards.length > 0 && timeLeft() > 8000) {
+      const summaryForAI = unanalyzedAwards.map(a => 
         `- ${a.recipient_name}: $${(a.total_obligation / 1e6).toFixed(1)}M ${a.award_type} from ${a.awarding_agency} | Sector: ${a.sector} | ${a.award_description.substring(0, 100)}`
       ).join('\n');
 
@@ -223,7 +230,7 @@ RULES:
           }
         });
 
-        // Merge AI analysis back into awards
+        // Merge AI analysis back into unanalyzed awards only
         const analysisMap = new Map();
         if (aiResult?.awards_analysis) {
           for (const a of aiResult.awards_analysis) {
@@ -231,7 +238,7 @@ RULES:
           }
         }
 
-        for (const award of processedAwards) {
+        for (const award of unanalyzedAwards) {
           const ai = analysisMap.get((award.recipient_name || '').toLowerCase().trim());
           if (ai) {
             award.related_symbols_json = JSON.stringify(ai.related_symbols || []);
@@ -249,13 +256,15 @@ RULES:
         console.log('[GovSpending] AI analysis complete. Macro impact:', aiResult?.macro_impact || 'N/A');
       } catch (aiErr) {
         console.warn('[GovSpending] AI analysis failed:', aiErr.message);
-        for (const award of processedAwards) {
+        for (const award of unanalyzedAwards) {
           award.related_symbols_json = '[]';
           award.signal_impact = 'neutral';
           award.impact_score = 0;
           award.ai_analysis = '';
         }
       }
+    } else if (unanalyzedAwards.length === 0 && processedAwards.length > 0) {
+      console.log('[GovSpending] All awards already analyzed — skipping LLM call entirely');
     }
 
     // Save awards to database

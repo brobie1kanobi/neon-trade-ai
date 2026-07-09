@@ -112,9 +112,11 @@ Deno.serve(async (req) => {
       }
     };
 
-    const buildCacheKey = (symbolList) => {
-      const normalized = [...new Set((symbolList || []).map((s) => String(s || '').toUpperCase()).filter(Boolean))].sort();
-      return `market-intel:${normalized.join(',')}`;
+    // FIXED: Use a single canonical cache key for ALL market intel requests.
+    // Previously, each unique symbol combo ("BTC", "BTC,ETH", "BTC,ETH,SOL") got its own
+    // cache entry, causing redundant LLM calls. Now every request shares one cache row.
+    const buildCacheKey = (_symbolList) => {
+      return 'market-intel:global';
     };
 
     const getCachedMarketIntelligence = async (cacheKey) => {
@@ -150,7 +152,9 @@ Deno.serve(async (req) => {
 
     const saveCachedMarketIntelligence = async (cacheKey, symbolList, intelPayload) => {
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+      // FIXED: Bumped TTL from 15 min → 2 hours. Broad market sentiment doesn't change
+      // every 15 minutes, and the old TTL was triggering up to 4x LLM calls/hour.
+      const expiresAt = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
       const marketIntel = intelPayload?.market_intelligence || {};
       const cacheRecord = {
         cache_key: cacheKey,
