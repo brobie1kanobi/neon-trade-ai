@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { X, Calendar, Hash, DollarSign, Package, Banknote, TrendingUp, TrendingDown, Percent } from "lucide-react";
+import { X, Calendar, Hash, DollarSign, Package, Banknote, TrendingUp, TrendingDown, Percent, ArrowRight, BarChart3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useSettings } from "@/components/utils/SettingsContext";
+import { base44 } from "@/api/base44Client";
 
 // Format date in user's timezone
 const formatInTimezone = (date, timezone, is24h) => {
@@ -34,8 +35,43 @@ const formatInTimezone = (date, timezone, is24h) => {
 };
 
 export default function TradeDetailsModal({ trade, isOpen, onClose }) {
-  // Move hook before any early returns to satisfy React rules
   const { settings } = useSettings();
+  const [costBasis, setCostBasis] = useState(null);
+  const [loadingCostBasis, setLoadingCostBasis] = useState(false);
+
+  // For sell trades, look up the average cost basis from Holdings or buy trades
+  useEffect(() => {
+    if (!trade || !isOpen) { setCostBasis(null); return; }
+    if (trade.type !== 'sell') { setCostBasis(null); return; }
+
+    const fetchCostBasis = async () => {
+      setLoadingCostBasis(true);
+      try {
+        // Try to get average cost from Holdings entity first
+        const holdings = await base44.entities.Holding.filter({ symbol: trade.symbol });
+        if (holdings.length > 0 && holdings[0].average_cost_price > 0) {
+          setCostBasis({ avg_buy_price: holdings[0].average_cost_price, source: 'holdings' });
+          setLoadingCostBasis(false);
+          return;
+        }
+
+        // Fallback: calculate from recent buy trades for this symbol
+        const buyTrades = await base44.entities.Trade.filter(
+          { symbol: trade.symbol, type: 'buy', status: 'executed' },
+          '-created_date', 20
+        );
+        if (buyTrades.length > 0) {
+          const totalQty = buyTrades.reduce((s, t) => s + (t.quantity || 0), 0);
+          const totalCost = buyTrades.reduce((s, t) => s + (t.total_value || t.quantity * t.price), 0);
+          setCostBasis({ avg_buy_price: totalQty > 0 ? totalCost / totalQty : 0, source: 'trades' });
+        }
+      } catch (e) {
+        console.error('[TradeDetailsModal] Cost basis lookup failed:', e);
+      }
+      setLoadingCostBasis(false);
+    };
+    fetchCostBasis();
+  }, [trade?.id, isOpen]);
 
   if (!trade) return null;
 
@@ -87,6 +123,20 @@ export default function TradeDetailsModal({ trade, isOpen, onClose }) {
       color: trade.type === 'sell' ? 'text-green-500' : 'text-red-500',
       bold: true
     });
+  }
+
+  // P&L calculation for sell trades
+  let pnlSection = null;
+  if (trade.type === 'sell' && costBasis && costBasis.avg_buy_price > 0) {
+    const avgBuyPrice = costBasis.avg_buy_price;
+    const costBasisTotal = avgBuyPrice * trade.quantity;
+    const proceeds = actualCashImpact;
+    const grossPnl = proceeds - costBasisTotal;
+    const netPnl = grossPnl - fee;
+    const pnlPct = costBasisTotal > 0 ? (netPnl / costBasisTotal) * 100 : 0;
+    const isProfit = netPnl >= 0;
+
+    pnlSection = { avgBuyPrice, costBasisTotal, proceeds, grossPnl, netPnl, pnlPct, isProfit };
   }
 
   return (
@@ -141,6 +191,67 @@ export default function TradeDetailsModal({ trade, isOpen, onClose }) {
            {trade.is_auto_trade && (
              <div className="flex items-center gap-2 pt-2">
                <Badge className="text-xs bg-blue-100 text-blue-800">🤖 Auto-Trade</Badge>
+             </div>
+           )}
+
+           {/* P&L Breakdown for Sell Trades */}
+           {trade.type === 'sell' && (
+             <div className="pt-3 border-t space-y-2" style={{ borderColor: 'var(--border-color)' }}>
+               <div className="flex items-center gap-2 mb-2">
+                 <BarChart3 className="w-4 h-4 neon-text" />
+                 <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Profit & Loss</span>
+               </div>
+               {loadingCostBasis ? (
+                 <div className="text-xs text-center py-2" style={{ color: 'var(--text-secondary)' }}>Calculating...</div>
+               ) : pnlSection ? (
+                 <>
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Avg. Buy Price</span>
+                     <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{formatPrice(pnlSection.avgBuyPrice)}</span>
+                   </div>
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Sell Price</span>
+                     <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{formatPrice(trade.price)}</span>
+                   </div>
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Price Change</span>
+                     <span className={`text-xs font-medium flex items-center gap-1 ${pnlSection.isProfit ? 'text-green-500' : 'text-red-500'}`}>
+                       <ArrowRight className="w-3 h-3" />
+                       {formatPrice(trade.price)} ({pnlSection.isProfit ? '+' : ''}{(((trade.price - pnlSection.avgBuyPrice) / pnlSection.avgBuyPrice) * 100).toFixed(2)}%)
+                     </span>
+                   </div>
+                   <div className="h-px my-1" style={{ backgroundColor: 'var(--border-color)' }} />
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Cost Basis</span>
+                     <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>${pnlSection.costBasisTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                   </div>
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Sale Proceeds</span>
+                     <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>${pnlSection.proceeds.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                   </div>
+                   {fee > 0 && (
+                     <div className="flex items-center justify-between">
+                       <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Fees Paid</span>
+                       <span className="text-xs font-medium text-red-400">-${fee.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span>
+                     </div>
+                   )}
+                   <div className={`flex items-center justify-between p-2 rounded-lg mt-1 ${pnlSection.isProfit ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                     <span className={`text-sm font-bold ${pnlSection.isProfit ? 'text-green-500' : 'text-red-500'}`}>
+                       Net {pnlSection.isProfit ? 'Profit' : 'Loss'}
+                     </span>
+                     <div className="text-right">
+                       <span className={`text-sm font-bold ${pnlSection.isProfit ? 'text-green-500' : 'text-red-500'}`}>
+                         {pnlSection.isProfit ? '+' : ''}${pnlSection.netPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                       </span>
+                       <span className={`text-xs ml-1 ${pnlSection.isProfit ? 'text-green-400' : 'text-red-400'}`}>
+                         ({pnlSection.isProfit ? '+' : ''}{pnlSection.pnlPct.toFixed(2)}%)
+                       </span>
+                     </div>
+                   </div>
+                 </>
+               ) : (
+                 <div className="text-xs text-center py-2" style={{ color: 'var(--text-secondary)' }}>No purchase history found for cost basis</div>
+               )}
              </div>
            )}
         </div>
