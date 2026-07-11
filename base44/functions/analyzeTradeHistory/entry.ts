@@ -151,22 +151,28 @@ Deno.serve(async (req) => {
       let losingTrades = 0;
       const pnlHistory = [];
 
-      // Match sells to buys (FIFO)
+      // Match sells to buys (FIFO) with fee-adjusted P&L
       const remainingBuys = [...buys];
       for (const sell of sells) {
         if (remainingBuys.length === 0) break;
         const matchedBuy = remainingBuys.shift();
-        const pnl = (sell.price - matchedBuy.price) * Math.min(sell.quantity, matchedBuy.quantity);
-        totalPnL += pnl;
+        const matchedQty = Math.min(sell.quantity, matchedBuy.quantity);
+        const grossPnl = (sell.price - matchedBuy.price) * matchedQty;
+        const totalFees = (matchedBuy.fee || 0) + (sell.fee || 0);
+        const netPnl = grossPnl - totalFees;
+        totalPnL += netPnl;
         pnlHistory.push({
           buyPrice: matchedBuy.price,
           sellPrice: sell.price,
-          quantity: Math.min(sell.quantity, matchedBuy.quantity),
-          pnl: pnl,
+          quantity: matchedQty,
+          pnl: netPnl,
+          grossPnl: grossPnl,
+          fees: totalFees,
           pnlPercent: matchedBuy.price > 0 ? ((sell.price - matchedBuy.price) / matchedBuy.price) * 100 : 0,
+          netPnlPercent: (matchedBuy.price * matchedQty) > 0 ? (netPnl / (matchedBuy.price * matchedQty)) * 100 : 0,
           timestamp: sell.timestamp
         });
-        if (pnl > 0) winningTrades++;
+        if (netPnl > 0) winningTrades++;
         else losingTrades++;
       }
 
@@ -230,13 +236,20 @@ Deno.serve(async (req) => {
         // Timing insights
         best_buy_hours_utc: bestBuyHours,
         
-        // Recent activity
+        // Total fees
+        total_fees: symbolTrades.reduce((sum, t) => sum + (t.fee || 0), 0),
+        
+        // Recent activity with P&L context
         last_trade_date: symbolTrades[symbolTrades.length - 1]?.timestamp,
-        recent_trades: symbolTrades.slice(-5).map(t => ({
-          type: t.type,
-          price: t.price,
-          quantity: t.quantity,
-          timestamp: t.timestamp
+        recent_trades: pnlHistory.slice(-5).map(p => ({
+          type: 'round_trip',
+          buyPrice: p.buyPrice,
+          sellPrice: p.sellPrice,
+          quantity: p.quantity,
+          pnl: p.pnl,
+          pnlPercent: p.pnlPercent,
+          fees: p.fees || 0,
+          timestamp: p.timestamp
         }))
       };
     }

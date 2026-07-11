@@ -468,10 +468,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Check if user has "Historical Performance" strategy enabled
+    let strategyHistoryEnabled = true; // default on
+    try {
+      const settingsList = await base44.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
+      if (settingsList.length > 0) {
+        strategyHistoryEnabled = settingsList[0].strategy_history !== false;
+      }
+    } catch (_e) {}
+
     // CRITICAL: Fetch historical trade data for smarter recommendations
     let tradeHistoryData = null;
     let tradeHistoryPromise = null;
-    if (includeTradeHistory && timeLeft() > 9000 && targetSymbols.length <= 10) {
+    const shouldFetchHistory = includeTradeHistory && strategyHistoryEnabled && timeLeft() > 9000 && targetSymbols.length <= 10;
+    if (shouldFetchHistory) {
       console.log('[MarketIntelligence] Fetching trade history for symbols:', targetSymbols);
       try {
         tradeHistoryPromise = withTimeout(
@@ -489,6 +499,23 @@ Deno.serve(async (req) => {
       } catch (histErr) {
         console.warn('[MarketIntelligence] Trade history scheduling failed:', histErr.message);
       }
+    } else if (!strategyHistoryEnabled) {
+      console.log('[MarketIntelligence] Historical Performance strategy disabled by user — skipping trade history');
+    }
+
+    // Resolve trade history BEFORE building LLM prompt so it's included in the analysis
+    if (tradeHistoryPromise) {
+      try {
+        const historyResponse = await tradeHistoryPromise;
+        const historyData = historyResponse?.data || historyResponse;
+        if (historyData?.success) {
+          tradeHistoryData = historyData;
+          console.log('[MarketIntelligence] Got trade history for', Object.keys(historyData.asset_analytics || {}).length, 'assets (pre-prompt)');
+        }
+      } catch (histErr) {
+        console.warn('[MarketIntelligence] Trade history pre-resolve failed:', histErr.message);
+      }
+      tradeHistoryPromise = null; // consumed, prevent double-resolve later
     }
 
     // Build comprehensive analysis prompt with market intelligence AND trade history
@@ -947,19 +974,6 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
     const recommendations = llmResponse?.recommendations || [];
     const marketIntelligence = llmResponse?.market_intelligence || null;
 
-    // Resolve trade history if scheduled
-    if (!tradeHistoryData && tradeHistoryPromise) {
-      try {
-        const historyResponse = await tradeHistoryPromise;
-        const historyData = historyResponse?.data || historyResponse;
-        if (historyData?.success) {
-          tradeHistoryData = historyData;
-          console.log('[MarketIntelligence] Got trade history for', Object.keys(historyData.asset_analytics || {}).length, 'assets');
-        }
-      } catch (histErr) {
-        console.warn('[MarketIntelligence] Trade history fetch failed:', histErr.message);
-      }
-    }
     console.log('[MarketIntelligence] Parsed recommendations count:', recommendations.length);
     console.log('[MarketIntelligence] Recommendations:', JSON.stringify(recommendations, null, 2));
 
