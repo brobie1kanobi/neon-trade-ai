@@ -53,10 +53,9 @@ export default function AssetAbout({ symbol }) {
         <CardTitle>About {details.name}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p 
-          className="text-sm prose dark:prose-invert"
-          dangerouslySetInnerHTML={{ __html: details.description || 'No description available.' }} 
-        />
+        <p className="text-sm prose dark:prose-invert">
+          {details.description ? details.description.replace(/<[^>]*>/g, '') : 'No description available.'}
+        </p>
 
         {details.links && (
           <div>

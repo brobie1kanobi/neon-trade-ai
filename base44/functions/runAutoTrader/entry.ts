@@ -1782,7 +1782,8 @@ Deno.serve(async (req) => {
       log(`✅ Trade completed for ${sym}`);
 
       // BUG FIX #1c: Deactivate the consumed signal so it can't trigger another buy
-      if (signal?.id) {
+      // SECURITY: Only admin can deactivate global AssetSignal records
+      if (signal?.id && isAdmin) {
         try {
           await base44.asServiceRole.entities.AssetSignal.update(signal.id, { is_active: false });
           log(`Deactivated signal ${signal.id} for ${sym}`);
