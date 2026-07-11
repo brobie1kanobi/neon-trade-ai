@@ -180,6 +180,7 @@ Deno.serve(async (req) => {
 
     const user = await base44.auth.me().catch(() => null);
     if (!user) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
+    if (user.role !== 'admin') return Response.json({ error: 'Forbidden', success: false }, { status: 403 });
     if (!action) return Response.json({ error: 'Missing action', success: false }, { status: 400 });
 
     // Status uses presence of secrets
