@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
+    if (user.role !== 'admin') return Response.json({ error: 'Forbidden', success: false }, { status: 403 });
 
     console.log('[syncKrakenBalance] Starting for:', user.email);
 

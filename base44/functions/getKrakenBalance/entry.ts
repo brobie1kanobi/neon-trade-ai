@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized', success: false }, { status: 401 });
+    if (user.role !== 'admin') return Response.json({ error: 'Forbidden', success: false }, { status: 403 });
 
     const hasBal = !!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'));
     if (!hasBal) {
