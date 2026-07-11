@@ -41,7 +41,7 @@ const STOCK_BROKERS = [
 ].map(b => ({ ...b, logo_url: clearbit(b.domain), category: 'stocks' }));
 
 const CRYPTO_BROKERS = [
-  { key: 'coinbase', name: 'Coinbase', domain: 'coinbase.com', country: 'US', oauth: true, login_path: '/signin' },
+  { key: 'coinbase', name: 'Coinbase', domain: 'coinbase.com', country: 'US', login_path: '/signin' },
   { key: 'kraken', name: 'Kraken', domain: 'kraken.com', country: 'US', login_path: '/sign-in' },
   { key: 'crypto', name: 'Crypto.com Exchange', domain: 'crypto.com', country: 'US', login_path: '/exchange' },
   { key: 'binanceus', name: 'Binance.US', domain: 'binance.us', country: 'US', login_path: '/en/login' },
@@ -84,17 +84,6 @@ Deno.serve(async (req) => {
 
       // Provide real login URL (or OAuth URL if configured)
       let auth_url = `https://${broker.domain}${broker.login_path || ''}`;
-
-      // Example for Coinbase OAuth flow (requires secrets). If unavailable, fallback to login page.
-      if (broker.key === 'coinbase' && broker.oauth) {
-        const cbClientId = Deno.env.get('COINBASE_CLIENT_ID');
-        const cbRedirect = Deno.env.get('COINBASE_REDIRECT_URI');
-        if (cbClientId && cbRedirect) {
-          const scope = encodeURIComponent('wallet:accounts:read wallet:buys:create wallet:sells:create wallet:transactions:read');
-          const redirectUri = encodeURIComponent(cbRedirect);
-          auth_url = `https://www.coinbase.com/oauth/authorize?response_type=code&client_id=${cbClientId}&redirect_uri=${redirectUri}&scope=${scope}`;
-        }
-      }
 
       // Ensure we track a pending connection for this broker (no fake "connected")
       const existing = await base44.entities.BrokerConnection.filter({ created_by: user.email, broker_key: broker.key });
@@ -155,6 +144,6 @@ Deno.serve(async (req) => {
     return Response.json({ error: 'Invalid action' }, { status: 400 });
   } catch (error) {
     console.error('brokerLink error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 });

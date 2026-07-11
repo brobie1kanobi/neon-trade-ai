@@ -321,6 +321,8 @@ export default function MessageBubble({ message }) {
             ) : (
               <ReactMarkdown
                 className="text-sm prose prose-sm prose-slate max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'input', 'style']}
+                unwrapDisallowed={true}
                 components={{
                   code: ({ inline, className, children, ...props }) => {
                     const match = /language-(\w+)/.exec(className || '');

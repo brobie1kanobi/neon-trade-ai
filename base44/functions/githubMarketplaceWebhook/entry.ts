@@ -29,7 +29,17 @@ Deno.serve(async (req) => {
     const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
     const digest = "sha256=" + Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-    if (digest !== signature) {
+    // Timing-safe comparison to prevent timing attacks
+    const digestBytes = new TextEncoder().encode(digest);
+    const signatureBytes = new TextEncoder().encode(signature);
+    if (digestBytes.length !== signatureBytes.length) {
+      console.error("Invalid signature");
+      return Response.json({ error: "Invalid signature" }, { status: 401 });
+    }
+    const sigMatch = await crypto.subtle.timingSafeEqual
+      ? crypto.subtle.timingSafeEqual(digestBytes, signatureBytes)
+      : digest === signature; // fallback if timingSafeEqual unavailable
+    if (!sigMatch) {
       console.error("Invalid signature");
       return Response.json({ error: "Invalid signature" }, { status: 401 });
     }
@@ -98,6 +108,6 @@ Deno.serve(async (req) => {
     return Response.json({ ok: true, event, delivery_id: deliveryId });
   } catch (error) {
     console.error("Webhook processing error:", error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 });

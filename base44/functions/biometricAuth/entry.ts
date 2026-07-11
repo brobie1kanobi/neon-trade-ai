@@ -22,20 +22,14 @@ Deno.serve(async (req) => {
     let appUrl = Deno.env.get('BASE44_APP_URL');
     
     if (!appUrl) {
-      // Try to get from Base44 app ID and construct URL
-      const appId = Deno.env.get('BASE44_APP_ID');
-      if (appId) {
-        appUrl = `https://preview--neontrade.base44.app`;
+      // Derive from request origin/referer header
+      const origin = req.headers.get('origin') || req.headers.get('referer');
+      if (origin) {
+        appUrl = new URL(origin).origin;
       } else {
-        // Fallback: derive from request URL
+        // Last resort: use the request's own URL origin
         const requestUrl = new URL(req.url);
-        const origin = req.headers.get('origin') || req.headers.get('referer');
-        if (origin) {
-          appUrl = new URL(origin).origin;
-        } else {
-          // Last resort: use the request's origin
-          appUrl = `${requestUrl.protocol}//${requestUrl.host}`;
-        }
+        appUrl = `${requestUrl.protocol}//${requestUrl.host}`;
       }
     }
     
@@ -140,6 +134,6 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Biometric Auth Error:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500 });
   }
 });
