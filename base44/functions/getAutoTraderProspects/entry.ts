@@ -143,7 +143,10 @@ Deno.serve(async (req) => {
       tradingCash = cashAvailable;
       console.log('[Prospects] SIM cash available:', cashAvailable);
     } else {
-    // LIVE mode: fetch from Kraken directly
+    // LIVE mode: fetch from Kraken directly — admin only (uses global exchange secrets)
+    if (user.role !== 'admin') {
+      return Response.json({ error: 'Live mode balance requires admin access' }, { status: 403 });
+    }
     try {
       console.log('[Prospects] Fetching Kraken balance directly...');
       

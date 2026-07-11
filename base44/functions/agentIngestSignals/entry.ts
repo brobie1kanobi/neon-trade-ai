@@ -4,6 +4,15 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
+    // Require authenticated admin user
+    const caller = await base44.auth.me();
+    if (!caller) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (caller.role !== 'admin') {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     if (req.method !== 'POST') {
       return Response.json({ error: 'POST required' }, { status: 405 });
     }
