@@ -105,13 +105,10 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
-    // Auth check – allow admins manually, automations run with service role
-    try {
-      const user = await base44.auth.me();
-      if (user && user.role !== 'admin') {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    } catch (_) { /* automation – no user context */ }
+    // Auth check – require admin role; reject unauthenticated requests
+    const user = await base44.auth.me();
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    if (user.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 });
 
     // 1. Fetch all active conditional orders
     const orders = await base44.asServiceRole.entities.ConditionalOrder.filter({ status: 'active' });
