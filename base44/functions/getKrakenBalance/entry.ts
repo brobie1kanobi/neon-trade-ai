@@ -69,9 +69,74 @@ Deno.serve(async (req) => {
     const balanceData = balanceRes?.data || balanceRes;
     
     if (!balanceData?.success) {
+      // RESILIENCE: On temporary lockout or rate limit, fall back to last-known DB data
+      // so the UI doesn't flash $0 assets while Kraken is temporarily unavailable
+      const errMsg = balanceData?.error || 'Kraken BalanceEx failed';
+      const isTransient = /temporary lockout|rate limit|too many|throttl/i.test(errMsg);
+      
+      if (isTransient) {
+        console.warn('[getKrakenBalance] Transient Kraken error, falling back to DB:', errMsg);
+        try {
+          const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false });
+          const dbWallets = await base44.entities.Wallet.filter({});
+          const dbWallet = dbWallets[0];
+          const usd = dbWallet?.real_cash_balance || 0;
+          
+          // Fetch current prices for DB holdings
+          const KRAKEN_PUBLIC = 'https://api.kraken.com/0/public/Ticker';
+          const syms = dbHoldings.filter(h => h.quantity > 0).map(h => h.symbol);
+          const pairList = syms.map(s => knownPair(s)).filter(Boolean);
+          let fallbackPrices = {};
+          if (pairList.length > 0) {
+            try {
+              const pResp = await Promise.race([
+                fetch(`${KRAKEN_PUBLIC}?pair=${pairList.join(',')}`, { headers: { 'User-Agent': 'NeonTrade-AI/1.0' } }),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
+              ]);
+              if (pResp.ok) {
+                const pData = await pResp.json();
+                for (const [pair, ticker] of Object.entries(pData?.result || {})) {
+                  let sym = pair.replace(/ZUSD$|USD$/g, '');
+                  if (sym.startsWith('X') && sym.length === 4) sym = sym.substring(1);
+                  if (sym === 'XBT') sym = 'BTC';
+                  if (sym === 'XDG') sym = 'DOGE';
+                  const price = parseFloat(ticker.c?.[0]) || 0;
+                  if (price > 0) fallbackPrices[sym] = price;
+                }
+              }
+            } catch (_e) {}
+          }
+          
+          let totalCrypto = 0;
+          const fallbackHoldings = dbHoldings.filter(h => h.quantity > 0).map(h => {
+            const p = fallbackPrices[h.symbol] || 0;
+            const val = h.quantity * p;
+            totalCrypto += val;
+            return {
+              symbol: h.symbol, quantity: h.quantity, current_price: p, current_price_usd: p,
+              total_value_usd: val, avg_cost: h.average_cost_price || 0,
+              cost_basis_total: (h.average_cost_price || 0) * h.quantity,
+              asset_type: 'crypto', is_simulation: false, price_available: p > 0
+            };
+          });
+          
+          return Response.json({
+            success: true, connected: true,
+            usd_balance: usd, total_usd_balance: usd, available_usd_balance: usd,
+            holdings: fallbackHoldings, total_assets: fallbackHoldings.length,
+            total_crypto_value_usd: totalCrypto, total_portfolio_value_usd: usd + totalCrypto,
+            prices_available: Object.keys(fallbackPrices).length > 0,
+            is_fallback: true, fallback_reason: errMsg,
+            duration_ms: Date.now() - start
+          }, { status: 200 });
+        } catch (fallbackErr) {
+          console.error('[getKrakenBalance] DB fallback also failed:', fallbackErr.message);
+        }
+      }
+      
       return Response.json({
         success: false, connected: false,
-        error: balanceData?.error || 'Kraken BalanceEx failed',
+        error: errMsg,
         usd_balance: 0, total_usd_balance: 0, available_usd_balance: 0,
         holdings: [], total_assets: 0, total_crypto_value_usd: 0, total_portfolio_value_usd: 0
       }, { status: 200 });
