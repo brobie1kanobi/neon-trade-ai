@@ -350,7 +350,10 @@ export default function MessageBubble({ message }) {
                       </code>
                     );
                   },
-                  a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
+                  a: ({ children, href, ...props }) => {
+                    const safeHref = (href && /^https?:\/\//i.test(href)) ? href : undefined;
+                    return <a {...props} href={safeHref} target="_blank" rel="noopener noreferrer">{children}</a>;
+                  },
                   p: ({ children }) => <p className="my-1 leading-relaxed">{children}</p>,
                   ul: ({ children }) => <ul className="my-1 ml-4 list-disc">{children}</ul>,
                   ol: ({ children }) => <ol className="my-1 ml-4 list-decimal">{children}</ol>,

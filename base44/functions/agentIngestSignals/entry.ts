@@ -9,9 +9,7 @@ Deno.serve(async (req) => {
     if (!caller) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (caller.role !== 'admin') {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // Note: non-admins are allowed but scoped to their own email (checked below)
 
     if (req.method !== 'POST') {
       return Response.json({ error: 'POST required' }, { status: 405 });
@@ -22,6 +20,11 @@ Deno.serve(async (req) => {
 
     if (!user_email || typeof user_email !== 'string') {
       return Response.json({ error: 'Missing or invalid user_email' }, { status: 400 });
+    }
+
+    // Security: admins can ingest for any user, non-admins only for themselves
+    if (caller.role !== 'admin' && user_email !== caller.email) {
+      return Response.json({ error: 'Forbidden: cannot ingest signals for another user' }, { status: 403 });
     }
     if (!Array.isArray(signals) || signals.length === 0) {
       return Response.json({ error: 'signals must be a non-empty array' }, { status: 400 });
