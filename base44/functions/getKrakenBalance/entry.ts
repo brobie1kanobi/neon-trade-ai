@@ -77,8 +77,8 @@ Deno.serve(async (req) => {
       if (isTransient) {
         console.warn('[getKrakenBalance] Transient Kraken error, falling back to DB:', errMsg);
         try {
-          const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false });
-          const dbWallets = await base44.entities.Wallet.filter({});
+          const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false, created_by: user.email });
+          const dbWallets = await base44.entities.Wallet.filter({ created_by: user.email });
           const dbWallet = dbWallets[0];
           const usd = dbWallet?.real_cash_balance || 0;
           
@@ -107,8 +107,17 @@ Deno.serve(async (req) => {
             } catch (_e) {}
           }
           
+          // Deduplicate by symbol — syncKrakenBalance may leave stale duplicates
+          const bySymbol = {};
+          for (const h of dbHoldings.filter(h => h.quantity > 0)) {
+            const sym = h.symbol;
+            if (!bySymbol[sym] || new Date(h.updated_date || 0) > new Date(bySymbol[sym].updated_date || 0)) {
+              bySymbol[sym] = h;
+            }
+          }
+          
           let totalCrypto = 0;
-          const fallbackHoldings = dbHoldings.filter(h => h.quantity > 0).map(h => {
+          const fallbackHoldings = Object.values(bySymbol).map(h => {
             const p = fallbackPrices[h.symbol] || 0;
             const val = h.quantity * p;
             totalCrypto += val;
@@ -186,10 +195,10 @@ Deno.serve(async (req) => {
       } catch (_e) { /* Non-critical */ }
     }
 
-    // Fetch cost basis from DB holdings
+    // Fetch cost basis from DB holdings (scoped to current user)
     let costBasisMap = {};
     try {
-      const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false });
+      const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false, created_by: user.email });
       for (const h of (dbHoldings || [])) {
         if (h.symbol && h.average_cost_price > 0) {
           costBasisMap[h.symbol] = h.average_cost_price;
