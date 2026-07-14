@@ -32,3 +32,4 @@ Thumbs.db
 # Temp
 tmp/
 coverage/
+base44/.app.jsonc
