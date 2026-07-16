@@ -183,9 +183,14 @@ function formatKrakenSymbol(symbol) {
     return map[s] || s;
   }
 
-  // Fetch available (free) holdings per asset from Kraken extended balance
-  async function getAvailableMap(base44) {
+  // Fetch available (free) holdings per asset from Kraken extended balance.
+  // forceFresh busts the proxy read cache first — used for SELL sizing so we
+  // never size against a stale (cached) balance after a recent trade.
+  async function getAvailableMap(base44, forceFresh = false) {
     try {
+      if (forceFresh) {
+        try { await base44.asServiceRole.functions.invoke('krakenApi', { action: 'invalidateCache' }); } catch (_e) {}
+      }
       const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
       let data = resp?.data || resp;
       if (data?.data) data = data.data;
@@ -764,7 +769,7 @@ async function executeKrakenRestOrder(base44, orderParams) {
 
   let finalQty = parseFloat(orderParams.order_qty) || 0;
   if (side === 'sell') {
-    const availableMap = await getAvailableMap(base44);
+    const availableMap = await getAvailableMap(base44, true);
     const available = availableMap[baseSymbol] || 0;
     finalQty = Math.min(finalQty, available);
     finalQty = Math.floor((finalQty * 0.995) * 1e8) / 1e8;
@@ -1012,6 +1017,13 @@ Deno.serve(async (req) => {
       return freshToken;
     }
 
+    // Bust krakenApi's short-TTL read cache so post-trade balance/order reads are fresh
+    async function bustKrakenReadCache() {
+      try {
+        await base44.asServiceRole.functions.invoke('krakenApi', { action: 'invalidateCache' });
+      } catch (_e) { /* non-critical */ }
+    }
+
     // ============================================
     // ACTION: PLACE BUY WITH TP/SL (Complete trading setup)
     // Matches Kraken Pro order form behavior
@@ -1200,6 +1212,8 @@ Deno.serve(async (req) => {
         created_by: user.email
       });
 
+      await bustKrakenReadCache();
+
       return Response.json({
         success: true,
         buy_order_id: buyResult.order_id,
@@ -1265,7 +1279,7 @@ Deno.serve(async (req) => {
       };
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       let finalQty = parsedQty;
-      const availMap = await getAvailableMap(base44);
+      const availMap = await getAvailableMap(base44, true);
       const available = availMap[symbol.toUpperCase()] || 0;
       finalQty = Math.min(parsedQty, available);
       if (finalQty < minQty) {
@@ -1374,7 +1388,7 @@ Deno.serve(async (req) => {
         'PEPE': 500000.0, 'SUI': 3.0
       };
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
-      const availMap = await getAvailableMap(base44);
+      const availMap = await getAvailableMap(base44, true);
       const available = availMap[symbol.toUpperCase()] || 0;
       let finalQty = Math.min(parsedQty, available);
       // Haircut to avoid "insufficient funds" from fee/rounding holds
@@ -1583,7 +1597,7 @@ Deno.serve(async (req) => {
 
       // SELL: Cap to available holdings and block if below Kraken minimum
       if (String(side).toLowerCase() === 'sell') {
-        const availMap = await getAvailableMap(base44);
+        const availMap = await getAvailableMap(base44, true);
         const available = availMap[symbol.toUpperCase()] || 0;
         finalQty = Math.min(parsedQty, available);
         if (finalQty < minQty) {
@@ -1682,7 +1696,9 @@ Deno.serve(async (req) => {
       // For market orders, this is the quantity we submitted (finalQty)
       // For limit orders, execution happens later
       console.log(`[krakenTrade] Order placed - requested qty: ${finalQty}, order type: ${orderType}`);
-      
+
+      await bustKrakenReadCache();
+
       return Response.json({
         success: true,
         order_id: tradeResult.order_id,
@@ -1735,6 +1751,8 @@ Deno.serve(async (req) => {
         }),
         created_by: user.email
       });
+
+      await bustKrakenReadCache();
 
       return Response.json({
         success: true,

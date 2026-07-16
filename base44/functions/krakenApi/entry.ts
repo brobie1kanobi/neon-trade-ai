@@ -79,6 +79,18 @@ function generateNonce() { const now = Date.now() * 1000; if (now <= lastNonce) 
 const hmacKeyCache = new Map(); // cleanSecret(base64) -> CryptoKey
 const inFlightCalls = new Map(); // `${endpoint}|${postData}` -> Promise
 
+// Short-TTL response cache for expensive private READ endpoints.
+// Multiple callers (dashboard, portfolio, auto-trader, PnL, status) within the
+// TTL window share ONE Kraken response instead of each triggering a fresh
+// private call — this is the main defense against "Temporary lockout".
+const responseCache = new Map(); // cacheKey -> { data, expiresAt }
+const RESPONSE_TTL = {
+  getExtendedBalance: 20000, // 20s — balances change slowly; WS carries live updates
+  getBalance: 20000,
+  getOpenOrders: 15000,
+  getTradesHistory: 60000,   // 60s — trade history is essentially historical
+};
+
 async function callKraken(apiKey, apiSecret, endpoint, data = {}, retryCount = 0) {
   const cleanKey = String(apiKey || '').trim().replace(/\s+/g, '');
   const cleanSecret = String(apiSecret || '').trim().replace(/\s+/g, '');
@@ -194,12 +206,44 @@ Deno.serve(async (req) => {
       return Response.json({ success: false, error: 'Connection is managed via Application Secrets. Set keys in Settings > Secrets.' }, { status: 200 });
     }
 
+    // Bust this user's cached read responses (call after a trade/order fill so
+    // balances/orders refresh immediately instead of serving stale cache)
+    if (action === 'invalidateCache') {
+      const prefix = `${user.email}|`;
+      for (const k of responseCache.keys()) {
+        if (k.startsWith(prefix)) responseCache.delete(k);
+      }
+      return Response.json({ success: true, invalidated: true }, { status: 200 });
+    }
+
     // Helpers to choose creds
     const credsFor = (purpose) => {
       const useTrade = new Set(['getWebSocketUrl','getWebSocketToken']).has(purpose);
       const { apiKey, apiSecret } = getSecrets(useTrade ? 'trade' : 'balance');
       return { apiKey, apiSecret, keyType: useTrade ? 'trade' : 'balance' };
     };
+
+    // Serve a cached response for read endpoints when still fresh.
+    // Cache is per-user + per-payload so different requests don't collide.
+    const cacheKeyFor = (act) => `${user.email}|${act}|${JSON.stringify(payload || {})}`;
+    const getCached = (act) => {
+      const ttl = RESPONSE_TTL[act];
+      if (!ttl) return null;
+      const hit = responseCache.get(cacheKeyFor(act));
+      if (hit && hit.expiresAt > Date.now()) return hit.data;
+      return null;
+    };
+    const setCached = (act, data) => {
+      const ttl = RESPONSE_TTL[act];
+      if (!ttl) return;
+      responseCache.set(cacheKeyFor(act), { data, expiresAt: Date.now() + ttl });
+    };
+
+    // Short-circuit: return fresh cached read responses before touching Kraken
+    const cachedRead = getCached(action);
+    if (cachedRead) {
+      return Response.json({ ...cachedRead, cached: true }, { status: 200 });
+    }
 
     if (action === 'getBalance') {
       const { apiKey, apiSecret } = credsFor('getBalance');
@@ -211,7 +255,9 @@ Deno.serve(async (req) => {
         let a = asset; if (a.startsWith('X') && a.length === 4) a = a.substring(1); if (a.startsWith('Z') && a.length === 4) a = a.substring(1); if (a === 'XBT') a = 'BTC';
         balances[a] = parseFloat(amount) || 0;
       }
-      return Response.json({ success: true, balance: balances, raw_balance: raw }, { status: 200 });
+      const out = { success: true, balance: balances, raw_balance: raw };
+      setCached('getBalance', out);
+      return Response.json(out, { status: 200 });
     }
 
     if (action === 'getExtendedBalance') {
@@ -224,7 +270,9 @@ Deno.serve(async (req) => {
         let a = asset; if (a.startsWith('X') && a.length === 4) a = a.substring(1); if (a.startsWith('Z') && a.length === 4) a = a.substring(1); if (a === 'XBT') a = 'BTC';
         const available = parseFloat(info?.balance) || 0; const hold = parseFloat(info?.hold_trade) || 0; balances[a] = { balance: available, hold_trade: hold, total: available + hold, credit: parseFloat(info?.credit) || 0, credit_used: parseFloat(info?.credit_used) || 0 };
       }
-      return Response.json({ success: true, balance: balances, raw_balance: raw }, { status: 200 });
+      const out = { success: true, balance: balances, raw_balance: raw };
+      setCached('getExtendedBalance', out);
+      return Response.json(out, { status: 200 });
     }
 
     if (action === 'getTradesHistory') {
@@ -238,7 +286,9 @@ Deno.serve(async (req) => {
       for (const [txid, trade] of Object.entries(result.result?.trades || {})) {
         trades.push({ trade_id: txid, txid, ordertxid: trade.ordertxid, pair: trade.pair, time: trade.time, type: trade.type, ordertype: trade.ordertype, price: trade.price, cost: trade.cost, fee: trade.fee, vol: trade.vol, margin: trade.margin, misc: trade.misc, ...trade });
       }
-      return Response.json({ success: true, trades, count: trades.length }, { status: 200 });
+      const out = { success: true, trades, count: trades.length };
+      setCached('getTradesHistory', out);
+      return Response.json(out, { status: 200 });
     }
 
     if (action === 'getOpenOrders') {
@@ -247,7 +297,9 @@ Deno.serve(async (req) => {
       const result = await callKraken(apiKey, apiSecret, '/0/private/OpenOrders', { trades: true });
       const openOrders = [];
       for (const [orderId, order] of Object.entries(result.result?.open || {})) { openOrders.push({ order_id: orderId, ...order }); }
-      return Response.json({ success: true, orders: openOrders, count: openOrders.length }, { status: 200 });
+      const out = { success: true, orders: openOrders, count: openOrders.length };
+      setCached('getOpenOrders', out);
+      return Response.json(out, { status: 200 });
     }
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
