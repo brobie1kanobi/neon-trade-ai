@@ -7,7 +7,58 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
     .finally(() => clearTimeout(id));
 }
 
+// SSRF guard: only allow outbound requests to public https hosts. Blocks localhost,
+// private/reserved IP ranges, cloud metadata endpoints, and non-https schemes.
+function isSafePublicUrl(rawUrl) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch (_e) {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+
+  // Block obvious internal hostnames and the cloud metadata service.
+  if (
+    host === 'localhost' ||
+    host === '0.0.0.0' ||
+    host === 'metadata' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    return false;
+  }
+
+  // If the host is an IPv4 literal, reject private/reserved/loopback ranges.
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+    if (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 169 && b === 254) || // link-local (incl. 169.254.169.254 metadata)
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) || // CGNAT
+      a >= 224 // multicast / reserved
+    ) {
+      return false;
+    }
+  }
+
+  // Reject IPv6 literals (brackets) — includes ::1 loopback and unique-local.
+  if (host.includes(':')) return false;
+
+  return true;
+}
+
 async function validateImageUrl(url, timeoutMs = 2000) {
+  // SSRF: never fetch a URL that resolves to an internal/private/non-https target,
+  // even if an upstream LLM was tricked into returning one via prompt injection.
+  if (!isSafePublicUrl(url)) return false;
   // Try HEAD quickly
   try {
     const head = await fetchWithTimeout(url, { method: 'HEAD', redirect: 'follow', cache: 'no-store' }, timeoutMs);

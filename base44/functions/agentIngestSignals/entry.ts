@@ -22,9 +22,14 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Missing or invalid user_email' }, { status: 400 });
     }
 
-    // Security: admins can ingest for any user, non-admins only for themselves
-    if (caller.role !== 'admin' && user_email !== caller.email) {
-      return Response.json({ error: 'Forbidden: cannot ingest signals for another user' }, { status: 403 });
+    // Security: AssetSignal is a global, system-wide entity that the auto-trader
+    // executes for ALL users. Its RLS restricts create/update to admins only.
+    // Writing it below via asServiceRole bypasses that RLS, so we MUST enforce the
+    // admin check here — otherwise any standard user could inject global trading
+    // signals (privilege escalation). Non-admins are rejected outright.
+    const isAdmin = (caller.role || '').toLowerCase() === 'admin';
+    if (!isAdmin) {
+      return Response.json({ error: 'Forbidden: only admins may ingest signals' }, { status: 403 });
     }
     if (!Array.isArray(signals) || signals.length === 0) {
       return Response.json({ error: 'signals must be a non-empty array' }, { status: 400 });

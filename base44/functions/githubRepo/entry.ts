@@ -161,6 +161,28 @@ Deno.serve(async (req) => {
       const commitData = await commitResp.json();
       const baseTreeSha = commitData.tree.sha;
 
+      // Security: validate every file path to prevent path traversal / arbitrary
+      // file overwrite (e.g. "../.env", absolute paths, or hidden config files).
+      const isSafePath = (p) => {
+        if (typeof p !== 'string' || p.length === 0 || p.length > 512) return false;
+        // Normalize separators and reject traversal, absolute, and backslash paths.
+        if (p.includes('..') || p.startsWith('/') || p.startsWith('\\') || p.includes('\\')) return false;
+        if (/^[a-zA-Z]:/.test(p)) return false; // Windows drive-letter absolute path
+        // Reject any path segment that is a traversal or empty.
+        const segments = p.split('/');
+        for (const seg of segments) {
+          if (seg === '..' || seg === '.' || seg.trim() === '') return false;
+        }
+        // Only allow a conservative set of characters in path segments.
+        if (!/^[a-zA-Z0-9._\-/]+$/.test(p)) return false;
+        return true;
+      };
+      for (const file of files) {
+        if (!file || !isSafePath(file.path)) {
+          return Response.json({ error: `Invalid or unsafe file path: ${file?.path ?? '(missing)'}` }, { status: 400 });
+        }
+      }
+
       // Create blobs for each file
       const treeItems = [];
       for (const file of files) {

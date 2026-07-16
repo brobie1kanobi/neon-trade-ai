@@ -321,8 +321,9 @@ export default function MessageBubble({ message }) {
             ) : (
               <ReactMarkdown
                 className="text-sm prose prose-sm prose-slate max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-                disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'input', 'style']}
-                unwrapDisallowed={true}
+                disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'input', 'style', 'link', 'meta', 'svg', 'math', 'button', 'textarea', 'select', 'video', 'audio', 'base']}
+                unwrapDisallowed={false}
+                skipHtml={true}
                 components={{
                   code: ({ inline, className, children, ...props }) => {
                     const match = /language-(\w+)/.exec(className || '');
@@ -350,9 +351,18 @@ export default function MessageBubble({ message }) {
                       </code>
                     );
                   },
-                  a: ({ children, href, ...props }) => {
+                  a: ({ children, href }) => {
+                    // Only allow http(s) links; drop any other props (e.g. injected
+                    // onmouseover/onclick event handlers) by not spreading them.
                     const safeHref = (href && /^https?:\/\//i.test(href)) ? href : undefined;
-                    return <a {...props} href={safeHref} target="_blank" rel="noopener noreferrer">{children}</a>;
+                    return <a href={safeHref} target="_blank" rel="noopener noreferrer">{children}</a>;
+                  },
+                  img: ({ src, alt }) => {
+                    // Only render images from http(s) sources; strip all other props
+                    // (including any injected event-handler attributes).
+                    const safeSrc = (src && /^https?:\/\//i.test(src)) ? src : undefined;
+                    if (!safeSrc) return null;
+                    return <img src={safeSrc} alt={typeof alt === 'string' ? alt : ''} className="max-w-full rounded" />;
                   },
                   p: ({ children }) => <p className="my-1 leading-relaxed">{children}</p>,
                   ul: ({ children }) => <ul className="my-1 ml-4 list-disc">{children}</ul>,
