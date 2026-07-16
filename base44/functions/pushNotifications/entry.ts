@@ -160,17 +160,27 @@ Deno.serve(async (req) => {
         }, { status: 400 });
       }
 
-      // SECURITY FIX: Only allow sending to own email OR if admin
+      // SECURITY: sending to a DIFFERENT user is a privileged, abuse-prone action
+      // (phishing/spam to arbitrary devices). It requires BOTH the admin role AND
+      // an explicit email allowlist, so a spoofed or misconfigured admin role alone
+      // cannot dispatch notifications to other users. Self-delivery is always allowed.
       const isAdmin = (user?.role || '').toLowerCase() === 'admin';
       const target = targetUser || user.email;
-      
-      // CRITICAL: Block non-admin users from sending to other users
-      if (target !== user.email && !isAdmin) {
-        console.warn('[Push] BLOCKED: Non-admin user attempted to send to different user');
-        return Response.json({ 
-          error: 'Permission denied - can only send notifications to yourself',
-          success: false 
-        }, { status: 403 });
+
+      if (target !== user.email) {
+        const allowlist = (Deno.env.get('DISABLE_LIVE_MODE_ADMINS') || '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean);
+        const callerEmail = (user?.email || '').toLowerCase();
+        const isAllowlisted = allowlist.length > 0 && allowlist.includes(callerEmail);
+        if (!isAdmin || !isAllowlisted) {
+          console.warn('[Push] BLOCKED: cross-user send attempt without admin+allowlist');
+          return Response.json({
+            error: 'Permission denied - can only send notifications to yourself',
+            success: false
+          }, { status: 403 });
+        }
       }
 
       console.log('[Push] Sending notification:', { from: user.email, to: target, isAdmin });
