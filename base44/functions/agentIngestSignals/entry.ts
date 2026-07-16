@@ -31,6 +31,17 @@ Deno.serve(async (req) => {
     if (!isAdmin) {
       return Response.json({ error: 'Forbidden: only admins may ingest signals' }, { status: 403 });
     }
+    // Defense in depth: in addition to the platform admin role, require the caller's
+    // email to be on an explicit allowlist. This protects the asServiceRole write path
+    // even if an admin role is ever misconfigured or spoofable elsewhere.
+    const allowlist = (Deno.env.get('DISABLE_LIVE_MODE_ADMINS') || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const callerEmail = (caller.email || '').toLowerCase();
+    if (allowlist.length === 0 || !allowlist.includes(callerEmail)) {
+      return Response.json({ error: 'Forbidden: not on the signal-ingest admin allowlist' }, { status: 403 });
+    }
     if (!Array.isArray(signals) || signals.length === 0) {
       return Response.json({ error: 'signals must be a non-empty array' }, { status: 400 });
     }
