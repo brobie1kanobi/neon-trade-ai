@@ -77,7 +77,10 @@ Deno.serve(async (req) => {
       if (isTransient) {
         console.warn('[getKrakenBalance] Transient Kraken error, falling back to DB:', errMsg);
         try {
-          const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false, created_by: user.email });
+          // Real holdings are synced by syncKrakenBalance running as the service role,
+          // so they are stamped created_by=<service account>, not the admin user.
+          // Read the latest real holdings via service role and dedupe by symbol below.
+          const dbHoldings = await base44.asServiceRole.entities.Holding.filter({ is_simulation: false }, "-updated_date", 200);
           const dbWallets = await base44.entities.Wallet.filter({ created_by: user.email });
           const dbWallet = dbWallets[0];
           const usd = dbWallet?.real_cash_balance || 0;
@@ -195,10 +198,11 @@ Deno.serve(async (req) => {
       } catch (_e) { /* Non-critical */ }
     }
 
-    // Fetch cost basis from DB holdings (scoped to current user)
+    // Fetch cost basis from DB holdings. Real holdings are synced by the service
+    // role (syncKrakenBalance), so read them via service role, newest first.
     let costBasisMap = {};
     try {
-      const dbHoldings = await base44.entities.Holding.filter({ is_simulation: false, created_by: user.email });
+      const dbHoldings = await base44.asServiceRole.entities.Holding.filter({ is_simulation: false }, "-updated_date", 200);
       for (const h of (dbHoldings || [])) {
         if (h.symbol && h.average_cost_price > 0) {
           costBasisMap[h.symbol] = h.average_cost_price;
