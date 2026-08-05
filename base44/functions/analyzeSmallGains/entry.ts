@@ -699,19 +699,28 @@ For each asset:
       }
     };
 
-    async function invokeLLM({ prompt, label, timeoutMs }) {
+    async function invokeLLM({ prompt, label, timeoutMs, model, withWeb, schema }) {
       const baseMs = typeof timeoutMs === 'number' ? timeoutMs : 12000;
       const ms = Math.min(baseMs, ensureTime());
       if (ms < 4000) {
-        console.warn(`[HF] Skipping ${label || 'LLM call'} — only ${ms}ms left, need ≥4000ms`);
+        console.warn(`[LLM] Skipping ${label || 'LLM call'} — only ${ms}ms left, need ≥4000ms`);
         throw new Error(`Insufficient time for ${label || 'LLM call'}: ${ms}ms`);
       }
-      console.log(`[HF] Starting ${label || 'LLM call'} with ${ms}ms budget`);
-      // callHuggingFace handles its own per-attempt timeouts and retries
-      return await callHuggingFace(
-        'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.',
-        prompt + '\n\nRespond with valid JSON only.',
-        ms
+      console.log(`[LLM] Starting ${label || 'LLM call'} with ${ms}ms budget`);
+      // Use the platform's built-in LLM integration instead of the external Hugging Face
+      // API — HUGGINGFACE_API_TOKEN has depleted credits (HTTP 402), which was silently
+      // forcing every call into the generic "Market is neutral..." heuristic fallback.
+      const useWeb = withWeb === true;
+      const llmModel = useWeb ? 'gemini_3_flash' : (model && model !== 'automatic' ? model : undefined);
+      return await withTimeout(
+        base44.integrations.Core.InvokeLLM({
+          prompt: 'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.\n\n' + prompt,
+          add_context_from_internet: useWeb,
+          response_json_schema: schema || undefined,
+          model: llmModel
+        }),
+        ms,
+        label || 'LLM call'
       );
     }
 

@@ -63,6 +63,11 @@ Deno.serve(async (req) => {
           usdBalance = info.balance || info.total || 0;
           continue;
         }
+        // CRITICAL: Skip staking/opt-in-reward positions (e.g. "ETH.S", "DOT.M").
+        // parseKrakenAsset() strips this suffix, which would otherwise merge the
+        // staked balance into the spot symbol and double-count its value — the
+        // Spot balance shown to the user does not include staked amounts.
+        if (/\.[A-Za-z]+$/.test(asset)) continue;
         const qty = info.balance || info.total || 0;
         if (qty <= 0.00001) continue;
         krakenHoldings.push({ symbol: asset, quantity: qty });

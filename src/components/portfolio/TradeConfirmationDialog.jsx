@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Bot } from 'lucide-react';
 
 export default function TradeConfirmationDialog({ isOpen, onClose, tradeDetails, onConfirm }) {
-  const [setConditional, setSetConditional] = useState(false);
+  const [setConditional, setSetConditional] = useState(true);
 
   const handleConfirm = () => {
     onConfirm(tradeDetails, setConditional);

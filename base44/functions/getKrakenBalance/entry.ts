@@ -168,6 +168,11 @@ Deno.serve(async (req) => {
     const rawHoldings = [];
     const symbols = [];
     for (const [asset, info] of Object.entries(ext)) {
+      // CRITICAL: Skip staking/opt-in-reward positions (Kraken suffixes them, e.g.
+      // "ETH.S", "DOT.M"). These are separate from the tradeable Spot balance shown
+      // on Kraken's Spot tab — merging them by stripping the suffix double-counts
+      // the same underlying asset (spot + staked) and inflates the portfolio value.
+      if (/\.[A-Za-z]+$/.test(asset)) continue;
       const normalizedAsset = parseKrakenAsset(asset);
       if (normalizedAsset === 'USD') continue;
       const qty = info.balance || info.total || 0;
