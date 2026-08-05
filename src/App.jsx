@@ -1,10 +1,13 @@
 import './App.css'
+import { Suspense, lazy } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import VisualEditAgent from '@/lib/VisualEditAgent'
-import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
+
+// Lazy-load non-critical dev/tracking tools so they don't block initial render
+const VisualEditAgent = lazy(() => import('@/lib/VisualEditAgent'))
+const NavigationTracker = lazy(() => import('@/lib/NavigationTracker'))
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import AITraderSettings from './pages/AITraderSettings';
@@ -80,11 +83,15 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <NavigationTracker />
+          <Suspense fallback={null}>
+            <NavigationTracker />
+          </Suspense>
           <AuthenticatedApp />
         </Router>
         <Toaster />
-        <VisualEditAgent />
+        <Suspense fallback={null}>
+          <VisualEditAgent />
+        </Suspense>
       </QueryClientProvider>
     </AuthProvider>
   )

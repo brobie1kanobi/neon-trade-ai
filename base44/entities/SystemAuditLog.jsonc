@@ -1,0 +1,59 @@
+{
+  "name": "SystemAuditLog",
+  "type": "object",
+  "properties": {
+    "audit_type": {
+      "type": "string",
+      "enum": [
+        "wallet_reconcile",
+        "portfolio_repair",
+        "balance_check"
+      ],
+      "description": "Which maintenance routine produced this entry"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "adjusted",
+        "flagged",
+        "error"
+      ],
+      "description": "Outcome of the audit run"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Short human-readable summary of what happened"
+    },
+    "details_json": {
+      "type": "string",
+      "description": "JSON string with full before/after details"
+    }
+  },
+  "required": [
+    "audit_type",
+    "status"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

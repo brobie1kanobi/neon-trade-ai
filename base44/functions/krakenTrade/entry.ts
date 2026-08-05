@@ -1692,6 +1692,15 @@ Deno.serve(async (req) => {
         created_by: user.email
       });
 
+      // Granular lifecycle event (additive, never blocks trading if it fails)
+      base44.asServiceRole.entities.TradeEventLog.create({
+        trade_ref: tradeResult.order_id || '',
+        symbol,
+        state: 'filled',
+        message: `${side} ${finalQty} ${symbol} ${orderType} filled`,
+        created_by: user.email
+      }).catch(() => {});
+
       // CRITICAL: Return the ACTUAL executed quantity from Kraken
       // For market orders, this is the quantity we submitted (finalQty)
       // For limit orders, execution happens later
@@ -1792,6 +1801,12 @@ Deno.serve(async (req) => {
           }),
           created_by: user.email
         });
+        base44.asServiceRole.entities.TradeEventLog.create({
+          symbol: requestBody?.symbol || '',
+          state: 'failed',
+          message: (error.message || '').substring(0, 200),
+          created_by: user.email
+        }).catch(() => {});
       }
     } catch (logError) {
       console.error('[krakenTrade] Logging error:', logError);

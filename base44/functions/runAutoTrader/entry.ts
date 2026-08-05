@@ -1441,6 +1441,28 @@ Deno.serve(async (req) => {
         }
       }
       
+      // CRITICAL: Enforce the centralized risk engine before executing. This runs the
+      // daily-loss-cap check (which can activate "bad days" mode from today's realized
+      // P&L) — a check the inline exposure logic above does not duplicate.
+      try {
+        const riskCheck = await base44.functions.invoke('riskEngine', {
+          action: 'evaluateTrade',
+          payload: {
+            proposedTrade: { symbol: sym, type: 'buy', quantity: qty, price, total_value, is_simulation: isSimMode },
+            portfolioState
+          }
+        });
+        const riskData = riskCheck?.data || riskCheck;
+        if (riskData?.success && riskData.approved === false) {
+          const reason = riskData.rejections?.[0]?.message || 'Risk engine rejected trade';
+          log(`RISK ENGINE: ${sym} rejected — ${reason}`);
+          tradesRejectedRisk.push({ symbol: sym, reason });
+          continue;
+        }
+      } catch (riskErr) {
+        log(`Risk engine check failed for ${sym}, proceeding with inline checks only`, { error: riskErr.message });
+      }
+
       // Already refreshed balance earlier via direct Kraken API; just enforce minimal checks here
       if (!isSimMode) {
         if (availableCash < 1) {

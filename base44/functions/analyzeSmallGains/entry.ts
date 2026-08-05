@@ -1153,10 +1153,35 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
         // Deactivate existing active signals for these symbols (prevent duplicates)
         // ALSO deactivate any existing buy signals for assets on the AVOID list
         const existing = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
+        const existingBySymbol = new Map(existing.map(s => [(s.asset_symbol || '').toUpperCase(), s]));
         const symbolsSet = new Set(actionable.map(a => (a.symbol || '').toUpperCase()));
+
+        // SIGNAL DELTA DEDUP: skip persisting a "new" signal that barely differs from the
+        // still-active one (same action, confidence within 15 pts) — just extend its expiry.
+        // This avoids churning the DB every ~3min with near-identical rows.
+        const DELTA_THRESHOLD = 15;
+        const unchangedSymbols = new Set();
+        for (const r of actionable) {
+          const sym = (r.symbol || '').toUpperCase();
+          const prev = existingBySymbol.get(sym);
+          if (prev && prev.signal_type === r.optimal_action && Math.abs((prev.confidence_score || 0) - (r.confidence_score || 0)) < DELTA_THRESHOLD) {
+            unchangedSymbols.add(sym);
+          }
+        }
+        if (unchangedSymbols.size > 0) {
+          const extendExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+          for (const sym of unchangedSymbols) {
+            try {
+              await base44.asServiceRole.entities.AssetSignal.update(existingBySymbol.get(sym).id, { expires_at: extendExpiry });
+            } catch (_e) {}
+          }
+          console.log('[MarketIntelligence] Signal delta dedup: extended', unchangedSymbols.size, 'unchanged signals instead of recreating');
+        }
+
         for (const sig of existing) {
           try {
             const sigSym = (sig.asset_symbol || '').toUpperCase();
+            if (unchangedSymbols.has(sigSym)) continue; // keep the reused signal active
             // Deactivate if: replacing with new signal OR asset is now on AVOID list
             if (symbolsSet.has(sigSym) || aiAvoidList.includes(sigSym)) {
               await base44.asServiceRole.entities.AssetSignal.update(sig.id, { is_active: false });
@@ -1169,6 +1194,7 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
 
         const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
         for (const r of actionable) {
+          if (unchangedSymbols.has((r.symbol || '').toUpperCase())) continue; // reused above, don't duplicate
           try {
             const currentPrice = Number(r.current_price || 0);
             const tpPct = r.take_profit_pct ?? 3;

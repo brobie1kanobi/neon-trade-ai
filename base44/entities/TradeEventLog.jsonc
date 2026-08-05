@@ -1,0 +1,49 @@
+{
+  "name": "TradeEventLog",
+  "type": "object",
+  "properties": {
+    "trade_ref": {
+      "type": "string",
+      "description": "Kraken order id or client order id this event belongs to"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Asset symbol"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "submitted",
+        "filled",
+        "failed",
+        "cancelled"
+      ],
+      "description": "Lifecycle state reached"
+    },
+    "message": {
+      "type": "string",
+      "description": "Short description of what happened at this state"
+    }
+  },
+  "required": [
+    "state"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

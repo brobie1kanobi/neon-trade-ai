@@ -1,35 +1,11 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
+import { parseKrakenAsset, extractBaseAsset, isStakingAsset } from '../../shared/krakenAssets.ts';
 
 /**
  * Sync Kraken Balance — Routes ALL Kraken calls through krakenApi
  * to respect the shared rate limiter. No direct Kraken API calls.
+ * Asset symbol normalization lives in shared/krakenAssets.ts.
  */
-
-function parseKrakenAsset(krakenCode) {
-  const code = String(krakenCode || '').toUpperCase();
-  const cleaned = code.replace(/\.\w+$/, '');
-  const map = {
-    'XXBT': 'BTC', 'XBT': 'BTC', 'XETH': 'ETH', 'ETH': 'ETH', 'ETH2': 'ETH',
-    'XXRP': 'XRP', 'XRP': 'XRP', 'XXLM': 'XLM', 'XLM': 'XLM',
-    'XLTC': 'LTC', 'LTC': 'LTC', 'XDG': 'DOGE', 'XXDG': 'DOGE', 'DOGE': 'DOGE',
-    'SOL': 'SOL', 'ADA': 'ADA', 'DOT': 'DOT', 'LINK': 'LINK',
-    'UNI': 'UNI', 'MATIC': 'MATIC', 'ATOM': 'ATOM', 'BCH': 'BCH',
-    'AVAX': 'AVAX', 'BNB': 'BNB', 'TRX': 'TRX', 'USDT': 'USDT',
-    'USDC': 'USDC', 'ZUSD': 'USD', 'USD': 'USD'
-  };
-  if (map[cleaned]) return map[cleaned];
-  let symbol = cleaned;
-  if (symbol.startsWith('Z')) symbol = symbol.substring(1);
-  if (symbol.startsWith('X') && symbol.length > 3) symbol = symbol.substring(1);
-  return map[symbol] || symbol;
-}
-
-function extractBaseAsset(pair) {
-  const cleaned = String(pair || '')
-    .toUpperCase()
-    .replace(/\/USD$|ZUSD$|USD$|EUR$|GBP$/g, '');
-  return parseKrakenAsset(cleaned);
-}
 
 Deno.serve(async (req) => {
   const startTime = Date.now();
@@ -67,7 +43,7 @@ Deno.serve(async (req) => {
         // parseKrakenAsset() strips this suffix, which would otherwise merge the
         // staked balance into the spot symbol and double-count its value — the
         // Spot balance shown to the user does not include staked amounts.
-        if (/\.[A-Za-z]+$/.test(asset)) continue;
+        if (isStakingAsset(asset)) continue;
         const qty = info.balance || info.total || 0;
         if (qty <= 0.00001) continue;
         krakenHoldings.push({ symbol: asset, quantity: qty });

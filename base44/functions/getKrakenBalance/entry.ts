@@ -1,51 +1,13 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
+import { parseKrakenAsset, knownPair, isStakingAsset } from '../../shared/krakenAssets.ts';
 
 /**
  * Get Kraken Balance — Routes through krakenApi to respect rate limits.
  * No direct Kraken calls — everything goes via krakenApi proxy.
+ * Asset symbol normalization lives in shared/krakenAssets.ts.
  */
 
 const KRAKEN_PUBLIC_API = 'https://api.kraken.com/0/public/Ticker';
-
-function parseKrakenAsset(krakenCode) {
-  const code = String(krakenCode || '').toUpperCase();
-  const cleaned = code.replace(/\.\w+$/, '');
-  const map = {
-    'XXBT': 'BTC', 'XBT': 'BTC',
-    'XETH': 'ETH', 'ETH': 'ETH', 'ETH2': 'ETH',
-    'XXRP': 'XRP', 'XRP': 'XRP',
-    'XXLM': 'XLM', 'XLM': 'XLM',
-    'XLTC': 'LTC', 'LTC': 'LTC',
-    'XDG': 'DOGE', 'XXDG': 'DOGE', 'DOGE': 'DOGE',
-    'ZUSD': 'USD', 'USD': 'USD',
-    'SOL': 'SOL', 'ADA': 'ADA', 'DOT': 'DOT',
-    'LINK': 'LINK', 'AVAX': 'AVAX', 'ATOM': 'ATOM',
-    'UNI': 'UNI', 'MATIC': 'MATIC', 'BCH': 'BCH',
-    'TRX': 'TRX', 'PEPE': 'PEPE', 'SHIB': 'SHIB',
-    'NEAR': 'NEAR', 'ALGO': 'ALGO', 'ICP': 'ICP',
-    'SUI': 'SUI', 'HBAR': 'HBAR', 'TRUMP': 'TRUMP',
-    'BONK': 'BONK', 'FLOKI': 'FLOKI', 'BABY': 'BABY',
-  };
-  if (map[cleaned]) return map[cleaned];
-  let symbol = cleaned;
-  if (symbol.startsWith('Z') && symbol.length >= 4) symbol = symbol.substring(1);
-  if (symbol.startsWith('X') && symbol.length >= 4) symbol = symbol.substring(1);
-  if (map[symbol]) return map[symbol];
-  return symbol;
-}
-
-function knownPair(symbol) {
-  const map = {
-    BTC: 'XXBTZUSD', ETH: 'XETHZUSD', XRP: 'XXRPZUSD', LTC: 'XLTCZUSD', SOL: 'SOLUSD', ADA: 'ADAUSD',
-    DOT: 'DOTUSD', DOGE: 'XDGUSD', LINK: 'LINKUSD', UNI: 'UNIUSD', MATIC: 'MATICUSD', ATOM: 'ATOMUSD',
-    AVAX: 'AVAXUSD', BCH: 'BCHUSD', TRX: 'TRXUSD', PEPE: 'PEPEUSD', XLM: 'XXLMZUSD',
-    SHIB: 'SHIBUSD', NEAR: 'NEARUSD', ALGO: 'ALGOUSD', ICP: 'ICPUSD', FIL: 'FILUSD',
-    SAND: 'SANDUSD', MANA: 'MANAUSD', APE: 'APEUSD', OP: 'OPUSD', ARB: 'ARBUSD',
-    INJ: 'INJUSD', SUI: 'SUIUSD', TAO: 'TAOUSD', WIF: 'WIFUSD', FLOKI: 'FLOKIUSD',
-    BONK: 'BONKUSD', BABY: 'BABYUSD', HBAR: 'HBARUSD', TRUMP: 'TRUMPUSD',
-  };
-  return map[symbol] || `${symbol}USD`;
-}
 
 Deno.serve(async (req) => {
   const start = Date.now();
@@ -172,7 +134,7 @@ Deno.serve(async (req) => {
       // "ETH.S", "DOT.M"). These are separate from the tradeable Spot balance shown
       // on Kraken's Spot tab — merging them by stripping the suffix double-counts
       // the same underlying asset (spot + staked) and inflates the portfolio value.
-      if (/\.[A-Za-z]+$/.test(asset)) continue;
+      if (isStakingAsset(asset)) continue;
       const normalizedAsset = parseKrakenAsset(asset);
       if (normalizedAsset === 'USD') continue;
       const qty = info.balance || info.total || 0;

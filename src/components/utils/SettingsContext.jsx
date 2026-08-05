@@ -198,6 +198,18 @@ export const SettingsProvider = ({ children }) => {
     }
   }, [user, loadSettings]);
 
+  // Real-time sync: reload settings if changed elsewhere (another tab/device)
+  // instead of relying on the 5-minute cache to eventually catch up.
+  useEffect(() => {
+    if (!user?.email) return;
+    const unsubscribe = base44.entities.UserSettings.subscribe((event) => {
+      if (event?.data?.created_by === user.email) {
+        loadSettings(true);
+      }
+    });
+    return unsubscribe;
+  }, [user, loadSettings]);
+
   return (
     <SettingsContext.Provider value={{
       settings,
