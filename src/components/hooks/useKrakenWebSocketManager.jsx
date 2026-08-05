@@ -473,7 +473,13 @@ function handlePrivateMessage(message) {
       console.log('[KrakenWS] 📊 Balance snapshot received:', data.length, 'assets');
       
       data.forEach(balanceItem => {
-        const { asset, balance: availableBalance, wallets } = balanceItem;
+        const { asset, balance: availableBalance, wallet_type } = balanceItem;
+        // CRITICAL: Kraken's balances channel reports a wallet breakdown (spot,
+        // earn, margin, etc). Only the "spot" wallet is the tradeable cash/crypto
+        // balance shown in this app — a margin/earn entry for the same asset code
+        // would otherwise clobber the correct spot balance with an unrelated
+        // number (e.g. a negative margin balance), producing a wildly wrong total.
+        if (wallet_type && wallet_type !== 'spot') return;
         let available = parseFloat(availableBalance) || 0;
         
         GLOBAL_WS_STATE.balances.set(asset, {
@@ -498,7 +504,11 @@ function handlePrivateMessage(message) {
       console.log('[KrakenWS] 📊 Balance UPDATE received:', data.length, 'changes');
       
       data.forEach(update => {
-        const { asset, balance: newBalance } = update;
+        const { asset, balance: newBalance, wallet_type } = update;
+        // CRITICAL: Same wallet-breakdown guard as the snapshot handler above —
+        // ignore updates for non-spot wallets (margin/earn) so they can't
+        // overwrite the spot balance with an unrelated number.
+        if (wallet_type && wallet_type !== 'spot') return;
         
         GLOBAL_WS_STATE.balances.set(asset, {
           asset,
