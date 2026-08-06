@@ -239,8 +239,15 @@ Deno.serve(async (req) => {
       responseCache.set(cacheKeyFor(act), { data, expiresAt: Date.now() + ttl });
     };
 
-    // Short-circuit: return fresh cached read responses before touching Kraken
-    const cachedRead = getCached(action);
+    // Short-circuit: return fresh cached read responses before touching Kraken.
+    // CRITICAL: callers that need a guaranteed-live number (e.g. the dashboard's
+    // primary balance/total display) pass bypassCache:true. This in-memory cache
+    // is per function instance — across multiple warm instances an invalidateCache
+    // call on one instance can't clear another instance's copy, so a stale (often
+    // inflated) balance could otherwise be served for up to the full TTL even
+    // right after a trade. Bypassing it for the balance display removes that risk.
+    const bypassCache = !!payload?.bypassCache;
+    const cachedRead = bypassCache ? null : getCached(action);
     if (cachedRead) {
       return Response.json({ ...cachedRead, cached: true }, { status: 200 });
     }

@@ -26,8 +26,11 @@ Deno.serve(async (req) => {
       }, { status: 200 });
     }
 
-    // Route through krakenApi to respect the shared rate limiter
-    const balanceRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+    // Route through krakenApi to respect the shared rate limiter.
+    // CRITICAL: bypassCache=true — this endpoint feeds the dashboard's primary
+    // "Total Balance" display, so it must never return a stale/cached snapshot
+    // (e.g. from just before a trade completed on a different function instance).
+    const balanceRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance', payload: { bypassCache: true } });
     const balanceData = balanceRes?.data || balanceRes;
     
     if (!balanceData?.success) {
