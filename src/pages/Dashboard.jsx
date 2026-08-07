@@ -788,15 +788,9 @@ export default function Dashboard() {
     return () => window.removeEventListener('trade:completed', handleTradeCompleted);
   }, [compute24hChange]);
 
-  // Trigger initial REST fetch if provider hasn't loaded yet (one-time only)
-  const dashboardFetchAttemptedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!isSimMode && !providerHasData && !providerLoading && fetchKrakenData && !dashboardFetchAttemptedRef.current) {
-      dashboardFetchAttemptedRef.current = true;
-      console.log('[Dashboard] LIVE mode - triggering Kraken data fetch');
-      fetchKrakenData(true);
-    }
-  }, [isSimMode, providerHasData, providerLoading, fetchKrakenData]);
+  // The shared Kraken provider owns the initial balance fetch. Calling it from
+  // the dashboard as well bypasses the provider's startup pacing and races the
+  // balance WebSocket token request, which can trigger Kraken temporary lockouts.
 
   // CRITICAL: In LIVE mode, use provider's best-available values (REST > WS > 0)
   // Provider already merges REST snapshot (authoritative) + WS real-time (fallback)

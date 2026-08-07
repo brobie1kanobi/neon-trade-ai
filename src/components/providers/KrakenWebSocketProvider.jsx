@@ -361,12 +361,14 @@ export function KrakenWebSocketProvider({ children }) {
         }));
       }
 
-      // After first successful snapshot, delay subscribe to executions to avoid rate limits at boot
+      // Keep the trade-key execution subscription well clear of the balance
+      // token and initial balance snapshot. Starting both private streams at
+      // once causes Kraken's temporary-lockout response on some account tiers.
       if (!ordersSubscribedRef.current && wsManager?.refreshOrders) {
         ordersSubscribedRef.current = true;
         setTimeout(() => {
           try { wsManager.refreshOrders?.(); } catch (_) {}
-        }, 8000);
+        }, 30000);
       }
 
       restInFlightRef.current = false;
@@ -404,9 +406,11 @@ export function KrakenWebSocketProvider({ children }) {
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
-          setTimeout(() => fetchPnL(), 8000);
+          // PnL is non-critical for the opening balance. Fetch it after the
+          // balance snapshot and execution subscription have settled.
+          setTimeout(() => fetchPnL(), 45000);
         }
-      }, 3000); // 3s delay — gives WS auth time to complete before REST balance call
+      }, 3000); // gives balance WS authentication time to complete first
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
