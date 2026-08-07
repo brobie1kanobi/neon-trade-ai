@@ -404,9 +404,7 @@ export function KrakenWebSocketProvider({ children }) {
       const timer = setTimeout(() => {
         if (!hasInitialSnapshotRef.current) {
           fetchRestData(true);
-          // Keep account-history work out of the startup burst. The balance WebSocket
-          // token and initial balance snapshot already use the read-only Kraken key.
-          setTimeout(() => fetchPnL(), 60000);
+          setTimeout(() => fetchPnL(), 8000);
         }
       }, 3000); // 3s delay — gives WS auth time to complete before REST balance call
 
