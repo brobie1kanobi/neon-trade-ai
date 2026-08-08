@@ -661,9 +661,10 @@ export default function Dashboard() {
     // CRITICAL: For LIVE mode, use REAL Kraken PnL from getKrakenPnL endpoint
     if (!isSimModeLocal) {
       if (!krakenPnL) {
-        // Wait for provider PnL to avoid flicker from SIM calculations
-        setRealized24h({ value: 0, percentage: 0 });
-        setLifetimeChange({ value: 0, percentage: 0 });
+        // CRITICAL: Don't zero out the previously-shown values while waiting
+        // for provider PnL - just skip this update. Resetting to {value:0}
+        // here on every re-run (holdings/price ticks) is what caused the
+        // Lifetime PnL to flash to $0.00 (green) between accurate values.
         return;
       }
       // 24h realized PnL from Kraken trades
