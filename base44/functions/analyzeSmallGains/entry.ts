@@ -761,14 +761,21 @@ Return JSON with: market_sentiment_score (0-100, BE SPECIFIC not 50), market_reg
       console.log('[MarketIntelligence] Using cached market intelligence for', marketIntelCacheKey);
     } else {
       try {
-        // Primary web-enabled model
+        // Primary web-enabled model. CRITICAL: Reserve a guaranteed time slice for
+        // the no-web fallback call below — otherwise, whenever upstream calls run
+        // slow (e.g. during Kraken API congestion/lockouts), the primary call
+        // consumes the entire remaining budget, leaves the fallback with <4000ms,
+        // and every request silently drops to the generic "Market is neutral..."
+        // heuristic even though a real analysis could still succeed.
+        const FALLBACK_RESERVE_MS = 6000;
+        const primaryTimeoutMs = Math.max(4000, ensureTime() - FALLBACK_RESERVE_MS);
         marketIntelResp = await invokeLLM({
               prompt: intelPrompt,
               model: 'gemini_3_flash',
               withWeb: true,
               schema: intelSchema,
               label: 'LLM market intelligence (web)',
-              timeoutMs: ensureTime()
+              timeoutMs: primaryTimeoutMs
             });
       } catch (eA) {
         console.error('[MarketIntelligence] ❌ Intel LLM FAILED (primary HF call). Error:', eA?.message || eA);
