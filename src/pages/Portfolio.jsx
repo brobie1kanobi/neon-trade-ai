@@ -344,24 +344,13 @@ export default function Portfolio() {
           
           setDetailedHoldings(updated);
           
-          // CRITICAL: Only set PnL here if krakenPnL is NOT available
-          // When krakenPnL is available, the dedicated useEffect below handles it with accurate data
-          if (!krakenPnL?.success) {
-            const currentTotalValue = updated.reduce((sum, h) => sum + h.currentValue, 0);
-            const totalCostBasis = updated.reduce((sum, h) => sum + h.costBasis, 0);
-            
-            const lifetimePnL = currentTotalValue - totalCostBasis;
-            const lifetimePct = totalCostBasis > 0 ? (lifetimePnL / totalCostBasis) * 100 : 0;
-            
-            setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-            setPortfolio24hrChange({ value: 0, percentage: 0 });
-            
-            console.log('[Portfolio] LIVE calculated (no krakenPnL):', {
-              totalValue: currentTotalValue.toFixed(2),
-              costBasis: totalCostBasis.toFixed(2),
-              pnl: lifetimePnL.toFixed(2)
-            });
-          }
+          // NOTE: Lifetime/24h PnL for LIVE mode is set EXCLUSIVELY by the
+          // dedicated krakenPnL effect below - never here. This used to also
+          // write a fallback estimate whenever krakenPnL hadn't loaded yet
+          // (using currentPrice||average_cost_price, which computes a $0 gain
+          // when a fresh price isn't available), and having two writers race
+          // on every holdings/price recompute is what caused the lifetime PnL
+          // to flash to $0 (green) between accurate values.
           
         } else {
           // SIM MODE: Fetch prices and calculate
