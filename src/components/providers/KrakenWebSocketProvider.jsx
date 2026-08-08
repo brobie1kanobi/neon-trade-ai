@@ -368,7 +368,7 @@ export function KrakenWebSocketProvider({ children }) {
         ordersSubscribedRef.current = true;
         setTimeout(() => {
           try { wsManager.refreshOrders?.(); } catch (_) {}
-        }, 30000);
+        }, 45000);
       }
 
       restInFlightRef.current = false;
@@ -399,18 +399,32 @@ export function KrakenWebSocketProvider({ children }) {
     }
   }, [isSimMode]);
 
-  // ── Initial REST snapshot (one-time) ──
+  // ── Initial REST snapshot (fallback only) ──
+  // The balance WebSocket is the primary source. REST is only a backstop for
+  // when the WS hasn't delivered a balance snapshot yet — calling it
+  // unconditionally on every boot doubles up private Kraken calls right at
+  // startup, which is what was triggering "Temporary lockout" immediately
+  // after opening the app.
   useEffect(() => {
     if (shouldConnect && !hasInitialSnapshotRef.current && restData.lastFetchTime === 0) {
-      // Stagger initial REST fetch to let WS token request complete first (avoid rate limit burst)
+      // Give the private balance WebSocket (staggered ~8s after mount) time to
+      // authenticate and deliver its snapshot before falling back to REST.
       const timer = setTimeout(() => {
-        if (!hasInitialSnapshotRef.current) {
+        if (hasInitialSnapshotRef.current) return;
+        const wsAlreadyHasBalances = typeof window !== 'undefined' &&
+          window.__krakenWsBalances && Object.keys(window.__krakenWsBalances).length > 0;
+
+        if (wsAlreadyHasBalances) {
+          // WS already delivered data — skip the redundant REST call entirely.
+          hasInitialSnapshotRef.current = true;
+          setRestData(prev => ({ ...prev, isLoading: false }));
+        } else {
           fetchRestData(true);
-          // PnL is non-critical for the opening balance. Fetch it after the
-          // balance snapshot and execution subscription have settled.
-          setTimeout(() => fetchPnL(), 45000);
         }
-      }, 3000); // gives balance WS authentication time to complete first
+        // PnL is non-critical for the opening balance. Fetch it well after the
+        // balance snapshot and execution subscription have settled.
+        setTimeout(() => fetchPnL(), 60000);
+      }, 12000); // gives the balance WS connection time to authenticate first
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
@@ -419,7 +433,7 @@ export function KrakenWebSocketProvider({ children }) {
           hasInitialSnapshotRef.current = true;
           setRestData(prev => ({ ...prev, isLoading: false }));
         }
-      }, 20000);
+      }, 25000);
 
       return () => { clearTimeout(timer); clearTimeout(safetyTimer); };
     }
