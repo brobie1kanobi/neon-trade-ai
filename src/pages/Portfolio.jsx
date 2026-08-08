@@ -315,7 +315,13 @@ export default function Portfolio() {
         console.log('[Portfolio] No holdings to process');
         setDetailedHoldings([]);
         setPortfolio24hrChange({ value: 0, percentage: 0 });
-        setLifetimeChange({ value: 0, percentage: 0 });
+        // LIVE mode: don't zero lifetime PnL here - holdings can be transiently
+        // empty during a WS/REST refresh, and the krakenPnL effect below is the
+        // authoritative source for live lifetime PnL. Zeroing it here caused the
+        // displayed value to flash to $0.00 between refreshes.
+        if (isSimMode) {
+          setLifetimeChange({ value: 0, percentage: 0 });
+        }
         setIsCalculatingValue(false);
         return;
     }
