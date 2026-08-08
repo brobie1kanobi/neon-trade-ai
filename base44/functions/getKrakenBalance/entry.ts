@@ -9,6 +9,14 @@ import { parseKrakenAsset, knownPair, isStakingAsset } from '../../shared/kraken
 
 const KRAKEN_PUBLIC_API = 'https://api.kraken.com/0/public/Ticker';
 
+// Module-level fallback cache: last known-good price per symbol. If the public
+// Ticker call fails or is rate-limited (easily triggered by a refresh firing
+// several simultaneous balance calls), we reuse the last good price instead of
+// falling back to 0 - a $0 price was zeroing out real crypto holdings and
+// making them appear to "disappear" even though cash (price-independent)
+// still loaded fine.
+const lastKnownPrices = new Map(); // symbol -> price
+
 Deno.serve(async (req) => {
   const start = Date.now();
   try {
@@ -94,7 +102,18 @@ Deno.serve(async (req) => {
             if (price > 0) prices[sym] = price;
           }
         }
-      } catch (_e) { /* Non-critical */ }
+      } catch (_e) { /* Non-critical - fall back to last known prices below */ }
+    }
+
+    // Fall back to the last known-good price for any symbol the live fetch
+    // didn't return a price for (failed/rate-limited call, missing pair, etc.)
+    // instead of letting that holding's value collapse to $0.
+    for (const sym of symbols) {
+      if (prices[sym] > 0) {
+        lastKnownPrices.set(sym, prices[sym]);
+      } else if (lastKnownPrices.has(sym)) {
+        prices[sym] = lastKnownPrices.get(sym);
+      }
     }
 
     // Fetch cost basis from DB holdings. Real holdings are synced by the service
