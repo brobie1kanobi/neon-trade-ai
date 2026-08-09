@@ -1364,7 +1364,7 @@ Deno.serve(async (req) => {
     // ACTION: PLACE BRACKET ORDERS (TP + SL via single connection)
     // ============================================
     if (action === 'place_bracket_orders') {
-      const { symbol, quantity, takeProfitPrice, stopLossPrice } = body;
+      const { symbol, quantity, takeProfitPrice, stopLossPrice } = requestBody;
 
       if (!symbol || !quantity || !takeProfitPrice || !stopLossPrice) {
         return Response.json({ 
@@ -1734,7 +1734,7 @@ Deno.serve(async (req) => {
     // ACTION: CANCEL ORDER
     // ============================================
     if (action === 'cancel_order') {
-      const { orderIds } = body;
+      const { orderIds } = requestBody;
 
       if (!orderIds || (Array.isArray(orderIds) && orderIds.length === 0)) {
         return Response.json({ 
