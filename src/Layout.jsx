@@ -11,13 +11,14 @@ import NotificationDrawer from "./components/notifications/NotificationDrawer";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsProvider, useSettings } from "./components/utils/SettingsContext";
-import { KrakenWebSocketProvider } from "./components/providers/KrakenWebSocketProvider";
+import { KrakenWebSocketProvider, useKrakenWebSocket } from "./components/providers/KrakenWebSocketProvider";
 import { LongPressTooltip } from "./components/utils/LongPressTooltip";
 import { base44 } from "@/api/base44Client";
 
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
   const { settings, user, isLoading, updateSetting } = useSettings();
+  const { fetchKrakenData, refresh: refreshKraken } = useKrakenWebSocket();
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -143,11 +144,22 @@ function LayoutContent({ children, currentPageName }) {
     setShowBiometricsPrompt(false);
   };
 
+  // CRITICAL: A full window.location.reload() re-triggers the ENTIRE Kraken
+  // boot sequence (public WS + private balance/orders WS + fresh REST snapshot),
+  // which burns through several private API calls every single time it fires.
+  // Users repeatedly tapping Refresh while balances look stuck was compounding
+  // the exact "Temporary lockout" it was meant to fix. Instead, ask the already
+  //-connected provider to refresh in place and let pages re-fetch their own
+  // data via the events they already listen for — no reload, no new WS/token calls.
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
+    try {
+      await refreshKraken?.();
+      await fetchKrakenData?.(true);
+    } catch (_e) {}
+    window.dispatchEvent(new CustomEvent('kraken:synced'));
+    window.dispatchEvent(new CustomEvent('app:data-updated', { detail: { type: 'manual_refresh' } }));
+    setTimeout(() => setIsRefreshing(false), 500);
   };
 
   const darkMode = settings?.dark_mode !== false; // Default to dark mode

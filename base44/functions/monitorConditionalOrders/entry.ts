@@ -126,6 +126,16 @@ Deno.serve(async (req) => {
     let processed = 0;
     let executed = 0;
     const results = [];
+    // CRITICAL: Fetch the live-account available-balance map ONCE per run and
+    // reuse it for every triggered order below. Previously each triggered
+    // order called getExtendedBalance separately, so a run with several
+    // simultaneous TP/SL hits fired multiple redundant private Kraken calls
+    // in the same few seconds — a major contributor to "Temporary lockout".
+    let availMapCache = null;
+    const getAvailMapCached = async () => {
+      if (!availMapCache) availMapCache = await getAvailableMap(base44);
+      return availMapCache;
+    };
 
     // 3. Evaluate each order
     for (const order of orders) {
@@ -184,7 +194,7 @@ Deno.serve(async (req) => {
 
       if (!is_simulation) {
         // Verify there's enough available on Kraken to fill THIS order's quantity
-        const availMap = await getAvailableMap(base44);
+        const availMap = await getAvailMapCached();
         const available = availMap[symbol] || 0;
 
         // CRITICAL: Only sell this order's quantity, NOT the full balance.
@@ -244,6 +254,10 @@ Deno.serve(async (req) => {
 
         if (sellResult?.success) {
           executed++;
+          // Invalidate the cached balance snapshot — this sale changed the
+          // account's available balance, so any later order in this same run
+          // (e.g. a second order on the same symbol) must see the fresh amount.
+          if (!is_simulation) availMapCache = null;
           await base44.asServiceRole.entities.ConditionalOrder.update(id, {
             status: 'executed', closure_reason: reason, executed_at: new Date().toISOString()
           });
