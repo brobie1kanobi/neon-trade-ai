@@ -174,8 +174,11 @@ Deno.serve(async (req) => {
         reason = `Stop-Loss hit (${gainPct.toFixed(2)}% <= -${loss_margin}%)`;
       }
 
-      // Trailing stop check
-      if (!shouldSell && trailing_enabled && peak > purchase_price && trailing_margin > 0) {
+      // Trailing stop check — only ARM once price has moved up by at least
+      // trailing_margin% from entry, so a trailing sell always locks in a
+      // real gain instead of firing on a tiny uptick followed by a pullback.
+      const peakGainPct = ((peak - purchase_price) / purchase_price) * 100;
+      if (!shouldSell && trailing_enabled && trailing_margin > 0 && peakGainPct >= trailing_margin) {
         const dropPct = ((peak - price) / peak) * 100;
         if (dropPct >= trailing_margin) {
           shouldSell = true;
