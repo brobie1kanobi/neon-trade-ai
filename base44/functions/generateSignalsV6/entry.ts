@@ -538,16 +538,19 @@ Deno.serve(async (req) => {
     }
 
     // ===== 7. HISTORICAL PERFORMANCE (if enabled) =====
+    // NOTE: Trade records have no cost-basis field, so pnl here was always 0
+    // (comparing price to itself) — every asset was scored a fake 100% winner.
+    // ModelPerformance already has the correctly-computed is_success flag per
+    // closed position, so use that as the real source of truth.
     let historyMap = {};
     if (strategies.history) {
       try {
-        const trades = await base44.asServiceRole.entities.Trade.filter({ type: 'sell', is_auto_trade: true }, '-created_date', 50);
-        for (const t of trades) {
-          const sym = (t.symbol || '').toUpperCase();
+        const perf = await base44.asServiceRole.entities.ModelPerformance.filter({}, '-created_date', 100);
+        for (const p of perf) {
+          const sym = (p.asset_symbol || '').toUpperCase();
           if (!historyMap[sym]) historyMap[sym] = { wins: 0, losses: 0, total: 0 };
           historyMap[sym].total++;
-          const pnl = (t.price || 0) - (t.average_cost_price || t.price || 0);
-          if (pnl >= 0) historyMap[sym].wins++; else historyMap[sym].losses++;
+          if (p.is_success) historyMap[sym].wins++; else historyMap[sym].losses++;
         }
       } catch (_) {}
     }
