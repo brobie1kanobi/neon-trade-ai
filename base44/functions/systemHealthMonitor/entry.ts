@@ -28,6 +28,10 @@ Deno.serve(async (req) => {
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    if ((user.role || '').toLowerCase() !== 'admin') {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
     
     const body = await req.json().catch(() => ({}));
     const { action = 'checkHealth', component, error_message } = body;

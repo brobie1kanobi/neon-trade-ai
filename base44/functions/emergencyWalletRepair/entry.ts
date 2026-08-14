@@ -85,8 +85,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Emergency repair error:', error);
     return Response.json({ 
-      error: error.message,
-      stack: error.stack 
+      error: error.message
     }, { status: 500 });
   }
 });
