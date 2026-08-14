@@ -37,48 +37,62 @@ export default function AIPerformancePanel() {
         return;
       }
 
-      // Separate buy and sell trades
+      // Separate buy and sell trades (for totals/labels below)
       const buyTrades = allTrades.filter(t => t.type === 'buy');
       const sellTrades = allTrades.filter(t => t.type === 'sell');
 
-      // Find completed round-trips (buy + sell of same symbol)
+      // FIFO-match buys to sells in true chronological order, per symbol AND
+      // per sim/live mode (never cross-match a sim buy with a live sell), and
+      // weighted by quantity so partial fills are split correctly. This avoids
+      // pairing a buy with the wrong sell — the old newest-first matching could
+      // produce a win/loss flag that contradicted the actual dollar PnL.
+      const chronological = [...allTrades].sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
       const completedTrades = [];
-      const sellsBySymbol = {};
-      for (const sell of sellTrades) {
-        if (!sellsBySymbol[sell.symbol]) sellsBySymbol[sell.symbol] = [];
-        sellsBySymbol[sell.symbol].push(sell);
-      }
+      const openLots = {};
+      const lotKey = (t) => `${t.symbol}|${!!t.is_simulation}`;
 
-      for (const buy of buyTrades) {
-        const sells = sellsBySymbol[buy.symbol] || [];
-        const matchingSell = sells.find(s => 
-          new Date(s.created_date) > new Date(buy.created_date)
-        );
-        if (matchingSell) {
-          const pctReturn = ((matchingSell.price - buy.price) / buy.price) * 100;
-          const holdMs = new Date(matchingSell.created_date) - new Date(buy.created_date);
-          completedTrades.push({
-            symbol: buy.symbol,
-            asset_type: buy.asset_type,
-            entry_price: buy.price,
-            exit_price: matchingSell.price,
-            quantity: buy.quantity,
-            buy_value: buy.total_value,
-            sell_value: matchingSell.total_value,
-            pct_return: pctReturn,
-            is_win: pctReturn > 0,
-            hold_minutes: holdMs / 60000,
-            is_simulation: buy.is_simulation,
-            buy_date: buy.created_date,
-            sell_date: matchingSell.created_date
-          });
-          // Remove matched sell so it's not reused
-          sells.splice(sells.indexOf(matchingSell), 1);
+      for (const t of chronological) {
+        const key = lotKey(t);
+        if (t.type === 'buy') {
+          if (!openLots[key]) openLots[key] = [];
+          openLots[key].push({ price: t.price, remaining: t.quantity, date: t.created_date, asset_type: t.asset_type });
+        } else if (t.type === 'sell') {
+          let sellQtyRemaining = t.quantity;
+          const lots = openLots[key] || [];
+          while (sellQtyRemaining > 1e-9 && lots.length > 0) {
+            const lot = lots[0];
+            const matchQty = Math.min(lot.remaining, sellQtyRemaining);
+            if (matchQty <= 1e-9) { lots.shift(); continue; }
+            const buyValue = matchQty * lot.price;
+            const sellValue = matchQty * t.price;
+            const holdMs = new Date(t.created_date) - new Date(lot.date);
+            completedTrades.push({
+              symbol: t.symbol,
+              asset_type: t.asset_type || lot.asset_type,
+              entry_price: lot.price,
+              exit_price: t.price,
+              quantity: matchQty,
+              buy_value: buyValue,
+              sell_value: sellValue,
+              pct_return: ((t.price - lot.price) / lot.price) * 100,
+              is_win: sellValue > buyValue,
+              hold_minutes: holdMs / 60000,
+              is_simulation: t.is_simulation,
+              buy_date: lot.date,
+              sell_date: t.created_date
+            });
+            lot.remaining -= matchQty;
+            sellQtyRemaining -= matchQty;
+            if (lot.remaining <= 1e-9) lots.shift();
+          }
         }
       }
 
-      // Calculate open positions (buys without matching sells)
-      const openPositions = buyTrades.length - completedTrades.length;
+      // Open positions = remaining unmatched buy quantity across all lots
+      let openPositions = 0;
+      for (const key in openLots) {
+        openPositions += openLots[key].filter(l => l.remaining > 1e-9).length;
+      }
 
       // Key metrics
       const wins = completedTrades.filter(t => t.is_win);
