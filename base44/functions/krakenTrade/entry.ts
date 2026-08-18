@@ -1132,8 +1132,8 @@ Deno.serve(async (req) => {
       let tpResult = null;
       let slResult = null;
 
-      // Use a safety haircut for closing orders to account for fees/rounding
-      const sellQtyForClosers = Math.max(sellMinQty, Math.floor((parsedQty * 0.995) * 1e8) / 1e8);
+      // TP/SL closing orders must match the exact buy quantity
+      const sellQtyForClosers = parsedQty;
 
       if (finalTpPrice && canPlaceSellOrders) {
         // CRITICAL: Round TP price to Kraken's required decimal precision
