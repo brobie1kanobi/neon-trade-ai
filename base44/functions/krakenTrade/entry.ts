@@ -1390,10 +1390,9 @@ Deno.serve(async (req) => {
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       const availMap = await getAvailableMap(base44, true);
       const available = availMap[symbol.toUpperCase()] || 0;
-      let finalQty = Math.min(parsedQty, available);
-      // Haircut to avoid "insufficient funds" from fee/rounding holds
-      finalQty = Math.max(minQty, Math.floor((finalQty * 0.995) * 1e8) / 1e8);
-      if (finalQty > available) finalQty = Math.max(0, available - minQty * 0.01);
+      // TP/SL closing orders must match the exact buy quantity — cap to available
+      // balance only if it's actually less (no artificial haircut, no dust left behind)
+      const finalQty = Math.min(parsedQty, available);
       if (finalQty < minQty) {
         return Response.json({ success: false, error: `Insufficient available ${symbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` }, { status: 200 });
       }
