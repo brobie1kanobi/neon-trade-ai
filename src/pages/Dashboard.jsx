@@ -638,16 +638,23 @@ export default function Dashboard() {
       const qty = h.quantity || 0;
       const valueNow = qty * currentPrice;
 
+      // CRITICAL: The 24h-ago reference price must behave like a fixed point in
+      // time. Re-deriving it from "currentPrice / (1+pct/100)" on every tick was
+      // still unstable because pct itself is reported with tiny jitter on almost
+      // every ticker message (Kraken recalculates it per trade) — pairing that
+      // jitter with a constantly-moving currentPrice amplified into multi-dollar
+      // swings on the total. Anchor it once and only let it drift at most every
+      // 5 minutes, which is how often a "24h ago" reference should realistically
+      // move — this is what actually stops the flicker.
       const symbolKey = (h.symbol || "").toUpperCase();
       const cachedAnchor = pctAnchorRef.current[symbolKey];
+      const ANCHOR_TTL_MS = 5 * 60 * 1000;
       let prevPrice;
-      if (cachedAnchor && cachedAnchor.pct === pct) {
-        // pct hasn't changed since we last anchored it — reuse the cached
-        // 24h-ago price instead of re-deriving it against a newer currentPrice.
+      if (cachedAnchor && (Date.now() - cachedAnchor.computedAt) < ANCHOR_TTL_MS) {
         prevPrice = cachedAnchor.prevPrice;
       } else {
         prevPrice = (currentPrice > 0 && pct > -100) ? currentPrice / (1 + pct / 100) : currentPrice;
-        pctAnchorRef.current[symbolKey] = { pct, prevPrice };
+        pctAnchorRef.current[symbolKey] = { prevPrice, computedAt: Date.now() };
       }
       const valuePrev = qty * prevPrice;
 
