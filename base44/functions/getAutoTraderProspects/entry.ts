@@ -264,6 +264,24 @@ Deno.serve(async (req) => {
     
     console.log('[Prospects] Found', prefs.length, 'enabled preferences for', isSimMode ? 'SIM' : 'LIVE', 'mode (from', allPrefs.length, 'total)');
 
+    // CRITICAL: Merge in watchlist symbols so prospects reflect the SAME assets the
+    // "AI Analysis" page evaluates. Without this, a symbol with no explicit AutoBuyPreference
+    // (e.g. XRP, DOGE, XLM) can carry a fresher, higher-confidence signal than the symbols
+    // shown here — meaning the "closest to being sent" list quietly falls out of sync with
+    // what the AI actually rates as the best opportunities.
+    const watchedSymbolsRaw = Array.isArray(rawRecord?.watched_crypto) ? rawRecord.watched_crypto : [];
+    const existingPrefSymbols = new Set(prefs.map(p => String(p.symbol || '').toUpperCase()));
+    for (const w of watchedSymbolsRaw) {
+      const sym = String(w || '').toUpperCase();
+      if (sym && !existingPrefSymbols.has(sym)) {
+        prefs.push({ symbol: sym, asset_type: 'crypto', percentage: 10, enabled: true, is_simulation: isSimMode });
+        existingPrefSymbols.add(sym);
+      }
+    }
+    if (watchedSymbolsRaw.length > 0) {
+      console.log('[Prospects] After merging watchlist:', prefs.length, 'total symbols to evaluate');
+    }
+
     if (prefs.length === 0) {
       // Fallback: use ANY enabled prefs regardless of is_simulation flag
       const enabled = allPrefs.filter(p => p.enabled !== false);
