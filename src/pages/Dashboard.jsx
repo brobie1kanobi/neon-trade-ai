@@ -593,6 +593,16 @@ export default function Dashboard() {
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
   const handleCloseModal = () => setSelectedTrade(null);
 
+  // CRITICAL: Anchors the 24h-ago reference price per symbol, keyed off the
+  // last-seen 24h% value. Recomputing "prevPrice = currentPrice / (1+pct/100)"
+  // on every tick was the source of the flicker: currentPrice updates far more
+  // often (every WS tick / 30s poll) than pct does, so pairing a FRESH price
+  // with a STALE pct produced a different (wrong) prevPrice each render even
+  // though the real 24h-ago price hadn't changed. Only recompute the anchor
+  // when pct itself actually changes (a genuine new 24h reading); otherwise
+  // reuse the cached anchor so the 24h PnL stays stable between real updates.
+  const pctAnchorRef = useRef({});
+
   const compute24hChange = useCallback(() => {
     if (!Array.isArray(effectiveHoldings) || effectiveHoldings.length === 0) {
       setChange24h({ value: 0, percentage: 0 });
@@ -627,7 +637,18 @@ export default function Dashboard() {
       const pct = typeof pctRaw === "string" ? parseFloat(pctRaw.replace("%", "")) : (typeof pctRaw === "number" ? pctRaw : 0);
       const qty = h.quantity || 0;
       const valueNow = qty * currentPrice;
-      const prevPrice = (currentPrice > 0 && pct > -100) ? currentPrice / (1 + pct / 100) : currentPrice;
+
+      const symbolKey = (h.symbol || "").toUpperCase();
+      const cachedAnchor = pctAnchorRef.current[symbolKey];
+      let prevPrice;
+      if (cachedAnchor && cachedAnchor.pct === pct) {
+        // pct hasn't changed since we last anchored it — reuse the cached
+        // 24h-ago price instead of re-deriving it against a newer currentPrice.
+        prevPrice = cachedAnchor.prevPrice;
+      } else {
+        prevPrice = (currentPrice > 0 && pct > -100) ? currentPrice / (1 + pct / 100) : currentPrice;
+        pctAnchorRef.current[symbolKey] = { pct, prevPrice };
+      }
       const valuePrev = qty * prevPrice;
 
       currentHoldingsValue += valueNow;
