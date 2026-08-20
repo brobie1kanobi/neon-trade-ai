@@ -500,7 +500,11 @@ export function KrakenWebSocketProvider({ children }) {
           if (price > 0) {
             const wsPair = `${normalized}/USD`;
             if (!priceWindow[wsPair] || Math.abs(priceWindow[wsPair].price - price) > 0.001) {
-              priceWindow[wsPair] = { price, timestamp: Date.now() };
+              // CRITICAL: Preserve change_24h (and any other fields) set by the private
+              // ticker WS — this poller only refreshes price, and replacing the whole
+              // object was wiping change_24h every ~30s, causing the 24h PnL card to
+              // flicker between the real value and 0 even though price barely moved.
+              priceWindow[wsPair] = { ...priceWindow[wsPair], price, timestamp: Date.now() };
               updated = true;
             }
           }
