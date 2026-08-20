@@ -331,10 +331,19 @@ Deno.serve(async (req) => {
       console.error('[Prospects] Failed to fetch signals:', e.message);
     }
     
-    // Build signal lookup map
+    // Build signal lookup map — if multiple generators wrote a signal for the same
+    // symbol, always keep the most recently updated one instead of an arbitrary
+    // last-in-array pick, so prospects never trade on a stale, superseded signal.
     const signalMap = new Map();
     for (const sig of signals) {
-      signalMap.set(sig.asset_symbol, sig);
+      const existingSig = signalMap.get(sig.asset_symbol);
+      if (!existingSig) {
+        signalMap.set(sig.asset_symbol, sig);
+        continue;
+      }
+      const existingTime = new Date(existingSig.updated_date || existingSig.created_date || 0).getTime();
+      const newTime = new Date(sig.updated_date || sig.created_date || 0).getTime();
+      if (newTime >= existingTime) signalMap.set(sig.asset_symbol, sig);
     }
 
     const reloadSignals = async () => {

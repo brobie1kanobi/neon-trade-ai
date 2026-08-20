@@ -41,9 +41,18 @@ Deno.serve(async (req) => {
     // entity-automation cascades, and dashboard auto-refresh
     const SIGNAL_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
     try {
-      const recentSignals = await base44.asServiceRole.entities.AssetSignal.filter(
-        { is_active: true }, '-created_date', 5
+      const isOwnSignal = (s) => {
+        try { return JSON.parse(s.metadata_json || '{}').generator === 'analyzeSmallGains'; } catch (_e) { return false; }
+      };
+      const recentSignalsRaw = await base44.asServiceRole.entities.AssetSignal.filter(
+        { is_active: true }, '-created_date', 20
       );
+      // CRITICAL: Only reuse signals THIS generator produced. Other generators
+      // (e.g. generateSignalsV6 "v7 multi-strategy") write to the same shared
+      // AssetSignal table with a different methodology — treating their output
+      // as a valid cache hit here caused the "All Analysis" list to silently
+      // show contradictory data vs. the market intelligence panel above it.
+      const recentSignals = recentSignalsRaw.filter(isOwnSignal).slice(0, 5);
       if (recentSignals.length > 0) {
         const newestAge = Date.now() - new Date(recentSignals[0].created_date).getTime();
         if (newestAge < SIGNAL_COOLDOWN_MS) {
@@ -1226,6 +1235,7 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
               predicted_gain_pct: r.predicted_move_pct ?? 0,
               momentum_strength: r.momentum_strength || 'moderate',
               metadata_json: JSON.stringify({
+                generator: 'analyzeSmallGains',
                 generated_at: new Date().toISOString(),
                 auto_tradeable: r.auto_tradeable === true,
                 timing_window: r.timing_window,
