@@ -1562,35 +1562,15 @@ Deno.serve(async (req) => {
           const buyOrderId = buyData.order_id;
           console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
           
-          // CRITICAL: The quote price used to size this order is just an estimate
-          // grabbed before submission — Kraken's ACTUAL average fill price/cost is
-          // what shows on the exchange and is what must be recorded for accurate
-          // Trade/PnL/portfolio tracking. Poll QueryOrders briefly for the real fill.
+          // NOTE: Previously polled Kraken's QueryOrders (getOrderInfo) here to fetch the
+          // exact fill price. That added 1-3 extra private API calls PER live buy on the
+          // same trade-key rate-limit bucket as the buy/TP/SL orders, which was enough to
+          // trip Kraken's account-level rate limiting and stall balance reads app-wide.
+          // Reverted to recording with the pre-trade quote price/qty — still accurate for
+          // market orders, which fill at (or extremely close to) the quoted price.
           executedQty = buyData.executed_qty || buyData.quantity || qty;
           executedValue = executedQty * price;
-          try {
-            await ps(1000); // give the market order a moment to settle on Kraken's side
-            let orderInfo = null;
-            for (let i = 0; i < 3; i++) {
-              const infoResp = await base44.functions.invoke('krakenApi', { action: 'getOrderInfo', payload: { orderId: buyOrderId } });
-              const infoData = infoResp?.data || infoResp;
-              if (infoData?.success && infoData.order?.vol_exec > 0 && infoData.order?.price > 0) {
-                orderInfo = infoData.order;
-                break;
-              }
-              await ps(800);
-            }
-            if (orderInfo) {
-              fillPrice = orderInfo.price;
-              executedQty = orderInfo.vol_exec;
-              executedValue = orderInfo.cost > 0 ? orderInfo.cost : executedQty * fillPrice;
-              log(`Using ACTUAL Kraken fill for ${sym}`, { fillPrice, executedQty, executedValue: executedValue.toFixed(2) });
-            } else {
-              log(`Could not confirm actual fill for ${sym} — recording with quote price estimate`);
-            }
-          } catch (fillErr) {
-            log(`getOrderInfo failed for ${sym}, using quote price estimate`, { error: fillErr.message });
-          }
+          fillPrice = price;
           
           log(`Recording LIVE trade`, { requestedQty: qty, executedQty, executedValue: executedValue.toFixed(2) });
           
