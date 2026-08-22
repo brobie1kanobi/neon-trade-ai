@@ -309,6 +309,31 @@ Deno.serve(async (req) => {
       return Response.json(out, { status: 200 });
     }
 
+    // CRITICAL: Returns the ACTUAL Kraken fill price/cost for an order (average
+    // execution price, real cost, real executed volume) via QueryOrders — used
+    // to correct the estimate price used at signal time with what Kraken really
+    // charged, so Trade records/PnL match the exchange exactly.
+    if (action === 'getOrderInfo') {
+      const txid = payload?.orderId || payload?.txid;
+      if (!txid) return Response.json({ success: false, error: 'Missing orderId' }, { status: 200 });
+      const { apiKey, apiSecret } = getSecrets('trade');
+      await getLimiter(user.email, 'trade').remove(1);
+      const result = await callKraken(apiKey, apiSecret, '/0/private/QueryOrders', { txid: String(txid), trades: true });
+      const order = result.result?.[txid];
+      if (!order) return Response.json({ success: false, error: 'Order not found' }, { status: 200 });
+      return Response.json({
+        success: true,
+        order: {
+          status: order.status,
+          price: parseFloat(order.price) || 0,       // average fill price
+          cost: parseFloat(order.cost) || 0,          // actual total USD cost
+          fee: parseFloat(order.fee) || 0,
+          vol: parseFloat(order.vol) || 0,
+          vol_exec: parseFloat(order.vol_exec) || 0    // actual executed quantity
+        }
+      }, { status: 200 });
+    }
+
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
       try {
         const forceRefresh = !!payload?.forceRefresh;

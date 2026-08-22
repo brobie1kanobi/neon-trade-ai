@@ -1523,6 +1523,7 @@ Deno.serve(async (req) => {
       let krakenOrderIds = '';
       let executedQty = qty;
       let executedValue = total_value;
+      let fillPrice = price; // overwritten with Kraken's actual average fill price in LIVE mode
       const orderAttempts = timeLeft() > 12000 ? 2 : 1;
 
       // CRITICAL: Execute trade based on mode
@@ -1561,9 +1562,35 @@ Deno.serve(async (req) => {
           const buyOrderId = buyData.order_id;
           console.log(`[runAutoTrader] ✅ BUY executed: ${buyOrderId}`);
           
-          // CRITICAL: Record LIVE trade with ACTUAL executed quantity from Kraken response
+          // CRITICAL: The quote price used to size this order is just an estimate
+          // grabbed before submission — Kraken's ACTUAL average fill price/cost is
+          // what shows on the exchange and is what must be recorded for accurate
+          // Trade/PnL/portfolio tracking. Poll QueryOrders briefly for the real fill.
           executedQty = buyData.executed_qty || buyData.quantity || qty;
           executedValue = executedQty * price;
+          try {
+            await ps(1000); // give the market order a moment to settle on Kraken's side
+            let orderInfo = null;
+            for (let i = 0; i < 3; i++) {
+              const infoResp = await base44.functions.invoke('krakenApi', { action: 'getOrderInfo', payload: { orderId: buyOrderId } });
+              const infoData = infoResp?.data || infoResp;
+              if (infoData?.success && infoData.order?.vol_exec > 0 && infoData.order?.price > 0) {
+                orderInfo = infoData.order;
+                break;
+              }
+              await ps(800);
+            }
+            if (orderInfo) {
+              fillPrice = orderInfo.price;
+              executedQty = orderInfo.vol_exec;
+              executedValue = orderInfo.cost > 0 ? orderInfo.cost : executedQty * fillPrice;
+              log(`Using ACTUAL Kraken fill for ${sym}`, { fillPrice, executedQty, executedValue: executedValue.toFixed(2) });
+            } else {
+              log(`Could not confirm actual fill for ${sym} — recording with quote price estimate`);
+            }
+          } catch (fillErr) {
+            log(`getOrderInfo failed for ${sym}, using quote price estimate`, { error: fillErr.message });
+          }
           
           log(`Recording LIVE trade`, { requestedQty: qty, executedQty, executedValue: executedValue.toFixed(2) });
           
@@ -1573,7 +1600,7 @@ Deno.serve(async (req) => {
             type: 'buy',
             asset_type: typ,
             quantity: executedQty,
-            price: price,
+            price: fillPrice,
             total_value: executedValue,
             status: 'filled',
             is_auto_trade: true,
@@ -1594,7 +1621,7 @@ Deno.serve(async (req) => {
               entry_type: 'trade_buy',
               quantity_delta: executedQty,
               cash_delta: -executedValue,
-              unit_price: price,
+              unit_price: fillPrice,
               reference_type: 'trade',
               reference_id: buyOrderId,
               idempotency_key: `${idempotencyKey}_ledger`,
@@ -1717,20 +1744,28 @@ Deno.serve(async (req) => {
         is_simulation: isSimMode
       });
       
+      // CRITICAL: For LIVE trades, holdings cost basis and downstream TP/SL purchase
+      // price must reflect the ACTUAL Kraken fill (executedQty/executedValue/fillPrice),
+      // never the pre-trade quote estimate — otherwise cost basis and PnL drift from
+      // what the exchange actually charged.
+      const recordQty = isSimMode ? qty : executedQty;
+      const recordValue = isSimMode ? total_value : executedValue;
+      const recordPrice = isSimMode ? price : fillPrice;
+
       if (existing?.length > 0) {
         const h = existing[0];
         const oldQty = Number(h.quantity || 0);
         const oldAvg = Number(h.average_cost_price || 0);
-        const newQty = oldQty + qty;
-        const newCost = oldQty * oldAvg + total_value;
+        const newQty = oldQty + recordQty;
+        const newCost = oldQty * oldAvg + recordValue;
         const newAvg = newQty > 0 ? (newCost / newQty) : 0;
         await base44.entities.Holding.update(h.id, { quantity: newQty, average_cost_price: newAvg });
       } else {
         await base44.entities.Holding.create({
           symbol: sym,
           asset_type: typ,
-          quantity: qty,
-          average_cost_price: price,
+          quantity: recordQty,
+          average_cost_price: recordPrice,
           is_simulation: isSimMode,
           created_by: user.email
         });
@@ -1743,12 +1778,12 @@ Deno.serve(async (req) => {
         symbol: sym,
         asset_type: typ,
         quantity: (isSimMode ? qty : executedQty),
-        purchase_price: price,
+        purchase_price: recordPrice,
         gain_margin: gainMargin,
         loss_margin: lossMargin,
         status: 'active',
         trailing_enabled: trailingEnabled,
-        highest_price: price,
+        highest_price: recordPrice,
         trailing_margin: trailingMargin,
         is_simulation: isSimMode,
         idempotency_key: `${idempotencyKey}_conditional`,
@@ -1790,9 +1825,9 @@ Deno.serve(async (req) => {
       tradesPlaced.push({
         symbol: sym,
         asset_type: typ,
-        qty,
-        price,
-        total_value,
+        qty: recordQty,
+        price: recordPrice,
+        total_value: recordValue,
         ai_confidence: confidence,
         effective_gain_margin: gainMargin,
         effective_loss_margin: lossMargin,
@@ -1817,18 +1852,18 @@ Deno.serve(async (req) => {
       // Create notification for this AI trade with full financial details
       try {
         const modeLabel = isSimMode ? 'SIM' : 'LIVE';
-        const tpTarget = round2(price * (1 + gainMargin / 100));
+        const tpTarget = round2(recordPrice * (1 + gainMargin / 100));
         await base44.entities.Notification.create({
           title: `🤖 ${modeLabel} AI Buy: ${sym}`,
-          message: `Auto-traded ${qty.toFixed(6)} ${sym} at $${price.toFixed(2)} for $${total_value.toFixed(2)}`,
+          message: `Auto-traded ${recordQty.toFixed(6)} ${sym} at $${recordPrice.toFixed(2)} for $${recordValue.toFixed(2)}`,
           type: 'success',
           read: false,
           details_json: JSON.stringify({
             symbol: sym,
             action: 'buy',
-            quantity: qty,
-            price: price,
-            total_value: total_value,
+            quantity: recordQty,
+            price: recordPrice,
+            total_value: recordValue,
             tp_price: tpTarget,
             tp_pct: gainMargin,
             sl_pct: lossMargin,
