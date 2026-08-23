@@ -474,6 +474,19 @@ export default function MarketAnalysis() {
     fetchAnalysis();
   }, [fetchAnalysis]);
 
+  // Respond to the header's global refresh button — without this, this page
+  // never re-fetches when that button is clicked (it only listens for its
+  // own local "Refresh" button, calling fetchAnalysis on mount).
+  useEffect(() => {
+    const handleGlobalRefresh = () => fetchAnalysis(true);
+    window.addEventListener('app:data-updated', handleGlobalRefresh);
+    window.addEventListener('kraken:synced', handleGlobalRefresh);
+    return () => {
+      window.removeEventListener('app:data-updated', handleGlobalRefresh);
+      window.removeEventListener('kraken:synced', handleGlobalRefresh);
+    };
+  }, [fetchAnalysis]);
+
   const handleSendToTrader = async (signal) => {
     try {
       // Add to auto-buy preferences if not already there
