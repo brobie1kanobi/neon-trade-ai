@@ -1075,6 +1075,15 @@ Return JSON: market_sentiment_score (0-100), market_regime ('risk-on'|'risk-off'
         let adjustedConfidence = r.confidence_score;
         let adjustedAction = r.optimal_action || r.action || 'hold';
         
+        // RULE 0: Promote a contradictory "hold" to "buy" — the AI sometimes labels
+        // a signal "hold" while its own reasoning/data (positive 24h trend + positive
+        // predicted move + confidence already at/above the buy bar) clearly describes
+        // a buy. Left as "hold" it silently never reaches the auto-trader pipeline.
+        if (adjustedAction === 'hold' && change24h >= 0 && (r.predicted_move_pct || 0) > 0 && adjustedConfidence >= 55) {
+          console.log(`[MarketIntelligence] ${r.symbol}: Promoted hold->buy (24h ${change24h.toFixed(1)}%, predicted +${(r.predicted_move_pct || 0).toFixed(1)}%, confidence ${adjustedConfidence})`);
+          adjustedAction = 'buy';
+        }
+        
         // RULE 1: strong_buy requires positive 24h momentum — don't buy falling assets
         if (adjustedAction === 'strong_buy' && change24h < 0.5) {
           adjustedAction = change24h < -2 ? 'hold' : 'buy';
