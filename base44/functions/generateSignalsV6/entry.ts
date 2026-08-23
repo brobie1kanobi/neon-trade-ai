@@ -671,7 +671,11 @@ Deno.serve(async (req) => {
       if (strategies.bollinger && bb) reasonParts.push(`BB%B=${bb.percentB.toFixed(2)}(${scores.bollinger > 0 ? '+' : ''}${scores.bollinger})`);
       if (strategies.trend && scores.trend != null) reasonParts.push(`Trend(${scores.trend > 0 ? '+' : ''}${scores.trend})`);
       if (strategies.volume && volRatio != null) reasonParts.push(`Vol=${volRatio.toFixed(1)}x(${scores.volume > 0 ? '+' : ''}${scores.volume})`);
-      if (strategies.sentiment && sentiment[sym]) reasonParts.push(`Sent=${sentiment[sym].score}(${sentiment[sym].reasoning?.slice(0, 40)})`);
+      // NOTE: previously sliced to 40 chars, which cut sentences off mid-word
+      // (e.g. "...due to lack o"). Store the full reasoning so downstream
+      // consumers (UI translation, trade history, prediction models) get
+      // accurate, complete text instead of a truncated fragment.
+      if (strategies.sentiment && sentiment[sym]) reasonParts.push(`Sent=${sentiment[sym].score}(${sentiment[sym].reasoning || 'no reasoning provided'})`);
       if (strategies.history && scores.history != null) reasonParts.push(`Hist(${scores.history > 0 ? '+' : ''}${scores.history})`);
 
       const reasoning = `v7 multi-strategy [${enabledStrategies.join(',')}]: composite=${compositeScore.toFixed(1)} | ${reasonParts.join(', ')}${btcSuffix}`;
