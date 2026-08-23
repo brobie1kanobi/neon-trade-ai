@@ -182,7 +182,22 @@ function getSecrets(purpose) {
   return { apiKey: balKey.trim(), apiSecret: balSecret.trim() };
 }
 
+// Cross-instance (entity-backed) cache TTLs. The in-memory caches above only
+// dedupe within ONE warm Deno isolate; the platform runs several, so every
+// isolate was making its own private Kraken call on app launch. These shared
+// TTLs make all isolates reuse a single Kraken response.
+const SHARED_TTL = {
+  getExtendedBalance: 30000,
+  getBalance: 30000,
+  getOpenOrders: 20000,
+  getTradesHistory: 300000
+};
+const LOCKOUT_KEY = 'kraken:lockout';
+const LOCKOUT_MS = 180000; // back off 3 min after Kraken rate-limits/locks out
+
 Deno.serve(async (req) => {
+  let staleShared = null;
+  let sharedSetLockout = null;
   try {
     const base44 = createClientFromRequest(req);
 
@@ -233,10 +248,37 @@ Deno.serve(async (req) => {
       if (hit && hit.expiresAt > Date.now()) return hit.data;
       return null;
     };
-    const setCached = (act, data) => {
+    // Entity-backed cache shared by ALL function instances
+    const sharedGet = async (key) => {
+      try {
+        const rows = await base44.asServiceRole.entities.KrakenApiCache.filter({ cache_key: key }, '-updated_date', 1);
+        const row = rows?.[0];
+        if (!row) return null;
+        return {
+          id: row.id,
+          data: row.data_json ? JSON.parse(row.data_json) : null,
+          expired: new Date(row.expires_at).getTime() <= Date.now()
+        };
+      } catch (_e) { return null; }
+    };
+    const sharedSet = async (key, data, ttlMs) => {
+      try {
+        const rows = await base44.asServiceRole.entities.KrakenApiCache.filter({ cache_key: key }, '-updated_date', 1);
+        const record = {
+          cache_key: key,
+          data_json: data == null ? '' : JSON.stringify(data),
+          expires_at: new Date(Date.now() + ttlMs).toISOString()
+        };
+        if (rows?.[0]) await base44.asServiceRole.entities.KrakenApiCache.update(rows[0].id, record);
+        else await base44.asServiceRole.entities.KrakenApiCache.create(record);
+      } catch (_e) {}
+    };
+    sharedSetLockout = () => sharedSet(LOCKOUT_KEY, { locked: true }, LOCKOUT_MS);
+
+    const setCached = async (act, data) => {
       const ttl = RESPONSE_TTL[act];
-      if (!ttl) return;
-      responseCache.set(cacheKeyFor(act), { data, expiresAt: Date.now() + ttl });
+      if (ttl) responseCache.set(cacheKeyFor(act), { data, expiresAt: Date.now() + ttl });
+      if (SHARED_TTL[act]) await sharedSet(cacheKeyFor(act), data, SHARED_TTL[act]);
     };
 
     // Short-circuit: return fresh cached read responses before touching Kraken.
@@ -252,6 +294,28 @@ Deno.serve(async (req) => {
       return Response.json({ ...cachedRead, cached: true }, { status: 200 });
     }
 
+    // Cross-instance cache + lockout guard for private READ endpoints.
+    if (SHARED_TTL[action]) {
+      const hit = await sharedGet(cacheKeyFor(action));
+      if (hit?.data) {
+        if (!hit.expired && !bypassCache) {
+          responseCache.set(cacheKeyFor(action), { data: hit.data, expiresAt: Date.now() + (RESPONSE_TTL[action] || 15000) });
+          return Response.json({ ...hit.data, cached: 'shared' }, { status: 200 });
+        }
+        staleShared = hit.data;
+      }
+
+      // If Kraken recently rate-limited/locked us out, do NOT call it again —
+      // serve the last known-good response so the UI keeps showing balances.
+      const lock = await sharedGet(LOCKOUT_KEY);
+      if (lock && !lock.expired) {
+        if (staleShared) {
+          return Response.json({ ...staleShared, cached: 'stale', kraken_backoff: true }, { status: 200 });
+        }
+        return Response.json({ success: false, error: 'Kraken API is in cooldown after rate limiting — retrying shortly', kraken_backoff: true }, { status: 200 });
+      }
+    }
+
     if (action === 'getBalance') {
       const { apiKey, apiSecret } = credsFor('getBalance');
       await getLimiter(user.email, 'balance').remove(endpointCost('/0/private/Balance'));
@@ -263,7 +327,7 @@ Deno.serve(async (req) => {
         balances[a] = parseFloat(amount) || 0;
       }
       const out = { success: true, balance: balances, raw_balance: raw };
-      setCached('getBalance', out);
+      await setCached('getBalance', out);
       return Response.json(out, { status: 200 });
     }
 
@@ -278,7 +342,7 @@ Deno.serve(async (req) => {
         const available = parseFloat(info?.balance) || 0; const hold = parseFloat(info?.hold_trade) || 0; balances[a] = { balance: available, hold_trade: hold, total: available + hold, credit: parseFloat(info?.credit) || 0, credit_used: parseFloat(info?.credit_used) || 0 };
       }
       const out = { success: true, balance: balances, raw_balance: raw };
-      setCached('getExtendedBalance', out);
+      await setCached('getExtendedBalance', out);
       return Response.json(out, { status: 200 });
     }
 
@@ -294,7 +358,7 @@ Deno.serve(async (req) => {
         trades.push({ trade_id: txid, txid, ordertxid: trade.ordertxid, pair: trade.pair, time: trade.time, type: trade.type, ordertype: trade.ordertype, price: trade.price, cost: trade.cost, fee: trade.fee, vol: trade.vol, margin: trade.margin, misc: trade.misc, ...trade });
       }
       const out = { success: true, trades, count: trades.length };
-      setCached('getTradesHistory', out);
+      await setCached('getTradesHistory', out);
       return Response.json(out, { status: 200 });
     }
 
@@ -305,7 +369,7 @@ Deno.serve(async (req) => {
       const openOrders = [];
       for (const [orderId, order] of Object.entries(result.result?.open || {})) { openOrders.push({ order_id: orderId, ...order }); }
       const out = { success: true, orders: openOrders, count: openOrders.length };
-      setCached('getOpenOrders', out);
+      await setCached('getOpenOrders', out);
       return Response.json(out, { status: 200 });
     }
 
@@ -372,7 +436,17 @@ Deno.serve(async (req) => {
 
     return Response.json({ error: 'Unknown action', success: false }, { status: 400 });
   } catch (error) {
-    console.error('[krakenApi] Error:', error.message);
-    return Response.json({ error: error.message, success: false, connected: false }, { status: 200 });
+    const msg = error?.message || 'Unknown error';
+    console.error('[krakenApi] Error:', msg);
+
+    // Kraken rate-limit / temporary lockout: start a global cooldown so every
+    // other caller stops hammering the key, and serve the last good snapshot.
+    if (/rate limit|lockout|too many requests/i.test(msg)) {
+      try { await sharedSetLockout?.(); } catch (_e) {}
+      if (staleShared) {
+        return Response.json({ ...staleShared, cached: 'stale', kraken_backoff: true }, { status: 200 });
+      }
+    }
+    return Response.json({ error: msg, success: false, connected: false }, { status: 200 });
   }
 });

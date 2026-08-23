@@ -114,8 +114,10 @@ const useAutoTrader = (settings, user) => {
       }
     };
 
-    // First mount: 15s delay. Re-mounts: defer to next interval tick.
-    const initialDelay = thisMountId === 1 ? 15000 : AUTO_TRADER_COOLDOWN_MS;
+    // First mount: wait 3 minutes. The auto-trader run makes many private Kraken
+    // calls; firing it ~15s after launch competed with the balance snapshot and
+    // WS token requests and was what starved/locked out the balance key on open.
+    const initialDelay = thisMountId === 1 ? 180000 : AUTO_TRADER_COOLDOWN_MS;
     const mountDelay = setTimeout(triggerBackendAutoTrader, initialDelay);
 
     const interval = setInterval(triggerBackendAutoTrader, AUTO_TRADER_INTERVAL_MS);

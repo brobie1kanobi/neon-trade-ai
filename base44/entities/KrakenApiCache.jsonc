@@ -1,0 +1,45 @@
+{
+  "name": "KrakenApiCache",
+  "type": "object",
+  "properties": {
+    "cache_key": {
+      "type": "string",
+      "description": "Deterministic key for the cached Kraken private read response (or lockout marker)"
+    },
+    "data_json": {
+      "type": "string",
+      "description": "JSON stringified cached Kraken response payload"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache entry expires"
+    }
+  },
+  "required": [
+    "cache_key",
+    "expires_at"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

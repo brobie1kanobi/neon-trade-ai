@@ -424,7 +424,8 @@ export function KrakenWebSocketProvider({ children }) {
         // PnL is non-critical for the opening balance. Fetch it well after the
         // balance snapshot and execution subscription have settled.
         setTimeout(() => fetchPnL(), 60000);
-      }, 12000); // gives the balance WS connection time to authenticate first
+      }, 3000); // balance reads are now served from a shared cross-instance cache,
+                // so this no longer races the WS token for a fresh Kraken call
 
       // Safety: don't stay in loading forever
       const safetyTimer = setTimeout(() => {
