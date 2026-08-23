@@ -131,22 +131,42 @@ export function friendlyPattern(pattern) {
 // entry zone, allocation) so it stays 100% consistent with the actual data.
 export function buildEligibilityExplanation(prospect, userMargins) {
   const lines = [];
+  const sym = prospect.symbol;
   const actionLabel = prospect.optimal_action === 'strong_buy' ? 'a STRONG BUY' : 'a BUY';
-  lines.push(`AI rated this ${actionLabel} signal at ${prospect.confidence_score}% confidence.`);
+  lines.push(`AI rated ${sym} ${actionLabel} signal at ${prospect.confidence_score}% confidence, based on $${prospect.current_price?.toFixed(2)} current price.`);
 
   if (typeof prospect.market_trend === 'number') {
     const dir = prospect.market_trend >= 0 ? 'up' : 'down';
-    lines.push(`Price is ${dir} ${Math.abs(prospect.market_trend).toFixed(2)}% over the last 24h — within the safe range the AI trades in (not chasing a pump or catching a falling knife).`);
+    lines.push(`${sym} is ${dir} ${Math.abs(prospect.market_trend).toFixed(2)}% over the last 24h — within the safe range the AI trades in (not chasing a pump or catching a falling knife).`);
   }
 
-  if (prospect.entry_zone_status === 'in_zone') lines.push('Current price is inside the AI\'s recommended entry zone.');
-  else if (prospect.entry_zone_status === 'below_zone') lines.push('Current price is below the AI\'s ideal entry zone (even better value than expected).');
-  else if (prospect.entry_zone_status === 'above_zone') lines.push('Current price is above the AI\'s ideal entry zone — a bit late to this move.');
+  if (prospect.entry_zone?.low != null && prospect.entry_zone?.high != null) {
+    const { low, high } = prospect.entry_zone;
+    if (prospect.entry_zone_status === 'in_zone') lines.push(`Current price of $${prospect.current_price?.toFixed(2)} sits inside the AI's recommended entry zone ($${low.toFixed(2)} - $${high.toFixed(2)}) for ${sym}.`);
+    else if (prospect.entry_zone_status === 'below_zone') lines.push(`Current price of $${prospect.current_price?.toFixed(2)} is below the AI's $${low.toFixed(2)} - $${high.toFixed(2)} entry zone — even better value than the AI expected.`);
+    else if (prospect.entry_zone_status === 'above_zone') lines.push(`Current price of $${prospect.current_price?.toFixed(2)} is above the AI's $${low.toFixed(2)} - $${high.toFixed(2)} entry zone — a bit late to this move.`);
+  }
 
-  if (typeof prospect.total_value === 'number' && typeof prospect.user_allocation_pct === 'number') {
-    const gain = userMargins?.gain_margin ?? prospect.user_gain_margin;
-    const loss = userMargins?.loss_margin ?? prospect.user_loss_margin;
-    lines.push(`Sized at ${prospect.user_allocation_pct}% of your available trading cash ($${prospect.total_value.toFixed(2)}), with a +${gain}% take-profit and -${loss}% stop-loss.`);
+  if (prospect.technical_pattern && !/no clear pattern/i.test(prospect.technical_pattern)) {
+    lines.push(`Chart pattern detected on ${sym}: ${prospect.technical_pattern}.`);
+  }
+
+  if (prospect.timing_window) {
+    const timingText = prospect.timing_window === 'immediate' ? 'The AI flags this as an immediate opportunity — the setup may not last.' :
+      prospect.timing_window === 'short_term' ? 'The AI expects this setup to play out over the next 24-48 hours.' :
+      `The AI suggests waiting before acting on ${sym}.`;
+    lines.push(timingText);
+  }
+
+  if (prospect.has_existing_position && prospect.existing_quantity) {
+    lines.push(`You already hold ${prospect.existing_quantity.toFixed(4)} ${sym} — this order would add to that position.`);
+  }
+
+  if (typeof prospect.total_value === 'number' && typeof prospect.quantity === 'number') {
+    const alloc = prospect.user_allocation_pct ?? prospect.allocation_percent;
+    const gain = prospect.user_gain_margin ?? userMargins?.gain_margin;
+    const loss = prospect.user_loss_margin ?? userMargins?.loss_margin;
+    lines.push(`Order: ${prospect.quantity.toFixed(4)} ${sym} (~$${prospect.total_value.toFixed(2)}, ${alloc}% of your available trading cash), protected with a +${gain}% take-profit and -${loss}% stop-loss.`);
   }
 
   return lines;
