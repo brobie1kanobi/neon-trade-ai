@@ -36,6 +36,18 @@ Deno.serve(async (req) => {
 
     console.log('[MarketIntelligence] Analyzing', symbols.length, 'symbols with full intelligence:', includeMarketIntelligence, 'trade history:', includeTradeHistory);
 
+    // Resolve the symbols this request actually needs BEFORE the dedup check below,
+    // so the cooldown can be scoped to them instead of being symbol-agnostic.
+    const earlyAutoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
+      created_by: user.email,
+      enabled: true
+    }).catch(() => []);
+    const dedupTargetSymbols = [...new Set(
+      (symbols.length > 0 ? symbols : earlyAutoBuyPrefs.map(p => p.symbol))
+        .map((s) => String(s || '').toUpperCase())
+        .filter(Boolean)
+    )];
+
     // ── DEDUP GUARD: Skip full analysis if signals were generated very recently ──
     // This prevents rapid-fire HF calls from overlapping frontend loads,
     // entity-automation cascades, and dashboard auto-refresh
@@ -47,13 +59,25 @@ Deno.serve(async (req) => {
       const recentSignalsRaw = await base44.asServiceRole.entities.AssetSignal.filter(
         { is_active: true }, '-created_date', 20
       );
-      // CRITICAL: Only reuse signals THIS generator produced. Other generators
-      // (e.g. generateSignalsV6 "v7 multi-strategy") write to the same shared
-      // AssetSignal table with a different methodology — treating their output
-      // as a valid cache hit here caused the "All Analysis" list to silently
-      // show contradictory data vs. the market intelligence panel above it.
-      const recentSignals = recentSignalsRaw.filter(isOwnSignal).slice(0, 5);
-      if (recentSignals.length > 0) {
+      // CRITICAL: Only reuse signals THIS generator produced, AND only for the
+      // symbols this request is actually asking about. The old check was symbol-
+      // agnostic — if ANY own-signal (for ANY symbol) was fresh, it short-circuited
+      // the whole request, leaving symbols NOT covered by that recent run stuck on
+      // stale/heuristic-fallback data. That's why Auto-Trader Prospects could show
+      // a much lower/generic confidence for a symbol than the "AI Analysis" page —
+      // the Prospector's request for that symbol was being skipped by another
+      // page's unrelated recent signal.
+      const recentOwnSignals = recentSignalsRaw.filter(isOwnSignal);
+      const freshSymbols = new Set(
+        recentOwnSignals
+          .filter((s) => Date.now() - new Date(s.created_date).getTime() < SIGNAL_COOLDOWN_MS)
+          .map((s) => String(s.asset_symbol || '').toUpperCase())
+      );
+      const allTargetSymbolsFresh = dedupTargetSymbols.length > 0 && dedupTargetSymbols.every((s) => freshSymbols.has(s));
+      const recentSignals = recentOwnSignals
+        .filter((s) => dedupTargetSymbols.includes(String(s.asset_symbol || '').toUpperCase()))
+        .slice(0, 5);
+      if (allTargetSymbolsFresh && recentSignals.length > 0) {
         const newestAge = Date.now() - new Date(recentSignals[0].created_date).getTime();
         if (newestAge < SIGNAL_COOLDOWN_MS) {
           console.log(`[MarketIntelligence] DEDUP: Signals generated ${(newestAge/1000).toFixed(0)}s ago (< ${SIGNAL_COOLDOWN_MS/1000}s cooldown). Returning cached signals.`);
@@ -330,11 +354,9 @@ Deno.serve(async (req) => {
       throw new Error('HF: exhausted all retry attempts');
     }
 
-    // Get user's auto-buy preferences (check both sim and live)
-    const autoBuyPrefs = await base44.asServiceRole.entities.AutoBuyPreference.filter({
-      created_by: user.email,
-      enabled: true
-    }).catch(() => []);
+    // Get user's auto-buy preferences (check both sim and live) — reuse the lookup
+    // already done above for the dedup check instead of fetching it twice.
+    const autoBuyPrefs = earlyAutoBuyPrefs;
 
     const targetSymbols = symbols.length > 0 ? symbols : autoBuyPrefs.map(p => p.symbol);
     const normalizedTargetSymbols = [...new Set(targetSymbols.map((s) => String(s || '').toUpperCase()).filter(Boolean))];
