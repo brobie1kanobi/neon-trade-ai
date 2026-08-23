@@ -98,14 +98,23 @@ export function summarizeReasoning(reasoning) {
   const parsed = parseV7Reasoning(reasoning);
   if (!parsed) return reasoning || 'Analyzing entry opportunity...';
 
-  const top = parsed.insights.slice(0, 2).map(i => i.label).join(' and ');
+  // Use the actual per-asset detail (with real numbers/text), not just the
+  // strategy label — two assets scoring off the same strategies should still
+  // read differently because their RSI/BB/volume/sentiment values differ.
+  const top = parsed.insights.slice(0, 2);
   const scoreLabel = parsed.composite == null ? '' :
-    parsed.composite >= 50 ? 'a strong buy score' :
-    parsed.composite >= 20 ? 'a buy score' :
-    parsed.composite <= -50 ? 'a strong sell score' :
-    parsed.composite <= -20 ? 'a sell score' : 'a neutral score';
+    parsed.composite >= 50 ? 'strong buy' :
+    parsed.composite >= 20 ? 'buy' :
+    parsed.composite <= -50 ? 'strong sell' :
+    parsed.composite <= -20 ? 'sell' : 'neutral';
 
-  let summary = top ? `Driven mainly by ${top}, this adds up to ${scoreLabel} (${parsed.composite?.toFixed(0)}/100).` : `Composite score: ${parsed.composite?.toFixed(0)}/100.`;
+  const detailSentences = top
+    .map(i => i.detail.charAt(0).toUpperCase() + i.detail.slice(1))
+    .join('. ');
+
+  let summary = detailSentences ?
+    `${detailSentences}. Combined score: ${parsed.composite?.toFixed(0)}/100 (${scoreLabel}).` :
+    `Composite score: ${parsed.composite?.toFixed(0)}/100.`;
   if (parsed.btcNote) summary += ` ${parsed.btcNote}.`;
   return summary;
 }
