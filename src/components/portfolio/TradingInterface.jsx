@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Zap, ArrowUpCircle, ArrowDownCircle, Search, Save, Loader2, Settings as SettingsIcon, Bot, ShoppingCart, ShieldCheck } from "lucide-react";
-import { InvokeLLM } from "@/integrations/Core";
 import { UserSettings, User, ConditionalOrder, LedgerEntry } from "@/entities/all";
 import TradeConfirmationDialog from "./TradeConfirmationDialog";
 import AdvancedOrderModal from "./AdvancedOrderModal";

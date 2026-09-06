@@ -1,24 +1,8 @@
 import { base44 } from './base44Client';
 
-
-
-
-export const Core = base44.integrations.Core;
-
-export const InvokeLLM = base44.integrations.Core.InvokeLLM;
-
-export const SendEmail = base44.integrations.Core.SendEmail;
-
-export const SendSMS = base44.integrations.Core.SendSMS;
-
+// Only unrestricted upload integrations are exposed to the client.
+// Restricted Core integrations (InvokeLLM, SendEmail, GenerateImage, …) run
+// server-side inside backend functions via base44.asServiceRole.
 export const UploadFile = base44.integrations.Core.UploadFile;
 
-export const GenerateImage = base44.integrations.Core.GenerateImage;
-
-export const ExtractDataFromUploadedFile = base44.integrations.Core.ExtractDataFromUploadedFile;
-
-
-
-
-
-
+export const UploadPrivateFile = base44.integrations.Core.UploadPrivateFile;

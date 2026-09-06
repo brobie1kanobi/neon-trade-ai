@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, ReferenceDot } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { InvokeLLM } from "@/integrations/Core";
 import { getMarketData } from "@/functions/getMarketData";
 
 export default function AssetDetailModal({ asset, isOpen, onClose }) {
@@ -38,19 +36,19 @@ export default function AssetDetailModal({ asset, isOpen, onClose }) {
     if (!asset) return;
 
     try {
-      const response = await InvokeLLM({
-        prompt: `Get detailed information for ${asset.symbol}. Include current price, 24h change, market cap, and name.`,
-        add_context_from_internet: true,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            current_price: { type: "number" },
-            change_24h: { type: "number" },
-            market_cap: { type: "string" },
-            name: { type: "string" }
-          }
-        }
+      const isStock = (asset.asset_type || "crypto").toLowerCase() === "stock";
+      const { data } = await getMarketData({
+        action: "getWatchlistData",
+        payload: isStock
+          ? { cryptoSymbols: [], stockSymbols: [String(asset.symbol).toUpperCase()] }
+          : { cryptoSymbols: [String(asset.symbol).toUpperCase()], stockSymbols: [] }
       });
+      const row = Array.isArray(data) ? data[0] : null;
+      const response = row ? {
+        current_price: Number(row.price ?? row.current_price ?? 0),
+        change_24h: Number(row.change ?? row.change_24h_percent ?? row.price_change_percentage_24h ?? 0),
+        name: row.name || asset.symbol
+      } : null;
 
       if (response && response.current_price !== undefined) {
         if (prevPriceRef.current !== null && prevPriceRef.current !== response.current_price) {

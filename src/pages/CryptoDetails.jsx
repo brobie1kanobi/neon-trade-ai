@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { User, Holding, Trade } from "@/entities/all";
-import { InvokeLLM } from "@/integrations/Core";
 import { useSettings } from "@/components/utils/SettingsContext";
 import { base44 } from "@/api/base44Client";
 
@@ -30,68 +29,18 @@ export default function CryptoDetails() {
   const assetType = (new URLSearchParams(location.search).get("assetType") || "crypto").toLowerCase();
 
   const enrichAssetInfo = async (symbolArg, assetTypeArg) => {
-    const schema = {
-      type: "object",
-      properties: {
-        full_name: { type: "string" },
-        description: { type: "string" },
-        website: { type: "string" },
-        yahoo_symbol: { type: "string" },
-        exchange: { type: "string" },
-        sector: { type: "string" },
-        industry: { type: "string" }
-      }
-    };
-
-    const checksPass = (d) => {
-      if (!d) return false;
-      const hasDesc = d.description && d.description.trim().length >= 40;
-      const hasName = d.full_name && d.full_name.trim().length >= 2;
-      return hasDesc || hasName;
-    };
-
-    // 1) Google-first attempt
     try {
-      const g = await InvokeLLM({
-        prompt: `Using Google.com results first, identify the official profile and key details for this ${assetTypeArg}:
-symbol: ${symbolArg}
-Return a concise JSON with: full_name, description (2-5 sentences), website (official), yahoo_symbol (if differs), exchange, sector and industry (for stocks).
-If info is not found on Google results, leave fields blank (do NOT fabricate), we'll try other sources.`,
-        add_context_from_internet: true,
-        response_json_schema: schema
+      const res = await base44.functions.invoke('assetAiInsights', {
+        action: 'assetProfile',
+        symbol: symbolArg,
+        assetType: assetTypeArg
       });
-      if (checksPass(g)) return g;
+      const data = res?.data || res;
+      return data?.profile || null;
     } catch (e) {
-      console.warn("Google enrichment failed:", e.message);
+      console.warn("Asset profile enrichment failed:", e.message);
+      return null;
     }
-
-    // 2) Yahoo Finance-focused attempt
-    try {
-      const y = await InvokeLLM({
-        prompt: `From Yahoo Finance ONLY, fetch profile for ${assetTypeArg} ${symbolArg}.
-Return JSON with: full_name, description (2-5 sentences), website (official), yahoo_symbol, exchange, sector, industry.`,
-        add_context_from_internet: true,
-        response_json_schema: schema
-      });
-      if (checksPass(y)) return y;
-    } catch (e) {
-      console.warn("Yahoo Finance enrichment failed:", e.message);
-    }
-
-    // 3) General web search fallback
-    try {
-      const w = await InvokeLLM({
-        prompt: `Using general web search, identify the official profile and a short description for ${assetTypeArg} ${symbolArg}.
-Prefer official site, Wikipedia, or reputable sources. Return: full_name, description (2-5 sentences), website, yahoo_symbol, exchange, sector, industry.`,
-        add_context_from_internet: true,
-        response_json_schema: schema
-      });
-      if (checksPass(w)) return w;
-    } catch (e) {
-      console.warn("General web enrichment failed:", e.message);
-    }
-
-    return null;
   };
 
   useEffect(() => {

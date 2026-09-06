@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Zap, Newspaper, BarChart, BrainCircuit } from "lucide-react";
-import { InvokeLLM } from "@/integrations/Core";
+import { base44 } from "@/api/base44Client";
 import ReactMarkdown from 'react-markdown';
 
 export default function AssetInsights({ symbol, name }) {
@@ -14,26 +14,12 @@ export default function AssetInsights({ symbol, name }) {
             if (!symbol || !name) return;
             setIsLoading(true);
             try {
-                const response = await InvokeLLM({
-                    prompt: `Provide a detailed but concise market analysis for ${name} (${symbol}). I need the following information in a structured JSON format:
-1.  **sentiment**: A single word: "Bullish", "Bearish", or "Neutral".
-2.  **summary**: A 2-3 sentence overview of the current market position and outlook.
-3.  **technical_analysis**: A brief summary of key technical indicators (RSI, MACD, key moving averages).
-4.  **recent_news**: 2-3 bullet points of recent significant news or catalysts affecting the price. Use markdown for the bullet points.
-`,
-                    add_context_from_internet: true,
-                    response_json_schema: {
-                        type: "object",
-                        properties: {
-                            sentiment: { type: "string", enum: ["Bullish", "Bearish", "Neutral"] },
-                            summary: { type: "string" },
-                            technical_analysis: { type: "string" },
-                            recent_news: { type: "string" }
-                        },
-                        required: ["sentiment", "summary", "technical_analysis", "recent_news"]
-                    }
+                const res = await base44.functions.invoke('assetAiInsights', {
+                    action: 'assetInsights',
+                    symbol
                 });
-                setInsights(response);
+                const data = res?.data || res;
+                setInsights(data?.insights || { error: "Could not load insights at this time." });
             } catch (error) {
                 console.error("Failed to fetch asset insights:", error);
                 setInsights({ error: "Could not load insights at this time." });

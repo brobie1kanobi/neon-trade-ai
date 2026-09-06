@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
 
       try {
         const llm = await withTimeout(
-          base44.integrations.Core.InvokeLLM({
+          base44.asServiceRole.integrations.Core.InvokeLLM({
             prompt: [
               `Find the official domain and a direct logo image (png or svg) for the stock ticker "${sym}".`,
               "Prefer the official site, Wikipedia/Wikimedia, or a reputable brand assets CDN.",

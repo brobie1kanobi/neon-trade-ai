@@ -744,7 +744,7 @@ For each asset:
       const useWeb = withWeb === true;
       const llmModel = useWeb ? 'gemini_3_flash' : (model && model !== 'automatic' ? model : undefined);
       return await withTimeout(
-        base44.integrations.Core.InvokeLLM({
+        base44.asServiceRole.integrations.Core.InvokeLLM({
           prompt: 'You are an expert quantitative trading analyst. Always respond with valid JSON only, no extra text.\n\n' + prompt,
           add_context_from_internet: useWeb,
           response_json_schema: schema || undefined,
