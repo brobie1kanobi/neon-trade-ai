@@ -38,8 +38,8 @@ export default function AutoTraderProspects() {
   const [backendMessage, setBackendMessage] = useState('');
   // Initialize margins from settings context, fall back to defaults
   const [userMargins, setUserMargins] = useState({
-    gain_margin: settings?.gain_margin ?? 10,
-    loss_margin: settings?.loss_margin ?? 5
+    gain_margin: settings?.gain_margin ?? 3,
+    loss_margin: settings?.loss_margin ?? 2
   });
 
   // Update margins when settings load from context
@@ -47,8 +47,8 @@ export default function AutoTraderProspects() {
     if (settings?.gain_margin !== undefined || settings?.loss_margin !== undefined) {
       console.log('[Prospects UI] Settings from context - gain:', settings.gain_margin, 'loss:', settings.loss_margin);
       setUserMargins({
-        gain_margin: settings.gain_margin ?? 10,
-        loss_margin: settings.loss_margin ?? 5
+        gain_margin: settings.gain_margin ?? 3,
+        loss_margin: settings.loss_margin ?? 2
       });
     }
   }, [settings?.gain_margin, settings?.loss_margin]);
@@ -108,8 +108,8 @@ export default function AutoTraderProspects() {
       const qty = parseFloat(prospect.quantity.toFixed(8));
       const price = prospect.current_price;
       const estimatedCost = qty * price;
-      const tpPercent = Math.abs((prospect.user_gain_margin ?? userMargins.gain_margin ?? 10));
-      const slPercent = Math.abs((prospect.user_loss_margin ?? userMargins.loss_margin ?? 5));
+      const tpPercent = Math.abs((prospect.user_gain_margin ?? userMargins.gain_margin ?? 3));
+      const slPercent = Math.abs((prospect.user_loss_margin ?? userMargins.loss_margin ?? 2));
       const takeProfitPrice = parseFloat((price * (1 + tpPercent / 100)).toFixed(2));
       const stopLossPrice = parseFloat((price * (1 - slPercent / 100)).toFixed(2));
       

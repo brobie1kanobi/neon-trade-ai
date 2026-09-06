@@ -536,11 +536,13 @@ Deno.serve(async (req) => {
 
       const aiTpPct = signal.take_profit_pct || null;
       const aiSlPct = signal.stop_loss_pct || null;
-      // Enforce minimum TP 4%, SL 2% for high win rate
-      const rawGainMargin = aiTpPct && aiTpPct > settings.gain_margin ? aiTpPct : settings.gain_margin;
-      const rawLossMargin = aiSlPct || settings.loss_margin;
-      const effectiveGainMargin = Math.max(rawGainMargin, 4);
-      const effectiveLossMargin = Math.max(rawLossMargin, 2);
+      // CRITICAL: The user's configured margins are the LAW. The AI's suggested
+      // take-profit used to override gain_margin whenever it was larger (and a hard
+      // 4% floor was applied on top), which is how a 3% preference became a ~10% TP
+      // order on Kraken. The AI suggestion is now advisory only (surfaced as
+      // ai_suggested_gain) and may only TIGHTEN the stop-loss, never widen the target.
+      const effectiveGainMargin = settings.gain_margin;
+      const effectiveLossMargin = aiSlPct ? Math.min(aiSlPct, settings.loss_margin) : settings.loss_margin;
       
       let entryZoneStatus = 'unknown';
       if (signal.entry_zone_low && signal.entry_zone_high) {

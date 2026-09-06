@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useKrakenWebSocket } from '@/components/providers/KrakenWebSocketProvider';
 import { useSettings } from '@/components/utils/SettingsContext';
 import { toast } from 'sonner';
+import { evaluateProfitLock } from '@/lib/profitLock';
 
 /**
  * REAL-TIME CONDITIONAL ORDER MONITOR
@@ -121,6 +122,21 @@ export function useConditionalOrderMonitor(userEmail) {
       if (!shouldSell && gainPct <= -loss_margin) {
         shouldSell = true;
         reason = `Stop-Loss hit (${gainPct.toFixed(2)}% <= -${loss_margin}%)`;
+      }
+
+      // PROFIT LOCK — sell a near-target position that starts rolling over,
+      // so a run to +2.5% on a 3% target isn't given back entirely.
+      if (!shouldSell) {
+        const lock = evaluateProfitLock({
+          purchasePrice: purchase_price,
+          price,
+          peak,
+          gainMargin: gain_margin
+        });
+        if (lock) {
+          shouldSell = true;
+          reason = lock.reason;
+        }
       }
 
       // Trailing stop check — only ARM once price has moved up by at least
@@ -270,6 +286,7 @@ export function useConditionalOrderMonitor(userEmail) {
           const durationMin = Math.round((Date.now() - entryTime) / 60000);
           let exitReason = 'manual';
           if (reason.includes('Take-Profit')) exitReason = 'take_profit';
+          else if (reason.includes('Profit Lock')) exitReason = 'take_profit';
           else if (reason.includes('Stop-Loss')) exitReason = 'stop_loss';
           else if (reason.includes('Trailing')) exitReason = 'trailing_stop';
 
