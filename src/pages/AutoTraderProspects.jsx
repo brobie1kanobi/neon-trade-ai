@@ -18,6 +18,7 @@ import { useKrakenWebSocket } from "@/components/providers/KrakenWebSocketProvid
 import { useSettings } from "@/components/utils/SettingsContext";
 import { useWallet } from "@/components/hooks/useWallet";
 import AIAnalysisCard from "@/components/prospects/AIAnalysisCard";
+import IdealEntryPoint from "@/components/prospects/IdealEntryPoint";
 
 export default function AutoTraderProspects() {
   const navigate = useNavigate();
@@ -352,6 +353,8 @@ export default function AutoTraderProspects() {
                   </div>
                 </div>
 
+                <IdealEntryPoint prospect={prospect} />
+
                 <AIAnalysisCard prospect={prospect} userMargins={userMargins} />
 
                 {prospect.is_blocked ?
@@ -368,12 +371,16 @@ export default function AutoTraderProspects() {
                   </div> :
 
             <Button
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              className={`w-full text-white ${prospect.at_ideal_entry === false ? "bg-amber-600 hover:bg-amber-700" : "bg-green-600 hover:bg-green-700"}`}
               onClick={() => setSelectedProspect(prospect)}
               disabled={isSimMode}>
 
                     <Send className="w-4 h-4 mr-2" />
-                    {isSimMode ? "💎 Demo Mode Only" : "🟢 Execute on Kraken Now"}
+                    {isSimMode
+                ? "💎 Demo Mode Only"
+                : prospect.at_ideal_entry === false
+                ? "⏳ Above Ideal Buy-In — Buy Anyway"
+                : "🟢 Execute on Kraken Now"}
                   </Button>
             }
               </CardContent>

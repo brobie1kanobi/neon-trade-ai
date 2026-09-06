@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { computeIdealEntry } from '../../shared/idealEntry.ts';
 
 /**
  * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
@@ -1044,6 +1045,20 @@ Deno.serve(async (req) => {
         if (total < 1) continue;
         const qty = total / price;
         if (qty < (MIN_ORDER_SIZES[symbol] || 0.00001)) continue;
+
+        // IDEAL BUY-IN GATE: don't pay a premium for an asset that has already run up.
+        // If price is above the ideal entry, wait for the pullback instead of buying now.
+        const entry = computeIdealEntry({
+          price,
+          change24h,
+          entryZoneLow: sig.entry_zone_low,
+          entryZoneHigh: sig.entry_zone_high
+        });
+        if (!entry.at_ideal_entry) {
+          log(`ENTRY GATE: Skipping ${symbol} — $${price} above ideal buy-in $${entry.ideal_entry_price.toFixed(6)} (needs -${entry.entry_gap_pct.toFixed(2)}%)`);
+          continue;
+        }
+
         prospects.push({
           symbol,
           asset_type: pref.asset_type || 'crypto',

@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { computeIdealEntry } from '../../shared/idealEntry.ts';
 
 // Kraken pair mappings for public API
 const KRAKEN_PAIR_MAP = {
@@ -582,6 +583,12 @@ Deno.serve(async (req) => {
         timing_window: signal.timing_window,
         entry_zone: signal.entry_zone_low && signal.entry_zone_high ? { low: signal.entry_zone_low, high: signal.entry_zone_high } : null,
         entry_zone_status: entryZoneStatus,
+        ...computeIdealEntry({
+          price,
+          change24h,
+          entryZoneLow: signal.entry_zone_low,
+          entryZoneHigh: signal.entry_zone_high
+        }),
         sentiment_score: signal.sentiment_score,
         stop_loss_pct: effectiveLossMargin,
         take_profit_pct: effectiveGainMargin,
