@@ -264,7 +264,7 @@ Deno.serve(async (req) => {
           `${a.symbol}: ${a.total_trades} trades, Win rate: ${a.win_rate.toFixed(1)}%, Avg gain: ${a.avg_successful_gain_pct.toFixed(1)}%, Optimal buy: $${a.optimal_buy_zone.mid.toFixed(4)}`
         ).join('\n');
 
-        const aiResponse = await base44.integrations.Core.InvokeLLM({
+        const aiResponse = await base44.asServiceRole.integrations.Core.InvokeLLM({
           prompt: `You are an expert quantitative trader analyzing historical trade data to identify patterns and optimal entry/exit points.
 
 HISTORICAL TRADE DATA:
