@@ -1398,7 +1398,9 @@ Deno.serve(async (req) => {
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
       const price = prospect.current_price || 0;
       // CRITICAL: Use the quantity and total_value from prospects - these are calculated using user's allocation %
-      const qty = prospect.quantity || 0;
+      // Normalize to Kraken's 8-decimal volume precision BEFORE ordering, so the buy
+      // volume and the TP/SL volume that follows it are byte-for-byte identical (no dust).
+      const qty = Math.floor((Number(prospect.quantity) || 0) * 1e8) / 1e8;
       const total_value = prospect.total_value || 0;
       let confidence = prospect.confidence_score || 0;
       const userAllocationPct = prospect.user_allocation_pct || 10;

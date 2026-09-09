@@ -99,6 +99,16 @@ const PRICE_DECIMALS = {
 /**
  * Round price to Kraken's required decimal precision for the asset
  */
+/**
+ * Kraken accepts a maximum of 8 decimal places on order volume. Sending a raw
+ * float like 0.0004562770186225034 lets Kraken do its own truncation, which is
+ * how a buy of ...627 ended up paired with a TP of ...626 and left dust behind.
+ * Normalize every volume to 8 decimals up front so buy and closer are identical.
+ */
+function toKrakenVolume(qty) {
+  return Math.floor((Number(qty) || 0) * 1e8) / 1e8;
+}
+
 function roundPriceForKraken(price, symbol) {
   const baseSymbol = symbol.replace('/USD', '').toUpperCase();
   const decimals = PRICE_DECIMALS[baseSymbol] ?? 4; // Default to 4 decimals if unknown
@@ -1390,9 +1400,15 @@ Deno.serve(async (req) => {
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       const availMap = await getAvailableMap(base44, true);
       const available = availMap[symbol.toUpperCase()] || 0;
-      // TP/SL closing orders must match the exact buy quantity — cap to available
-      // balance only if it's actually less (no artificial haircut, no dust left behind)
-      const finalQty = Math.min(parsedQty, available);
+      // TP/SL closing orders MUST be for the exact same volume as the buy they
+      // follow, or the leftover fraction is dust that can never be sold (it sits
+      // below Kraken's minimum). Both sides are normalized to 8 decimals, and the
+      // exact buy volume is used whenever the balance covers it — a one-satoshi
+      // reporting lag in the balance snapshot must never shrink the closer.
+      const exactQty = toKrakenVolume(parsedQty);
+      const availQty = toKrakenVolume(available);
+      const finalQty = (availQty + 1e-8 >= exactQty) ? exactQty : availQty;
+      console.log('[krakenTrade] Bracket volume:', { requested: parsedQty, exactQty, availQty, finalQty });
       if (finalQty < minQty) {
         return Response.json({ success: false, error: `Insufficient available ${symbol} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` }, { status: 200 });
       }
@@ -1613,6 +1629,10 @@ Deno.serve(async (req) => {
           console.warn('[krakenTrade] Quantity below minimum. Auto-adjusting', parsedQty, '->', finalQty);
         }
       }
+
+      // Normalize to Kraken's 8-decimal volume precision so the recorded quantity is
+      // exactly what the exchange fills — the closer order can then match it exactly.
+      finalQty = toKrakenVolume(finalQty);
 
       console.log('[krakenTrade] Place order:', { symbol, side, quantity: finalQty, orderType });
 
