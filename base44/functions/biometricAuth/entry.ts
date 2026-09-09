@@ -18,21 +18,15 @@ const stringToBuffer = (str) => {
 
 Deno.serve(async (req) => {
   try {
-    // Get app URL from Base44 environment or derive from request
-    let appUrl = Deno.env.get('BASE44_APP_URL');
-    
-    if (!appUrl) {
-      // Derive from request origin/referer header
-      const origin = req.headers.get('origin') || req.headers.get('referer');
-      if (origin) {
-        appUrl = new URL(origin).origin;
-      } else {
-        // Last resort: use the request's own URL origin
-        const requestUrl = new URL(req.url);
-        appUrl = `${requestUrl.protocol}//${requestUrl.host}`;
-      }
-    }
-    
+    // Derive the app URL from the incoming request. WebAuthn requires rpID and
+    // expectedOrigin to match the domain the browser is actually on, so the
+    // caller's own origin is the correct (and zero-config) source of truth —
+    // custom domains included.
+    const callerOrigin = req.headers.get('origin') || req.headers.get('referer');
+    const appUrl = callerOrigin
+      ? new URL(callerOrigin).origin
+      : new URL(req.url).origin;
+
     const rpID = new URL(appUrl).hostname;
     const origin = appUrl;
 
