@@ -362,15 +362,21 @@ async function releaseLock(base44, runId, status, stats) {
 }
 
 /**
- * User's TP/SL margins are the LAW — no dynamic overrides, no "optimization".
- * Returns the user's exact configured values, period.
+ * TP sizing: use the AI's predicted move when it is SMALLER than the user's
+ * configured gain margin (take the realistic profit the market is actually
+ * offering), otherwise fall back to the user's margin as the hard ceiling.
+ * The user's gain_margin is never exceeded. Stop-loss is always the user's.
+ * A 1% floor keeps the TP above round-trip fees.
  */
-function getUserMargins(defaultGainMargin, defaultLossMargin) {
-  return {
-    gainMargin: defaultGainMargin,
-    lossMargin: defaultLossMargin,
-    source: 'user_settings'
-  };
+function getUserMargins(defaultGainMargin, defaultLossMargin, predictedGainPct) {
+  const predicted = Number(predictedGainPct || 0);
+  let gainMargin = defaultGainMargin;
+  let source = 'user_settings';
+  if (predicted > 0 && predicted < defaultGainMargin) {
+    gainMargin = Math.max(1, Math.min(predicted, defaultGainMargin));
+    source = 'ai_predicted_move';
+  }
+  return { gainMargin, lossMargin: defaultLossMargin, source };
 }
 
 /**
@@ -1308,10 +1314,14 @@ Deno.serve(async (req) => {
         eligible
       });
 
-      // BUG FIX #1a: Skip if we already have an open position (active ConditionalOrder) for this symbol
+      // NOTE: Holding an active ConditionalOrder for a symbol no longer blocks a new
+      // auto-buy. That guard was permanently freezing out high-confidence signals
+      // (e.g. BTC @75%) for any asset the user already held, so nothing ever executed.
+      // Adding to an existing position is still bounded by max_asset_exposure_percent,
+      // the recent-duplicate window, the stop-loss cooldown, and the consumed-signal
+      // guard below — so duplicates are prevented without starving the trader.
       if (eligible && symbolsWithOpenPosition.has(p.symbol)) {
-        log(`POSITION GUARD: Skipping ${p.symbol} — already have an active ConditionalOrder`);
-        return false;
+        log(`Adding to existing ${p.symbol} position (exposure cap still enforced)`);
       }
 
       // BUG FIX #1b: Skip if this signal_id was already consumed by a previous trade
@@ -1393,8 +1403,10 @@ Deno.serve(async (req) => {
       let confidence = prospect.confidence_score || 0;
       const userAllocationPct = prospect.user_allocation_pct || 10;
       
-      // User's TP/SL margins — exactly as configured, no overrides
-      const margins = getUserMargins(defaultGainMargin, defaultLossMargin);
+      // TP margin: AI predicted move when smaller than the user's gain margin,
+      // otherwise the user's configured margin (hard ceiling). SL always user's.
+      const sigForMargins = signalMap.get(sym);
+      const margins = getUserMargins(defaultGainMargin, defaultLossMargin, sigForMargins?.predicted_gain_pct);
       const gainMargin = margins.gainMargin;
       const lossMargin = margins.lossMargin;
       const trailingMargin = defaultTrailingMargin;
