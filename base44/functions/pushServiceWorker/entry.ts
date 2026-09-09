@@ -1,6 +1,18 @@
 // Service Worker for Push Notifications
 // This must be served with Content-Type: application/javascript
-
+//
+// INTENTIONALLY UNAUTHENTICATED — do not add an auth check here.
+// The browser fetches a service worker script itself, during
+// navigator.serviceWorker.register(). That request is made by the browser's
+// own worker loader, NOT by app code, so it cannot carry the Base44 session
+// token — requiring base44.auth.me() would make registration return 401 and
+// break push notifications for every user.
+//
+// There is nothing to protect: the response is a fixed, public JavaScript
+// string. It reads no secrets, touches no entities, takes no input from the
+// request, and returns no user data. It is a static asset, equivalent to a
+// file in /public. No caller verification is needed because an anonymous
+// caller gains nothing beyond source code the browser must be able to read.
 Deno.serve((req) => {
   const serviceWorkerCode = `
 // Push Notification Service Worker for NeonTrade AI
