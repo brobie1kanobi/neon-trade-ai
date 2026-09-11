@@ -190,30 +190,98 @@ export default function AutoTraderProspects() {
         console.error('[Prospects] Failed to record Trade entity:', tradeErr);
       }
       
-      // Skipping Kraken bracket orders; create app-managed ConditionalOrder instead
-      await new Promise(res => setTimeout(res, 500));
+      // CRITICAL: Place REAL resting TP/SL orders on Kraken, anchored to the
+      // ACTUAL fill price. The app must never be responsible for watching the
+      // price and deciding when to sell — polling Kraken can't track price
+      // closely enough, so the exit was routinely missed and the position had
+      // to be dumped at a loss. A resting take-profit lives on Kraken's own
+      // matching engine and fires the instant the target trades, with no app
+      // involvement and no API calls.
+      // TP/SL are anchored to actualPrice (the real fill), not the earlier
+      // quote, so +tpPercent is a true profit relative to what was paid.
+      const tpPriceFromFill = parseFloat((actualPrice * (1 + tpPercent / 100)).toFixed(8));
+      const slPriceFromFill = parseFloat((actualPrice * (1 - slPercent / 100)).toFixed(8));
+
+      // Give Kraken a moment to settle the fill into the available balance so
+      // the sell-side sizing check sees the coins we just bought.
+      await new Promise(res => setTimeout(res, 1500));
+
+      let tpPlaced = false;
       try {
-        await base44.entities.ConditionalOrder.create({
+        const bracketRes = await base44.functions.invoke('krakenTrade', {
+          action: 'place_bracket_orders',
           symbol: prospect.symbol,
-          asset_type: prospect.asset_type || 'crypto',
           quantity: actualQty,
-          purchase_price: actualPrice,
-          gain_margin: tpPercent,
-          loss_margin: slPercent,
-          status: 'active',
-          trailing_enabled: settings?.trailing_takeprofit_enabled !== false,
-          highest_price: price,
-          trailing_margin: settings?.trailing_takeprofit_margin ?? 3,
-          is_simulation: false,
-          idempotency_key: `manual_${prospect.symbol}_${Date.now()}`,
-          trade_id: null
+          takeProfitPrice: tpPriceFromFill,
+          stopLossPrice: slPriceFromFill
         });
-        toast.success(`✅ Protection Set`, {
-          description: `Conditional TP @ +${tpPercent}% and SL @ -${slPercent}% will be managed by the app`
-        });
-      } catch (e) {
-        console.error('ConditionalOrder create failed:', e);
-        toast.warning('Protection not set', { description: 'Position opened; app-managed TP/SL creation failed' });
+        const bracketData = bracketRes?.data || bracketRes;
+        tpPlaced = bracketData?.tp_success === true;
+
+        if (tpPlaced && bracketData?.sl_success) {
+          toast.success(`🎯 TP Order Live on Kraken`, {
+            description: `Sell @ $${tpPriceFromFill} (+${tpPercent}%) • Stop @ $${slPriceFromFill} (-${slPercent}%) — resting on the exchange`
+          });
+        } else if (tpPlaced) {
+          toast.success(`🎯 TP Order Live on Kraken`, {
+            description: `Sell @ $${tpPriceFromFill} (+${tpPercent}%) resting on the exchange • Stop-loss failed: ${bracketData?.sl_error || 'unknown'}`
+          });
+        } else {
+          throw new Error(bracketData?.tp_error || bracketData?.error || 'Kraken rejected the take-profit order');
+        }
+
+        // Record the exchange order ids so Orders & History reflects the real
+        // resting orders. trailing_enabled is false and status is 'triggered'
+        // so the app-side monitor never tries to sell this position itself —
+        // Kraken owns the exit now, and a second seller would double-sell.
+        try {
+          await base44.entities.ConditionalOrder.create({
+            symbol: prospect.symbol,
+            asset_type: prospect.asset_type || 'crypto',
+            quantity: actualQty,
+            purchase_price: actualPrice,
+            gain_margin: tpPercent,
+            loss_margin: slPercent,
+            status: 'triggered',
+            trailing_enabled: false,
+            is_simulation: false,
+            idempotency_key: `manual_${prospect.symbol}_${Date.now()}`,
+            kraken_tp_order_id: bracketData?.tp_order_id || null,
+            kraken_sl_order_id: bracketData?.sl_order_id || null,
+            closure_reason: 'Exit handled by resting Kraken TP/SL orders',
+            trade_id: null
+          });
+        } catch (recErr) {
+          console.error('[Prospects] Failed to record bracket reference:', recErr);
+        }
+      } catch (bracketErr) {
+        console.error('[Prospects] Kraken TP/SL placement failed:', bracketErr);
+        // FALLBACK ONLY: exchange rejected the resting orders (e.g. position is
+        // below Kraken's minimum sell size). Fall back to the app-managed
+        // watcher so the position is not left completely unprotected.
+        try {
+          await base44.entities.ConditionalOrder.create({
+            symbol: prospect.symbol,
+            asset_type: prospect.asset_type || 'crypto',
+            quantity: actualQty,
+            purchase_price: actualPrice,
+            gain_margin: tpPercent,
+            loss_margin: slPercent,
+            status: 'active',
+            trailing_enabled: settings?.trailing_takeprofit_enabled !== false,
+            highest_price: actualPrice,
+            trailing_margin: settings?.trailing_takeprofit_margin ?? 3,
+            is_simulation: false,
+            idempotency_key: `manual_fallback_${prospect.symbol}_${Date.now()}`,
+            trade_id: null
+          });
+          toast.warning('TP order rejected by Kraken — using app fallback', {
+            description: `${bracketErr.message} • App will watch TP +${tpPercent}% / SL -${slPercent}%`
+          });
+        } catch (e) {
+          console.error('ConditionalOrder fallback create failed:', e);
+          toast.error('Position unprotected', { description: 'Buy filled but no TP could be set — set an exit manually on Kraken' });
+        }
       }
 
       setSelectedProspect(null);
