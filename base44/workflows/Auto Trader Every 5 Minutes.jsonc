@@ -1,0 +1,45 @@
+{
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/5 * * * *",
+      "one_time_date": null,
+      "timezone": "America/New_York",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "name": "Auto Trader Every 5 Minutes",
+  "description": "Safety-net schedule: runs the auto trader every 5 minutes so a price that reaches the ideal entry is acted on even when no new AI signal was written.",
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "auto_trader_every_5_minutes",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "run_auto_trader": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "runAutoTrader",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Run auto trader",
+            "description": "Every 5 minutes"
+          }
+        }
+      }
+    ]
+  }
+}
