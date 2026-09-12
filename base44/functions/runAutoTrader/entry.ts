@@ -1275,8 +1275,18 @@ Deno.serve(async (req) => {
         is_auto_trade: true,
         type: 'buy'
       }, '-created_date', 100);
+      // CRITICAL: Only treat a signal as "consumed" for 2 HOURS after the trade.
+      // The AI updates existing AssetSignal records in place, so a signal id is
+      // stable for an asset. Checking the last 100 trades with no time limit meant
+      // that once an asset was bought, its signal id stayed permanently on this
+      // blocklist and that asset could never be auto-bought again. That is a
+      // primary reason so few buys were going out.
+      const CONSUMED_WINDOW_MS = 2 * 3600000;
+      const nowMs = Date.now();
       for (const t of recentAutoTrades) {
-        if (t.signal_id) consumedSignalIds.add(t.signal_id);
+        if (!t.signal_id) continue;
+        const age = nowMs - new Date(t.created_date || t.filled_at || 0).getTime();
+        if (age < CONSUMED_WINDOW_MS) consumedSignalIds.add(t.signal_id);
       }
     } catch (_e) {}
     log('Consumed signals check', { count: consumedSignalIds.size });
@@ -1532,6 +1542,16 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // CRITICAL: A live buy must never be sent unless there is enough time left in
+      // this invocation to ALSO place its take-profit. The TP is placed after the
+      // buy returns, so a buy started near the deadline got filled and then the
+      // function died before the TP went out — leaving an unprotected position.
+      // 12s reserves room for the buy, the settle pause, and the TP/SL orders.
+      if (!isSimMode && timeLeft() < 12000) {
+        log(`TIME GUARD: Not starting ${sym} buy — ${Math.round(timeLeft() / 1000)}s left is not enough to also place its TP`);
+        break;
+      }
+
       log(`🚀 AUTO-EXECUTING ${sym}`, { qty, price, total_value: total_value.toFixed(2), confidence });
       
       // PRE-VALIDATION: Block orders Kraken would reject BEFORE sending them
@@ -1678,10 +1698,43 @@ Deno.serve(async (req) => {
               tpOrderId = bracketData?.tp_order_id || null;
               slOrderId = bracketData?.sl_order_id || null;
 
-              if (tpOrderId || slOrderId) {
-                console.log(`[runAutoTrader] ✅ Linked TP/SL placed`, { tpOrderId, slOrderId });
+              // CRITICAL: The take-profit is the whole point of the trade — one
+              // transient WebSocket/rate-limit hiccup used to mean the position sat
+              // unprotected forever. Retry the TP specifically before giving up.
+              if (!tpOrderId) {
+                console.warn(`[runAutoTrader] ⚠️ TP missing on first attempt — retrying`, { tp_error: bracketData?.tp_error, error: bracketData?.error });
+                await ps(2000);
+                try {
+                  const tpRetry = await invokeKrakenTrade(base44, {
+                    action: 'place_order',
+                    symbol: sym,
+                    side: 'sell',
+                    quantity: executedQty,
+                    orderType: 'take-profit',
+                    triggerPrice: takeProfitPrice
+                  }, 2, wsToken, user.email);
+                  tpOrderId = tpRetry?.order_id || null;
+                  if (tpOrderId) console.log(`[runAutoTrader] ✅ TP placed on retry: ${tpOrderId}`);
+                } catch (tpRetryErr) {
+                  console.error(`[runAutoTrader] TP retry failed for ${sym}:`, tpRetryErr.message);
+                }
+              }
+
+              if (tpOrderId) {
+                console.log(`[runAutoTrader] ✅ TP live on Kraken`, { tpOrderId, slOrderId });
               } else {
-                console.warn(`[runAutoTrader] ⚠️ Linked TP/SL not created`, { error: bracketData?.error, tp_error: bracketData?.tp_error, sl_error: bracketData?.sl_error });
+                console.error(`[runAutoTrader] ❌ NO TP for ${sym} — position is unprotected`);
+                // Make an unprotected position visible instead of silent.
+                try {
+                  await base44.entities.Notification.create({
+                    title: `⚠️ No take-profit set: ${sym}`,
+                    message: `Bought ${executedQty} ${sym} but Kraken rejected the take-profit order. Set an exit manually.`,
+                    type: 'warning',
+                    read: false,
+                    details_json: JSON.stringify({ symbol: sym, quantity: executedQty, tp_error: bracketData?.tp_error || null }),
+                    created_by: user.email
+                  });
+                } catch (_e) {}
               }
             } catch (bracketError) {
               console.error('[runAutoTrader] Linked TP/SL placement failed:', bracketError.message);
@@ -1926,6 +1979,10 @@ Deno.serve(async (req) => {
       let __emergingCount = 0;
       for (const emerging of emergingOpportunities.slice(0, MAX_EMERGING)) {
         if (availableCash < 5) break;
+        // NOTE: orderAttempts is scoped to the standard-prospect loop above, so
+        // referencing it here threw a ReferenceError and killed every emerging
+        // trade before it was placed. Compute it locally instead.
+        const emergingAttempts = timeLeft() > 12000 ? 2 : 1;
         
         const emergingSymbol = (emerging.symbol || '').toUpperCase();
         
@@ -1983,11 +2040,44 @@ Deno.serve(async (req) => {
               side: 'buy',
               quantity: emergingQty,
               orderType: 'market'
-            }, orderAttempts, wsToken, user.email);
+            }, emergingAttempts, wsToken, user.email);
             
             if (emergingBuyData?.success) {
               console.log(`[runAutoTrader] ✅ Emerging buy executed: ${emergingBuyData.order_id}`);
-              
+
+              // CRITICAL: This path previously placed a market BUY and then NOTHING
+              // else — no take-profit, no stop-loss, not even a ConditionalOrder
+              // record. Every emerging buy was left completely unprotected. Now the
+              // same TP/SL bracket the standard path uses is placed here too.
+              const emergingFilledQty = emergingBuyData.executed_qty || emergingQty;
+              let emergingTpId = null;
+              let emergingSlId = null;
+              try {
+                await ps(1200);
+                const emergingBracket = await invokeKrakenTrade(base44, {
+                  action: 'place_bracket_orders',
+                  symbol: emergingSymbol,
+                  quantity: emergingFilledQty,
+                  takeProfitPrice: roundPriceForKraken(emergingPrice * (1 + emergingGainMargin / 100), emergingSymbol),
+                  stopLossPrice: roundPriceForKraken(emergingPrice * (1 - emergingLossMargin / 100), emergingSymbol)
+                }, emergingAttempts, wsToken, user.email);
+                emergingTpId = emergingBracket?.tp_order_id || null;
+                emergingSlId = emergingBracket?.sl_order_id || null;
+                console.log(`[runAutoTrader] Emerging TP/SL:`, { emergingTpId, emergingSlId });
+              } catch (embErr) {
+                console.error(`[runAutoTrader] Emerging TP/SL failed for ${emergingSymbol}:`, embErr.message);
+              }
+
+              if (!emergingTpId) {
+                try {
+                  await base44.entities.Notification.create({
+                    title: `⚠️ No take-profit set: ${emergingSymbol}`,
+                    message: `Bought ${emergingFilledQty} ${emergingSymbol} but the take-profit order did not go through. Set an exit manually.`,
+                    type: 'warning', read: false, created_by: user.email
+                  });
+                } catch (_e) {}
+              }
+
               await base44.entities.Trade.create({
                 symbol: emergingSymbol,
                 type: 'buy',
