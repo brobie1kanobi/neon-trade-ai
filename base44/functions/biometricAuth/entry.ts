@@ -6,6 +6,34 @@ import {
 
 const rpName = 'NeonTrade AI';
 
+// SECURITY: The ONLY origins this app will register biometric credentials for.
+// The Origin/Referer headers are fully attacker-controlled, so they can never be
+// trusted as the source of rpID/expectedOrigin — a spoofed header would let an
+// attacker bind a credential to a domain they own. Add a custom domain here (and
+// nowhere else) if the app is served from one.
+const ALLOWED_ORIGINS = ['https://neontrade.base44.app'];
+
+/**
+ * Resolve the WebAuthn origin from a server-side allowlist.
+ * A caller-supplied origin is only honored when it exactly matches an entry in
+ * ALLOWED_ORIGINS; anything else falls back to the deployed endpoint's own origin.
+ */
+function resolveTrustedOrigin(req) {
+  const endpointOrigin = new URL(req.url).origin;
+  const trusted = ALLOWED_ORIGINS.includes(endpointOrigin)
+    ? ALLOWED_ORIGINS
+    : [...ALLOWED_ORIGINS, endpointOrigin];
+
+  const claimed = req.headers.get('origin');
+  let claimedOrigin = null;
+  if (claimed) {
+    try { claimedOrigin = new URL(claimed).origin; } catch (_e) { claimedOrigin = null; }
+  }
+
+  if (claimedOrigin && trusted.includes(claimedOrigin)) return claimedOrigin;
+  return trusted[0];
+}
+
 const bufferToBase64URL = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)))
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -18,17 +46,10 @@ const stringToBuffer = (str) => {
 
 Deno.serve(async (req) => {
   try {
-    // Derive the app URL from the incoming request. WebAuthn requires rpID and
-    // expectedOrigin to match the domain the browser is actually on, so the
-    // caller's own origin is the correct (and zero-config) source of truth —
-    // custom domains included.
-    const callerOrigin = req.headers.get('origin') || req.headers.get('referer');
-    const appUrl = callerOrigin
-      ? new URL(callerOrigin).origin
-      : new URL(req.url).origin;
-
-    const rpID = new URL(appUrl).hostname;
-    const origin = appUrl;
+    // SECURITY: rpID/expectedOrigin come from the server-side allowlist above,
+    // never from the request's Origin/Referer headers.
+    const origin = resolveTrustedOrigin(req);
+    const rpID = new URL(origin).hostname;
 
     const { action, payload } = await req.json();
     const base44 = createClientFromRequest(req);
