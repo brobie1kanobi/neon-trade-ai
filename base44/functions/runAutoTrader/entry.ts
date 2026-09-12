@@ -268,8 +268,12 @@ async function hasRecentStopLoss(base44, userEmail, symbol) {
       if (!(r.includes('stop') || r.includes('loss') || r.includes('sl'))) continue;
       if ((now - new Date(o.executed_at || o.updated_date || 0).getTime()) < cd) return { blocked: true, hours_ago: ((now - new Date(o.executed_at || o.updated_date || 0).getTime()) / 3600000).toFixed(1) };
     }
-    const sells = await base44.entities.Trade.filter({ created_by: userEmail, symbol: symbol.toUpperCase(), type: 'sell', is_auto_trade: true }, '-created_date', 8);
-    for (const s of sells) { if ((now - new Date(s.created_date || s.filled_at || 0).getTime()) < cd) return { blocked: true, hours_ago: ((now - new Date(s.created_date || 0).getTime()) / 3600000).toFixed(1) }; }
+    // REMOVED: a blanket "any auto-sell in the last 12h blocks re-entry" rule.
+    // It did not check whether the sale was a LOSS — so every PROFITABLE exit
+    // locked that asset out of trading for 12 hours. With a short watchlist this
+    // meant the trader progressively froze itself out of the exact assets it was
+    // successfully making money on. Genuine stop-loss cooldown is still enforced
+    // by the ConditionalOrder loop above, which checks closure_reason.
     return { blocked: false };
   } catch (_e) { return { blocked: false }; }
 }
@@ -740,7 +744,12 @@ Deno.serve(async (req) => {
     // PRE-FLIGHT 1: Temporal cooldown — reject if a completed/running run exists within 4 minutes.
     // This is the ultimate server-side rate limit regardless of how many browser tabs or
     // clients are calling this function. Without this, multiple tabs each fire on mount.
-    const MIN_RUN_GAP_MS = 1500000; // 25 minutes — enforce ~30min cadence server-side
+    // 90 seconds — matches the dashboard's polling cadence. This was 1,500,000ms
+    // (25 MINUTES) while the comment claimed 4 minutes, so ~19 out of every 20
+    // trigger attempts were rejected with "Cooldown active" and the trader could
+    // only ever run about twice an hour. That single number was the main reason
+    // READY orders sat in the outbox for hours without being sent.
+    const MIN_RUN_GAP_MS = 90000;
     try {
       const recentRuns = await base44.entities.AutoTraderRun.filter({
         created_by: user.email
@@ -1392,7 +1401,9 @@ Deno.serve(async (req) => {
     }
 
     // Process each eligible prospect
-    for (const prospect of eligibleProspects.slice(0, 2)) {
+    // Up to 4 orders per run (was 2). shouldStop() still guards the time budget,
+    // so a slow run simply stops early instead of overrunning.
+    for (const prospect of eligibleProspects.slice(0, 4)) {
       if (shouldStop()) { log('Time nearly exhausted, stopping further orders'); break; }
       const sym = (prospect.symbol || '').toUpperCase();
       const typ = (prospect.asset_type || 'crypto').toLowerCase();
@@ -1806,6 +1817,15 @@ Deno.serve(async (req) => {
         conditionalOrderData.kraken_order_id = orderIdParts[0] || null;
         conditionalOrderData.kraken_tp_order_id = orderIdParts[1] || null;
         conditionalOrderData.kraken_sl_order_id = orderIdParts[2] || null;
+
+        // When a REAL take-profit is resting on Kraken, the exchange owns this
+        // exit. Turn off app-side trailing so the monitor cannot cancel that TP
+        // and market-sell instead — the exit stays on the exchange where it fires
+        // instantly at the target price.
+        if (conditionalOrderData.kraken_tp_order_id) {
+          conditionalOrderData.trailing_enabled = false;
+          conditionalOrderData.closure_reason = 'Exit handled by resting Kraken TP/SL orders';
+        }
       }
       
       const __minQtyCO = MIN_ORDER_SIZES[sym] || 0.00001;

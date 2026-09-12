@@ -152,6 +152,19 @@ Deno.serve(async (req) => {
               kraken_tp_order_id, kraken_sl_order_id, asset_type, signal_id,
               created_by } = order;
 
+      // CRITICAL: If this position already has a REAL resting take-profit order on
+      // Kraken, the exchange owns the exit — do not touch it. Previously this
+      // monitor evaluated its own TP/profit-lock/trailing rules on top of the
+      // exchange order, and on trigger it CANCELLED the resting Kraken TP and
+      // market-sold instead. That is why take-profit orders kept showing up as
+      // "Canceled" seconds/minutes after being placed and exits landed as market
+      // sells at worse prices. A resting TP fires on Kraken's matching engine the
+      // instant the target trades; this function cannot beat it and must not race it.
+      if (!is_simulation && kraken_tp_order_id) {
+        console.log(`[monitor] ${order.symbol} #${order.id}: exchange TP ${kraken_tp_order_id} is live — leaving exit to Kraken`);
+        continue;
+      }
+
       const gainPct = ((price - purchase_price) / purchase_price) * 100;
       let shouldSell = false;
       let reason = '';
