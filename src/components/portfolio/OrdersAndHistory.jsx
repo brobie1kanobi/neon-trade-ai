@@ -687,25 +687,13 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
   const filteredTrades = React.useMemo(() => {
     const localTrades = trades.filter((t) => t.is_simulation === isSimMode);
 
-    // Add executed orders from Closed tab as trades (mostly SELL executions)
-    const executedFromClosed = closedOrders.
-    filter((o) => o.status === 'executed' && o.is_simulation === isSimMode).
-    map((o) => {
-      const execPrice = o.execution_price || o.trigger_price || o.purchase_price || 0;
-      return {
-        id: `exec-${o.id}`,
-        symbol: normalizeKrakenSymbol(o.symbol || ''),
-        type: 'sell',
-        quantity: Number(o.quantity) || 0,
-        price: execPrice,
-        total_value: (Number(o.quantity) || 0) * execPrice,
-        created_date: o.updated_date || o.created_date,
-        is_simulation: !!o.is_simulation,
-        is_auto_trade: true,
-        asset_type: 'crypto',
-        status: 'executed'
-      };
-    });
+    // NOTE: executed ConditionalOrders are NOT injected here as trades.
+    // They used to be, priced from trigger_price/purchase_price — which fabricated a
+    // second "sell" row for every real sell, at an estimated price that never happened
+    // on the exchange (e.g. two extra BTC sells at the TP trigger price alongside the
+    // two genuine fills). Executed conditional orders already have their own
+    // Closed/Failed tab; the Trades tab shows only real Trade records and real Kraken
+    // fills, so one exchange sell = one row.
 
     // In LIVE mode, merge with Kraken trades history
     if (!isSimMode && krakenTradesHistory.length > 0) {
