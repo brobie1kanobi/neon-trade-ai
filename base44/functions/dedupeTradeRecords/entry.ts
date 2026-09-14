@@ -77,6 +77,26 @@ export default async function (req) {
       cost: parseFloat(t.cost)
     }));
 
+    // CRITICAL: Kraken's TradesHistory returns individual FILLS, and one order can
+    // fill in several pieces. The app writes ONE Trade record per order, so fills
+    // must be collapsed to order level — otherwise a single order that filled twice
+    // looks like two legitimate trades and its duplicate record is never spotted.
+    const orderMap = new Map();
+    for (const f of krakenFills) {
+      const key = f.ordertxid || `fill_${f.id}`;
+      const existing = orderMap.get(key);
+      if (!existing) {
+        orderMap.set(key, { ...f, fill_count: 1 });
+      } else {
+        existing.vol += f.vol;
+        existing.cost += f.cost;
+        existing.fill_count += 1;
+        existing.price = existing.vol > 0 ? existing.cost / existing.vol : existing.price;
+        existing.time = Math.min(existing.time, f.time);
+      }
+    }
+    const krakenOrders = [...orderMap.values()];
+
     // 2. All local LIVE trades
     const localTrades = await base44.asServiceRole.entities.Trade.filter({
       is_simulation: false,
@@ -115,17 +135,24 @@ export default async function (req) {
       const clusterStart = tradeTime(cluster.trades[0]);
       const clusterEnd = tradeTime(cluster.trades[cluster.trades.length - 1]);
 
-      // Kraken fills for this symbol/side inside the cluster window
-      const fills = krakenFills.filter(f =>
+      // Real Kraken ORDERS for this symbol/side inside the cluster window
+      const fills = krakenOrders.filter(f =>
         f.symbol === symbol &&
         f.type === side &&
         f.time >= clusterStart - CLUSTER_WINDOW_MS &&
         f.time <= clusterEnd + CLUSTER_WINDOW_MS
       );
 
-      // Only ever collapse down to the number of REAL fills. No fills = leave alone.
+      // Only ever collapse down to the number of REAL orders. No orders = leave alone.
       if (fills.length === 0 || cluster.trades.length <= fills.length) {
-        skipped.push({ symbol, side, local_count: cluster.trades.length, kraken_fills: fills.length, reason: 'no excess records backed by exchange data' });
+        skipped.push({
+          symbol,
+          side,
+          cluster_time: new Date(clusterStart).toISOString(),
+          local_count: cluster.trades.length,
+          kraken_orders: fills.length,
+          reason: fills.length === 0 ? 'no matching exchange order in window' : 'record count matches exchange orders'
+        });
         continue;
       }
 
@@ -152,10 +179,10 @@ export default async function (req) {
       const phantoms = scored.slice(fills.length);
 
       for (const k of keepers) {
-        kept.push({ id: k.trade.id, symbol, side, price: k.trade.price, quantity: k.trade.quantity, status: k.trade.status });
+        kept.push({ id: k.trade.id, symbol, side, time: new Date(tradeTime(k.trade)).toISOString(), price: k.trade.price, quantity: k.trade.quantity, status: k.trade.status });
       }
       for (const p of phantoms) {
-        deleted.push({ id: p.trade.id, symbol, side, price: p.trade.price, quantity: p.trade.quantity, status: p.trade.status, total_value: p.trade.total_value });
+        deleted.push({ id: p.trade.id, symbol, side, time: new Date(tradeTime(p.trade)).toISOString(), price: p.trade.price, quantity: p.trade.quantity, status: p.trade.status, total_value: p.trade.total_value });
         if (apply) {
           try {
             await base44.asServiceRole.entities.Trade.delete(p.trade.id);
@@ -171,6 +198,7 @@ export default async function (req) {
       applied: apply,
       local_live_trades: localTrades.length,
       kraken_fills: krakenFills.length,
+      kraken_orders: krakenOrders.length,
       clusters_examined: clusters.length,
       phantoms_removed: apply ? deleted.length : 0,
       phantoms_identified: deleted.length,
