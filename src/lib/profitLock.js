@@ -34,7 +34,9 @@ export function evaluateProfitLock({ purchasePrice, price, peak, gainMargin }) {
   if (dropFromPeakPct < giveback) return null; // still holding near the peak
 
   // Never let profit lock sell at a loss — that's the stop-loss's job.
-  if (gainPct <= 0.2) return null;
+  // The floor is 0.75%, not a hair above zero: a market sell pays spread + fees,
+  // so exiting on a +0.2% "gain" reliably books a NET LOSS.
+  if (gainPct < 0.75) return null;
 
   return {
     reason: `Profit Lock (+${gainPct.toFixed(2)}% locked in — peaked at +${peakGainPct.toFixed(2)}%, gave back ${dropFromPeakPct.toFixed(2)}%)`,

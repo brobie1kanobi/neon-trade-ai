@@ -377,7 +377,9 @@ function getUserMargins(defaultGainMargin, defaultLossMargin, predictedGainPct) 
   let gainMargin = defaultGainMargin;
   let source = 'user_settings';
   if (predicted > 0 && predicted < defaultGainMargin) {
-    gainMargin = Math.max(1, Math.min(predicted, defaultGainMargin));
+    // Floor at 2%: a 1% TP target arms Profit Lock on pure noise, and after
+    // spread + fees such an exit is a net loss. Never target below 2%.
+    gainMargin = Math.max(2, Math.min(predicted, defaultGainMargin));
     source = 'ai_predicted_move';
   }
   return { gainMargin, lossMargin: defaultLossMargin, source };

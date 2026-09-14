@@ -28,11 +28,11 @@
     },
     "price": {
       "type": "number",
-      "description": "Price per unit at trade execution (EXACT from Kraken)"
+      "description": "Price per unit at trade execution (EXACT from Kraken). 0 while status is pending_fill."
     },
     "total_value": {
       "type": "number",
-      "description": "Total cost/proceeds of the trade (EXACT from Kraken 'cost' field)"
+      "description": "Total cost/proceeds of the trade (EXACT from Kraken 'cost' field). 0 while status is pending_fill."
     },
     "fee": {
       "type": "number",
@@ -42,6 +42,7 @@
       "type": "string",
       "enum": [
         "pending_submission",
+        "pending_fill",
         "submitted",
         "partially_filled",
         "filled",
@@ -51,7 +52,7 @@
         "failed_retrying"
       ],
       "default": "pending_submission",
-      "description": "Status of the trade in state machine"
+      "description": "Status of the trade in state machine. pending_fill = sent to Kraken, awaiting the real fill from the exchange sync."
     },
     "filled_quantity": {
       "type": "number",
@@ -102,6 +103,14 @@
     "risk_rejection_reason": {
       "type": "string",
       "description": "Reason if rejected by risk engine"
+    },
+    "exit_purchase_price": {
+      "type": "number",
+      "description": "For sells: the position's buy price, so the exchange sync can label profit vs loss from the real fill"
+    },
+    "exit_reason": {
+      "type": "string",
+      "description": "For sells: why the position was closed (take_profit, stop_loss, trailing_stop, profit_lock)"
     },
     "submitted_at": {
       "type": "string",

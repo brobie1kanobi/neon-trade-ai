@@ -133,6 +133,10 @@ Deno.serve(async (req) => {
     // simultaneous TP/SL hits fired multiple redundant private Kraken calls
     // in the same few seconds — a major contributor to "Temporary lockout".
     let availMapCache = null;
+    // DUPLICATE-SELL GUARD: once a symbol has been sold in this run, any other
+    // ConditionalOrder on that same symbol must NOT be sold again. Stacked
+    // orders on one position were firing two market sells seconds apart.
+    const soldSymbols = new Set();
     const getAvailMapCached = async () => {
       if (!availMapCache) availMapCache = await getAvailableMap(base44);
       return availMapCache;
@@ -217,6 +221,17 @@ Deno.serve(async (req) => {
 
       if (!shouldSell) continue;
 
+      if (soldSymbols.has(symbol)) {
+        console.warn(`[monitor] ${symbol} #${id}: already sold in this run — cancelling duplicate order instead of selling again`);
+        await base44.asServiceRole.entities.ConditionalOrder.update(id, {
+          status: 'cancelled',
+          closure_reason: `Auto-cancelled: duplicate order — ${symbol} position was already closed in this run`,
+          executed_at: new Date().toISOString()
+        });
+        results.push({ id, symbol, reason, error: 'Duplicate order for already-closed position' });
+        continue;
+      }
+
       console.log(`[monitor] TRIGGERED ${symbol} #${id}: ${reason} | price=$${price}`);
 
       // BUG FIX #2: Sell ONLY this order's tracked quantity, not the full account balance.
@@ -286,6 +301,7 @@ Deno.serve(async (req) => {
 
         if (sellResult?.success) {
           executed++;
+          soldSymbols.add(symbol);
           // Invalidate the cached balance snapshot — this sale changed the
           // account's available balance, so any later order in this same run
           // (e.g. a second order on the same symbol) must see the fresh amount.
@@ -294,53 +310,71 @@ Deno.serve(async (req) => {
             status: 'executed', closure_reason: reason, executed_at: new Date().toISOString()
           });
 
-          // Record Trade
-          await base44.asServiceRole.entities.Trade.create({
-            symbol, type: 'sell', asset_type: asset_type || 'crypto',
-            quantity: sellQuantity, price, total_value: sellQuantity * price,
-            status: 'filled', is_auto_trade: true, is_simulation,
-            signal_id, kraken_order_id: sellResult.order_id,
-            filled_at: new Date().toISOString(), created_by
-          });
+          let exitReason = 'manual';
+          if (reason.includes('Take-Profit')) exitReason = 'take_profit';
+          else if (reason.includes('Profit Lock')) exitReason = 'take_profit';
+          else if (reason.includes('Stop-Loss')) exitReason = 'stop_loss';
+          else if (reason.includes('Trailing')) exitReason = 'trailing_stop';
 
-          // Notify
-          await base44.asServiceRole.entities.Notification.create({
-            title: `${is_simulation ? 'SIM' : 'LIVE'} ${reason.split(' ')[0]}: ${symbol}`,
-            message: `Sold ${sellQuantity} ${symbol} @ $${price.toFixed(2)} – ${reason}`,
-            type: gainPct >= 0 ? 'success' : 'warning', read: false,
-            details_json: JSON.stringify({ symbol, quantity, price, reason, is_simulation }),
-            created_by
-          });
+          if (is_simulation) {
+            // SIM has no exchange to reconcile against, so the simulated price
+            // IS the truth here — record and notify immediately.
+            await base44.asServiceRole.entities.Trade.create({
+              symbol, type: 'sell', asset_type: asset_type || 'crypto',
+              quantity: sellQuantity, price, total_value: sellQuantity * price,
+              status: 'filled', is_auto_trade: true, is_simulation: true,
+              signal_id, kraken_order_id: sellResult.order_id,
+              exit_purchase_price: purchase_price, exit_reason: exitReason,
+              filled_at: new Date().toISOString(), created_by
+            });
 
-          // BUG FIX #4: Write ModelPerformance record for analytics
-          try {
-            const outcomePct = ((price - purchase_price) / purchase_price) * 100;
-            const entryTime = new Date(order.created_date || order.updated_date).getTime();
-            const durationMin = Math.round((Date.now() - entryTime) / 60000);
-            let exitReason = 'manual';
-            if (reason.includes('Take-Profit')) exitReason = 'take_profit';
-            else if (reason.includes('Profit Lock')) exitReason = 'take_profit';
-            else if (reason.includes('Stop-Loss')) exitReason = 'stop_loss';
-            else if (reason.includes('Trailing')) exitReason = 'trailing_stop';
-
-            await base44.asServiceRole.entities.ModelPerformance.create({
-              signal_id: signal_id || null,
-              trade_id: sellResult.order_id || null,
-              asset_symbol: symbol,
-              entry_price: purchase_price,
-              exit_price: price,
-              outcome_percentage: Math.round(outcomePct * 100) / 100,
-              duration_held_minutes: durationMin,
-              is_success: outcomePct > 0,
-              exit_reason: exitReason,
-              is_simulation: is_simulation,
+            await base44.asServiceRole.entities.Notification.create({
+              title: `SIM ${reason.split(' ')[0]}: ${symbol}`,
+              message: `Sold ${sellQuantity} ${symbol} @ $${price.toFixed(6)} – ${reason}`,
+              type: gainPct >= 0 ? 'success' : 'warning', read: false,
+              details_json: JSON.stringify({ symbol, quantity: sellQuantity, price, reason, is_simulation: true }),
               created_by
             });
-          } catch (mpErr) {
-            console.warn(`[monitor] ModelPerformance write failed for ${symbol}:`, mpErr.message);
+
+            try {
+              const outcomePct = ((price - purchase_price) / purchase_price) * 100;
+              const entryTime = new Date(order.created_date || order.updated_date).getTime();
+              await base44.asServiceRole.entities.ModelPerformance.create({
+                signal_id: signal_id || null,
+                trade_id: sellResult.order_id || null,
+                asset_symbol: symbol,
+                entry_price: purchase_price,
+                exit_price: price,
+                outcome_percentage: Math.round(outcomePct * 100) / 100,
+                duration_held_minutes: Math.round((Date.now() - entryTime) / 60000),
+                is_success: outcomePct > 0,
+                exit_reason: exitReason,
+                is_simulation: true,
+                created_by
+              });
+            } catch (mpErr) {
+              console.warn(`[monitor] ModelPerformance write failed for ${symbol}:`, mpErr.message);
+            }
+          } else {
+            // LIVE: this function does NOT know the fill price. The ticker price it
+            // read is an estimate, and writing it as a completed trade was inventing
+            // profit that never happened (and produced a second, contradictory record
+            // once the exchange sync wrote the real fill). Record the sale as
+            // PENDING_FILL with no price, no value and no profit claim. syncTradesWithKraken
+            // corrects THIS SAME record from Kraken's authoritative fill and only then
+            // notifies the user and writes performance analytics.
+            await base44.asServiceRole.entities.Trade.create({
+              symbol, type: 'sell', asset_type: asset_type || 'crypto',
+              quantity: sellQuantity, price: 0, total_value: 0,
+              status: 'pending_fill', is_auto_trade: true, is_simulation: false,
+              signal_id, kraken_order_id: sellResult.order_id,
+              exit_purchase_price: purchase_price, exit_reason: exitReason,
+              submitted_at: new Date().toISOString(), created_by
+            });
+            console.log(`[monitor] ${symbol}: sell sent to Kraken (${sellResult.order_id}) — awaiting real fill from exchange sync`);
           }
 
-          results.push({ id, symbol, reason, price, success: true });
+          results.push({ id, symbol, reason, trigger_price: price, success: true, awaiting_fill: !is_simulation });
         } else {
           console.error(`[monitor] Sell failed for ${symbol}: ${sellResult?.error}`);
           await base44.asServiceRole.entities.ConditionalOrder.update(id, {

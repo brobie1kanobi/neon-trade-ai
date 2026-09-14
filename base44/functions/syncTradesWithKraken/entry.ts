@@ -74,6 +74,85 @@ async function callKraken(apiKey, apiSecret, endpoint, data = {}) {
   }
 }
 
+/**
+ * A sell that was sitting as `pending_fill` now has its authoritative Kraken fill.
+ * This is the ONLY place a LIVE sell is described as a profit or a loss, and the
+ * label comes from the exchange's real fill price and fee — never a ticker estimate.
+ */
+async function announceResolvedSell(base44, userEmail, localTrade, fill) {
+  const buyPrice = Number(localTrade.exit_purchase_price || 0);
+  const symbol = localTrade.symbol;
+  const exitReason = localTrade.exit_reason || 'manual';
+
+  let title;
+  let type;
+  let message = `Sold ${fill.quantity} ${symbol} @ $${fill.price} for $${fill.proceeds.toFixed(2)}`;
+  let netProfit = null;
+  let gainPct = null;
+
+  if (buyPrice > 0) {
+    const costBasis = buyPrice * fill.quantity;
+    netProfit = fill.proceeds - fill.fee - costBasis;
+    gainPct = ((fill.price - buyPrice) / buyPrice) * 100;
+    const isProfit = netProfit > 0;
+    title = isProfit
+      ? `✅ Profit Taken: ${symbol}`
+      : `🔻 Loss Realized: ${symbol}`;
+    type = isProfit ? 'success' : 'warning';
+    message += ` — ${isProfit ? '+' : '-'}$${Math.abs(netProfit).toFixed(2)} net (${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(2)}% vs $${buyPrice} buy, fee $${fill.fee.toFixed(2)})`;
+  } else {
+    title = `Sell filled: ${symbol}`;
+    type = 'info';
+  }
+
+  try {
+    await base44.asServiceRole.entities.Notification.create({
+      title,
+      message,
+      type,
+      read: false,
+      details_json: JSON.stringify({
+        symbol,
+        action: 'sell',
+        quantity: fill.quantity,
+        fill_price: fill.price,
+        proceeds: fill.proceeds,
+        fee: fill.fee,
+        buy_price: buyPrice || null,
+        net_profit: netProfit,
+        gain_pct: gainPct,
+        exit_reason: exitReason,
+        source: 'kraken_fill',
+        is_simulation: false
+      }),
+      created_by: userEmail
+    });
+  } catch (e) {
+    console.warn('[syncTradesWithKraken] Notification failed:', e.message);
+  }
+
+  if (buyPrice > 0) {
+    try {
+      const entryTime = new Date(localTrade.submitted_at || localTrade.created_date).getTime();
+      await base44.asServiceRole.entities.ModelPerformance.create({
+        signal_id: localTrade.signal_id || null,
+        trade_id: localTrade.id,
+        asset_symbol: symbol,
+        entry_price: buyPrice,
+        exit_price: fill.price,
+        outcome_percentage: Math.round(gainPct * 100) / 100,
+        duration_held_minutes: Math.max(0, Math.round((fill.filledAt.getTime() - entryTime) / 60000)),
+        is_success: netProfit > 0,
+        exit_reason: ['take_profit', 'stop_loss', 'trailing_stop', 'manual', 'signal_expired', 'risk_limit'].includes(exitReason) ? exitReason : 'manual',
+        is_simulation: false,
+        created_by: userEmail
+      });
+    } catch (e) {
+      console.warn('[syncTradesWithKraken] ModelPerformance failed:', e.message);
+    }
+  }
+}
+
 Deno.serve(async (req) => {
   const startTime = Date.now();
   
@@ -204,7 +283,12 @@ Deno.serve(async (req) => {
     let updated = 0;
     let created = 0;
     let matched = 0;
+    let fillsResolved = 0;
     const errors = [];
+    // Every Kraken fill consumed by an existing local record. Step 4 must never
+    // create a second record for one of these — that is exactly how one Kraken
+    // sell became two contradictory trades in the app.
+    const consumedKrakenIds = new Set();
 
     // Step 3: Update existing local trades with Kraken's EXACT values
     for (const localTrade of localTrades) {
@@ -220,7 +304,7 @@ Deno.serve(async (req) => {
         
         // If no match, try to match by symbol, type, and approximate time
         if (!krakenTrade) {
-          const localTime = new Date(localTrade.created_date).getTime();
+          const localTime = new Date(localTrade.submitted_at || localTrade.created_date).getTime();
           const localSymbol = localTrade.symbol.toUpperCase();
           
           for (const kt of krakenTrades) {
@@ -240,6 +324,8 @@ Deno.serve(async (req) => {
 
         if (krakenTrade) {
           matched++;
+          consumedKrakenIds.add(String(krakenTrade.trade_id || krakenTrade.txid));
+          if (krakenTrade.ordertxid) consumedKrakenIds.add(String(krakenTrade.ordertxid));
           
           // CRITICAL: Use Kraken's EXACT values - these are the AUTHORITATIVE source
           // Kraken API returns:
@@ -254,7 +340,10 @@ Deno.serve(async (req) => {
           
           // CRITICAL: Always update to ensure exact Kraken values, even if "close"
           // For auditing purposes, we want EXACT values, not "close enough"
+          const isPendingFill = localTrade.status === 'pending_fill';
+
           const needsUpdate = 
+            isPendingFill ||
             Math.abs(localTrade.quantity - exactQuantity) > 0.00000001 ||
             Math.abs(localTrade.price - exactPrice) > 0.00000001 ||
             Math.abs(localTrade.total_value - exactCost) > 0.00000001 ||
@@ -266,16 +355,35 @@ Deno.serve(async (req) => {
               new: { qty: exactQuantity, price: exactPrice, total: exactCost, fee: exactFee }
             });
             
-            await base44.asServiceRole.entities.Trade.update(localTrade.id, {
+            const patch = {
               quantity: exactQuantity,
               price: exactPrice,
               total_value: exactCost,
               fee: exactFee,
               kraken_trade_id: String(krakenTrade.trade_id || krakenTrade.txid),
               kraken_order_id: krakenTrade.ordertxid ? String(krakenTrade.ordertxid) : null
-            });
+            };
+            if (isPendingFill) {
+              patch.status = 'filled';
+              patch.filled_at = new Date(krakenTrade.time * 1000).toISOString();
+            }
+
+            await base44.asServiceRole.entities.Trade.update(localTrade.id, patch);
             
             updated++;
+
+            // A pending sell just became a REAL fill — this is the only place a
+            // profit/loss claim is ever made, and it is made from Kraken's numbers.
+            if (isPendingFill && localTrade.type === 'sell') {
+              fillsResolved++;
+              await announceResolvedSell(base44, user.email, localTrade, {
+                quantity: exactQuantity,
+                price: exactPrice,
+                proceeds: exactCost,
+                fee: exactFee,
+                filledAt: new Date(krakenTrade.time * 1000)
+              });
+            }
           }
         } else {
           console.warn('[syncTradesWithKraken] No Kraken match found for local trade:', localTrade.id, localTrade.symbol, localTrade.created_date);
@@ -298,6 +406,10 @@ Deno.serve(async (req) => {
       
       // Skip if we already have this trade
       if (localTradeIds.has(ktId) || localTradeIds.has(String(kt.ordertxid || ''))) {
+        continue;
+      }
+      // Skip if this fill was already applied to an existing local record above.
+      if (consumedKrakenIds.has(ktId) || (kt.ordertxid && consumedKrakenIds.has(String(kt.ordertxid)))) {
         continue;
       }
       
@@ -360,6 +472,7 @@ Deno.serve(async (req) => {
       matched: matched,
       updated: updated,
       created: created,
+      pending_fills_resolved: fillsResolved,
       errors: errors.length > 0 ? errors : undefined,
       duration_ms: Date.now() - startTime
     };
