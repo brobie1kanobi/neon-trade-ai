@@ -715,18 +715,39 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
           // Kraken-specific
           fee: parseFloat(kt.fee) || 0,
           order_type: kt.ordertype,
-          kraken_trade_id: kt.trade_id
+          kraken_trade_id: kt.trade_id,
+          // The ORDER id is what the app stores on its own Trade records, so it must
+          // be carried through — without it the same sell appears twice.
+          kraken_order_id: kt.ordertxid
         };
       });
 
-      // Merge and dedupe by checking if local trade matches Kraken trade (within time window)
-      const base = [...localTrades, ...executedFromClosed];
+      // Merge and dedupe. Exchange IDs are checked FIRST — an absolute 0.0001
+      // quantity tolerance is meaningless for assets like BTC (a whole position is
+      // 0.0005), so it matched unrelated fills; relative tolerance is used instead.
+      const base = [...localTrades];
+      const localExchangeIds = new Set(
+        base.
+        flatMap((lt) => [lt.kraken_trade_id, ...String(lt.kraken_order_id || '').split(',')]).
+        map((v) => String(v || '').trim()).
+        filter(Boolean)
+      );
+      // Entity timestamps come back without a trailing Z; new Date() would read them
+      // as local time and shift them by hours, breaking every time-window comparison.
+      const ts = (d) => {
+        if (!d) return 0;
+        const s = String(d);
+        const iso = s.includes('T') && !s.endsWith('Z') && !s.match(/[+-]\d{2}:?\d{2}$/) ? s + 'Z' : s;
+        return new Date(iso).getTime();
+      };
       const mergedTrades = [...base];
       krakenTradesList.forEach((kt) => {
+        if (localExchangeIds.has(String(kt.kraken_trade_id)) || localExchangeIds.has(String(kt.kraken_order_id))) return;
         const isDupe = base.some((lt) =>
         lt.symbol === kt.symbol &&
-        Math.abs((lt.quantity || 0) - kt.quantity) < 0.0001 &&
-        Math.abs(new Date(lt.created_date).getTime() - new Date(kt.created_date).getTime()) < 60000
+        lt.type === kt.type &&
+        kt.quantity > 0 && Math.abs((lt.quantity || 0) - kt.quantity) / kt.quantity < 0.01 &&
+        Math.abs(ts(lt.created_date) - ts(kt.created_date)) < 300000
         );
         if (!isDupe) {
           mergedTrades.push(kt);
@@ -736,8 +757,8 @@ export default function OrdersAndHistory({ trades = [], isSimMode = true, onRefr
       return sortByDateDesc(mergedTrades.map((t) => ({ ...t })));
     }
 
-    return sortByDateDesc([...localTrades, ...executedFromClosed]);
-  }, [trades, isSimMode, krakenTradesHistory, closedOrders]);
+    return sortByDateDesc([...localTrades]);
+  }, [trades, isSimMode, krakenTradesHistory]);
 
   const buyTrades = filteredTrades.filter((t) => t.type === "buy");
   const sellTrades = filteredTrades.filter((t) => t.type === "sell");
