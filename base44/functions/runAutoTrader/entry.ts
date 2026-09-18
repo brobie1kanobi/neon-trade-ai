@@ -278,6 +278,55 @@ async function hasRecentStopLoss(base44, userEmail, symbol) {
   } catch (_e) { return { blocked: false }; }
 }
 
+/**
+ * Ask Kraken what closing orders are ACTUALLY resting for a symbol.
+ *
+ * The bracket placement waits only ~4s for a WebSocket acknowledgement. When
+ * Kraken accepts the order but acks slowly, that call reports no order id — so
+ * a take-profit that is live on the exchange looked "rejected", which produced
+ * false "No take-profit set" alerts AND left kraken_tp_order_id empty (letting
+ * the app-side monitor duplicate an exit that already exists). The exchange is
+ * the source of truth, so ask it before deciding anything.
+ */
+async function findRestingClosers(base44, userEmail, symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  const result = { tp: null, sl: null };
+  try {
+    let apiKey = '';
+    let apiSecret = '';
+    try {
+      const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
+      if (conns.length > 0) {
+        const c = conns[0];
+        apiKey = (c.balance_api_key || c.trade_api_key || c.api_key || '').trim();
+        apiSecret = (c.balance_api_secret_encrypted || c.trade_api_secret_encrypted || c.api_secret_encrypted || '').trim();
+      }
+    } catch (_) {}
+    if (!apiKey || !apiSecret) {
+      apiKey = (Deno.env.get('Kraken_API_Key') || '').trim();
+      apiSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
+    }
+    if (!apiKey || !apiSecret) return result;
+
+    const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', {});
+    const orders = open?.result?.open || {};
+    const expectedPair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
+    for (const [orderId, order] of Object.entries(orders)) {
+      const descr = order?.descr || {};
+      const pair = String(descr.pair || '').toUpperCase().replace('/', '');
+      const matches = pair === expectedPair.toUpperCase() || pair.includes(sym);
+      if (!matches) continue;
+      if (String(descr.type || '').toLowerCase() !== 'sell') continue;
+      const ordertype = String(descr.ordertype || '').toLowerCase();
+      if (ordertype.includes('take-profit') && !result.tp) result.tp = orderId;
+      if (ordertype.includes('stop-loss') && !result.sl) result.sl = orderId;
+    }
+  } catch (e) {
+    console.warn('[runAutoTrader] Could not verify resting closers:', e?.message || e);
+  }
+  return result;
+}
+
 // Acquire distributed lock — atomic arbitration among concurrent pending records
 const LOCK_TIMEOUT_MS = 45000; // 45s - generous but prevents permanent stale locks
 
@@ -1706,6 +1755,21 @@ Deno.serve(async (req) => {
               // CRITICAL: The take-profit is the whole point of the trade — one
               // transient WebSocket/rate-limit hiccup used to mean the position sat
               // unprotected forever. Retry the TP specifically before giving up.
+              // The ack may simply have been slow — confirm with the exchange
+              // before treating a live order as a rejection.
+              if (!tpOrderId || !slOrderId) {
+                await ps(1200);
+                const resting = await findRestingClosers(base44, user.email, sym);
+                if (!tpOrderId && resting.tp) {
+                  tpOrderId = resting.tp;
+                  console.log(`[runAutoTrader] ✅ TP confirmed resting on Kraken (slow ack): ${tpOrderId}`);
+                }
+                if (!slOrderId && resting.sl) {
+                  slOrderId = resting.sl;
+                  console.log(`[runAutoTrader] ✅ SL confirmed resting on Kraken (slow ack): ${slOrderId}`);
+                }
+              }
+
               if (!tpOrderId) {
                 console.warn(`[runAutoTrader] ⚠️ TP missing on first attempt — retrying`, { tp_error: bracketData?.tp_error, error: bracketData?.error });
                 await ps(2000);
@@ -1727,6 +1791,15 @@ Deno.serve(async (req) => {
 
               if (tpOrderId) {
                 console.log(`[runAutoTrader] ✅ TP live on Kraken`, { tpOrderId, slOrderId });
+              } else {
+                // Final confirmation: the retry's ack can also be slow.
+                const finalCheck = await findRestingClosers(base44, user.email, sym);
+                if (finalCheck.tp) tpOrderId = finalCheck.tp;
+                if (!slOrderId && finalCheck.sl) slOrderId = finalCheck.sl;
+              }
+
+              if (tpOrderId) {
+                console.log(`[runAutoTrader] ✅ TP live on Kraken for ${sym}: ${tpOrderId}`);
               } else {
                 console.error(`[runAutoTrader] ❌ NO TP for ${sym} — position is unprotected`);
                 // Make an unprotected position visible instead of silent.
@@ -2071,6 +2144,13 @@ Deno.serve(async (req) => {
                 console.log(`[runAutoTrader] Emerging TP/SL:`, { emergingTpId, emergingSlId });
               } catch (embErr) {
                 console.error(`[runAutoTrader] Emerging TP/SL failed for ${emergingSymbol}:`, embErr.message);
+              }
+
+              if (!emergingTpId || !emergingSlId) {
+                await ps(1200);
+                const restingEm = await findRestingClosers(base44, user.email, emergingSymbol);
+                if (!emergingTpId && restingEm.tp) emergingTpId = restingEm.tp;
+                if (!emergingSlId && restingEm.sl) emergingSlId = restingEm.sl;
               }
 
               if (!emergingTpId) {
