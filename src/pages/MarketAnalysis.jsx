@@ -113,13 +113,13 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
         {signal.stop_loss_pct &&
         <Badge variant="outline" className="text-red-500 border-red-500">
             <Shield className="w-3 h-3 mr-1" />
-            SL: {signal.stop_loss_pct}%
+            SL: {Number(signal.stop_loss_pct).toFixed(1)}%
           </Badge>
         }
         {signal.take_profit_pct &&
         <Badge variant="outline" className="text-green-500 border-green-500">
             <Target className="w-3 h-3 mr-1" />
-            TP: {signal.take_profit_pct}%
+            TP: {Number(signal.take_profit_pct).toFixed(1)}%
           </Badge>
         }
         {signal.momentum_strength &&

@@ -393,7 +393,7 @@ export default function AutoTraderProspects() {
                 prospect.confidence_score >= 50 ? "bg-yellow-500" :
                 "bg-gray-500"
                 }>
-                      {prospect.confidence_score}% AI Confidence
+                      {Math.round(Number(prospect.confidence_score || 0))}% AI Confidence
                     </Badge>
                     <p className="text-xs text-gray-500 mt-1">
                       {prospect.user_allocation_pct || prospect.allocation_percent}% allocation

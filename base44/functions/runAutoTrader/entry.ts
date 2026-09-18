@@ -1069,7 +1069,10 @@ Deno.serve(async (req) => {
           price,
           change24h,
           entryZoneLow: sig.entry_zone_low,
-          entryZoneHigh: sig.entry_zone_high
+          entryZoneHigh: sig.entry_zone_high,
+          // Tolerance scales with the target so a few basis points of premium
+          // never blocks a trade whose whole target is only a few percent.
+          targetGainPct: typeof settings.gain_margin === 'number' ? settings.gain_margin : 3
         });
         if (!entry.at_ideal_entry) {
           log(`ENTRY GATE: Skipping ${symbol} — $${price} above ideal buy-in $${entry.ideal_entry_price.toFixed(6)} (needs -${entry.entry_gap_pct.toFixed(2)}%)`);

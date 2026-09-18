@@ -123,6 +123,9 @@ Deno.serve(async (req) => {
       trailing_takeprofit_enabled: rawRecord?.trailing_takeprofit_enabled !== undefined ? rawRecord.trailing_takeprofit_enabled : true,
       trailing_takeprofit_margin: rawRecord?.trailing_takeprofit_margin !== undefined ? rawRecord.trailing_takeprofit_margin : 3,
       min_signal_confidence: typeof rawRecord?.min_signal_confidence === 'number' ? rawRecord.min_signal_confidence : 55,
+      // This was missing, so the page's confidence gate silently fell back to
+      // min_signal_confidence and ignored the user's real execution threshold.
+      auto_execute_threshold: typeof rawRecord?.auto_execute_threshold === 'number' ? rawRecord.auto_execute_threshold : undefined,
     };
     
     console.log('[Prospects] Settings - gain:', settings.gain_margin, '% loss:', settings.loss_margin, '%');
@@ -468,7 +471,8 @@ Deno.serve(async (req) => {
       }
       
       const signalType = (signal.signal_type || 'hold').toLowerCase();
-      const confidence = signal.confidence_score || 50;
+      // Round: raw scores arrive as floats like 55.00000000000001 and were rendered verbatim.
+      const confidence = Math.round(Number(signal.confidence_score || 50));
       const change24h = signal.change_24h || quote?.change_24h_percent || quote?.price_change_percentage_24h || 0;
       
       if (signalType !== 'buy' && signalType !== 'strong_buy') {
@@ -478,8 +482,12 @@ Deno.serve(async (req) => {
       
       console.log('[Prospects] ✅ ACTIONABLE signal found:', symbol, signalType, 'confidence:', confidence);
       
-      // Require minimum confidence for display (user-configurable, default 50%)
-      const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
+      // Gate on the SAME threshold the auto-trader executes on (auto_execute_threshold).
+      // This page previously used min_signal_confidence (50), so signals the trader would
+      // never send — e.g. BTC at 55% against a 60% threshold — showed up here as READY.
+      const minConfidence = typeof settings.auto_execute_threshold === 'number'
+        ? settings.auto_execute_threshold
+        : (typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50);
       if (confidence < minConfidence) {
         console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence, '< min:', minConfidence);
         continue;
@@ -587,7 +595,8 @@ Deno.serve(async (req) => {
           price,
           change24h,
           entryZoneLow: signal.entry_zone_low,
-          entryZoneHigh: signal.entry_zone_high
+          entryZoneHigh: signal.entry_zone_high,
+          targetGainPct: effectiveGainMargin
         }),
         sentiment_score: signal.sentiment_score,
         stop_loss_pct: effectiveLossMargin,
