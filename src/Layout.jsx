@@ -382,7 +382,7 @@ function LayoutContent({ children, currentPageName }) {
               <div className="w-14 sm:w-16 flex-shrink-0" />
 
               {/* RIGHT group */}
-              <div className="flex items-end justify-center gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3 pr-7 sm:pr-0">
+              <div className="flex items-end justify-center gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3 pr-10 sm:pr-0">
                 {rightNavItems.map((item) => {
                   const isActive = location.pathname === item.url;
                   const Component = item.url ? Link : 'button';
