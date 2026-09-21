@@ -308,7 +308,7 @@ function LayoutContent({ children, currentPageName }) {
         </main>
 
         {/* Bottom Navigation with safe area padding */}
-        <nav className="opacity-100 flex-shrink-0 z-50 border-t select-none w-full"
+        <nav className="opacity-100 flex-shrink-0 sticky bottom-0 z-50 border-t select-none w-full"
         style={{
           backgroundColor: 'var(--primary-bg)',
           borderColor: 'var(--border-color)',
