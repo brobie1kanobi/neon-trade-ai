@@ -366,13 +366,13 @@ function LayoutContent({ children, currentPageName }) {
                     <Component
                       key={item.title}
                       {...props}
-                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 p-1 sm:p-2"
+                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 px-0.5 py-1 sm:p-2"
                       style={{
                         color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                         backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                       }}>
                       <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
-                      <span className="text-[10px] sm:text-xs font-medium leading-tight text-center w-full">{item.title}</span>
+                      <span className="text-[9px] sm:text-xs font-medium leading-tight text-center w-full">{item.title}</span>
                     </Component>);
 
                 })}
@@ -382,7 +382,7 @@ function LayoutContent({ children, currentPageName }) {
               <div className="w-14 sm:w-16 flex-shrink-0" />
 
               {/* RIGHT group */}
-              <div className="flex items-end justify-start gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3">
+              <div className="flex items-end justify-center gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3 pr-7 sm:pr-0">
                 {rightNavItems.map((item) => {
                   const isActive = location.pathname === item.url;
                   const Component = item.url ? Link : 'button';
@@ -390,14 +390,14 @@ function LayoutContent({ children, currentPageName }) {
                   return (
                     <Component
                       key={item.title}
-                      {...props} className="rounded-lg flex flex-col items-center gap-0.5 sm:gap-1 transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 sm:p-2"
+                      {...props} className="rounded-lg flex flex-col items-center gap-0.5 sm:gap-1 transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 px-0.5 py-1 sm:p-2"
 
                       style={{
                         color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                         backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                       }}>
                       <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
-                      <span className="text-[10px] sm:text-xs font-medium leading-tight">{item.title}</span>
+                      <span className="text-[9px] sm:text-xs font-medium leading-tight text-center w-full">{item.title}</span>
                     </Component>);
 
                 })}
