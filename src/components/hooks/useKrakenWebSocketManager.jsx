@@ -488,6 +488,14 @@ function subscribeToExecutions(ws, token) {
   console.log('[KrakenWS] Subscribed to executions');
 }
 
+// Aliases for use inside useKrakenWebSocketManager. The hook destructures
+// boolean options named `subscribeToBalances` / `subscribeToExecutions`, which
+// shadow the functions above — calling them there threw
+// "subscribeToExecutions2 is not a function" and silently broke every manual
+// refresh. The hook must go through these aliases instead.
+const sendBalancesSubscription = subscribeToBalances;
+const sendExecutionsSubscription = subscribeToExecutions;
+
 /**
  * Handle PUBLIC WebSocket messages
  * CRITICAL: These are the PRIMARY source for live price data
@@ -929,7 +937,7 @@ export function useKrakenWebSocketManager(options = {}) {
       // CRITICAL: Only use balance key for balance refreshes
       const token = await getWebSocketToken('balance');
       if (GLOBAL_WS_STATE.privateWsBalances && token) {
-        subscribeToBalances(GLOBAL_WS_STATE.privateWsBalances, token);
+        sendBalancesSubscription(GLOBAL_WS_STATE.privateWsBalances, token);
       }
     } catch (err) {
       console.error('[KrakenWS] Failed to refresh balances:', err.message);
@@ -944,7 +952,7 @@ export function useKrakenWebSocketManager(options = {}) {
       // CRITICAL: Only use trade key for order/execution refreshes
       const token = await getWebSocketToken('trade');
       if (GLOBAL_WS_STATE.privateWsOrders && token) {
-        subscribeToExecutions(GLOBAL_WS_STATE.privateWsOrders, token);
+        sendExecutionsSubscription(GLOBAL_WS_STATE.privateWsOrders, token);
       }
     } catch (err) {
       console.error('[KrakenWS] Failed to refresh orders:', err.message);
