@@ -390,7 +390,7 @@ function LayoutContent({ children, currentPageName }) {
                   return (
                     <Component
                       key={item.title}
-                      {...props} className="rounded-lg flex flex-col items-center gap-0.5 sm:gap-1 transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 sm:p-2 mt-1 pt-1 pb-1 pr-1 pl-2 mr-2 ml-1"
+                      {...props} className="rounded-lg flex flex-col items-center gap-0.5 sm:gap-1 transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 sm:p-2 mt-1 pt-1 pb-1 pr-1 pl-2 ml-2"
 
                       style={{
                         color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
