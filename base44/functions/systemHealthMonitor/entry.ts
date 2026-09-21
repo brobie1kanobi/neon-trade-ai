@@ -20,6 +20,42 @@ const THRESHOLDS = {
   driftThresholdUsd: 50      // Alert if balance drift >$50
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * TRANSIENT vs BLOCKING errors.
+ *
+ * Kraken answers a rate-limited account with "EGeneral:Temporary lockout" and,
+ * during that lockout, sometimes with a misleading "unknown key". Those are
+ * throttling responses, not broken infrastructure — counting them toward the
+ * auto-pause threshold is what blocked auto-trading with 34 phantom errors.
+ * They are still recorded (last_error_message + a transient counter) for
+ * visibility, but they never increment the blocking counters or pause trading.
+ */
+function isTransientError(message) {
+  return /lockout|unknown key|rate limit|too many requests|429|timeout/i.test(String(message || ''));
+}
+
+/** Parse metrics_json safely. */
+function parseMetrics(record) {
+  try {
+    const m = JSON.parse(record?.metrics_json || '{}');
+    return m && typeof m === 'object' ? m : {};
+  } catch (_e) {
+    return {};
+  }
+}
+
+/** Keep only error timestamps from the last 24h, so the 24h count decays. */
+function pruneErrorTimes(times, nowMs) {
+  if (!Array.isArray(times)) return [];
+  return times
+    .map(t => new Date(t).getTime())
+    .filter(t => Number.isFinite(t) && nowMs - t < DAY_MS)
+    .slice(-500)
+    .map(t => new Date(t).toISOString());
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -113,30 +149,58 @@ Deno.serve(async (req) => {
         });
         
         const now = new Date().toISOString();
+        const nowMs = Date.now();
+        const transient = isTransientError(error_message);
         
         let record;
         if (existing.length > 0) {
           record = existing[0];
-          const newErrorCount1h = (record.error_count_1h || 0) + 1;
-          const newErrorCount24h = (record.error_count_24h || 0) + 1;
-          
-          // Check if should auto-pause
+          const metrics = parseMetrics(record);
+
+          // Rolling 24h window: error_count_24h is DERIVED from timestamps in
+          // the last 24 hours, never a lifetime accumulator, so the system
+          // self-unblocks once the errors age out.
+          const errorTimes = pruneErrorTimes(metrics.error_times, nowMs);
+          if (!transient) errorTimes.push(now);
+
+          const newErrorCount1h = transient
+            ? (record.error_count_1h || 0)
+            : (record.error_count_1h || 0) + 1;
+          const newErrorCount24h = errorTimes.length;
+          const transientCount = (Number(metrics.transient_count) || 0) + (transient ? 1 : 0);
+
+          // Check if should auto-pause — transient throttling never pauses.
           let shouldPause = false;
           let pauseReason = null;
           
-          if (newErrorCount1h >= THRESHOLDS.errorRate1h) {
+          if (!transient && newErrorCount1h >= THRESHOLDS.errorRate1h) {
             shouldPause = true;
             pauseReason = `Error rate exceeded: ${newErrorCount1h} errors in 1 hour`;
           }
+
+          // A transient error must never downgrade an otherwise healthy
+          // component — keep whatever status the real signals produced.
+          const nextStatus = shouldPause
+            ? 'unhealthy'
+            : transient
+              ? (record.status === 'unhealthy' ? 'unhealthy' : record.status || 'healthy')
+              : 'degraded';
           
           await base44.asServiceRole.entities.SystemHealth.update(record.id, {
-            status: shouldPause ? 'unhealthy' : 'degraded',
+            status: nextStatus,
             error_count_1h: newErrorCount1h,
             error_count_24h: newErrorCount24h,
             last_error_at: now,
             last_error_message: error_message || 'Unknown error',
-            is_auto_paused: shouldPause,
-            pause_reason: pauseReason
+            is_auto_paused: shouldPause ? true : (transient ? !!record.is_auto_paused : false),
+            pause_reason: shouldPause ? pauseReason : (transient ? record.pause_reason || null : null),
+            metrics_json: JSON.stringify({
+              ...metrics,
+              error_times: errorTimes,
+              transient_count: transientCount,
+              last_error_transient: transient,
+              last_transient_at: transient ? now : metrics.last_transient_at || null
+            })
           });
           
           // Create notification if paused
@@ -155,16 +219,41 @@ Deno.serve(async (req) => {
         } else {
           await base44.asServiceRole.entities.SystemHealth.create({
             component,
-            status: 'degraded',
-            error_count_1h: 1,
-            error_count_24h: 1,
+            status: transient ? 'healthy' : 'degraded',
+            error_count_1h: transient ? 0 : 1,
+            error_count_24h: transient ? 0 : 1,
             last_error_at: now,
             last_error_message: error_message || 'Unknown error',
-            is_auto_paused: false
+            is_auto_paused: false,
+            metrics_json: JSON.stringify({
+              error_times: transient ? [] : [now],
+              transient_count: transient ? 1 : 0,
+              last_error_transient: transient
+            })
           });
         }
         
-        return Response.json({ success: true });
+        return Response.json({ success: true, transient });
+      }
+
+      // Cheap check used before any Kraken reconnection attempt: is this
+      // component currently paused/unhealthy (i.e. in cooldown)?
+      case 'isLockedOut': {
+        const target = component || 'kraken_api';
+        const existing = await base44.asServiceRole.entities.SystemHealth.filter({
+          component: target
+        });
+        const record = existing[0];
+        const lockedOut = !!record && (record.is_auto_paused === true || record.status === 'unhealthy');
+        return Response.json({
+          success: true,
+          component: target,
+          locked_out: lockedOut,
+          status: record?.status || 'unknown',
+          error_count_1h: record?.error_count_1h || 0,
+          error_count_24h: record?.error_count_24h || 0,
+          reason: record?.pause_reason || record?.last_error_message || null
+        });
       }
       
       case 'resetErrors': {
@@ -189,12 +278,26 @@ Deno.serve(async (req) => {
       }
       
       case 'resetHourlyCounters': {
-        // Called by scheduled job every hour
+        // Called by scheduled job every hour. Also prunes the rolling 24h
+        // window so error_count_24h decays instead of accumulating forever —
+        // this is what lets a component recover on its own.
         const allRecords = await base44.asServiceRole.entities.SystemHealth.filter({});
+        const nowMs = Date.now();
         
         for (const record of allRecords) {
+          const metrics = parseMetrics(record);
+          const errorTimes = pruneErrorTimes(metrics.error_times, nowMs);
+          const stillUnhealthy = errorTimes.length >= THRESHOLDS.errorRate1h;
+
           await base44.asServiceRole.entities.SystemHealth.update(record.id, {
-            error_count_1h: 0
+            error_count_1h: 0,
+            error_count_24h: errorTimes.length,
+            // With the hourly counter cleared and no recent real errors left,
+            // release the auto-pause so trading resumes without manual reset.
+            status: stillUnhealthy ? record.status : 'healthy',
+            is_auto_paused: stillUnhealthy ? record.is_auto_paused : false,
+            pause_reason: stillUnhealthy ? record.pause_reason : null,
+            metrics_json: JSON.stringify({ ...metrics, error_times: errorTimes })
           });
         }
         

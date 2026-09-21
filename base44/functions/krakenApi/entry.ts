@@ -412,6 +412,31 @@ Deno.serve(async (req) => {
           return Response.json({ success: true, connected: true, wsUrl: 'wss://ws-auth.kraken.com/v2', publicWsUrl: 'wss://ws.kraken.com/v2', token: cached.token, expires_in: remaining, used_key_type: keyType, fingerprint, cached: true }, { status: 200 });
         }
 
+        // CROSS-INSTANCE TOKEN CACHE: the in-memory cache above only dedupes
+        // within ONE warm Deno isolate, and the platform runs several — so each
+        // isolate was calling GetWebSocketsToken for itself, multiplying private
+        // API calls until Kraken issued a "Temporary lockout". This entity-backed
+        // cache makes every isolate reuse ONE token per token lifetime.
+        const wsCacheKey = `ws_token:${keyType}:${fingerprint}`;
+        if (!forceRefresh) {
+          const sharedHit = await sharedGet(wsCacheKey);
+          const sharedToken = sharedHit?.data;
+          if (sharedToken?.token && !sharedHit.expired) {
+            const remaining = Math.floor((Number(sharedToken.expiresAtMs || 0) - now) / 1000);
+            if (remaining > 60) {
+              wsTokenCache.set(keyType, { token: sharedToken.token, expiresAt: Number(sharedToken.expiresAtMs), fingerprint });
+              return Response.json({ success: true, connected: true, wsUrl: 'wss://ws-auth.kraken.com/v2', publicWsUrl: 'wss://ws.kraken.com/v2', token: sharedToken.token, expires_in: remaining, used_key_type: keyType, fingerprint, cached: 'shared' }, { status: 200 });
+            }
+          }
+
+          // Kraken already rate-limited us — do not ask for another token and
+          // renew that lockout. Tell the caller to back off instead.
+          const wsLock = await sharedGet(LOCKOUT_KEY);
+          if (wsLock && !wsLock.expired) {
+            return Response.json({ success: false, connected: true, error: 'Kraken API is in cooldown after rate limiting — retrying shortly', kraken_backoff: true }, { status: 200 });
+          }
+        }
+
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
         let p = inFlight.get(keyType);
         if (!p || forceRefresh) {
@@ -421,9 +446,19 @@ Deno.serve(async (req) => {
         const result = await p.finally(() => { inFlight.delete(keyType); });
         const token = result.result?.token; const expires = result.result?.expires || 900;
         if (!token) throw new Error('Failed to get WebSocket token from Kraken');
-        wsTokenCache.set(keyType, { token, expiresAt: now + expires * 1000, fingerprint });
+        const expiresAtMs = now + expires * 1000;
+        wsTokenCache.set(keyType, { token, expiresAt: expiresAtMs, fingerprint });
+        // Publish to the cross-instance cache, expiring 60s before Kraken does
+        // so no isolate ever hands out a token that dies mid-connection.
+        await sharedSet(wsCacheKey, { token, expiresAtMs }, Math.max(30000, expires * 1000 - 60000));
         return Response.json({ success: true, connected: true, wsUrl: 'wss://ws-auth.kraken.com/v2', publicWsUrl: 'wss://ws.kraken.com/v2', token, expires_in: expires, used_key_type: keyType, fingerprint }, { status: 200 });
       } catch (e) {
+        // A lockout hit while fetching a token must start the global cooldown
+        // too, otherwise every caller keeps retrying and renewing it.
+        if (/rate limit|lockout|too many requests/i.test(String(e?.message || ''))) {
+          try { await sharedSetLockout?.(); } catch (_e) {}
+          return Response.json({ success: false, connected: true, error: e.message, kraken_backoff: true }, { status: 200 });
+        }
         return Response.json({ success: false, connected: false, error: e.message }, { status: 200 });
       }
     }

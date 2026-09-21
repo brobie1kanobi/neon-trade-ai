@@ -1834,7 +1834,11 @@ Deno.serve(async (req) => {
           // Do NOT count order validation rejections (minimum not met, invalid volume, 
           // insufficient funds, invalid price, etc.) — these are expected and harmless.
           const errMsg = String(krakenError.message || '');
-          const isValidationError = /minimum not met|EGeneral:Invalid arguments|volume minimum|invalid volume|EOrder:Invalid volume|insufficient funds|EOrder:Insufficient|invalid price|EOrder:Invalid price|too small|below minimum|order size|unknown order|EOrder:Unknown/i.test(errMsg);
+          // Also excludes TRANSIENT Kraken throttling responses ("Temporary
+          // lockout", "unknown key" during a lockout, rate limits). Those are
+          // classified as transient inside systemHealthMonitor now — skipping
+          // them here avoids a pointless cross-function call per failed order.
+          const isValidationError = /minimum not met|EGeneral:Invalid arguments|volume minimum|invalid volume|EOrder:Invalid volume|insufficient funds|EOrder:Insufficient|invalid price|EOrder:Invalid price|too small|below minimum|order size|unknown order|EOrder:Unknown|lockout|unknown key|rate limit|too many requests/i.test(errMsg);
           
           if (!isValidationError) {
             try {

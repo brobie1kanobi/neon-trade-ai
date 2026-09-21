@@ -37,7 +37,12 @@ const GLOBAL_WS_STATE = {
   tokenTradeExpiry: 0,
   tokenBalance: null,
   tokenBalanceExpiry: 0,
+  // SEPARATE reconnect counters per connection. A single shared counter meant a
+  // successful PUBLIC connection reset it to 0 and re-enabled private retries
+  // during a Kraken lockout — the retry pressure that kept renewing the lockout.
   reconnectAttempts: 0,
+  reconnectAttemptsBalance: 0,
+  reconnectAttemptsOrders: 0,
 
   // Per-connection backoff so a failing private connection retries with
   // growing delays instead of every 60s watchdog cycle — repeated attempts
@@ -67,6 +72,32 @@ const MAX_RECONNECT_ATTEMPTS = 2;
 const RECONNECT_DELAY = 20000; // 20 seconds between retries to ease rate limits
 const MAX_BACKOFF_DELAY = 300000; // 5 minute cap — stops repeated retries from renewing a Kraken lockout
 const TOKEN_REFRESH_BUFFER = 60000; // Refresh token 1 minute before expiry
+const HEALTH_CHECK_TTL = 60000; // Cache the health lookup for a minute
+
+// CIRCUIT BREAKER: cached view of whether Kraken is in cooldown. Retrying while
+// Kraken has locked the account out only renews the lockout and spams errors.
+let healthCache = { lockedOut: false, checkedAt: 0 };
+
+async function isKrakenLockedOut() {
+  const now = Date.now();
+  if (now - healthCache.checkedAt < HEALTH_CHECK_TTL) return healthCache.lockedOut;
+  try {
+    const records = await base44.entities.SystemHealth.filter({ component: 'kraken_api' });
+    const record = records?.[0];
+    const lockedOut = !!record && (record.is_auto_paused === true || record.status === 'unhealthy');
+    healthCache = { lockedOut, checkedAt: now };
+    return lockedOut;
+  } catch (_e) {
+    // Cannot read health (e.g. non-admin user) — never block on uncertainty.
+    healthCache = { lockedOut: false, checkedAt: now };
+    return false;
+  }
+}
+
+/** Force the next health lookup to hit the database again. */
+function invalidateHealthCache() {
+  healthCache = { lockedOut: false, checkedAt: 0 };
+}
 
 /**
  * Emit custom events to all listeners
@@ -124,6 +155,11 @@ async function getWebSocketToken(keyType = 'trade') {
       return data.token;
     }
     
+    // Kraken is rate-limiting: back off hard instead of retrying immediately.
+    if (data?.kraken_backoff) {
+      throw new Error('Kraken API cooldown — backing off');
+    }
+
     if (data?.connected === false) {
       throw new Error('Kraken account not connected');
     }
@@ -215,6 +251,11 @@ async function connectPrivateBalancesWebSocket() {
   if (Date.now() < GLOBAL_WS_STATE.privateBalanceNextAttempt) {
     return;
   }
+  // CIRCUIT BREAKER: skip entirely while Kraken is in cooldown.
+  if (await isKrakenLockedOut()) {
+    console.log('[KrakenWS] Skipping private balances connect — Kraken API in cooldown');
+    return;
+  }
 
   try {
     // Get fresh token using BALANCE key only (avoid consuming trade key rate limits)
@@ -224,8 +265,9 @@ async function connectPrivateBalancesWebSocket() {
 
     ws.onopen = () => {
       GLOBAL_WS_STATE.isPrivateBalancesConnected = true;
-      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      GLOBAL_WS_STATE.reconnectAttemptsBalance = 0;
       GLOBAL_WS_STATE.privateBalanceBackoffMs = 20000; // reset backoff on success
+      invalidateHealthCache();
       if (typeof window !== 'undefined') {
         window.__krakenWsConnected = true;
         window.dispatchEvent(new CustomEvent('kraken:connected'));
@@ -260,8 +302,8 @@ async function connectPrivateBalancesWebSocket() {
 
       GLOBAL_WS_STATE.privateBalanceBackoffMs = Math.min(MAX_BACKOFF_DELAY, GLOBAL_WS_STATE.privateBalanceBackoffMs * 2);
       GLOBAL_WS_STATE.privateBalanceNextAttempt = Date.now() + GLOBAL_WS_STATE.privateBalanceBackoffMs;
-      if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        GLOBAL_WS_STATE.reconnectAttempts++;
+      if (GLOBAL_WS_STATE.reconnectAttemptsBalance < MAX_RECONNECT_ATTEMPTS) {
+        GLOBAL_WS_STATE.reconnectAttemptsBalance++;
         setTimeout(() => connectPrivateBalancesWebSocket(), GLOBAL_WS_STATE.privateBalanceBackoffMs);
       }
     };
@@ -277,8 +319,15 @@ async function connectPrivateBalancesWebSocket() {
       return;
     }
 
-    if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      GLOBAL_WS_STATE.reconnectAttempts++;
+    // Kraken cooldown: stop here. The watchdog will try again once the
+    // cooldown clears — retrying now would only extend it.
+    if (error.message && error.message.includes('cooldown')) {
+      GLOBAL_WS_STATE.privateBalanceNextAttempt = Date.now() + MAX_BACKOFF_DELAY;
+      return;
+    }
+
+    if (GLOBAL_WS_STATE.reconnectAttemptsBalance < MAX_RECONNECT_ATTEMPTS) {
+      GLOBAL_WS_STATE.reconnectAttemptsBalance++;
       setTimeout(() => connectPrivateBalancesWebSocket(), GLOBAL_WS_STATE.privateBalanceBackoffMs);
     }
   }
@@ -295,13 +344,19 @@ async function connectPrivateOrdersWebSocket() {
   if (Date.now() < GLOBAL_WS_STATE.privateOrdersNextAttempt) {
     return;
   }
+  // CIRCUIT BREAKER: skip entirely while Kraken is in cooldown.
+  if (await isKrakenLockedOut()) {
+    console.log('[KrakenWS] Skipping private orders connect — Kraken API in cooldown');
+    return;
+  }
   try {
     const token = await getWebSocketToken('trade');
     const ws = new WebSocket(PRIVATE_WS_URL);
     ws.onopen = () => {
       GLOBAL_WS_STATE.isPrivateOrdersConnected = true;
-      GLOBAL_WS_STATE.reconnectAttempts = 0;
+      GLOBAL_WS_STATE.reconnectAttemptsOrders = 0;
       GLOBAL_WS_STATE.privateOrdersBackoffMs = 20000; // reset backoff on success
+      invalidateHealthCache();
       if (typeof window !== 'undefined') {
         window.__krakenWsConnected = true;
         window.dispatchEvent(new CustomEvent('kraken:connected'));
@@ -331,8 +386,8 @@ async function connectPrivateOrdersWebSocket() {
       emitEvent('privateDisconnected', {});
       GLOBAL_WS_STATE.privateOrdersBackoffMs = Math.min(MAX_BACKOFF_DELAY, GLOBAL_WS_STATE.privateOrdersBackoffMs * 2);
       GLOBAL_WS_STATE.privateOrdersNextAttempt = Date.now() + GLOBAL_WS_STATE.privateOrdersBackoffMs;
-      if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        GLOBAL_WS_STATE.reconnectAttempts++;
+      if (GLOBAL_WS_STATE.reconnectAttemptsOrders < MAX_RECONNECT_ATTEMPTS) {
+        GLOBAL_WS_STATE.reconnectAttemptsOrders++;
         setTimeout(() => connectPrivateOrdersWebSocket(), GLOBAL_WS_STATE.privateOrdersBackoffMs);
       }
     };
@@ -340,8 +395,15 @@ async function connectPrivateOrdersWebSocket() {
   } catch (error) {
     GLOBAL_WS_STATE.privateOrdersBackoffMs = Math.min(MAX_BACKOFF_DELAY, GLOBAL_WS_STATE.privateOrdersBackoffMs * 2);
     GLOBAL_WS_STATE.privateOrdersNextAttempt = Date.now() + GLOBAL_WS_STATE.privateOrdersBackoffMs;
-    if (GLOBAL_WS_STATE.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      GLOBAL_WS_STATE.reconnectAttempts++;
+
+    // Kraken cooldown: stop retrying until it clears.
+    if (error.message && error.message.includes('cooldown')) {
+      GLOBAL_WS_STATE.privateOrdersNextAttempt = Date.now() + MAX_BACKOFF_DELAY;
+      return;
+    }
+
+    if (GLOBAL_WS_STATE.reconnectAttemptsOrders < MAX_RECONNECT_ATTEMPTS) {
+      GLOBAL_WS_STATE.reconnectAttemptsOrders++;
       setTimeout(() => connectPrivateOrdersWebSocket(), GLOBAL_WS_STATE.privateOrdersBackoffMs);
     }
   }
@@ -825,15 +887,28 @@ export function useKrakenWebSocketManager(options = {}) {
 
   // Watchdog: reconnect if disconnected - VERY conservative to prevent rate limits
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       // NOTE: Do NOT reset reconnectAttempts/backoff here. Each connect
       // function already checks its own backoff cooldown before attempting —
-      // forcing a retry every 60s regardless of backoff is what kept
-      // renewing Kraken's "Temporary lockout" in the past.
+      // forcing a retry regardless of backoff is what kept renewing Kraken's
+      // "Temporary lockout" in the past.
+      // The public WS needs no credentials, so it always reconnects freely.
       if (subscribeToPrices && !GLOBAL_WS_STATE.isPublicConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting public WS...');
         connectPublicWebSocket(priceSymbols);
       }
+
+      const needsPrivate =
+        (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) ||
+        (subscribeToExecutions && !GLOBAL_WS_STATE.isPrivateOrdersConnected);
+
+      // CIRCUIT BREAKER: one health read gates both private reconnects, so a
+      // Kraken cooldown produces zero private API calls instead of two per tick.
+      if (needsPrivate && await isKrakenLockedOut()) {
+        console.log('[KrakenWS] Watchdog: Kraken API in cooldown — skipping private reconnects');
+        return;
+      }
+
       if (subscribeToBalances && !GLOBAL_WS_STATE.isPrivateBalancesConnected) {
         console.log('[KrakenWS] Watchdog: Reconnecting private balances WS...');
         connectPrivateBalancesWebSocket();
@@ -842,7 +917,7 @@ export function useKrakenWebSocketManager(options = {}) {
         console.log('[KrakenWS] Watchdog: Reconnecting private orders WS...');
         connectPrivateOrdersWebSocket();
       }
-    }, 60000); // CRITICAL: 60 seconds between watchdog checks
+    }, 120000); // CRITICAL: 120 seconds between watchdog checks (was 60s)
     return () => clearInterval(interval);
   }, [subscribeToPrices, subscribeToBalances, subscribeToOrders, subscribeToExecutions, priceSymbols.join(',')]);
 
