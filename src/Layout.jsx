@@ -338,7 +338,7 @@ function LayoutContent({ children, currentPageName }) {
 
             {/* Notification button - mobile only: top-right corner of bar */}
             <button
-              onClick={notificationItem.action} className="px-4 rounded-md md:hidden absolute right-0 -top-1 z-20 flex items-center justify-center w-7 h-7 transition-all duration-200 hover:shadow-lg select-none"
+              onClick={notificationItem.action} className="px-4 rounded-md md:hidden absolute right-1 top-0.5 z-20 flex items-center justify-center w-7 h-7 transition-all duration-200 hover:shadow-lg select-none"
 
               style={{
                 color: 'var(--text-secondary)',
@@ -382,7 +382,7 @@ function LayoutContent({ children, currentPageName }) {
               <div className="w-14 sm:w-16 flex-shrink-0" />
 
               {/* RIGHT group */}
-              <div className="flex items-end justify-center gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3 pr-12 sm:pr-0">
+              <div className="flex items-end justify-center gap-1.5 sm:gap-3 md:gap-4 flex-1 pl-2 sm:pl-3 pr-7 sm:pr-0">
                 {rightNavItems.map((item) => {
                   const isActive = location.pathname === item.url;
                   const Component = item.url ? Link : 'button';
