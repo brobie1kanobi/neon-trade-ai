@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
+import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
 
 /**
  * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
@@ -1045,8 +1046,7 @@ Deno.serve(async (req) => {
         activeSignals = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
         activeSignals = activeSignals.filter(s => !s.expires_at || new Date(s.expires_at) > nowTs);
       } catch (_e) {}
-      const sigMap = new Map();
-      for (const s of activeSignals) sigMap.set(s.asset_symbol, s);
+      const sigMap = pickSignalPerSymbol(activeSignals);
 
       // 4) Fetch quotes via Kraken public API
       const cryptoSymbols = allPrefs.filter(p => p.asset_type === 'crypto').map(p => String(p.symbol || '').toUpperCase());
@@ -1298,10 +1298,7 @@ Deno.serve(async (req) => {
     log('Confidence threshold for ALL auto-execution', { threshold: AUTO_EXECUTE_THRESHOLD });
     
     // Build signal map for quick lookup
-    const signalMap = new Map();
-    for (const sig of signals) {
-      signalMap.set(sig.asset_symbol, sig);
-    }
+    const signalMap = pickSignalPerSymbol(signals);
 
     // ═══════════════════════════════════════════════════════════════════
     // BUG FIX #1: OPEN-POSITION & CONSUMED-SIGNAL GUARDS

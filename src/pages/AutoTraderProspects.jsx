@@ -430,7 +430,7 @@ export default function AutoTraderProspects() {
                     <Lock className="w-4 h-4 text-yellow-600 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">
-                        ⏸️ Reconnecting to Websocket...
+                        ⏸️ Not sending to Kraken yet
                       </p>
                       <p className="text-xs text-yellow-600 dark:text-yellow-500">
                         {prospect.block_reason}

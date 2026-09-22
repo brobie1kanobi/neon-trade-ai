@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
+import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
 
 // Kraken pair mappings for public API
 const KRAKEN_PAIR_MAP = {
@@ -338,24 +339,14 @@ Deno.serve(async (req) => {
     // Build signal lookup map — if multiple generators wrote a signal for the same
     // symbol, always keep the most recently updated one instead of an arbitrary
     // last-in-array pick, so prospects never trade on a stale, superseded signal.
-    const signalMap = new Map();
-    for (const sig of signals) {
-      const existingSig = signalMap.get(sig.asset_symbol);
-      if (!existingSig) {
-        signalMap.set(sig.asset_symbol, sig);
-        continue;
-      }
-      const existingTime = new Date(existingSig.updated_date || existingSig.created_date || 0).getTime();
-      const newTime = new Date(sig.updated_date || sig.created_date || 0).getTime();
-      if (newTime >= existingTime) signalMap.set(sig.asset_symbol, sig);
-    }
+    const signalMap = pickSignalPerSymbol(signals);
 
     const reloadSignals = async () => {
       const latest = await base44.asServiceRole.entities.AssetSignal.filter({ is_active: true });
       const now = new Date();
       const fresh = latest.filter(s => !s.expires_at || new Date(s.expires_at) > now);
       signalMap.clear();
-      for (const sig of fresh) signalMap.set(sig.asset_symbol, sig);
+      for (const [k, v] of pickSignalPerSymbol(fresh)) signalMap.set(k, v);
       return fresh;
     };
     
@@ -493,16 +484,11 @@ Deno.serve(async (req) => {
         continue;
       }
       
-      // TREND-FOLLOWING: Skip if price is falling — don't buy into a downtrend
-      if (change24h < -2) {
-        console.log('[Prospects] Skipping', symbol, '- negative trend:', change24h.toFixed(1), '%');
-        continue;
-      }
-      // ANTI-PUMP: Skip if price already surged >4% — likely chasing
-      if (change24h > 4) {
-        console.log('[Prospects] Skipping', symbol, '- already pumped:', change24h.toFixed(1), '%');
-        continue;
-      }
+      // Trend gates no longer hide a qualifying signal — they only stop it from
+      // being sent. The prospect is still shown with the reason it's waiting.
+      let trendBlock = null;
+      if (change24h < -2) trendBlock = `Price falling (${change24h.toFixed(1)}% 24h) — waiting for trend to stabilize`;
+      else if (change24h > 4) trendBlock = `Already up ${change24h.toFixed(1)}% in 24h — waiting to avoid chasing`;
 
       const holding = holdings.find(h => (h.symbol || "").toUpperCase() === symbol);
       
@@ -533,7 +519,9 @@ Deno.serve(async (req) => {
       let blockReason = null;
       let wouldExecute = false;
       
-      if (tradingCash < 1) {
+      if (trendBlock) {
+        blockReason = trendBlock;
+      } else if (tradingCash < 1) {
         blockReason = `No trading cash available ($${tradingCash.toFixed(2)})`;
       } else if (total < 1) {
         blockReason = "Order value too small (minimum $1)";
