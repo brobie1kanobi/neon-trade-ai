@@ -251,6 +251,19 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error('[Prospects] Kraken balance fetch failed:', e?.message || e);
     }
+    // Kraken "Temporary lockout" leaves cash at $0 — fall back to the last synced
+    // wallet balance so sizing (and the prospect list) doesn't collapse to nothing.
+    if (cashAvailable <= 0) {
+      try {
+        const wallets = await base44.entities.Wallet.filter({ created_by: user.email }, '-updated_date', 1);
+        const synced = Number(wallets[0]?.real_cash_balance || 0);
+        if (synced > 0) {
+          cashAvailable = synced;
+          tradingCash = synced * 0.98;
+          console.log('[Prospects] Using last synced wallet cash:', synced);
+        }
+      } catch (_e) {}
+    }
     } // end else (LIVE mode)
     
     if (!tradingCash) tradingCash = cashAvailable;
@@ -505,10 +518,9 @@ Deno.serve(async (req) => {
       }
       
       const krakenMinimum = 5;
+      // Never drop a qualifying signal for sizing — it's shown with a block reason below.
       if (total < krakenMinimum && total > 0 && tradingCash >= krakenMinimum) {
         total = krakenMinimum;
-      } else if (total < 1) {
-        continue;
       }
       
       total = Math.min(total, tradingCash * 0.90);
