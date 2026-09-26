@@ -372,7 +372,7 @@ function LayoutContent({ children, currentPageName }) {
                         backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
                       }}>
                       <item.icon className={`w-4 h-4 sm:w-5 sm:h-5 ${isActive ? 'neon-glow' : ''}`} />
-                      <span className="text-[9px] sm:text-xs font-medium leading-tight text-center w-full mr-1 pl-1">{item.title}</span>
+                      <span className="text-[9px] sm:text-xs font-medium leading-tight text-center w-full mr-1 pl-2">{item.title}</span>
                     </Component>);
 
                 })}
