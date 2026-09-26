@@ -366,7 +366,7 @@ function LayoutContent({ children, currentPageName }) {
                     <Component
                       key={item.title}
                       {...props}
-                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 sm:p-2 ml-1 mr-1 pt-1 pb-1"
+                      className="flex flex-col items-center gap-0.5 sm:gap-1 rounded-lg transition-all duration-200 hover:shadow-lg justify-center shadow-sm select-none w-[46px] h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 sm:p-2 mr-1"
                       style={{
                         color: isActive ? 'var(--neon-green)' : 'var(--text-secondary)',
                         backgroundColor: isActive ? 'rgba(var(--neon-green-rgb), 0.1)' : 'rgba(255, 255, 255, 0.05)'
