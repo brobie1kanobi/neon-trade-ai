@@ -190,9 +190,7 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
       setOverallPnL(currentPnL);
       
       // Calculate percentage
-      const costBasis = Math.abs(krakenPnL.realized_pnl || 0) + Math.abs(krakenPnL.unrealized_pnl || 0);
-      const pnlPct = costBasis > 0 ? (currentPnL / costBasis) * 100 : 0;
-      setOverallPnLPercent(pnlPct);
+      setOverallPnLPercent(krakenPnL.pnl_24h_pct || 0);
       return;
     }
     
@@ -312,9 +310,9 @@ export default function PerformanceChart({ holdings, trades, wallet, isSimMode, 
         pnlValue = krakenPnL.pnl_lifetime || 0;
       }
       
-      // Calculate percentage based on realized PnL as cost basis proxy
-      const costBasis = Math.abs(krakenPnL.realized_pnl || 0) + Math.abs(krakenPnL.unrealized_pnl || 0);
-      const pnlPct = costBasis > 0 ? (pnlValue / costBasis) * 100 : 0;
+      const pnlPct = (timeframe === '24h' || timeframe === '1h')
+        ? (krakenPnL.pnl_24h_pct || 0)
+        : (krakenPnL.pnl_lifetime_pct || 0);
       
       setOverallPnL(pnlValue);
       setOverallPnLPercent(pnlPct);

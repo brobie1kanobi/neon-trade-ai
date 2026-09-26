@@ -584,12 +584,7 @@ export default function Dashboard() {
   // CRITICAL: Use PnL from provider (already fetched, no duplicate call)
   const krakenPnL = React.useMemo(() => {
     if (isSimMode || !providerKrakenPnL?.success) return null;
-    return {
-      pnl_24h: providerKrakenPnL.pnl_24h || 0,
-      pnl_lifetime: providerKrakenPnL.pnl_lifetime || 0,
-      realized_pnl: providerKrakenPnL.realized_pnl || 0,
-      unrealized_pnl: providerKrakenPnL.unrealized_pnl || 0
-    };
+    return providerKrakenPnL;
   }, [isSimMode, providerKrakenPnL]);
 
   const handleSelectTrade = (trade) => setSelectedTrade(trade);
@@ -697,19 +692,9 @@ export default function Dashboard() {
         // Lifetime PnL to flash to $0.00 (green) between accurate values.
         return;
       }
-      // 24h realized PnL from Kraken trades
-      const realized24hValue = krakenPnL.pnl_24h || 0;
-      const realized24hPct = krakenPnL.realized_pnl > 0 ? (realized24hValue / krakenPnL.realized_pnl) * 100 : 0;
-      setRealized24h({ value: realized24hValue, percentage: realized24hPct });
-      
-      // Lifetime PnL = realized + unrealized from Kraken
-      const lifetimePnLValue = krakenPnL.pnl_lifetime || 0;
-      // Calculate percentage based on current portfolio value
-      const currentValue = wsCryptoValue > 0 ? wsCryptoValue : portfolioMarketValue;
-      const costBasis = currentValue - lifetimePnLValue;
-      const lifetimePct = costBasis > 0 ? (lifetimePnLValue / costBasis) * 100 : 0;
-      
-      setLifetimeChange({ value: lifetimePnLValue, percentage: lifetimePct });
+      // Profit figures come straight from the Kraken balance report (via provider)
+      setRealized24h({ value: krakenPnL.pnl_24h || 0, percentage: krakenPnL.pnl_24h_pct || 0 });
+      setLifetimeChange({ value: krakenPnL.pnl_lifetime || 0, percentage: krakenPnL.pnl_lifetime_pct || 0 });
       return;
     }
     
@@ -924,7 +909,7 @@ export default function Dashboard() {
           <BalanceCard
             title="Total Balance"
             amount={balanceVisible ? (totalBalance ?? 0) : null}
-            change={change24h}
+            change={!isSimMode && krakenPnL ? { value: krakenPnL.pnl_24h || 0, percentage: krakenPnL.pnl_24h_pct || 0 } : change24h}
             onToggleVisibility={() => setBalanceVisible(!balanceVisible)}
             isVisible={balanceVisible}
             isPrimary={true}

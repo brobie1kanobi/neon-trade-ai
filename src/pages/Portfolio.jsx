@@ -405,23 +405,9 @@ export default function Portfolio() {
   React.useEffect(() => {
     if (isSimMode || !krakenPnL?.success) return;
     
-    const pnl24h = krakenPnL.pnl_24h || 0;
-    const lifetimePnL = krakenPnL.pnl_lifetime || 0;
-    
-    // Calculate percentages based on current portfolio value
-    const currentValue = wsCryptoValue > 0 ? wsCryptoValue : 
-      (krakenData?.total_crypto_value || effectiveHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0));
-    const costBasis = currentValue - lifetimePnL;
-    const lifetimePct = costBasis > 0 ? (lifetimePnL / costBasis) * 100 : 0;
-    
-    setLifetimeChange({ value: lifetimePnL, percentage: lifetimePct });
-    setPortfolio24hrChange({ value: pnl24h, percentage: costBasis > 0 ? (pnl24h / costBasis) * 100 : 0 });
-    
-    console.log('[Portfolio] Kraken PnL from provider:', {
-      pnl_24h: pnl24h.toFixed(2),
-      lifetime: lifetimePnL.toFixed(2)
-    });
-  }, [isSimMode, krakenPnL, wsCryptoValue, krakenData, effectiveHoldings]);
+    setLifetimeChange({ value: krakenPnL.pnl_lifetime || 0, percentage: krakenPnL.pnl_lifetime_pct || 0 });
+    setPortfolio24hrChange({ value: krakenPnL.pnl_24h || 0, percentage: krakenPnL.pnl_24h_pct || 0 });
+  }, [isSimMode, krakenPnL]);
 
   const executeTrade = async (tradeData) => {
     const tradeIsSimMode = isSimMode;

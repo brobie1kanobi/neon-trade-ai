@@ -190,7 +190,8 @@ const SHARED_TTL = {
   getExtendedBalance: 30000,
   getBalance: 30000,
   getOpenOrders: 20000,
-  getTradesHistory: 300000
+  getTradesHistory: 300000,
+  getLedgers: 900000 // deposits/withdrawals rarely change
 };
 const LOCKOUT_KEY = 'kraken:lockout';
 const LOCKOUT_MS = 180000; // back off 3 min after Kraken rate-limits/locks out
@@ -359,6 +360,18 @@ Deno.serve(async (req) => {
       }
       const out = { success: true, trades, count: trades.length };
       await setCached('getTradesHistory', out);
+      return Response.json(out, { status: 200 });
+    }
+
+    if (action === 'getLedgers') {
+      const { apiKey, apiSecret } = credsFor('getLedgers');
+      await getLimiter(user.email, 'balance').remove(2);
+      const params = { type: ['deposit', 'withdrawal'].includes(payload?.type) ? payload.type : 'all' };
+      if (payload?.ofs) params.ofs = String(payload.ofs);
+      const result = await callKraken(apiKey, apiSecret, '/0/private/Ledgers', params);
+      const entries = Object.entries(result.result?.ledger || {}).map(([id, e]) => ({ id, ...e }));
+      const out = { success: true, entries, count: result.result?.count || entries.length };
+      await setCached('getLedgers', out);
       return Response.json(out, { status: 200 });
     }
 

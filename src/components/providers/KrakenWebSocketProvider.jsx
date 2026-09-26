@@ -390,18 +390,11 @@ export function KrakenWebSocketProvider({ children }) {
   useEffect(() => { fetchRestDataRef.current = fetchRestData; }, [fetchRestData]);
 
   // ── PnL fetcher (LIVE mode ONLY) ──
+  // Profit now arrives with every balance report — refreshing PnL = refreshing balance.
   const fetchPnL = useCallback(async () => {
     if (isSimMode || !shouldConnect) return;
-    try {
-      const response = await base44.functions.invoke('getKrakenPnL', {});
-      const data = response?.data || response;
-      if (data?.success) {
-        setRestData(prev => ({ ...prev, krakenPnL: data }));
-      }
-    } catch (err) {
-      console.error('[KrakenWSProvider] PnL error:', err);
-    }
-  }, [isSimMode]);
+    await fetchRestDataRef.current?.(true);
+  }, [isSimMode, shouldConnect]);
 
   // ── Initial REST snapshot (fallback only) ──
   // The balance WebSocket is the primary source. REST is only a backstop for
@@ -421,9 +414,7 @@ export function KrakenWebSocketProvider({ children }) {
         // Always load Kraken's own balance report — it is the source of truth.
         void wsAlreadyHasBalances;
         fetchRestData(true);
-        // PnL is non-critical for the opening balance. Fetch it well after the
-        // balance snapshot and execution subscription have settled.
-        setTimeout(() => fetchPnL(), 60000);
+
       }, 3000); // balance reads are now served from a shared cross-instance cache,
                 // so this no longer races the WS token for a fresh Kraken call
 
@@ -461,11 +452,7 @@ export function KrakenWebSocketProvider({ children }) {
   }, [shouldConnect]);
 
   // ── PnL polling (only thing not available via WS) - every 5 min ──
-  useEffect(() => {
-    if (!shouldConnect) return;
-    const id = setInterval(fetchPnL, 300000);
-    return () => clearInterval(id);
-  }, [shouldConnect, fetchPnL]);
+
 
   // ── FREE real-time price polling via Kraken public Ticker API (no integration credits) ──
   // Updates prices every 30s even when WS is disconnected, keeping dashboard balances fresh
@@ -641,6 +628,38 @@ export function KrakenWebSocketProvider({ children }) {
 
   const hasData = !!(restHasBalance || wsHasBalances);
 
+  // PROFIT: derived from Kraken's balance report (cost basis from Kraken's trade
+  // history, 24h-ago prices, net deposits) and re-valued with live prices so
+  // every page shows the same 24h and lifetime numbers.
+  const basePnl = restHasBalance ? restData.krakenBalance.pnl : null;
+  let livePnL = null;
+  if (basePnl) {
+    let unrealized = 0, costBasis = 0, d24 = 0, v24 = 0;
+    for (const h of bestHoldings) {
+      const qty = h.quantity || 0, price = h.current_price_usd || 0;
+      if (h.avg_cost > 0 && price > 0) { unrealized += qty * (price - h.avg_cost); costBasis += qty * h.avg_cost; }
+      if (h.price_24h_ago > 0 && price > 0) { d24 += qty * (price - h.price_24h_ago); v24 += qty * h.price_24h_ago; }
+    }
+    const totalValue = bestUsdBalance + bestCryptoValue;
+    const hasDeposits = basePnl.net_deposits != null;
+    const lifetime = hasDeposits ? totalValue - basePnl.net_deposits : unrealized;
+    const prevTotal = bestUsdBalance + v24;
+    livePnL = {
+      success: true,
+      pnl_24h: d24,
+      pnl_24h_pct: prevTotal > 0 ? (d24 / prevTotal) * 100 : 0,
+      pnl_lifetime: lifetime,
+      pnl_lifetime_pct: hasDeposits
+        ? (basePnl.net_deposits > 0 ? (lifetime / basePnl.net_deposits) * 100 : 0)
+        : (costBasis > 0 ? (unrealized / costBasis) * 100 : 0),
+      unrealized_pnl: unrealized,
+      realized_pnl: lifetime - unrealized,
+      net_deposits: basePnl.net_deposits,
+      lifetime_source: basePnl.lifetime_source,
+      positions: bestHoldings.map(h => ({ symbol: h.symbol, quantity: h.quantity, avgPrice: h.avg_cost }))
+    };
+  }
+
   const value = {
     ...state,
     // CRITICAL: Counter that increments on every WS event — use in dependency arrays
@@ -657,7 +676,7 @@ export function KrakenWebSocketProvider({ children }) {
     refresh,
     wsManager,
     krakenBalance: mergedKrakenBalance,
-    krakenPnL: restData.krakenPnL,
+    krakenPnL: livePnL,
     krakenOrders: restData.krakenOrders,
     krakenTrades: restData.krakenTrades,
     restDataLoading: restData.isLoading,
