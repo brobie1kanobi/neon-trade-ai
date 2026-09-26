@@ -131,6 +131,7 @@ export function KrakenWebSocketProvider({ children }) {
   });
 
   const lastRestCallRef = useRef(0);
+  const lastPriceRef = useRef({});
   const hasInitialSnapshotRef = useRef(false);
   const ordersSubscribedRef = useRef(false);
   const restInFlightRef = useRef(false);
@@ -542,7 +543,9 @@ export function KrakenWebSocketProvider({ children }) {
   // Priority: WS real-time > REST snapshot > 0
   // CRITICAL: Use global window state for connection check (not stale React state)
   const wsActuallyConnected = !!(state.isConnected || (typeof window !== 'undefined' && window.__krakenWsConnected));
-  const wsHasBalances = wsActuallyConnected && Object.keys(state.balances).length > 0;
+  // Balances the stream already delivered stay valid through brief disconnects;
+  // gating on the connection flag flipped the view between stream and snapshot.
+  const wsHasBalances = Object.keys(state.balances).length > 0;
   const restHasBalance = restData.krakenBalance?.success;
   
   // CRITICAL: Best-available balance logic — ANTI-FLICKER
@@ -567,7 +570,10 @@ export function KrakenWebSocketProvider({ children }) {
         const qty = bal.balance || 0;
         if (symbol === 'USD' || qty <= 0) return acc;
         const rest = restBySymbol[symbol];
-        const price = state.prices[`${symbol}/USD`]?.price || state.prices[`${asset}/USD`]?.price || rest?.current_price_usd || 0;
+        const livePrice = state.prices[`${symbol}/USD`]?.price || state.prices[`${asset}/USD`]?.price || rest?.current_price_usd || 0;
+        // Never let a momentarily-missing price zero a holding — reuse the last known one.
+        if (livePrice > 0) lastPriceRef.current[symbol] = livePrice;
+        const price = livePrice || lastPriceRef.current[symbol] || 0;
         const quantity = (acc[symbol]?.quantity || 0) + qty;
         acc[symbol] = {
           ...(rest || {}),

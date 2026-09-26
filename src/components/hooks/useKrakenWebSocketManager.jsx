@@ -537,14 +537,26 @@ function handlePublicMessage(message) {
       emitEvent('pricesUpdated', pricesObj);
       
       // Dispatch event for components listening + store on window for provider
+      // CRITICAL: MERGE — replacing the object wiped prices the REST poller set
+      // for held coins outside the ticker subscription (e.g. ADA), zeroing their
+      // value on every tick and making the total flicker.
       if (typeof window !== 'undefined') {
-        window.__krakenWsPrices = pricesObj;
+        window.__krakenWsPrices = { ...(window.__krakenWsPrices || {}), ...pricesObj };
         window.dispatchEvent(new CustomEvent('kraken:price-update', { 
           detail: pricesObj 
         }));
       }
     }
   }
+}
+
+// Wallets that count toward the holdings Kraken shows (margin/futures excluded —
+// they can be negative/unrelated and previously produced wildly wrong totals).
+const COUNTED_WALLETS = new Set(['spot', 'earn']);
+
+function setAssetWallets(asset, wallets) {
+  const total = Object.values(wallets).reduce((s, v) => s + v, 0);
+  GLOBAL_WS_STATE.balances.set(asset, { asset, balance: total, available: total, wallets, timestamp: Date.now() });
 }
 
 /**
@@ -571,21 +583,18 @@ function handlePrivateMessage(message) {
       console.log('[KrakenWS] 📊 Balance snapshot received:', data.length, 'assets');
       
       data.forEach(balanceItem => {
-        const { asset, balance: availableBalance, wallet_type } = balanceItem;
-        // CRITICAL: Kraken's balances channel reports a wallet breakdown (spot,
-        // earn, margin, etc). Only the "spot" wallet is the tradeable cash/crypto
-        // balance shown in this app — a margin/earn entry for the same asset code
-        // would otherwise clobber the correct spot balance with an unrelated
-        // number (e.g. a negative margin balance), producing a wildly wrong total.
-        if (wallet_type && wallet_type !== 'spot') return;
-        let available = parseFloat(availableBalance) || 0;
-        
-        GLOBAL_WS_STATE.balances.set(asset, {
-          asset,
-          balance: available,
-          available: available,
-          timestamp: Date.now()
-        });
+        const { asset, balance: totalBalance, wallets: walletList } = balanceItem;
+        // Snapshot gives the asset TOTAL plus a per-wallet breakdown. Store the
+        // breakdown so later per-wallet updates replace only their own wallet.
+        const wallets = {};
+        if (Array.isArray(walletList) && walletList.length > 0) {
+          walletList.forEach(w => {
+            if (COUNTED_WALLETS.has(w.type)) wallets[`${w.type}:${w.id || 'main'}`] = parseFloat(w.balance) || 0;
+          });
+        } else {
+          wallets['spot:main'] = parseFloat(totalBalance) || 0;
+        }
+        setAssetWallets(asset, wallets);
       });
       
       emitEvent('balancesUpdated', Object.fromEntries(GLOBAL_WS_STATE.balances));
@@ -602,18 +611,14 @@ function handlePrivateMessage(message) {
       console.log('[KrakenWS] 📊 Balance UPDATE received:', data.length, 'changes');
       
       data.forEach(update => {
-        const { asset, balance: newBalance, wallet_type } = update;
-        // CRITICAL: Same wallet-breakdown guard as the snapshot handler above —
-        // ignore updates for non-spot wallets (margin/earn) so they can't
-        // overwrite the spot balance with an unrelated number.
-        if (wallet_type && wallet_type !== 'spot') return;
-        
-        GLOBAL_WS_STATE.balances.set(asset, {
-          asset,
-          balance: parseFloat(newBalance) || 0,
-          available: parseFloat(newBalance) || 0,
-          timestamp: Date.now()
-        });
+        const { asset, balance: newBalance, wallet_type, wallet_id } = update;
+        // CRITICAL: An update's balance is for ONE wallet (e.g. spot), not the
+        // asset total. Overwriting the total with it dropped Earn holdings and
+        // made the balance flicker. Replace only that wallet, then re-sum.
+        const type = wallet_type || 'spot';
+        if (!COUNTED_WALLETS.has(type)) return;
+        const existing = GLOBAL_WS_STATE.balances.get(asset)?.wallets || {};
+        setAssetWallets(asset, { ...existing, [`${type}:${wallet_id || 'main'}`]: parseFloat(newBalance) || 0 });
         
         console.log(`[KrakenWS] Balance updated: ${asset} = ${newBalance}`);
       });
