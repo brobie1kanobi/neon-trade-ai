@@ -418,13 +418,9 @@ export function KrakenWebSocketProvider({ children }) {
         const wsAlreadyHasBalances = typeof window !== 'undefined' &&
           window.__krakenWsBalances && Object.keys(window.__krakenWsBalances).length > 0;
 
-        if (wsAlreadyHasBalances) {
-          // WS already delivered data — skip the redundant REST call entirely.
-          hasInitialSnapshotRef.current = true;
-          setRestData(prev => ({ ...prev, isLoading: false }));
-        } else {
-          fetchRestData(true);
-        }
+        // Always load Kraken's own balance report — it is the source of truth.
+        void wsAlreadyHasBalances;
+        fetchRestData(true);
         // PnL is non-critical for the opening balance. Fetch it well after the
         // balance snapshot and execution subscription have settled.
         setTimeout(() => fetchPnL(), 60000);
@@ -442,6 +438,26 @@ export function KrakenWebSocketProvider({ children }) {
 
       return () => { clearTimeout(timer); clearTimeout(safetyTimer); };
     }
+  }, [shouldConnect]);
+
+  // ── Keep the balance report fresh: every 60s, plus shortly after any live
+  // balance change (debounced) so auto-trader fills show up without a manual sync.
+  useEffect(() => {
+    if (!shouldConnect) return;
+    let debounce = null;
+    const refreshSoon = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        if (Date.now() - lastRestCallRef.current > 15000) fetchRestDataRef.current?.(true);
+      }, 3000);
+    };
+    window.addEventListener('kraken:balance-update', refreshSoon);
+    const id = setInterval(() => fetchRestDataRef.current?.(true), 60000);
+    return () => {
+      window.removeEventListener('kraken:balance-update', refreshSoon);
+      clearInterval(id);
+      clearTimeout(debounce);
+    };
   }, [shouldConnect]);
 
   // ── PnL polling (only thing not available via WS) - every 5 min ──
@@ -564,7 +580,19 @@ export function KrakenWebSocketProvider({ children }) {
   const restHoldings = restHasBalance ? (restData.krakenBalance.holdings || []) : [];
   const restBySymbol = Object.fromEntries(restHoldings.map(h => [h.symbol, h]));
 
-  const bestHoldings = wsHasBalances
+  // SOURCE OF TRUTH: Kraken's own balance report (REST) decides quantities + cash.
+  // The stream's per-wallet balance math has repeatedly miscounted (e.g. LTC in
+  // spot vs earn), so it's only used before the first REST snapshot arrives.
+  const revalue = (h) => {
+    const livePrice = state.prices[`${h.symbol}/USD`]?.price || h.current_price_usd || 0;
+    if (livePrice > 0) lastPriceRef.current[h.symbol] = livePrice;
+    const price = livePrice || lastPriceRef.current[h.symbol] || 0;
+    return { ...h, current_price: price, current_price_usd: price, total_value_usd: (h.quantity || 0) * price, avg_cost: h.avg_cost || 0, is_simulation: false };
+  };
+
+  const bestHoldings = restHasBalance
+    ? restHoldings.map(revalue)
+    : wsHasBalances
     ? Object.values(Object.entries(state.balances).reduce((acc, [asset, bal]) => {
         const symbol = normalizeKrakenSymbol(asset);
         const qty = bal.balance || 0;
@@ -591,9 +619,9 @@ export function KrakenWebSocketProvider({ children }) {
     : restHoldings.map(h => ({ ...h, avg_cost: h.avg_cost || 0, is_simulation: false }));
 
   const wsHasUsd = wsHasBalances && ('USD' in state.balances || 'ZUSD' in state.balances);
-  const bestUsdBalance = wsHasUsd
-    ? state.usdBalance
-    : (restHasBalance ? (restData.krakenBalance.usd_balance || 0) : 0);
+  const bestUsdBalance = restHasBalance
+    ? (restData.krakenBalance.usd_balance || 0)
+    : (wsHasUsd ? state.usdBalance : 0);
 
   const bestCryptoValue = bestHoldings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
 
