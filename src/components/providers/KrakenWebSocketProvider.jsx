@@ -550,40 +550,57 @@ export function KrakenWebSocketProvider({ children }) {
   //   - Crypto value: Stick to REST snapshot; Dashboard recomputes with WS prices itself
   //   - Holdings list: Always prefer REST (has quantities + snapshot prices)
   
-  const bestUsdBalance = restHasBalance
-    ? (restData.krakenBalance.usd_balance || 0)
-    : wsHasBalances
-      ? state.usdBalance
-      : 0;
+  // QUANTITIES: the live balance stream reflects every fill/buy/sell as it happens,
+  // while the REST snapshot is a point-in-time copy that goes stale (and is kept
+  // when a refresh gets rate-limited). So whenever the stream has balances, it
+  // decides amounts; the snapshot only supplies prices/cost basis as a fallback
+  // so a missing live price never zeroes a holding.
+  const restHoldings = restHasBalance ? (restData.krakenBalance.holdings || []) : [];
+  const restBySymbol = Object.fromEntries(restHoldings.map(h => [h.symbol, h]));
 
-  const bestCryptoValue = restHasBalance 
-    ? (restData.krakenBalance.total_crypto_value_usd || 0)
-    : wsHasBalances
-      ? state.cryptoHoldingsValue
-      : 0;
+  const bestHoldings = wsHasBalances
+    ? Object.values(Object.entries(state.balances).reduce((acc, [asset, bal]) => {
+        const symbol = normalizeKrakenSymbol(asset);
+        const qty = bal.balance || 0;
+        if (symbol === 'USD' || qty <= 0) return acc;
+        const rest = restBySymbol[symbol];
+        const price = state.prices[`${symbol}/USD`]?.price || state.prices[`${asset}/USD`]?.price || rest?.current_price_usd || 0;
+        const quantity = (acc[symbol]?.quantity || 0) + qty;
+        acc[symbol] = {
+          ...(rest || {}),
+          symbol,
+          quantity,
+          asset_type: 'crypto',
+          current_price: price,
+          current_price_usd: price,
+          total_value_usd: quantity * price,
+          avg_cost: rest?.avg_cost || 0,
+          is_simulation: false
+        };
+        return acc;
+      }, {}))
+    : restHoldings.map(h => ({ ...h, avg_cost: h.avg_cost || 0, is_simulation: false }));
 
-  const bestHoldings = restHasBalance
-    ? (restData.krakenBalance?.holdings || []).map(h => ({ ...h, avg_cost: h.avg_cost || 0, is_simulation: false }))
-    : wsHasBalances
-      ? Object.entries(state.balances)
-          .filter(([a]) => {
-            const n = normalizeKrakenSymbol(a);
-            return n !== 'USD';
-          })
-          .filter(([_, b]) => (b.balance || 0) > 0)
-          .map(([asset, bal]) => {
-            const normalized = normalizeKrakenSymbol(asset);
-            const price = state.prices[`${normalized}/USD`]?.price || state.prices[`${asset}/USD`]?.price || 0;
-            return {
-              symbol: normalized,
-              quantity: bal.balance || 0,
-              asset_type: 'crypto',
-              current_price_usd: price,
-              total_value_usd: (bal.balance || 0) * price,
-              is_simulation: false
-            };
-          })
-      : [];
+  const wsHasUsd = wsHasBalances && ('USD' in state.balances || 'ZUSD' in state.balances);
+  const bestUsdBalance = wsHasUsd
+    ? state.usdBalance
+    : (restHasBalance ? (restData.krakenBalance.usd_balance || 0) : 0);
+
+  const bestCryptoValue = bestHoldings.reduce((sum, h) => sum + (h.total_value_usd || 0), 0);
+
+  // Every consumer (Dashboard, Portfolio, Wallet) reads krakenBalance, so expose
+  // the merged live view there too — no page can fall back to a stale snapshot.
+  const mergedKrakenBalance = (restHasBalance || wsHasBalances) ? {
+    ...(restData.krakenBalance || {}),
+    success: true,
+    connected: true,
+    holdings: bestHoldings,
+    total_assets: bestHoldings.length,
+    usd_balance: bestUsdBalance,
+    total_usd_balance: bestUsdBalance,
+    total_crypto_value_usd: bestCryptoValue,
+    total_portfolio_value_usd: bestUsdBalance + bestCryptoValue
+  } : restData.krakenBalance;
 
   const hasData = !!(restHasBalance || wsHasBalances);
 
@@ -602,7 +619,7 @@ export function KrakenWebSocketProvider({ children }) {
     hasData,
     refresh,
     wsManager,
-    krakenBalance: restData.krakenBalance,
+    krakenBalance: mergedKrakenBalance,
     krakenPnL: restData.krakenPnL,
     krakenOrders: restData.krakenOrders,
     krakenTrades: restData.krakenTrades,

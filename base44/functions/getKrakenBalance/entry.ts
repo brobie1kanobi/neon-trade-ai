@@ -120,7 +120,8 @@ Deno.serve(async (req) => {
     // role (syncKrakenBalance), so read them via service role, newest first.
     let costBasisMap = {};
     try {
-      const dbHoldings = await base44.asServiceRole.entities.Holding.filter({ is_simulation: false }, "-updated_date", 200);
+      // Scope to THIS user — an unscoped read picked up other accounts' cost basis.
+      const dbHoldings = await base44.asServiceRole.entities.Holding.filter({ is_simulation: false, created_by: user.email }, "-updated_date", 200);
       for (const h of (dbHoldings || [])) {
         if (h.symbol && h.average_cost_price > 0) {
           costBasisMap[h.symbol] = h.average_cost_price;
