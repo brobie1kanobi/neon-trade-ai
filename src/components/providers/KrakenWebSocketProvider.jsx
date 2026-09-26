@@ -8,7 +8,10 @@ import { playTradeSound } from '@/components/utils/TradeSoundEngine';
 // Track last execution timestamp for recovery
 let lastExecutionTimestamp = null;
 
-const KrakenWebSocketContext = createContext(null);
+// Keep ONE context instance across hot reloads — re-creating it on module reload
+// left already-mounted consumers pointing at a different context than the
+// provider, throwing "must be used within KrakenWebSocketProvider".
+const KrakenWebSocketContext = globalThis.__krakenWsContext || (globalThis.__krakenWsContext = createContext(null));
 
 export const useKrakenWebSocket = () => {
   const context = useContext(KrakenWebSocketContext);
