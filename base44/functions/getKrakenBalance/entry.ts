@@ -230,7 +230,9 @@ Deno.serve(async (req) => {
     const total = totalUsd + totalCryptoValue;
     // Lifetime profit = what the account is worth now minus the money put in.
     // Falls back to open-position profit if Kraken's deposit history is unavailable.
-    const lifetime = netDeposits != null ? total - netDeposits : unrealized;
+    // Kraken's deposit ledger proved incomplete (missed most funding), which
+    // produced absurd figures, so lifetime = profit on positions vs. what was paid.
+    const lifetime = unrealized;
 
     return Response.json({
       success: true, connected: true,
@@ -243,9 +245,9 @@ Deno.serve(async (req) => {
         pnl_24h_pct: value24hAgo > 0 ? (pnl24h / value24hAgo) * 100 : 0,
         unrealized_pnl: unrealized,
         pnl_lifetime: lifetime,
-        pnl_lifetime_pct: netDeposits > 0 ? (lifetime / netDeposits) * 100 : (costBasisTotal > 0 ? (unrealized / costBasisTotal) * 100 : 0),
+        pnl_lifetime_pct: costBasisTotal > 0 ? (unrealized / costBasisTotal) * 100 : 0,
         net_deposits: netDeposits,
-        lifetime_source: netDeposits != null ? 'deposits' : 'open_positions',
+        lifetime_source: 'open_positions',
         cost_basis_total: costBasisTotal
       },
       duration_ms: Date.now() - start
