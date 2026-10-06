@@ -350,7 +350,10 @@ export function KrakenWebSocketProvider({ children }) {
       console.log('[KrakenWSProvider] REST snapshot complete - Balance:', balanceData?.success, 'USD:', balanceData?.usd_balance);
 
       setRestData(prev => ({
-        krakenBalance: balanceData?.success ? balanceData : prev.krakenBalance,
+        // Never let an older Kraken report replace a newer one already shown.
+        krakenBalance: balanceData?.success &&
+          !(prev.krakenBalance?.as_of && balanceData.as_of && balanceData.as_of < prev.krakenBalance.as_of)
+          ? balanceData : prev.krakenBalance,
         krakenOrders: prev.krakenOrders || [],
         krakenTrades: prev.krakenTrades,
         krakenPnL: prev.krakenPnL,
@@ -641,8 +644,10 @@ export function KrakenWebSocketProvider({ children }) {
       if (h.price_24h_ago > 0 && price > 0) { d24 += qty * (price - h.price_24h_ago); v24 += qty * h.price_24h_ago; }
     }
     const totalValue = bestUsdBalance + bestCryptoValue;
-    const hasDeposits = basePnl.net_deposits != null;
-    const lifetime = hasDeposits ? totalValue - basePnl.net_deposits : unrealized;
+    // Kraken's deposit history is incomplete, so lifetime = open-position profit.
+    void totalValue;
+    const hasDeposits = false;
+    const lifetime = unrealized;
     const prevTotal = bestUsdBalance + v24;
     livePnL = {
       success: true,

@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
 
     return Response.json({
       success: true, connected: true,
+      as_of: balanceData.fetched_at || new Date().toISOString(),
       usd_balance: totalUsd, total_usd_balance: totalUsd, available_usd_balance: availableUsd,
       holdings, total_assets: holdings.length,
       total_crypto_value_usd: totalCryptoValue, total_portfolio_value_usd: total,

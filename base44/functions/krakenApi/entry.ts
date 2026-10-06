@@ -303,7 +303,10 @@ Deno.serve(async (req) => {
           responseCache.set(cacheKeyFor(action), { data: hit.data, expiresAt: Date.now() + (RESPONSE_TTL[action] || 15000) });
           return Response.json({ ...hit.data, cached: 'shared' }, { status: 200 });
         }
-        staleShared = hit.data;
+        // Only reuse a stale balance as a fallback if it's recent — an hours-old
+        // copy hid new fills (e.g. ADA buys) for as long as lockouts kept recurring.
+        const age = Date.now() - new Date(hit.data.fetched_at || 0).getTime();
+        if (action !== 'getExtendedBalance' || age < 180000) staleShared = hit.data;
       }
 
       // If Kraken recently rate-limited/locked us out, do NOT call it again —
@@ -342,7 +345,7 @@ Deno.serve(async (req) => {
         let a = asset; if (a.startsWith('X') && a.length === 4) a = a.substring(1); if (a.startsWith('Z') && a.length === 4) a = a.substring(1); if (a === 'XBT') a = 'BTC';
         const available = parseFloat(info?.balance) || 0; const hold = parseFloat(info?.hold_trade) || 0; balances[a] = { balance: available, hold_trade: hold, total: available + hold, credit: parseFloat(info?.credit) || 0, credit_used: parseFloat(info?.credit_used) || 0 };
       }
-      const out = { success: true, balance: balances, raw_balance: raw };
+      const out = { success: true, balance: balances, raw_balance: raw, fetched_at: new Date().toISOString() };
       await setCached('getExtendedBalance', out);
       return Response.json(out, { status: 200 });
     }
