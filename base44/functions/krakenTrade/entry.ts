@@ -814,6 +814,9 @@ async function executeKrakenRestOrder(base44, orderParams) {
     payload.timeinforce = String(orderParams.time_in_force).toUpperCase();
   }
 
+  // Pace the REST fallback on the same Trade-key gate as WebSocket orders.
+  await tradeRateGate('trade_key', 2);
+
   const endpoint = '/0/private/AddOrder';
   const postData = new URLSearchParams(payload).toString();
   const nonce = payload.nonce;

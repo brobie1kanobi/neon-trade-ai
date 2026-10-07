@@ -141,31 +141,21 @@ async function __kr_callPrivate(apiKey, apiSecretBase64, endpoint, data = {}) {
 // Live cash fetcher: KrakenConnection → env keys → Wallet entity (real_cash_balance)
 async function fetchLiveCash(base44, userEmail) {
   let rawUsd = 0; let reserved = 0; let source = 'none';
-  // Step 1: Per-user KrakenConnection entity (highest fidelity — user's own API keys)
+  // Step 1: Kraken via krakenApi (BALANCE key, shared cache + rate limiter + lockout guard)
   try {
-    const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
-    if (conns.length > 0) {
-      const conn = conns[0];
-      const apiKey = (conn.balance_api_key || conn.trade_api_key || conn.api_key || '').trim();
-      const apiSecret = (conn.balance_api_secret_encrypted || conn.trade_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
-      if (apiKey && apiSecret) {
-        const bal = await __kr_callPrivate(apiKey, apiSecret, '/0/private/BalanceEx', {});
-        if (!bal?.error?.length && bal?.result) {
-          const usdEntry = bal.result['ZUSD'] || bal.result['USD'];
-          rawUsd = parseFloat(typeof usdEntry === 'object' ? usdEntry.balance : (usdEntry || 0));
-          try {
-            const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', { trades: 'true' });
-            if (open?.result?.open) {
-              for (const [, order] of Object.entries(open.result.open)) {
-                const side = (order.descr?.type || '').toLowerCase();
-                if (side === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
-              }
-            }
-          } catch (_) {}
-          source = 'kraken_connection';
-          return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
+    const balRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+    const bal = balRes?.data || balRes;
+    if (bal?.success && bal.balance) {
+      rawUsd = Number(bal.balance.USD?.balance || 0);
+      try {
+        const ooRes = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders' });
+        const oo = ooRes?.data || ooRes;
+        for (const order of (oo?.orders || [])) {
+          if (String(order.descr?.type || '').toLowerCase() === 'buy') reserved += Number(order.vol || 0) * Number(order.descr?.price || 0);
         }
-      }
+      } catch (_) {}
+      source = 'kraken_balance_key';
+      return { rawUsd, reserved, available: Math.max(0, rawUsd - reserved - rawUsd * 0.02), source };
     }
   } catch (_) {}
   // Step 2 (REMOVED): Shared env-var Kraken keys were returning a DIFFERENT account's
@@ -294,24 +284,11 @@ async function findRestingClosers(base44, userEmail, symbol) {
   const sym = String(symbol || '').toUpperCase();
   const result = { tp: null, sl: null };
   try {
-    let apiKey = '';
-    let apiSecret = '';
-    try {
-      const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
-      if (conns.length > 0) {
-        const c = conns[0];
-        apiKey = (c.balance_api_key || c.trade_api_key || c.api_key || '').trim();
-        apiSecret = (c.balance_api_secret_encrypted || c.trade_api_secret_encrypted || c.api_secret_encrypted || '').trim();
-      }
-    } catch (_) {}
-    if (!apiKey || !apiSecret) {
-      apiKey = (Deno.env.get('Kraken_API_Key') || '').trim();
-      apiSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
-    }
-    if (!apiKey || !apiSecret) return result;
-
-    const open = await __kr_callPrivate(apiKey, apiSecret, '/0/private/OpenOrders', {});
-    const orders = open?.result?.open || {};
+    // BALANCE key via krakenApi. bypassCache gets a fresh read (orders were just
+    // placed) while still honoring the shared rate limiter and lockout guard.
+    const openRes = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders', payload: { bypassCache: true } });
+    const open = openRes?.data || openRes;
+    const orders = Object.fromEntries((open?.orders || []).map(o => [o.order_id, o]));
     const expectedPair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
     for (const [orderId, order] of Object.entries(orders)) {
       const descr = order?.descr || {};
@@ -525,211 +502,9 @@ async function invokeKrakenTrade(base44, payload, maxAttempts = 4, wsToken = nul
         wsToken = null; // force refetch on next loop
       }
 
-      // Fallback: direct REST AddOrder when cross-function returns 403 (WS path blocked)
-      if ((/status code 403/i.test(msg) || /access denied/i.test(msg) || /403/i.test(msg)) && userEmail) {
-        try {
-          const conns = await base44.asServiceRole.entities.KrakenConnection.filter({ created_by: userEmail }, '-updated_date', 1);
-          let tradeKey = '';
-          let tradeSecret = '';
-          if (conns.length > 0) {
-            const conn = conns[0];
-            tradeKey = (conn.trade_api_key || conn.api_key || '').trim();
-            tradeSecret = (conn.trade_api_secret_encrypted || conn.api_secret_encrypted || '').trim();
-          }
-          // If no connection entity creds, fall back to environment TRADE secrets
-          if (!tradeKey || !tradeSecret) {
-            tradeKey = (Deno.env.get('Trade_Key') || '').trim();
-            tradeSecret = (Deno.env.get('Trade_Secret') || '').trim();
-          }
-          if (tradeKey && tradeSecret) {
-            const sym = String(payload.symbol || '').toUpperCase();
-            const pair = KRAKEN_PAIR_MAP[sym] || `${sym}USD`;
-            const vol = Number(payload.quantity || 0);
-
-            // Preflight: block SELL fallbacks when below Kraken minimum or insufficient available
-            const MIN_ORDER_SIZES = {
-              'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
-              'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-              'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
-              'PEPE': 500000.0, 'SUI': 3.0, 'HBAR': 20.0
-            };
-            const minQty = MIN_ORDER_SIZES[sym] || 0.00001;
-            if (String(payload?.side).toLowerCase() === 'sell') {
-              try {
-                const bal = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/BalanceEx', {});
-                const raw = bal?.result || {};
-                const key = sym === 'BTC' ? 'XXBT' : (sym.length === 3 ? `X${sym}` : sym);
-                const entry = raw[key] || raw[sym] || {};
-                const available = parseFloat(entry?.balance || 0) || 0;
-                const finalQty = Math.min(vol, available);
-                if (finalQty < minQty) {
-                  return { success: false, error: `Insufficient available ${sym} (${available.toFixed(8)}). Kraken minimum sell is ${minQty}.` };
-                }
-              } catch (_e) {
-                // If balance preflight fails, be conservative and block
-                return { success: false, error: `Order blocked: unable to verify available ${sym} for sell` };
-              }
-            }
-
-            // BRACKET TP/SL fallback
-            if (payload?.action === 'place_bracket_orders') {
-              const tp = Number(payload.takeProfitPrice || 0);
-              const sl = Number(payload.stopLossPrice || 0);
-              const sellVol = vol;
-              let tpOrderId = null;
-              let slOrderId = null;
-              let tpError = null;
-              let slError = null;
-
-              if (tp > 0) {
-                try {
-                  const roundedTp = roundPriceForKraken(tp, sym);
-                  const tpRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                    pair,
-                    type: 'sell',
-                    ordertype: 'take-profit',
-                    price: String(roundedTp),
-                    volume: String(sellVol)
-                  });
-                  if (!tpRes?.error?.length && tpRes?.result?.txid?.length) {
-                    tpOrderId = tpRes.result.txid[0];
-                  } else if (Array.isArray(tpRes?.error) && tpRes.error.length) {
-                    tpError = tpRes.error.join(', ');
-                  }
-                } catch (err) {
-                  tpError = err?.message || String(err);
-                }
-              }
-
-              await sleep(500);
-
-              if (sl > 0) {
-                try {
-                  const roundedSl = roundPriceForKraken(sl, sym);
-                  const slRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                    pair,
-                    type: 'sell',
-                    ordertype: 'stop-loss',
-                    price: String(roundedSl),
-                    volume: String(sellVol)
-                  });
-                  if (!slRes?.error?.length && slRes?.result?.txid?.length) {
-                    slOrderId = slRes.result.txid[0];
-                  } else if (Array.isArray(slRes?.error) && slRes.error.length) {
-                    slError = slRes.error.join(', ');
-                  }
-                } catch (err) {
-                  slError = err?.message || String(err);
-                }
-              }
-
-              return {
-                success: !!(tpOrderId || slOrderId),
-                tp_success: !!tpOrderId,
-                sl_success: !!slOrderId,
-                tp_order_id: tpOrderId,
-                sl_order_id: slOrderId,
-                tp_error: tpError,
-                sl_error: slError
-              };
-            }
-
-            // BUY market/limit fallback
-            if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'buy') {
-              const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                pair,
-                type: 'buy',
-                ordertype: String(payload.orderType || 'market').toLowerCase(),
-                volume: String(vol)
-              });
-              if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-              } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                throw new Error(addRes.error.join(', '));
-              }
-            }
-
-            // SELL take-profit fallback
-            if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'take-profit') {
-              const tp = Number(payload.triggerPrice || payload.stopPrice || 0);
-              if (tp > 0) {
-                const roundedTp = roundPriceForKraken(tp, sym);
-                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                  pair,
-                  type: 'sell',
-                  ordertype: 'take-profit',
-                  price: String(roundedTp),
-                  volume: String(vol)
-                });
-                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                  throw new Error(addRes.error.join(', '));
-                }
-              }
-            }
-
-            // SELL stop-loss fallback
-            if (payload?.action === 'place_order' && String(payload?.side).toLowerCase() === 'sell' && String(payload?.orderType).toLowerCase() === 'stop-loss') {
-              const sl = Number(payload.stopPrice || payload.triggerPrice || 0);
-              if (sl > 0) {
-                const roundedSl = roundPriceForKraken(sl, sym);
-                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                  pair,
-                  type: 'sell',
-                  ordertype: 'stop-loss',
-                  price: String(roundedSl),
-                  volume: String(vol)
-                });
-                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                  throw new Error(addRes.error.join(', '));
-                }
-              }
-            }
-
-            // Trailing stop request received -> Prefer static stop-loss instead (guaranteed fallback)
-            if (payload?.action === 'place_trailing_stop') {
-              const sl = Number(payload.stopPrice || payload.triggerPrice || 0);
-              if (sl > 0) {
-                const roundedSl = roundPriceForKraken(sl, sym);
-                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                  pair,
-                  type: 'sell',
-                  ordertype: 'stop-loss',
-                  price: String(roundedSl),
-                  volume: String(vol)
-                });
-                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                  throw new Error(addRes.error.join(', '));
-                }
-              }
-              // If no static price given, only then try true trailing-stop
-              const pct = Number(payload.trailingPercent || 0);
-              const priceParam = pct > 0 ? `${pct}%` : null;
-              if (priceParam) {
-                const addRes = await __kr_callPrivate(tradeKey, tradeSecret, '/0/private/AddOrder', {
-                  pair,
-                  type: 'sell',
-                  ordertype: 'trailing-stop',
-                  price: String(priceParam),
-                  volume: String(vol)
-                });
-                if (!addRes?.error?.length && addRes?.result?.txid?.length) {
-                  return { success: true, order_id: addRes.result.txid[0], executed_qty: vol };
-                } else if (Array.isArray(addRes?.error) && addRes.error.length) {
-                  throw new Error(addRes.error.join(', '));
-                }
-              }
-            }
-          }
-        } catch (fallbackErr) {
-          console.warn('[runAutoTrader] REST AddOrder fallback failed:', fallbackErr?.message || fallbackErr);
-        }
-      }
+      // NOTE: The direct REST AddOrder fallback was removed — it signed orders (and a
+      // BalanceEx preflight) outside krakenTrade's Trade-key limiter. All orders now go
+      // through krakenTrade, which already has its own paced REST fallback.
 
       if (/rate limit|429|timeout|websocket|nonce/i.test(msg) && attempt < maxAttempts - 1) {
         const delay = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 800);

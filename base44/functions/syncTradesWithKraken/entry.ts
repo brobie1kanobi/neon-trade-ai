@@ -169,50 +169,17 @@ Deno.serve(async (req) => {
 
     console.log('[syncTradesWithKraken] Starting sync for user:', user.email);
 
-    // Get Kraken connection to call API directly
-    const normalize = (s) => (typeof s === 'string' ? s.trim().replace(/\s+/g, '') : s);
-    const apiKey = normalize(Deno.env.get('Kraken_API_Key'));
-    const apiSecret = normalize(Deno.env.get('Kraken_API_Secret'));
-    if (!apiKey || !apiSecret) {
+    if (!(Deno.env.get('Kraken_API_Key') && Deno.env.get('Kraken_API_Secret'))) {
       return Response.json({ error: 'Missing Kraken_API_Key/Kraken_API_Secret in application secrets', success: false }, { status: 200 });
     }
 
-    // Step 1: Fetch ALL trades from Kraken directly
-    let krakenData = null;
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while (attempts < maxAttempts && !krakenData?.result?.trades) {
-      if (attempts > 0) {
-        const delay = 5000 * attempts;
-        console.log(`[syncTradesWithKraken] Retry ${attempts}/${maxAttempts} after ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-      }
-      
-      try {
-        krakenData = await callKraken(apiKey, apiSecret, '/0/private/TradesHistory', { type: 'all' });
-        console.log('[syncTradesWithKraken] Kraken API response:', !!krakenData?.result, 'trades:', Object.keys(krakenData?.result?.trades || {}).length);
-        
-        if (krakenData.error?.length > 0) {
-          console.error('[syncTradesWithKraken] Kraken error:', krakenData.error);
-          krakenData = { error: krakenData.error.join(', ') };
-        }
-      } catch (err) {
-        console.error('[syncTradesWithKraken] Fetch error:', err.message);
-        krakenData = { error: err.message };
-      }
-      
-      attempts++;
+    // Step 1: Trade history via krakenApi (BALANCE key, shared cache + rate limiter + lockout guard)
+    const thRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
+    const th = thRes?.data || thRes;
+    if (!th?.success) {
+      return Response.json({ error: th?.error || 'Failed to fetch Kraken trades', success: false }, { status: 200 });
     }
-    
-    if (!krakenData?.result?.trades) {
-      console.error('[syncTradesWithKraken] Failed to fetch Kraken trades after', attempts, 'attempts:', krakenData?.error);
-      return Response.json({ 
-        error: krakenData?.error || 'Failed to fetch Kraken trades',
-        success: false,
-        attempts: attempts
-      }, { status: 200 });
-    }
+    const krakenData = { result: { trades: Object.fromEntries((th.trades || []).map(t => [t.txid || t.trade_id, t])) } };
     
     // Convert to array format - CRITICAL: Ensure all IDs are strings
     const krakenTrades = Object.entries(krakenData.result.trades).map(([txid, trade]) => ({

@@ -34,34 +34,20 @@ export default async function (req) {
     try { body = await req.json(); } catch (_e) { body = {}; }
     const apply = body?.apply === true;
 
-    const apiKey = (Deno.env.get('Kraken_API_Key') || '').trim();
-    const apiSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
-    if (!apiKey || !apiSecret) {
-      return Response.json({ success: false, error: 'Missing Kraken API credentials' }, { status: 200 });
-    }
-
-    // 1. Kraken's authoritative fills. TradesHistory returns 50 per page, so page
-    // through it — with only one page most clusters have no exchange data to
-    // compare against and nothing can be safely cleaned.
+    // 1. Kraken's authoritative fills via krakenApi (BALANCE key, shared limiter).
     const rawFills = {};
     const MAX_PAGES = Number(body?.maxPages) > 0 ? Math.min(Number(body.maxPages), 20) : 12;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const res = await callKrakenPrivate(apiKey, apiSecret, '/0/private/TradesHistory', {
-        type: 'all',
-        ofs: String(page * 50)
-      });
-      if (res?.error?.length) {
-        if (page === 0) {
-          return Response.json({ success: false, error: res.error.join(', ') }, { status: 200 });
-        }
+      const res = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory', payload: page ? { ofs: page * 50 } : {} });
+      const d = res?.data || res;
+      if (!d?.success) {
+        if (page === 0) return Response.json({ success: false, error: d?.error || 'Failed to fetch Kraken trades' }, { status: 200 });
         break;
       }
-      const pageTrades = res?.result?.trades || {};
-      const keys = Object.keys(pageTrades);
-      if (keys.length === 0) break;
-      for (const k of keys) rawFills[k] = pageTrades[k];
-      if (keys.length < 50) break;
-      await new Promise(r => setTimeout(r, 1200)); // respect Kraken rate limits
+      const pageTrades = d.trades || [];
+      if (pageTrades.length === 0) break;
+      for (const t of pageTrades) rawFills[t.txid || t.trade_id] = t;
+      if (pageTrades.length < 50) break;
     }
     if (Object.keys(rawFills).length === 0) {
       return Response.json({ success: false, error: 'No Kraken trade history returned' }, { status: 200 });
