@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
 import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
+import { checkOpenPosition, repairMissingBracket } from '../../shared/positionGuard.ts';
 
 /**
  * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
@@ -1617,6 +1618,28 @@ Deno.serve(async (req) => {
       if (isDuplicateRecent) { log(`DEDUP: Skipping ${sym} - recent auto-buy exists`); continue; }
       const slCooldown = await hasRecentStopLoss(base44, user.email, sym);
       if (slCooldown.blocked) { log(`SL COOLDOWN: Skipping ${sym} - SL hit ${slCooldown.hours_ago}h ago`); tradesRejectedRisk.push({ symbol: sym, reason: `SL cooldown (${slCooldown.hours_ago}h ago)` }); continue; }
+
+      // POSITION GUARD: an open position for this asset means NO repeat buy.
+      // 1) If it has no take-profit on Kraken, place its missing TP/SL instead of buying again.
+      // 2) Only add more when price has dropped meaningfully below the last buy (averaging down).
+      const guard = await checkOpenPosition(base44, user.email, sym, isSimMode);
+      if (guard.position) {
+        const pos = guard.position;
+        if (!isSimMode && !pos.kraken_tp_order_id) {
+          const fixed = await repairMissingBracket(base44, user.email, pos, wsToken, log, { invokeKrakenTrade, findRestingClosers, roundPriceForKraken });
+          if (!fixed.tp) {
+            log(`POSITION GUARD: ${sym} held without a take-profit — not buying more until it's protected`);
+            continue;
+          }
+        }
+        const dipPct = Math.max(1, lossMargin / 2);
+        const lastBuy = Number(guard.lastBuyPrice || pos.purchase_price || 0);
+        if (!(lastBuy > 0 && price <= lastBuy * (1 - dipPct / 100))) {
+          log(`POSITION GUARD: Skipping ${sym} — already held, price $${price} not ${dipPct}% below last buy $${lastBuy}`);
+          continue;
+        }
+        log(`AVERAGE DOWN: ${sym} price $${price} is ≥${dipPct}% below last buy $${lastBuy} — adding`);
+      }
       
       // Track signal consumption
       const signal = signalMap.get(sym);
