@@ -2093,6 +2093,10 @@ Deno.serve(async (req) => {
           log(`Skipping emerging ${emergingSymbol} — on AVOID list`);
           continue;
         }
+        if (symbolsWithOpenPosition.has(emergingSymbol) || (await checkOpenPosition(base44, user.email, emergingSymbol, isSimMode)).position) {
+          log(`Skipping emerging ${emergingSymbol} — position already open`);
+          continue;
+        }
         
         // Fetch current price for emerging prospect (direct Kraken public API)
                   let emergingPrice = 0;
