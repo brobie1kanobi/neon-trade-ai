@@ -118,7 +118,10 @@ export default function RecentTrades({ trades, onTradeSelect }) {
 
   // Fetch on mount and when mode changes
   useEffect(() => {
-    fetchKrakenTrades();
+    // Wait until the balance report has loaded trade history into the shared
+    // cache, so opening the app doesn't fire a second, parallel private call.
+    const t = setTimeout(fetchKrakenTrades, 15000);
+    return () => clearTimeout(t);
   }, [fetchKrakenTrades]);
 
   // Merge and sort trades - combine local with Kraken in LIVE mode

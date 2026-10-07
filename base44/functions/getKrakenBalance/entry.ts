@@ -203,9 +203,12 @@ Deno.serve(async (req) => {
 
     // Cost basis from Kraken's OWN trade history (average-cost method, fees
     // included). The app's stored Trade/Holding rows are incomplete/stale.
-    const [tradeBook, netDeposits, ref24h] = await Promise.all([
+    // Deposit ledger is no longer read: it isn't used for profit anymore and its
+    // paginated reads (up to 20 private calls) were exhausting Kraken's rate
+    // limit on every app open.
+    const netDeposits = null;
+    const [tradeBook, ref24h] = await Promise.all([
       getKrakenCostBook(base44),
-      getNetDepositsUsd(base44, prices),
       getPrices24hAgo(Object.keys(qtyBySymbol))
     ]);
 
