@@ -65,6 +65,10 @@ export function useConditionalOrderMonitor(userEmail) {
   const checkOrders = useCallback(async () => {
     const now = Date.now();
     if (now - lastCheckRef.current < MIN_CHECK_INTERVAL_MS) return;
+    // LIVE exits are owned by the server monitor (every 5 min), which cancels the
+    // resting TP before selling. This in-browser check read the TP-locked balance
+    // as 0 and cancelled live protection records instead of selling.
+    if (!isSimMode) return;
     lastCheckRef.current = now;
 
     await refreshOrders();

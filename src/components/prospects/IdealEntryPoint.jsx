@@ -44,6 +44,10 @@ export default function IdealEntryPoint({ prospect }) {
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
         {prospect.ideal_entry_source === "ai_entry_zone"
           ? "Based on the AI's published entry zone — buying above it means paying a premium."
+          : atIdeal
+          ? Number(prospect.market_trend || 0) > 0
+            ? `${prospect.symbol} is up ${Number(prospect.market_trend).toFixed(2)}% today, but the current price is within the accepted range of the ideal entry, so the auto-trader can buy now.`
+            : "The current price is within the accepted range of the ideal entry, so the auto-trader can buy now."
           : Number(prospect.required_pullback_pct || 0) > 0
           ? `${prospect.symbol} already moved ${Number(prospect.market_trend || 0).toFixed(2)}% today, so a ${Number(prospect.required_pullback_pct).toFixed(2)}% pullback is required before the auto-trader buys.`
           : "Price is flat enough that the current market price is a fair entry."}

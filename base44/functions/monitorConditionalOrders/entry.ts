@@ -44,9 +44,9 @@ function normalizeAssetKey(key) {
 }
 
 // Fetch available (free) holdings per asset from Kraken extended balance
-async function getAvailableMap(base44) {
+async function getAvailableMap(base44, fresh = false) {
   try {
-    const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance' });
+    const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance', payload: fresh ? { bypassCache: true } : {} });
     let data = resp?.data || resp;
     if (data?.data) data = data.data;
     const out = {};
@@ -164,10 +164,10 @@ Deno.serve(async (req) => {
       // "Canceled" seconds/minutes after being placed and exits landed as market
       // sells at worse prices. A resting TP fires on Kraken's matching engine the
       // instant the target trades; this function cannot beat it and must not race it.
-      if (!is_simulation && kraken_tp_order_id) {
-        console.log(`[monitor] ${order.symbol} #${order.id}: exchange TP ${kraken_tp_order_id} is live — leaving exit to Kraken`);
-        continue;
-      }
+      // The STOP-LOSS, however, must still be enforced here: Kraken spot can't hold
+      // a resting TP and SL on the same coins, so no exchange SL exists. Skipping
+      // these orders entirely let losing positions sink with no exit at all.
+      const exchangeOwnsTp = !is_simulation && !!kraken_tp_order_id;
 
       const gainPct = ((price - purchase_price) / purchase_price) * 100;
       let shouldSell = false;
@@ -220,6 +220,8 @@ Deno.serve(async (req) => {
       }
 
       if (!shouldSell) continue;
+      // Exchange TP owns the upside exit — only a stop-loss overrides it.
+      if (exchangeOwnsTp && !reason.startsWith('Stop-Loss')) continue;
 
       if (soldSymbols.has(symbol)) {
         console.warn(`[monitor] ${symbol} #${id}: already sold in this run — cancelling duplicate order instead of selling again`);
@@ -239,7 +241,26 @@ Deno.serve(async (req) => {
       let sellQuantity = quantity;
       const minQty = MIN_ORDER_SIZES[symbol] || 0.00001;
 
+      let linkedCancelled = false;
       if (!is_simulation) {
+        // Resting TP/SL orders lock the coins (available = 0). Cancel them FIRST,
+        // then read a fresh balance — otherwise the position looks "consumed" and
+        // the protection record gets cancelled instead of the stop-loss selling.
+        const linked = [kraken_tp_order_id, kraken_sl_order_id].filter(Boolean);
+        if (linked.length) {
+          const cres = await base44.asServiceRole.functions.invoke('krakenTrade', { action: 'cancel_order', orderIds: linked })
+            .catch((e) => ({ data: { success: false, error: e.message } }));
+          const cd = cres?.data || cres;
+          linkedCancelled = true;
+          if (!cd?.success && !/unknown order/i.test(cd?.error || '')) {
+            console.warn(`[monitor] ${symbol} #${id}: could not cancel linked orders (${cd?.error}) — will retry next run`);
+            results.push({ id, symbol, reason, error: `Cancel linked orders failed: ${cd?.error}` });
+            continue;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+          availMapCache = await getAvailableMap(base44, true);
+        }
+
         // Verify there's enough available on Kraken to fill THIS order's quantity
         const availMap = await getAvailMapCached();
         const available = availMap[symbol] || 0;
@@ -279,7 +300,7 @@ Deno.serve(async (req) => {
       try {
         // Cancel any existing Kraken TP/SL orders to prevent double-sell
         const toCancel = [kraken_tp_order_id, kraken_sl_order_id].filter(Boolean);
-        if (toCancel.length && !is_simulation) {
+        if (toCancel.length && !is_simulation && !linkedCancelled) {
           try {
             await base44.asServiceRole.functions.invoke('krakenTrade', {
               action: 'cancel_order', orderIds: toCancel
