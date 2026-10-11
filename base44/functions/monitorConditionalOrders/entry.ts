@@ -167,7 +167,9 @@ Deno.serve(async (req) => {
       // The STOP-LOSS, however, must still be enforced here: Kraken spot can't hold
       // a resting TP and SL on the same coins, so no exchange SL exists. Skipping
       // these orders entirely let losing positions sink with no exit at all.
-      const exchangeOwnsTp = !is_simulation && !!kraken_tp_order_id;
+      // A zero/negative gain_margin is a "recovery exit" (sell once the loss shrinks
+      // to that level) — it sits below the exchange TP, so this monitor must run it.
+      const exchangeOwnsTp = !is_simulation && !!kraken_tp_order_id && gain_margin > 0;
 
       const gainPct = ((price - purchase_price) / purchase_price) * 100;
       let shouldSell = false;
@@ -183,7 +185,9 @@ Deno.serve(async (req) => {
       // Take-Profit check
       if (gainPct >= gain_margin) {
         shouldSell = true;
-        reason = `Take-Profit hit (+${gainPct.toFixed(2)}% >= +${gain_margin}%)`;
+        reason = gain_margin > 0
+          ? `Take-Profit hit (+${gainPct.toFixed(2)}% >= +${gain_margin}%)`
+          : `Recovery Exit hit (${gainPct.toFixed(2)}% >= ${gain_margin}%)`;
       }
 
       // Stop-Loss check
@@ -247,6 +251,14 @@ Deno.serve(async (req) => {
         // then read a fresh balance — otherwise the position looks "consumed" and
         // the protection record gets cancelled instead of the stop-loss selling.
         const linked = [kraken_tp_order_id, kraken_sl_order_id].filter(Boolean);
+        if (!linked.length) {
+          // No stored ids — find any resting SELL on this coin that would lock the balance.
+          const ooRes = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getOpenOrders', payload: { bypassCache: true } }).catch(() => null);
+          const pairNames = [KRAKEN_PAIR_MAP[symbol], `${symbol}USD`, symbol === 'BTC' ? 'XBTUSD' : null].filter(Boolean);
+          for (const o of ((ooRes?.data || ooRes)?.orders || [])) {
+            if (o.descr?.type === 'sell' && pairNames.includes(o.descr?.pair)) linked.push(o.order_id);
+          }
+        }
         if (linked.length) {
           const cres = await base44.asServiceRole.functions.invoke('krakenTrade', { action: 'cancel_order', orderIds: linked })
             .catch((e) => ({ data: { success: false, error: e.message } }));
