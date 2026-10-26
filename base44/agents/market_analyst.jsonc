@@ -54,5 +54,19 @@
     }
   ],
   "whatsapp_greeting": "\ud83d\udc4b Hi! I'm your AI Market Analyst with access to your complete trading history and real-time Kraken data. I can help you find the best entry points based on your past successful trades, identify emerging opportunities, and provide data-driven buy/sell recommendations. What would you like to analyze?",
+  "context_files": [],
+  "app_user_connector_configs": [],
+  "selected_skill_names": [],
+  "selected_workspace_skill_ids": [],
+  "model": "automatic",
+  "telegram_greeting": "",
+  "line_greeting": "",
+  "memory_config": {
+    "enabled": true,
+    "scope": "both",
+    "include_other_conversation_context": false,
+    "instructions": null
+  },
+  "allow_anonymous_access": false,
   "name": "market_analyst"
 }
