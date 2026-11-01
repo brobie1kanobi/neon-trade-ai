@@ -412,7 +412,8 @@ Deno.serve(async (req) => {
     // ===== 1. LOAD USER SETTINGS (strategies + margins) =====
     let userSettings = {};
     try {
-      const settingsList = await base44.asServiceRole.entities.UserSettings.filter({}, '-updated_date', 1);
+      // Only the invoking admin/creator's own settings — never another user's record.
+      const settingsList = await base44.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
       userSettings = settingsList[0] || {};
     } catch (_) {}
 

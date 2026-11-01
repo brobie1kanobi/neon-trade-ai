@@ -35,9 +35,9 @@ Deno.serve(async (req) => {
     }
 
     if (symbols.length === 0) {
-      // 2) Fallback to latest global UserSettings.watched_crypto
+      // 2) Fallback to the invoking admin's own UserSettings.watched_crypto
       try {
-        const latestSettings = await base44.asServiceRole.entities.UserSettings.filter({}, '-updated_date', 1);
+        const latestSettings = await base44.entities.UserSettings.filter({ created_by: user.email }, '-updated_date', 1);
         const watched = Array.from(new Set(((latestSettings?.[0]?.watched_crypto) || [])
           .map((s) => String(s || '').toUpperCase())));
         if (watched.length > 0) symbols = watched;
