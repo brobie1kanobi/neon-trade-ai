@@ -174,12 +174,22 @@ Deno.serve(async (req) => {
     }
 
     // Step 1: Trade history via krakenApi (BALANCE key, shared cache + rate limiter + lockout guard)
-    const thRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' });
-    const th = thRes?.data || thRes;
-    if (!th?.success) {
-      return Response.json({ error: th?.error || 'Failed to fetch Kraken trades', success: false }, { status: 200 });
+    // Kraken returns 50 fills per page. Routine runs read the newest page; a backfill
+    // passes { pages: N } to walk older history (capped at 10 pages = 500 fills).
+    const body = await req.json().catch(() => ({}));
+    const pages = Math.min(10, Math.max(1, Number(body?.pages) || 1));
+    const allFills = [];
+    for (let p = 0; p < pages; p++) {
+      const thRes = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory', payload: p ? { ofs: p * 50 } : {} });
+      const th = thRes?.data || thRes;
+      if (!th?.success) {
+        if (p === 0) return Response.json({ error: th?.error || 'Failed to fetch Kraken trades', success: false }, { status: 200 });
+        break;
+      }
+      allFills.push(...(th.trades || []));
+      if ((th.trades || []).length < 50) break;
     }
-    const krakenData = { result: { trades: Object.fromEntries((th.trades || []).map(t => [t.txid || t.trade_id, t])) } };
+    const krakenData = { result: { trades: Object.fromEntries(allFills.map(t => [t.txid || t.trade_id, t])) } };
     
     // Convert to array format - CRITICAL: Ensure all IDs are strings
     const krakenTrades = Object.entries(krakenData.result.trades).map(([txid, trade]) => ({
@@ -194,10 +204,19 @@ Deno.serve(async (req) => {
 
 
     // Step 2: Fetch ALL local LIVE trades using SERVICE ROLE (to bypass RLS for admin operations)
-    const localTrades = await base44.asServiceRole.entities.Trade.filter({ 
-      is_simulation: false,
-      created_by: user.email 
-    });
+    // ALL live trades for the one connected Kraken account, whichever process wrote
+    // them. Scheduled monitors save records under a service account, so filtering by
+    // the caller's email hid every monitor-placed sell — those stayed "pending" forever
+    // and their fills were imported a second time. Paged so nothing is silently dropped.
+    const localTrades = [];
+    for (let skip = 0; skip < 10000; skip += 500) {
+      const page = await base44.asServiceRole.entities.Trade.filter({ is_simulation: false }, '-created_date', 500, skip);
+      if (!Array.isArray(page)) throw new Error('Unexpected trade list response — aborting to avoid duplicate imports');
+      localTrades.push(...page);
+      if (page.length < 500) break;
+    }
+    // Safety: never import against an empty local view of a known non-empty history.
+    if (localTrades.length === 0) throw new Error('No local live trades loaded — aborting sync to avoid duplicate imports');
     
     console.log('[syncTradesWithKraken] Found', localTrades.length, 'local LIVE trades');
 
@@ -408,7 +427,15 @@ Deno.serve(async (req) => {
           fee: kt.fee
         });
         
+        // Exchange-side exits (resting take-profit / stop orders) were placed by the
+        // auto-trader; plain market/limit fills with no local record are manual.
+        const ot = String(kt.ordertype || '').toLowerCase();
+        const isExchangeExit = kt.type === 'sell' && (ot.includes('touched') || ot.includes('take-profit') || ot.includes('stop'));
+        const exitReason = isExchangeExit ? (ot.includes('stop') ? 'stop_loss' : 'take_profit') : (kt.type === 'sell' ? 'manual' : undefined);
         await base44.asServiceRole.entities.Trade.create({
+          exit_reason: exitReason,
+          filled_at: new Date(kt.time * 1000).toISOString(),
+          submitted_at: new Date(kt.time * 1000).toISOString(),
           symbol: displaySymbol,
           type: kt.type,
           asset_type: 'crypto',
@@ -417,7 +444,7 @@ Deno.serve(async (req) => {
           total_value: parseFloat(kt.cost),
           fee: parseFloat(kt.fee) || 0,
           status: 'executed',
-          is_auto_trade: false,
+          is_auto_trade: isExchangeExit,
           is_simulation: false,
           kraken_trade_id: String(ktId),  // CRITICAL: Convert to string
           kraken_order_id: kt.ordertxid ? String(kt.ordertxid) : null,

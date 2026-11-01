@@ -2,6 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
 import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
 import { checkOpenPosition, repairMissingBracket } from '../../shared/positionGuard.ts';
+import { claimBuy, releaseClaim } from '../../shared/buyClaim.ts';
 
 /**
  * AUTO-TRADER v3 - EVENT-DRIVEN, IDEMPOTENT, RISK-MANAGED
@@ -1438,6 +1439,13 @@ Deno.serve(async (req) => {
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
         // LIVE MODE: Use Kraken API with ADVANCED orders (Trailing Stop + Take Profit)
+        // Claim the buy before sending it so an overlapping run can't buy the same coin too.
+        const claim = await claimBuy(base44, user.email, sym, false, idempotencyKey);
+        if (!claim.won) {
+          log(`BUY CLAIM: Skipping ${sym} — another run already claimed this buy (${claim.winnerId})`);
+          continue;
+        }
+        const claimId = claim.claimId;
         try {
           // Calculate TP price (static) and trailing stop percentage
           // CRITICAL: Round prices to Kraken's required decimal precision per asset
@@ -1483,10 +1491,8 @@ Deno.serve(async (req) => {
           
           log(`Recording LIVE trade`, { requestedQty: qty, executedQty, executedValue: executedValue.toFixed(2) });
           
-          // Create Trade with idempotency key
-          await base44.entities.Trade.create({
-            symbol: sym,
-            type: 'buy',
+          // Fill in the claim record (created before the order) with the executed buy
+          await base44.entities.Trade.update(claimId, {
             asset_type: typ,
             quantity: executedQty,
             price: fillPrice,
@@ -1499,8 +1505,7 @@ Deno.serve(async (req) => {
             auto_trader_run_id: autoTraderRunId,
             kraken_order_id: buyOrderId,
             submitted_at: new Date().toISOString(),
-            filled_at: new Date().toISOString(),
-            created_by: user.email
+            filled_at: new Date().toISOString()
           });
           
           // Create LedgerEntry for audit trail
@@ -1624,6 +1629,7 @@ Deno.serve(async (req) => {
         } catch (krakenError) {
           log(`Kraken buy failed for ${sym}`, { error: krakenError.message });
           tradesFailed.push({ symbol: sym, error: krakenError.message });
+          await releaseClaim(base44, claimId, krakenError.message);
           
           // CRITICAL: Only record health errors for INFRASTRUCTURE failures
           // Do NOT count order validation rejections (minimum not met, invalid volume, 

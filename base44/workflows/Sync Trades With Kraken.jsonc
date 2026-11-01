@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "sync_trades_with_kraken",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "sync_trades": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "syncTradesWithKraken",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Sync trades with Kraken",
+            "description": "Kraken fills are the source of truth"
+          }
+        }
+      }
+    ]
+  },
+  "description": "Every 15 minutes, matches app trade records to Kraken's confirmed fills: resolves pending sells and imports exchange-side take-profits and manual trades.",
+  "name": "Sync Trades With Kraken",
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/15 * * * *",
+      "one_time_date": null,
+      "timezone": "America/New_York",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  }
+}

@@ -43,8 +43,13 @@ function normalizeAssetKey(key) {
   return map[s] || s;
 }
 
+// Total holdings (free + locked by resting orders), filled alongside the available
+// map so the monitor can tell "coins are locked" apart from "coins are gone".
+let lastTotalMap = {};
+
 // Fetch available (free) holdings per asset from Kraken extended balance
 async function getAvailableMap(base44, fresh = false) {
+  lastTotalMap = {};
   try {
     const resp = await base44.asServiceRole.functions.invoke('krakenApi', { action: 'getExtendedBalance', payload: fresh ? { bypassCache: true } : {} });
     let data = resp?.data || resp;
@@ -52,6 +57,11 @@ async function getAvailableMap(base44, fresh = false) {
     const out = {};
     const bal = data?.balance || data;
     if (!bal) return out;
+    lastTotalMap = {};
+    for (const [k, v] of Object.entries(bal)) {
+      const t = parseFloat((v && typeof v === 'object') ? (v.balance ?? v.total ?? 0) : (v || 0)) || 0;
+      if (t > 0) lastTotalMap[normalizeAssetKey(k)] = t;
+    }
     for (const [k, v] of Object.entries(bal)) {
       const sym = normalizeAssetKey(k);
       let qty = 0;
@@ -281,6 +291,15 @@ Deno.serve(async (req) => {
         // If available < order qty, this order's position was already consumed
         // (likely by a stacked duplicate order that fired first). Cancel cleanly.
         if (available < minQty || quantity > available * 1.05) {
+          // Coins still on the account but locked by a resting order (or a failed
+          // cancel / empty balance read) — the position is NOT gone. Keep tracking it
+          // and retry next run instead of dropping its stop-loss coverage.
+          const total = lastTotalMap[symbol] || 0;
+          if (Object.keys(lastTotalMap).length === 0 || total >= quantity * 0.95) {
+            console.warn(`[monitor] ${symbol} #${id}: coins locked or balance unreadable (available=${available.toFixed(8)}, total=${total.toFixed(8)}) — keeping order active, retry next run`);
+            results.push({ id, symbol, reason, error: 'Coins locked by a resting order — retrying next run' });
+            continue;
+          }
           // Position already consumed — cancel this stale order
           console.warn(`[monitor] ${symbol} #${id}: position consumed (available=${available.toFixed(8)}, order qty=${quantity}) — cancelling stale order`);
           await base44.asServiceRole.entities.ConditionalOrder.update(id, {
