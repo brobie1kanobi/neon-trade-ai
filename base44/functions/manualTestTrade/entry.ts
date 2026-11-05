@@ -17,8 +17,7 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const role = (user.role || '').toLowerCase();
-    console.log(`[manualTestTrade] User: ${user.email}, role: ${user.role}, is_creator: ${user.is_creator}`);
-    if (role !== 'admin' && !user.is_creator) {
+    if (role !== 'admin') {
       return Response.json({ error: 'Admin only', user_role: user.role }, { status: 403 });
     }
 

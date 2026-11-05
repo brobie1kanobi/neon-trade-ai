@@ -562,8 +562,7 @@ Deno.serve(async (req) => {
     // Respect user's setting but enforce admin-only LIVE trading
     let isSimMode = settings.sim_trading_mode !== false;
     const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-    const isCreator = !!user?.is_creator;
-    if (!isAdmin && !isCreator) {
+    if (!isAdmin) {
       if (!isSimMode) {
         log('LIVE mode requested but user is not admin/creator - forcing SIM mode');
       }

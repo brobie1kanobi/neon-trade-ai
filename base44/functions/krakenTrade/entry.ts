@@ -966,9 +966,8 @@ Deno.serve(async (req) => {
     const role = (user?.role || '').toLowerCase();
     const isAdmin = role === 'admin';
     const isOwner = role === 'owner';
-    const isCreator = !!user?.is_creator;
-    
-    if (!isAdmin && !isOwner && !isCreator) {
+    // Only the platform-managed role authorizes live trading — never a profile field.
+    if (!isAdmin && !isOwner) {
       return Response.json({ 
         error: 'Access denied - live trading requires admin/owner privileges', 
         success: false 
