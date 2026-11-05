@@ -1,4 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { fifoMatch } from '../../shared/fifoMatch.ts';
+
+// Statuses that mean the order never (fully) reached a confirmed fill.
+const UNFILLED = new Set(['pending_submission', 'pending_fill', 'submitted', 'cancelled', 'rejected', 'failed_retrying']);
 
 /**
  * Trade History Intelligence Analyzer
@@ -85,33 +89,32 @@ Deno.serve(async (req) => {
       is_simulation: false
     }));
 
-    // Convert local trades to unified format
-    const localNormalized = localTrades.map(lt => ({
-      symbol: normalizeSymbol(lt.symbol),
-      type: lt.type || 'unknown',
-      quantity: Number(lt.quantity) || 0,
-      price: Number(lt.price) || 0,
-      total_value: Number(lt.total_value) || 0,
-      fee: Number(lt.fee) || 0,
-      timestamp: new Date(lt.filled_at || lt.created_date || Date.now()),
-      source: 'local',
-      order_type: lt.is_auto_trade ? 'auto' : 'manual',
-      is_simulation: lt.is_simulation
-    }));
+    // Convert local trades to unified format. Only confirmed fills count, and the
+    // timestamp is the FILL time — an imported record's creation date is not a fill
+    // time, so exchange-synced records without one are left out of matching.
+    const localNormalized = localTrades
+      .filter(lt => !UNFILLED.has(lt.status) && Number(lt.price) > 0 && Number(lt.quantity) > 0)
+      .map(lt => {
+        const fillIso = lt.filled_at || lt.submitted_at || (lt.kraken_trade_id ? null : lt.created_date);
+        return {
+          symbol: normalizeSymbol(lt.symbol),
+          type: lt.type || 'unknown',
+          quantity: Number(lt.quantity) || 0,
+          price: Number(lt.price) || 0,
+          total_value: Number(lt.total_value) || 0,
+          fee: Number(lt.fee) || 0,
+          timestamp: new Date(fillIso || 0),
+          source: 'local',
+          order_type: lt.is_auto_trade ? 'auto' : 'manual',
+          is_simulation: lt.is_simulation === true
+        };
+      })
+      .filter(lt => lt.timestamp.getTime() > 0);
 
-    // Merge and dedupe (prefer Kraken data for live trades)
-    const allTrades = [...krakenNormalized];
-    localNormalized.forEach(lt => {
-      // Check if this trade already exists in Kraken data
-      const isDupe = krakenNormalized.some(kt => 
-        kt.symbol === lt.symbol && 
-        Math.abs(kt.quantity - lt.quantity) < 0.0001 &&
-        Math.abs(kt.timestamp.getTime() - lt.timestamp.getTime()) < 60000
-      );
-      if (!isDupe) {
-        allTrades.push(lt);
-      }
-    });
+    // Kraken's fills are authoritative for LIVE trades: when they were fetched, use
+    // them for live and keep local records only for simulation.
+    const haveKraken = krakenNormalized.length > 0;
+    const allTrades = [...krakenNormalized, ...localNormalized.filter(lt => !haveKraken || lt.is_simulation)];
 
     // Sort by timestamp
     allTrades.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
@@ -151,28 +154,15 @@ Deno.serve(async (req) => {
       let losingTrades = 0;
       const pnlHistory = [];
 
-      // Match sells to buys (FIFO) with fee-adjusted P&L
-      const remainingBuys = [...buys];
-      for (const sell of sells) {
-        if (remainingBuys.length === 0) break;
-        const matchedBuy = remainingBuys.shift();
-        const matchedQty = Math.min(sell.quantity, matchedBuy.quantity);
-        const grossPnl = (sell.price - matchedBuy.price) * matchedQty;
-        const totalFees = (matchedBuy.fee || 0) + (sell.fee || 0);
-        const netPnl = grossPnl - totalFees;
-        totalPnL += netPnl;
-        pnlHistory.push({
-          buyPrice: matchedBuy.price,
-          sellPrice: sell.price,
-          quantity: matchedQty,
-          pnl: netPnl,
-          grossPnl: grossPnl,
-          fees: totalFees,
-          pnlPercent: matchedBuy.price > 0 ? ((sell.price - matchedBuy.price) / matchedBuy.price) * 100 : 0,
-          netPnlPercent: (matchedBuy.price * matchedQty) > 0 ? (netPnl / (matchedBuy.price * matchedQty)) * 100 : 0,
-          timestamp: sell.timestamp
-        });
-        if (netPnl > 0) winningTrades++;
+      // Quantity-weighted FIFO per symbol + mode, partial fills/exits split correctly.
+      const { roundTrips } = fifoMatch(symbolTrades.map(t => ({
+        symbol: t.symbol, type: t.type, quantity: t.quantity, price: t.price, fee: t.fee,
+        time: t.timestamp.getTime(), is_simulation: t.is_simulation
+      })));
+      for (const rt of roundTrips) {
+        totalPnL += rt.pnl;
+        pnlHistory.push({ ...rt, timestamp: new Date(rt.sellTime) });
+        if (rt.pnl > 0) winningTrades++;
         else losingTrades++;
       }
 

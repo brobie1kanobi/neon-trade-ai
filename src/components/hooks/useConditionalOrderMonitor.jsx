@@ -283,8 +283,9 @@ export function useConditionalOrderMonitor(userEmail) {
         // Remove from local cache
         activeOrdersRef.current = activeOrdersRef.current.filter(o => o.id !== order.id);
 
-        // BUG FIX #4: Write ModelPerformance record for analytics
-        try {
+        // ModelPerformance from the browser is only trusted for SIM. Live outcomes are
+        // recorded by the exchange sync from Kraken's real fill, not a ticker estimate.
+        if (isSimMode) try {
           const outcomePct = ((price - purchase_price) / purchase_price) * 100;
           const entryTime = new Date(order.created_date || order.updated_date).getTime();
           const durationMin = Math.round((Date.now() - entryTime) / 60000);
@@ -305,6 +306,7 @@ export function useConditionalOrderMonitor(userEmail) {
             is_success: outcomePct > 0,
             exit_reason: exitReason,
             is_simulation: isSimMode,
+            source: 'simulation',
             created_by: userEmail
           });
         } catch (_) {}

@@ -18,6 +18,8 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { getRecentAnalysis, setRecentAnalysis } from "@/components/hooks/useGlobalDataStore";
 import useFearGreedIndex from "@/components/hooks/useFearGreedIndex";
+import SignalStatusLine from "@/components/analysis/SignalStatusLine";
+import { summarizeReasoning } from "@/lib/signalTranslator";
 
 function SignalCard({ signal, onSendToTrader, onManualTrade }) {
   const isStrongBuy = signal.optimal_action === 'strong_buy';
@@ -130,9 +132,11 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
         }
       </div>
 
-      <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-        {signal.reasoning || signal.action_reason || 'AI analysis in progress...'}
+      <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+        {summarizeReasoning(signal.reasoning || signal.action_reason)}
       </p>
+
+      <SignalStatusLine signal={signal} />
 
       <div className="flex gap-2">
         {(isStrongBuy || isBuy) && signal.confidence_score >= 70 &&
@@ -353,34 +357,6 @@ export default function MarketAnalysis() {
   const isSimMode = settings?.sim_trading_mode !== false;
   const fearGreedData = useFearGreedIndex();
 
-  // Quick fallback if backend analysis times out (Kraken public API)
-  const quickFallbackAnalysis = useCallback(async (symbols) => {
-    const MAP = { BTC: 'XXBTZUSD', ETH: 'XETHZUSD', SOL: 'SOLUSD', XRP: 'XXRPZUSD', ADA: 'ADAUSD', DOGE: 'XDGUSD', DOT: 'DOTUSD', LINK: 'LINKUSD', MATIC: 'MATICUSD', AVAX: 'AVAXUSD', UNI: 'UNIUSD', ATOM: 'ATOMUSD', LTC: 'XLTCZUSD', BCH: 'BCHUSD', XLM: 'XXLMZUSD', TRX: 'TRXUSD', SHIB: 'SHIBUSD', PEPE: 'PEPEUSD', HBAR: 'HBARUSD' };
-    const syms = (symbols || []).map(s => String(s).toUpperCase()).filter(s => MAP[s]);
-    if (syms.length === 0) return { success: true, recommendations: [], market_intelligence: null, analyzed_count: 0, timestamp: new Date().toISOString() };
-    const pairs = syms.map(s => MAP[s]).join(',');
-    try {
-      const controller = new AbortController();
-      const to = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${pairs}`, { signal: controller.signal });
-      clearTimeout(to);
-      const json = await res.json();
-      const recs = syms.map(sym => {
-        const t = json?.result?.[MAP[sym]];
-        const price = parseFloat(t?.c?.[0] || '0');
-        const open24h = parseFloat(t?.o || '0');
-        const ch = open24h > 0 ? ((price - open24h) / open24h) * 100 : 0;
-        const action = ch >= 0 ? 'buy' : 'hold';
-        const conf = ch >= 3 ? 65 : ch >= 0 ? 58 : 45;
-        return { symbol: sym, confidence_score: conf, predicted_direction: ch >= 0 ? 'up' : 'down', predicted_move_pct: Math.abs(ch), reasoning: 'Heuristic fallback', action, optimal_action: action, timing_window: '4h', stop_loss_pct: 2, take_profit_pct: 3, current_price: price, current_24h_change: ch };
-      });
-      const avg = recs.reduce((a,r)=>a+(r.current_24h_change||0),0)/recs.length || 0;
-      return { success: true, recommendations: recs, market_intelligence: { market_sentiment_score: null, market_regime: avg>1? 'risk-on': avg<-1? 'risk-off':'range', volatility_level: Math.abs(avg)>3?'high':Math.abs(avg)>1?'moderate':'low' }, analyzed_count: syms.length, timestamp: new Date().toISOString(), market_summary: 'Fallback analysis based on Kraken 24h change', upcoming_catalysts: [] };
-    } catch (_e) {
-      return { success: true, recommendations: [], market_intelligence: null, analyzed_count: syms.length, timestamp: new Date().toISOString(), market_summary: 'Fallback analysis unavailable', upcoming_catalysts: [] };
-    }
-  }, []);
-
   // Retry if user/settings not yet ready; debounce refresh clicks
   const retryRef = useRef(0);
   const refreshCooldownRef = useRef(0);
@@ -430,7 +406,7 @@ export default function MarketAnalysis() {
       const response = await base44.functions.invoke('analyzeSmallGains', {
         symbols: allSymbols,
         includeMarketIntelligence: true,
-        includeTradeHistory: true
+        force
       });
 
       const data = response?.data || response;
@@ -444,19 +420,8 @@ export default function MarketAnalysis() {
       }
     } catch (err) {
       console.error('[MarketAnalysis] Error:', err);
-      // Fallback: quick on-client heuristics so page never stays empty
-      try {
-        const watchedCrypto = settings?.watched_crypto || ['BTC','ETH','SOL','XRP','ADA'];
-        const watchedStocks = settings?.watched_stocks || [];
-        const autoBuyPrefs = await base44.entities.AutoBuyPreference.filter({ created_by: user?.email, enabled: true, is_simulation: isSimMode }).catch(() => []);
-        const allSymbols = [...new Set([...(watchedCrypto||[]), ...(watchedStocks||[]), ...autoBuyPrefs.map(p=>p.symbol)])];
-        const fallback = await quickFallbackAnalysis(allSymbols);
-        setAnalysisData(fallback);
-        setRecentAnalysis(fallback);
-        setError(null);
-      } catch (_e) {
-        setError(err.message);
-      }
+      // No guessed signals: show the error instead of a price-change heuristic.
+      setError(`Analysis unavailable right now: ${err?.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
       setAnalyzing(false);
@@ -674,7 +639,7 @@ export default function MarketAnalysis() {
             AI Market Analysis
           </h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Short-term predictions (1-6 hours) with high-probability signals
+            The exact signals the Auto-Trader acts on — one analysis, shared everywhere
           </p>
         </div>
         <Button
@@ -807,8 +772,10 @@ export default function MarketAnalysis() {
 
       {/* Last Updated */}
       <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
-        Last analyzed: {analysisData?.timestamp ? new Date(analysisData.timestamp).toLocaleString() : 'N/A'}
+        Signals as of: {analysisData?.signals_as_of ? new Date(analysisData.signals_as_of).toLocaleString() : 'N/A'}
         {' • '}{analysisData?.analyzed_count || 0} assets analyzed
+        {analysisData?.incomplete_count > 0 ? ` • ${analysisData.incomplete_count} incomplete (not traded)` : ''}
+        {analysisData?.intel_source === 'degraded' ? ' • AI commentary unavailable' : ''}
       </p>
 
       {/* Quick Links */}

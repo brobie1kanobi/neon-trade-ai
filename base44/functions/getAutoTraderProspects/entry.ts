@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
-import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
+import { pickSignalPerSymbol, tradeReadiness } from '../../shared/signalSelect.ts';
+import { runCanonicalPipeline, signalAgeMs } from '../../shared/signalEngine.ts';
 
 // Kraken pair mappings for public API
 const KRAKEN_PAIR_MAP = {
@@ -363,43 +364,20 @@ Deno.serve(async (req) => {
       return fresh;
     };
     
-    // If no signals exist, trigger generation
-    if (signals.length === 0) {
-      console.log('[Prospects] No signals found - triggering generation...');
-      try {
-        const symbolsToGenerate = prefs.map(p => (p.symbol || '').toUpperCase()).filter(Boolean);
-        await base44.functions.invoke('generateSignals', { 
-          symbols: symbolsToGenerate, 
-          forceRefresh: true 
-        });
-        
-        signals = await reloadSignals();
-        console.log('[Prospects] Generated and loaded', signals.length, 'signals');
-      } catch (genErr) {
-        console.error('[Prospects] Signal generation failed:', genErr.message);
-      }
-    }
-
-    // If signals exist but none are actionable for the watched assets, refresh from analyzeSmallGains
-    const watchedSymbols = prefs.map(p => String(p.symbol || '').toUpperCase());
-    const hasActionableStoredSignal = watchedSymbols.some((symbol) => {
+    // Refresh through the unified pipeline only when a watched asset has no
+    // canonical signal or its signal is older than 30 minutes.
+    const watchedSymbols = prefs.map(p => String(p.symbol || '').toUpperCase()).filter(Boolean);
+    const needRefresh = watchedSymbols.filter((symbol) => {
       const sig = signalMap.get(symbol);
-      const type = String(sig?.signal_type || '').toLowerCase();
-      return type === 'buy' || type === 'strong_buy';
+      return !sig || signalAgeMs(sig) > 30 * 60 * 1000;
     });
-
-    if (!hasActionableStoredSignal && watchedSymbols.length > 0) {
-      console.log('[Prospects] Stored signals are stale/non-actionable - refreshing via analyzeSmallGains...');
+    if (needRefresh.length > 0) {
       try {
-        await base44.functions.invoke('analyzeSmallGains', {
-          symbols: watchedSymbols,
-          includeMarketIntelligence: true,
-          includeTradeHistory: true
-        });
+        await runCanonicalPipeline(base44, user, { symbols: needRefresh });
         signals = await reloadSignals();
-        console.log('[Prospects] Reloaded signals after analyzeSmallGains:', signals.length);
-      } catch (refreshErr) {
-        console.error('[Prospects] analyzeSmallGains refresh failed:', refreshErr.message);
+        console.log('[Prospects] Refreshed canonical signals for', needRefresh.join(','));
+      } catch (genErr) {
+        console.error('[Prospects] Signal pipeline failed:', genErr.message);
       }
     }
     
@@ -531,7 +509,10 @@ Deno.serve(async (req) => {
       let blockReason = null;
       let wouldExecute = false;
       
-      if (trendBlock) {
+      const ready = tradeReadiness(signal, price);
+      if (!ready.ok) {
+        blockReason = `Signal not tradeable right now (${ready.reason.replace(/_/g, ' ')})`;
+      } else if (trendBlock) {
         blockReason = trendBlock;
       } else if (tradingCash < 1) {
         blockReason = `No trading cash available ($${tradingCash.toFixed(2)})`;

@@ -145,6 +145,7 @@ async function announceResolvedSell(base44, userEmail, localTrade, fill) {
         is_success: netProfit > 0,
         exit_reason: ['take_profit', 'stop_loss', 'trailing_stop', 'manual', 'signal_expired', 'risk_limit'].includes(exitReason) ? exitReason : 'manual',
         is_simulation: false,
+        source: 'exchange_fill',
         created_by: userEmail
       });
     } catch (e) {

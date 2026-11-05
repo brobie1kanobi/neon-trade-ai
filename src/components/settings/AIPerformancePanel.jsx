@@ -46,7 +46,13 @@ export default function AIPerformancePanel() {
       // weighted by quantity so partial fills are split correctly. This avoids
       // pairing a buy with the wrong sell — the old newest-first matching could
       // produce a win/loss flag that contradicted the actual dollar PnL.
-      const chronological = [...allTrades].sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+      // Only confirmed fills, ordered by FILL time (an imported record's creation
+      // date is when it was synced, not when it traded).
+      const UNFILLED = ['pending_submission', 'pending_fill', 'submitted', 'cancelled', 'rejected', 'failed_retrying'];
+      const fillTime = (t) => t.filled_at || t.submitted_at || (t.kraken_trade_id ? null : t.created_date);
+      const chronological = allTrades
+        .filter(t => !UNFILLED.includes(t.status) && Number(t.price) > 0 && Number(t.quantity) > 0 && fillTime(t))
+        .sort((a, b) => new Date(fillTime(a)) - new Date(fillTime(b)));
       const completedTrades = [];
       const openLots = {};
       const lotKey = (t) => `${t.symbol}|${!!t.is_simulation}`;
@@ -55,7 +61,7 @@ export default function AIPerformancePanel() {
         const key = lotKey(t);
         if (t.type === 'buy') {
           if (!openLots[key]) openLots[key] = [];
-          openLots[key].push({ price: t.price, remaining: t.quantity, date: t.created_date, asset_type: t.asset_type });
+          openLots[key].push({ price: t.price, remaining: t.quantity, date: fillTime(t), asset_type: t.asset_type });
         } else if (t.type === 'sell') {
           let sellQtyRemaining = t.quantity;
           const lots = openLots[key] || [];
@@ -65,7 +71,7 @@ export default function AIPerformancePanel() {
             if (matchQty <= 1e-9) { lots.shift(); continue; }
             const buyValue = matchQty * lot.price;
             const sellValue = matchQty * t.price;
-            const holdMs = new Date(t.created_date) - new Date(lot.date);
+            const holdMs = new Date(fillTime(t)) - new Date(lot.date);
             completedTrades.push({
               symbol: t.symbol,
               asset_type: t.asset_type || lot.asset_type,
@@ -79,7 +85,7 @@ export default function AIPerformancePanel() {
               hold_minutes: holdMs / 60000,
               is_simulation: t.is_simulation,
               buy_date: lot.date,
-              sell_date: t.created_date
+              sell_date: fillTime(t)
             });
             lot.remaining -= matchQty;
             sellQtyRemaining -= matchQty;

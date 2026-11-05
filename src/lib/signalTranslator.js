@@ -103,9 +103,9 @@ export function summarizeReasoning(reasoning) {
   // read differently because their RSI/BB/volume/sentiment values differ.
   const top = parsed.insights.slice(0, 2);
   const scoreLabel = parsed.composite == null ? '' :
-    parsed.composite >= 50 ? 'strong buy' :
+    parsed.composite >= 40 ? 'strong buy' :
     parsed.composite >= 20 ? 'buy' :
-    parsed.composite <= -50 ? 'strong sell' :
+    parsed.composite <= -40 ? 'strong sell' :
     parsed.composite <= -20 ? 'sell' : 'neutral';
 
   const detailSentences = top

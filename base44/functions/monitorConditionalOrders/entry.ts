@@ -402,6 +402,7 @@ Deno.serve(async (req) => {
                 is_success: outcomePct > 0,
                 exit_reason: exitReason,
                 is_simulation: true,
+                source: 'simulation',
                 created_by
               });
             } catch (mpErr) {

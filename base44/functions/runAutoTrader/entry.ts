@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { computeIdealEntry } from '../../shared/idealEntry.ts';
-import { pickSignalPerSymbol } from '../../shared/signalSelect.ts';
+import { pickSignalPerSymbol, tradeReadiness, isCanonicalSignal, REQUIRE_CANONICAL } from '../../shared/signalSelect.ts';
 import { checkOpenPosition, repairMissingBracket } from '../../shared/positionGuard.ts';
 import { claimBuy, releaseClaim } from '../../shared/buyClaim.ts';
 
@@ -735,6 +735,13 @@ Deno.serve(async (req) => {
       // Filter to non-expired signals
       const now = new Date();
       signals = signals.filter(s => !s.expires_at || new Date(s.expires_at) > now);
+
+      // Only the unified pipeline's signals are tradeable (see shared/signalSelect.ts).
+      if (REQUIRE_CANONICAL) {
+        const before = signals.length;
+        signals = signals.filter(isCanonicalSignal);
+        if (before !== signals.length) log(`Ignored ${before - signals.length} non-canonical signals`);
+      }
       
       // CRITICAL: Remove signals for assets on the AVOID list
       const beforeCount = signals.length;
@@ -869,7 +876,10 @@ Deno.serve(async (req) => {
         const price = q?.price || q?.current_price || 0;
         if (!price || price <= 0) continue;
         const sig = sigMap.get(symbol);
-        if (!sig) continue;
+        // Skip (with a recorded reason) anything not backed by a complete, fresh
+        // canonical signal whose price still matches the market.
+        const ready = tradeReadiness(sig, price);
+        if (!ready.ok) { log(`SIGNAL GATE: Skipping ${symbol} — ${ready.reason}`); continue; }
         const signalType = (sig.signal_type || 'hold').toLowerCase();
         const confidence = Number(sig.confidence_score || 0);
         const change24h = Number(sig.change_24h || q?.change_24h_percent || 0);
