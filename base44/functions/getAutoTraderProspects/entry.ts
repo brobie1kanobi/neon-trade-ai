@@ -371,7 +371,8 @@ Deno.serve(async (req) => {
       const sig = signalMap.get(symbol);
       return !sig || signalAgeMs(sig) > 30 * 60 * 1000;
     });
-    if (needRefresh.length > 0) {
+    // Only admins may regenerate the shared signals (same rule as every other signal endpoint).
+    if (needRefresh.length > 0 && user.role === 'admin') {
       try {
         await runCanonicalPipeline(base44, user, { symbols: needRefresh });
         signals = await reloadSignals();
