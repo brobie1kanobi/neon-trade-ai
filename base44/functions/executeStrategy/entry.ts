@@ -19,6 +19,10 @@ Deno.serve(async (req) => {
     if (user?.role !== 'admin' && strategy.created_by !== user.email) {
       return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
     }
+    // Live (real-money) trade records may only be written by admins — same rule as krakenTrade.
+    if (strategy.mode !== 'simulation' && (user.role || '').toLowerCase() !== 'admin') {
+      return Response.json({ error: 'Access denied - live strategies require admin privileges' }, { status: 403 });
+    }
     
     const executions = [];
     
