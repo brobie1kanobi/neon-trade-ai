@@ -237,7 +237,7 @@ function evaluate(sym: string, d: any, ctx: any) {
     meta: {
       pipeline: PIPELINE_ID, version: PIPELINE_VERSION, generated_at: new Date(now).toISOString(),
       data_status: incomplete ? 'incomplete' : 'complete',
-      non_actionable_reason: action === 'hold' || incomplete ? (reason || `no clear edge (score ${composite.toFixed(0)})`) : null,
+      non_actionable_reason: action === 'hold' || incomplete ? (reason || `Combined indicator score is ${composite.toFixed(0)} (range −100 to +100). A buy needs +${BUY_T} or higher and a sell needs −${BUY_T} or lower, so the indicators are too mixed to act on${parts.length ? ` (${parts.join(', ')})` : ''}`) : null,
       inputs: { price, change_24h: d.change24h, candles_1h: t1?.closes.length || 0, candles_4h: t4?.closes.length || 0, last_1h_candle: t1?.lastOpenTime ? new Date(t1.lastOpenTime).toISOString() : null, btc_momentum: btc, fear_greed: sentimentScore },
       indicators: ind, scores, weights, composite_raw: r2(compositeRaw), composite: r2(composite), adjustments,
       strategies_used: Object.keys(scores), user_margins: ctx.margins, history_mode: ctx.mode

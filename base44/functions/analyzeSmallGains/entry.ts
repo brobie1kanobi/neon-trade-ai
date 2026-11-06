@@ -26,16 +26,35 @@ async function fetchFearGreed() {
   } catch (_e) { return null; }
 }
 
+const isTicker = (s: any) => typeof s === 'string' && /^[A-Za-z0-9.\-]{1,10}$/.test(s.trim());
+// Split AI picks into ticker symbols (Opportunities/Avoid badges) and prose notes (Market Summary).
+// Handles the new {symbol, reason} shape and older cached prose strings.
+function splitPicks(list: any[], label: string) {
+  const symbols: string[] = [], notes: string[] = [];
+  for (const it of list || []) {
+    if (it && typeof it === 'object') {
+      if (isTicker(it.symbol)) symbols.push(String(it.symbol).trim().toUpperCase());
+      if (it.reason) notes.push(`${label} ${it.symbol || ''}: ${it.reason}`);
+    } else if (isTicker(it)) symbols.push(String(it).trim().toUpperCase());
+    else if (it) notes.push(`${label}: ${it}`);
+  }
+  return { symbols: [...new Set(symbols)], notes };
+}
+
 function intelFromRecord(c: any) {
+  const opp = splitPicks(parse(c.best_opportunities_json, []), 'Watch');
+  const avd = splitPicks(parse(c.avoid_list_json, []), 'Avoid');
+  const notes = [...parse(c.watch_avoid_notes_json, []), ...opp.notes, ...avd.notes];
   return {
     market_intelligence: {
       market_sentiment_score: c.market_sentiment_score ?? null, market_regime: c.market_regime || 'range',
       volatility_level: c.volatility_level || 'moderate', momentum_direction: c.momentum_direction || 'neutral',
       trend_strength: c.trend_strength || 'moderate', short_term_outlook: c.short_term_outlook || '',
-      trading_recommendation: c.trading_recommendation || '', best_opportunities: parse(c.best_opportunities_json, []),
-      avoid_list: parse(c.avoid_list_json, []), hot_signals: parse(c.hot_signals_json, [])
+      trading_recommendation: c.trading_recommendation || '', best_opportunities: opp.symbols,
+      avoid_list: avd.symbols, hot_signals: parse(c.hot_signals_json, [])
     },
     market_summary: c.market_summary || '',
+    watch_avoid_notes: notes,
     upcoming_catalysts: parse(c.upcoming_catalysts_json, [])
   };
 }
@@ -51,7 +70,7 @@ async function getMarketIntel(base44: any, recs: any[], fearGreed: number | null
   let payload: any = null, source = 'llm', ttlMs = 2 * 60 * 60 * 1000;
   try {
     payload = await base44.asServiceRole.integrations.Core.InvokeLLM({
-      prompt: `You are a short-term crypto market analyst. Using current news/social context and this live data:\n${lines}\n\nDescribe the market. avoid_list = assets with clear negative news or breakdown risk. Do NOT recommend trades; the technical signals above are final. Return JSON only.`,
+      prompt: `You are a short-term crypto market analyst. Using current news/social context and this live data:\n${lines}\n\nDescribe the market. best_opportunities = assets from the list worth watching; avoid_list = assets with clear negative news or breakdown risk. For both, 'symbol' MUST be the bare ticker from the list above (e.g. SOL) and 'reason' one short sentence. Do NOT recommend trades; the technical signals above are final. Return JSON only.`,
       add_context_from_internet: true,
       response_json_schema: {
         type: 'object',
@@ -59,7 +78,8 @@ async function getMarketIntel(base44: any, recs: any[], fearGreed: number | null
           market_intelligence: { type: 'object', properties: {
             market_regime: { type: 'string' }, volatility_level: { type: 'string' }, momentum_direction: { type: 'string' },
             trend_strength: { type: 'string' }, short_term_outlook: { type: 'string' }, trading_recommendation: { type: 'string' },
-            best_opportunities: { type: 'array', items: { type: 'string' } }, avoid_list: { type: 'array', items: { type: 'string' } },
+            best_opportunities: { type: 'array', items: { type: 'object', properties: { symbol: { type: 'string' }, reason: { type: 'string' } } } },
+            avoid_list: { type: 'array', items: { type: 'object', properties: { symbol: { type: 'string' }, reason: { type: 'string' } } } },
             hot_signals: { type: 'array', items: { type: 'object', properties: { symbol: { type: 'string' }, signal_type: { type: 'string' }, predicted_move_pct: { type: 'number' }, timing: { type: 'string' } } } }
           } },
           market_summary: { type: 'string' },
@@ -88,12 +108,16 @@ async function getMarketIntel(base44: any, recs: any[], fearGreed: number | null
   }
   payload.market_intelligence.market_sentiment_score = fearGreed;
   const mi = payload.market_intelligence;
+  const opp = splitPicks(mi.best_opportunities || [], 'Watch');
+  const avd = splitPicks(mi.avoid_list || [], 'Avoid');
+  mi.best_opportunities = opp.symbols; mi.avoid_list = avd.symbols;
+  payload.watch_avoid_notes = [...opp.notes, ...avd.notes];
   const record = {
     cache_key: CACHE_KEY, symbols_json: JSON.stringify(recs.map(r => r.symbol).sort()),
     market_sentiment_score: fearGreed ?? 50, market_regime: mi.market_regime, volatility_level: mi.volatility_level,
     momentum_direction: mi.momentum_direction, trend_strength: mi.trend_strength, short_term_outlook: mi.short_term_outlook || '',
-    trading_recommendation: mi.trading_recommendation || '', best_opportunities_json: JSON.stringify(mi.best_opportunities || []),
-    avoid_list_json: JSON.stringify((mi.avoid_list || []).map((s: string) => String(s).toUpperCase())), hot_signals_json: JSON.stringify(mi.hot_signals || []),
+    trading_recommendation: mi.trading_recommendation || '', best_opportunities_json: JSON.stringify(opp.symbols),
+    avoid_list_json: JSON.stringify(avd.symbols), watch_avoid_notes_json: JSON.stringify(payload.watch_avoid_notes), hot_signals_json: JSON.stringify(mi.hot_signals || []),
     market_summary: payload.market_summary || '', upcoming_catalysts_json: JSON.stringify(payload.upcoming_catalysts || []),
     cached_at: nowIso, expires_at: new Date(Date.now() + ttlMs).toISOString()
   };
@@ -140,6 +164,7 @@ Deno.serve(async (req) => {
       market_intelligence: intel.market_intelligence,
       market_summary: intel.market_summary,
       upcoming_catalysts: intel.upcoming_catalysts || [],
+      watch_avoid_notes: intel.watch_avoid_notes || [],
       intel_source: intel.intel_source,
       analyzed_count: recommendations.length,
       incomplete_count: recommendations.filter(r => r.analysis_status !== 'complete').length,

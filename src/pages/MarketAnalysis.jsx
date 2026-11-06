@@ -753,6 +753,12 @@ export default function MarketAnalysis() {
           </CardHeader>
           <CardContent>
             <p style={{ color: 'var(--text-primary)' }}>{analysisData.market_summary}</p>
+
+            {analysisData.watch_avoid_notes?.length > 0 &&
+          <ul className="mt-3 space-y-1 text-sm" style={{ color: 'var(--text-primary)' }}>
+                {analysisData.watch_avoid_notes.map((n, idx) => <li key={idx}>{n}</li>)}
+              </ul>
+          }
             
             {analysisData.upcoming_catalysts && analysisData.upcoming_catalysts.length > 0 &&
           <div className="mt-4">

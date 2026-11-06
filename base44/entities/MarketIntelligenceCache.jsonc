@@ -40,11 +40,15 @@
     },
     "best_opportunities_json": {
       "type": "string",
-      "description": "JSON stringified list of best opportunity symbols"
+      "description": "JSON stringified list of best opportunity ticker symbols"
     },
     "avoid_list_json": {
       "type": "string",
-      "description": "JSON stringified list of symbols to avoid"
+      "description": "JSON stringified list of ticker symbols to avoid"
+    },
+    "watch_avoid_notes_json": {
+      "type": "string",
+      "description": "JSON stringified list of explanations for watch/avoid picks"
     },
     "hot_signals_json": {
       "type": "string",
