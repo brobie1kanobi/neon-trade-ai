@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ChevronDown } from "lucide-react";
+import BlockReasonsList from "./BlockReasonsList";
 import { 
   Activity, 
   AlertTriangle, 
@@ -28,6 +30,8 @@ export default function SystemHealthPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [resettingComponent, setResettingComponent] = useState(null);
   const { settings } = useSettings();
+
+  const [expandedExec, setExpandedExec] = useState(false);
 
   const fetchHealth = async () => {
     try {
@@ -88,7 +92,8 @@ export default function SystemHealthPanel() {
         label: 'Trade Execution',
         detail: `${executedTrades.length} executed, ${failedTrades.length} failed (24h)`,
         icon: TrendingUp,
-        last_activity: lastTradeTime
+        last_activity: lastTradeTime,
+        blocked_trades: failedTrades
       };
 
       // Kraken API health - CRITICAL: merge with SystemHealth entity record
@@ -425,6 +430,17 @@ export default function SystemHealthPanel() {
                     )}
                   </div>
                 </div>
+                {key === 'trade_execution' && (
+                  <button
+                    onClick={() => setExpandedExec(v => !v)}
+                    className="mt-2 flex items-center gap-1 text-xs"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <ChevronDown className={`w-3 h-3 transition-transform ${expandedExec ? 'rotate-180' : ''}`} />
+                    {expandedExec ? 'Hide' : 'Show'} block reasons
+                  </button>
+                )}
+                {key === 'trade_execution' && expandedExec && <BlockReasonsList trades={comp.blocked_trades} />}
               </div>
             );
           })}
