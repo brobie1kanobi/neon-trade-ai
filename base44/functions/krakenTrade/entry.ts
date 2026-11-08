@@ -43,6 +43,11 @@ export async function tradeRateGate(userEmail, cost = 1) {
   await new Promise(r => setTimeout(r, Math.min(wait, 3000)));
 }
 
+// Kraken rejected the WS token itself (stale/invalid) — fix by fetching a fresh one.
+function isTokenError(msg) {
+  return /permission denied|EAPI:Invalid key|invalid session|ESession|invalid token|token expired/i.test(String(msg || ''));
+}
+
 // Per-user in-memory queue to serialize add_order calls (prevents EAPI:Rate limit exceeded)
 const __orderLocks = new Map();
 async function withOrderLock(userEmail, task) {
@@ -746,7 +751,11 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5, 
         throw e;
       }
 
-      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(msg);
+      // A rejected token won't start working by retrying it — hand back to the
+      // caller so it fetches a fresh token and retries once.
+      if (isTokenError(msg)) { throw e; }
+
+      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|403/i.test(msg);
       if (!shouldRetry) { throw e; }
       const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 400);
       console.warn(`[krakenTrade] Retry ${attempt + 1}/${maxAttempts} after ${delay}ms due to: ${msg}`);
@@ -1013,8 +1022,8 @@ Deno.serve(async (req) => {
         throw new Error('Invalid token source: expected TRADE key');
       }
       if (!nextToken) {
-        const detail = (tokenData && (tokenData.error || tokenData.used_key_type)) ? (`Failed to get WebSocket token (${tokenData.used_key_type || 'unknown'} key)`) : 'Failed to get WebSocket token';
-        throw new Error(detail);
+        // Surface Kraken's real reason (cooldown, rate limit, bad credentials...)
+        throw new Error(`Failed to get WebSocket token (trade key): ${tokenData?.error || 'no token returned'}`);
       }
       wsToken = nextToken;
       console.log('[krakenTrade] ✅ Got WebSocket token');
@@ -1104,7 +1113,7 @@ Deno.serve(async (req) => {
         console.log('[krakenTrade] ✅ BUY executed:', buyResult.order_id);
       } catch (buyError) {
         console.error('[krakenTrade] ❌ BUY failed:', buyError.message);
-        const isPerm = /permission denied/i.test(buyError.message || '');
+        const isPerm = isTokenError(buyError.message);
         // If permission error, force refresh WS token from trade key and retry once
         if (isPerm) {
           try {
@@ -1685,7 +1694,7 @@ Deno.serve(async (req) => {
         await tradeRateGate(user.email, 2);
         tradeResult = await withOrderLock(user.email, async () => executeKrakenTradeWithRetry(await getWsTokenLazy(2), orderParams, 5, base44));
       } catch (firstErr) {
-        if (/permission denied/i.test(firstErr?.message || '')) {
+        if (isTokenError(firstErr?.message)) {
           console.warn('[krakenTrade] Forcing WS token refresh and retrying single order...');
           const freshToken = await refreshWsToken(2);
           tradeResult = await executeKrakenTradeWithRetry(freshToken, orderParams, 5, base44);
@@ -1766,7 +1775,14 @@ Deno.serve(async (req) => {
 
       console.log('[krakenTrade] Cancel orders:', orderIds);
 
-      const cancelResult = await cancelKrakenOrder(await getWsTokenLazy(2), orderIds);
+      let cancelResult;
+      try {
+        cancelResult = await cancelKrakenOrder(await getWsTokenLazy(2), orderIds);
+      } catch (cancelErr) {
+        if (!isTokenError(cancelErr?.message)) throw cancelErr;
+        console.warn('[krakenTrade] Token rejected on cancel — refreshing and retrying once');
+        cancelResult = await cancelKrakenOrder(await refreshWsToken(2), orderIds);
+      }
 
       console.log('[krakenTrade] ✅ Orders cancelled:', cancelResult);
 

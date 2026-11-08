@@ -194,6 +194,9 @@ const SHARED_TTL = {
   getLedgers: 900000 // deposits/withdrawals rarely change
 };
 const LOCKOUT_KEY = 'kraken:lockout';
+// Kraken rate limits are per API key, so the Trade key gets its own cooldown —
+// a Balance-key lockout must never block the Trade key from getting a token.
+const TRADE_LOCKOUT_KEY = 'kraken:lockout:trade';
 const LOCKOUT_MS = 180000; // back off 3 min after Kraken rate-limits/locks out
 
 Deno.serve(async (req) => {
@@ -415,9 +418,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'getWebSocketUrl' || action === 'getWebSocketToken') {
+      const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
+      const wsLockKey = keyType === 'trade' ? TRADE_LOCKOUT_KEY : LOCKOUT_KEY;
       try {
         const forceRefresh = !!payload?.forceRefresh;
-        const keyType = (payload?.keyType === 'balance') ? 'balance' : 'trade';
         const { apiKey, apiSecret } = getSecrets(keyType === 'trade' ? 'trade' : 'balance');
         const fingerprint = `${keyType}:${String(apiKey).slice(0,6)}...${String(apiKey).slice(-4)}`;
 
@@ -447,9 +451,9 @@ Deno.serve(async (req) => {
 
           // Kraken already rate-limited us — do not ask for another token and
           // renew that lockout. Tell the caller to back off instead.
-          const wsLock = await sharedGet(LOCKOUT_KEY);
+          const wsLock = await sharedGet(wsLockKey);
           if (wsLock && !wsLock.expired) {
-            return Response.json({ success: false, connected: true, error: 'Kraken API is in cooldown after rate limiting — retrying shortly', kraken_backoff: true }, { status: 200 });
+            return Response.json({ success: false, connected: true, error: `Kraken ${keyType} key is in cooldown after rate limiting — retrying shortly`, kraken_backoff: true, used_key_type: keyType }, { status: 200 });
           }
         }
 
@@ -472,10 +476,10 @@ Deno.serve(async (req) => {
         // A lockout hit while fetching a token must start the global cooldown
         // too, otherwise every caller keeps retrying and renewing it.
         if (/rate limit|lockout|too many requests/i.test(String(e?.message || ''))) {
-          try { await sharedSetLockout?.(); } catch (_e) {}
-          return Response.json({ success: false, connected: true, error: e.message, kraken_backoff: true }, { status: 200 });
+          try { await sharedSet(wsLockKey, { locked: true }, LOCKOUT_MS); } catch (_e) {}
+          return Response.json({ success: false, connected: true, error: e.message, kraken_backoff: true, used_key_type: keyType }, { status: 200 });
         }
-        return Response.json({ success: false, connected: false, error: e.message }, { status: 200 });
+        return Response.json({ success: false, connected: false, error: e.message, used_key_type: keyType }, { status: 200 });
       }
     }
 
