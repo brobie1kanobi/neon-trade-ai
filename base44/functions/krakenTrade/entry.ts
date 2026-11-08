@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
+import { getMinOrderSizes } from '../../shared/krakenMinimums.ts';
 
 /**
  * Kraken Trade Executor - COMPLETE WebSocket v2 Trading Implementation
@@ -778,13 +779,7 @@ async function executeKrakenRestOrder(base44, orderParams) {
   const pair = String(orderParams.symbol || '').replace('/', '').toUpperCase();
   const baseSymbol = String(orderParams.symbol || '').split('/')[0].toUpperCase();
   const side = String(orderParams.side || '').toLowerCase();
-  const minOrderSizes = {
-    BTC: 0.00005, XBT: 0.00005, ETH: 0.001, SOL: 0.02, XRP: 10.0, ADA: 4.4, DOT: 0.5, DOGE: 13.0, XDG: 13.0,
-    LINK: 0.2, UNI: 0.5, MATIC: 10.0, POL: 10.0, ATOM: 0.5, AVAX: 0.1, BCH: 0.01, LTC: 0.04, TRX: 50.0,
-    SHIB: 100000.0, XLM: 20.0, ALGO: 10.0, FIL: 0.7, NEAR: 0.7, APT: 2.2, ARB: 5.2, OP: 16.0, INJ: 0.9,
-    PEPE: 500000.0, SUI: 3.0, HBAR: 20.0, KAS: 30.0, TAO: 0.008, GRASS: 13.0, GOAT: 5.0, TRUMP: 0.2,
-    MOVE: 6.0, KAITO: 2.5, TIA: 8.2, FET: 18.0, WIF: 14.0, BONK: 500000.0, FLOKI: 105000.0, BABY: 50.0
-  };
+  const minOrderSizes = await getMinOrderSizes();
 
   let finalQty = parseFloat(orderParams.order_qty) || 0;
   if (side === 'sell') {
@@ -1076,12 +1071,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Entry:', entryPrice || 'MARKET', 'TP:', takeProfitPrice || `+${takeProfitPercent}%`, 'SL:', stopLossPrice || `-${stopLossPercent}%`);
 
       // Kraken minimums for potential future SELL orders (TP/SL)
-      const minOrderSizes = {
-        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
-        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
-        'PEPE': 500000.0, 'SUI': 3.0
-      };
+      const minOrderSizes = await getMinOrderSizes();
       const sellMinQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       const canPlaceSellOrders = parsedQty >= sellMinQty;
 
@@ -1292,12 +1282,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] Use limit:', useLimit, 'Reference:', triggerReference);
 
       // Enforce Kraken minimums and available holdings for SELL side
-      const minOrderSizes = {
-        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
-        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
-        'PEPE': 500000.0, 'SUI': 3.0
-      };
+      const minOrderSizes = await getMinOrderSizes();
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       let finalQty = parsedQty;
       const availMap = await getAvailableMap(base44, true);
@@ -1402,12 +1387,7 @@ Deno.serve(async (req) => {
       console.log('[krakenTrade] TP:', takeProfitPrice, 'SL:', stopLossPrice);
 
       // Enforce Kraken minimums and available holdings for SELL side
-      const minOrderSizes = {
-        'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4, 'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0,
-        'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0, 'POL': 10.0, 'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0,
-        'SHIB': 100000.0, 'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0, 'INJ': 0.9,
-        'PEPE': 500000.0, 'SUI': 3.0
-      };
+      const minOrderSizes = await getMinOrderSizes();
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       const availMap = await getAvailableMap(base44, true);
       const available = availMap[symbol.toUpperCase()] || 0;
@@ -1536,86 +1516,8 @@ Deno.serve(async (req) => {
         }, { status: 400 });
       }
 
-      // CRITICAL: Minimum order validation (Kraken minimums - updated Dec 2024)
-      // Source: https://support.kraken.com/articles/205893708-minimum-order-size-volume-for-trading
-      const minOrderSizes = {
-        'BTC': 0.00005,    // Updated Dec 2024
-        'XBT': 0.00005,
-        'ETH': 0.001,      // Updated Dec 2024
-        'SOL': 0.02,       // Updated Dec 2024: mSOL is 0.017
-        'XRP': 10.0,
-        'ADA': 4.4,        // Updated Dec 2024
-        'DOT': 0.5,
-        'DOGE': 13.0,      // Updated Dec 2024
-        'XDG': 13.0,       // Kraken alias for DOGE
-        'LINK': 0.2,       // Updated Dec 2024
-        'UNI': 0.5,
-        'MATIC': 10.0,
-        'POL': 10.0,
-        'ATOM': 0.5,
-        'AVAX': 0.1,
-        'BCH': 0.01,       // Updated Dec 2024
-        'LTC': 0.04,
-        'TRX': 50.0,
-        'SHIB': 100000.0,
-        'XLM': 20.0,       // Verified Dec 2024 - NOT in list, check Stellar docs
-        'ALGO': 10.0,
-        'FIL': 0.7,        // Updated Dec 2024
-        'NEAR': 0.7,       // Updated Dec 2024
-        'APT': 2.2,        // Updated Dec 2024
-        'ARB': 5.2,        // Updated Dec 2024
-        'OP': 16.0,        // Updated Dec 2024
-        'INJ': 0.9,        // Updated Dec 2024
-        'PEPE': 500000.0,
-        'SUI': 3.0,
-        'BABY': 50.0,      // Updated Dec 2024
-        'FLOKI': 105000.0, // Updated Dec 2024
-        'WIF': 14.0,       // Updated Dec 2024
-        'BONK': 500000.0,  // Updated Dec 2024
-        'RENDER': 0.5,
-        'FET': 18.0,       // Updated Dec 2024
-        'RNDR': 0.5,
-        'GRT': 10.0,
-        'IMX': 16.0,       // Updated Dec 2024
-        'SAND': 5.0,
-        'MANA': 8.0,       // Updated Dec 2024
-        'AXS': 4.5,        // Updated Dec 2024
-        'ENS': 0.12,       // Updated Dec 2024
-        'LDO': 2.8,        // Updated Dec 2024
-        'RPL': 0.1,
-        'CRV': 4.5,        // Updated Dec 2024
-        'AAVE': 0.015,     // Updated Dec 2024
-        'MKR': 0.0035,     // Updated Dec 2024
-        'SNX': 2.0,
-        'COMP': 0.06,      // Updated Dec 2024
-        'YFI': 0.0002,
-        'SUSHI': 5.0,
-        '1INCH': 11.0,     // Updated Dec 2024
-        'BAL': 1.5,        // Updated Dec 2024
-        'ZRX': 9.0,        // Updated Dec 2024
-        'ENJ': 148.0,      // Updated Dec 2024
-        'CHZ': 50.0,
-        'GALA': 650.0,     // Updated Dec 2024
-        'APE': 18.0,       // Updated Dec 2024
-        'BLUR': 129.0,     // Updated Dec 2024
-        'SEI': 5.0,
-        'TIA': 8.2,        // Updated Dec 2024
-        'JUP': 20.0,       // Updated Dec 2024
-        'PYTH': 10.0,
-        'WLD': 1.0,
-        'STRK': 2.0,
-        'HBAR': 20.0,      // Added
-        'KAS': 30.0,       // Added
-        'TAO': 0.008,      // Added
-        'EIGEN': 8.6,      // Added
-        'ENA': 4.0,        // Added
-        'GRASS': 13.0,     // Added
-        'GOAT': 5.0,       // Added
-        'TRUMP': 0.2,      // Added
-        'FARTCOIN': 5.0,   // Added
-        'MOVE': 6.0,       // Added
-        'KAITO': 2.5       // Added
-      };
+      // CRITICAL: Minimum order validation — live Kraken minimums (shared/krakenMinimums.ts)
+      const minOrderSizes = await getMinOrderSizes();
 
       const minQty = minOrderSizes[symbol.toUpperCase()] || 0.00001;
       let finalQty = parsedQty;

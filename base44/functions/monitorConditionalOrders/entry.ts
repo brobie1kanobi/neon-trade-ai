@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
 import { evaluateProfitLock } from '../../shared/profitLock.ts';
+import { getMinOrderSizes, FALLBACK_MIN_ORDER_SIZES } from '../../shared/krakenMinimums.ts';
 
 /**
  * Server-side TP/SL Monitor - runs as a scheduled automation (hourly)
@@ -22,16 +23,8 @@ const KRAKEN_PAIR_MAP = {
   'FLOKI': 'FLOKIUSD'
 };
 
-const MIN_ORDER_SIZES = {
-  'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
-  'DOT': 0.5, 'DOGE': 13.0, 'XDG': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'MATIC': 10.0,
-  'ATOM': 0.5, 'AVAX': 0.1, 'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0, 'SHIB': 100000.0,
-  'XLM': 20.0, 'ALGO': 10.0, 'FIL': 0.7, 'NEAR': 0.7, 'BABY': 50.0, 'FLOKI': 105000.0,
-  'WIF': 14.0, 'BONK': 500000.0, 'PEPE': 500000.0, 'APT': 2.2, 'ARB': 5.2, 'OP': 16.0,
-  'INJ': 0.9, 'TIA': 8.2, 'FET': 18.0, 'TRUMP': 0.2, 'KAITO': 2.5, 'MOVE': 6.0,
-  'GRASS': 13.0, 'GOAT': 5.0, 'HBAR': 20.0, 'KAS': 30.0, 'TAO': 0.008, 'EIGEN': 8.6,
-  'ENA': 4.0, 'SUI': 3.0, 'FARTCOIN': 5.0, 'JUP': 20.0, 'POL': 10.0
-};
+// Refreshed from Kraken's live minimums at the start of every run.
+let MIN_ORDER_SIZES: Record<string, number> = FALLBACK_MIN_ORDER_SIZES;
 
 // Normalize Kraken asset key (e.g., XXLM -> XLM, XBT -> BTC)
 function normalizeAssetKey(key) {
@@ -120,6 +113,7 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     if (user.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 });
+    MIN_ORDER_SIZES = await getMinOrderSizes();
 
     // 1. Fetch all active conditional orders
     const orders = await base44.asServiceRole.entities.ConditionalOrder.filter({ status: 'active' });

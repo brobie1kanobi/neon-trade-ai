@@ -4,6 +4,7 @@ import { useKrakenWebSocket } from '@/components/providers/KrakenWebSocketProvid
 import { useSettings } from '@/components/utils/SettingsContext';
 import { toast } from 'sonner';
 import { evaluateProfitLock } from '@/lib/profitLock';
+import { MIN_ORDER_SIZES } from '@/lib/krakenMinimums';
 
 /**
  * REAL-TIME CONDITIONAL ORDER MONITOR
@@ -21,13 +22,7 @@ const MIN_CHECK_INTERVAL_MS = 25000; // Don't check more often than every 25s
 const STALE_ORDERS_CACHE_MS = 60000; // Re-fetch orders from DB every 60s
 
 // Kraken minimum order sizes per asset
-const MIN_ORDER_SIZES = {
-  'BTC': 0.00005, 'XBT': 0.00005, 'ETH': 0.001, 'SOL': 0.02, 'XRP': 10.0, 'ADA': 4.4,
-  'DOT': 0.5, 'DOGE': 13.0, 'LINK': 0.2, 'UNI': 0.5, 'ATOM': 0.5, 'AVAX': 0.1,
-  'BCH': 0.01, 'LTC': 0.04, 'TRX': 50.0, 'SHIB': 100000.0, 'XLM': 20.0,
-  'PEPE': 500000.0, 'SUI': 3.0, 'HBAR': 20.0, 'NEAR': 0.7, 'BONK': 500000.0,
-  'FLOKI': 105000.0, 'TRUMP': 0.2
-};
+
 
 export function useConditionalOrderMonitor(userEmail) {
   const { settings } = useSettings();

@@ -197,20 +197,8 @@ export const KRAKEN_PRICE_TYPE = {
   QUOTE: 'quote'     // Notional offset in quote currency
 };
 
-// Minimum order sizes (updated Dec 2024)
-export const MIN_ORDER_SIZES = {
-  'BTC': 0.0001,
-  'ETH': 0.005,
-  'SOL': 0.1,
-  'XRP': 10.0,
-  'XLM': 20.0,
-  'ADA': 10.0,
-  'DOT': 0.5,
-  'DOGE': 50.0,
-  'LINK': 0.5,
-  'AVAX': 0.1,
-  'LTC': 0.04
-};
+// Minimum order sizes — single shared list
+export { MIN_ORDER_SIZES } from '@/lib/krakenMinimums';
 
 export default function KrakenTradingDiagnostics() {
   return (
