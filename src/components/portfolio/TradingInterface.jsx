@@ -603,42 +603,34 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
             const stopLossPrice = tradeData.price * (1 - parseFloat(lossMargin) / 100);
             const takeProfitPrice = tradeData.price * (1 + parseFloat(gainMargin) / 100);
 
-            console.log('[TradingInterface] Placing Kraken stop-loss order:', {
-              symbol: tradeData.symbol,
-              quantity: tradeData.quantity,
-              stopPrice: stopLossPrice
-            });
-
-            // Place REAL Kraken stop-loss order
-            let stopLossOrderId = null;
+            // Kraken spot can only hold ONE resting exit on the same coins.
+            // The TAKE-PROFIT goes to the exchange; the stop-loss is enforced by
+            // the server-side monitor (runs even when the app is closed).
+            let takeProfitOrderId = null;
             try {
-              const stopLossResponse = await base44.functions.invoke('krakenTrade', {
+              const tpResponse = await base44.functions.invoke('krakenTrade', {
                 action: 'place_order',
                 symbol: tradeData.symbol,
                 side: 'sell',
                 quantity: tradeData.quantity,
-                orderType: 'stop-loss',
-                stopPrice: stopLossPrice,
-                timeInForce: 'gtc',
+                orderType: 'take-profit',
+                triggerPrice: takeProfitPrice,
                 wsToken: __wsToken
               });
 
-              const slData = stopLossResponse?.data || stopLossResponse;
-              if (slData?.success) {
-                stopLossOrderId = slData.order_id || slData.txid;
-                console.log('[TradingInterface] ✅ Kraken stop-loss order placed:', stopLossOrderId);
-                
-                notify.success("🟢 LIVE Stop-Loss Set", {
-                  description: `SL @ $${stopLossPrice.toFixed(2)} (-${lossMargin}%) on Kraken`,
+              const tpData = tpResponse?.data || tpResponse;
+              if (tpData?.success) {
+                takeProfitOrderId = tpData.order_id || tpData.txid;
+                notify.success("🟢 LIVE Take-Profit Set", {
+                  description: `TP @ $${takeProfitPrice.toFixed(4)} (+${gainMargin}%) on Kraken`,
                   duration: 3000,
-                  dedupKey: `sl:${tradeData.symbol}`
+                  dedupKey: `tp:${tradeData.symbol}`
                 });
               } else {
-                console.warn('[TradingInterface] Stop-loss order failed:', slData?.error);
+                console.warn('[TradingInterface] Take-profit order failed:', tpData?.error);
               }
-            } catch (slError) {
-              console.error('[TradingInterface] Stop-loss order error:', slError.message);
-              // Don't fail the whole flow - we still have local tracking
+            } catch (tpError) {
+              console.error('[TradingInterface] Take-profit order error:', tpError.message);
             }
 
             // Also create local conditional order for app-based monitoring (backup/trailing)
@@ -656,7 +648,7 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
               is_simulation: false,
               idempotency_key: `${idempotencyKey}_conditional`,
               kraken_order_id: krakenOrderId,
-              kraken_sl_order_id: stopLossOrderId || null,
+              kraken_tp_order_id: takeProfitOrderId || null,
               trade_id: krakenOrderId,
               created_by: currentUser.email
             });
@@ -664,7 +656,7 @@ const exchangeQty = typeof krakenData?.executed_qty === 'number' ? krakenData.ex
             console.log('[TradingInterface] ✅ Created LIVE conditional order:', conditionalOrder);
 
             notify.success("🤖 Auto-Trader Monitoring", {
-              description: `TP: +${gainMargin}% | SL: -${lossMargin}% ${stopLossOrderId ? '(Kraken SL active)' : '(trailing enabled)'}`,
+              description: `TP: +${gainMargin}% | SL: -${lossMargin}% ${takeProfitOrderId ? '(Kraken TP active, SL monitored)' : '(app-monitored)'}`,
               duration: 3000
             });
 
