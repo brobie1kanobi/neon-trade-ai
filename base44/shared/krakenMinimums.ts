@@ -1,7 +1,7 @@
 /**
  * Kraken minimum order sizes (in units of the coin), shared by every function
  * that sizes orders. Kraken changes these from time to time, so the live
- * values are read from Kraken's public AssetPairs endpoint (cached 1 hour);
+ * values are read from Kraken's public AssetPairs endpoint (cached 24 hours);
  * the backup list below (checked against Kraken on 2026-11-08) is used only
  * if Kraken can't be reached.
  */
@@ -25,7 +25,7 @@ const KRAKEN_BASE_ALIASES: Record<string, string> = {
   XXRP: 'XRP', XLTC: 'LTC', XXLM: 'XLM'
 };
 
-const CACHE_MS = 3600000;
+const CACHE_MS = 24 * 3600000; // once a day
 let cached: Record<string, number> | null = null;
 let cachedAt = 0;
 
