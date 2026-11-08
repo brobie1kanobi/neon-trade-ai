@@ -13,7 +13,7 @@ window.addEventListener('error', (e) => {
     e.stopImmediatePropagation();
     e.preventDefault();
   }
-});
+}, true); // capture phase: runs before the platform's error reporter sees it
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   // <React.StrictMode>
