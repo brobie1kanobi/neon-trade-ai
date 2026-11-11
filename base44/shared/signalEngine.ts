@@ -15,6 +15,7 @@
 //   Missing / stale / conflicting required inputs → 'hold' with confidence 0
 //   and data_status 'incomplete' — never a heuristic buy.
 import { PIPELINE_ID, signalMeta, isCanonicalSignal } from './signalSelect.ts';
+import { predictMoves } from './movePredictor.ts';
 
 export const PIPELINE_VERSION = 'unified_v1.0';
 export const SIGNAL_TTL_MS = 75 * 60 * 1000;
@@ -343,8 +344,13 @@ export async function runCanonicalPipeline(base44: any, user: any, opts: { symbo
   const saved: any[] = [];
   const toDeactivate: string[] = [];
   const ctx = { strategies, btc, sentimentScore, history, now, margins, mode };
+  const evals: Record<string, any> = {};
+  for (const sym of symbols) evals[sym] = evaluate(sym, data[sym], ctx);
+  const predictions = await predictMoves(base44, symbols.map(sym => ({ sym, d: data[sym], meta: evals[sym].meta })), btc, sentimentScore);
   for (const sym of symbols) {
-    const ev = evaluate(sym, data[sym], ctx);
+    const ev = evals[sym];
+    const pred = predictions[sym];
+    ev.meta.prediction = pred;
     const price = data[sym].price;
     const payload: any = {
       asset_symbol: sym, asset_type: 'crypto', timeframe: '1h', signal_type: ev.action, confidence_score: ev.confidence,
@@ -353,7 +359,8 @@ export async function runCanonicalPipeline(base44: any, user: any, opts: { symbo
       target_price: price > 0 ? price * (1 + margins.tp / 100) : undefined,
       stop_loss_price: price > 0 ? price * (1 - margins.sl / 100) : undefined,
       technical_pattern: ev.meta.data_status === 'complete' ? 'No clear pattern' : 'Analysis incomplete',
-      momentum_strength: ev.momentum, timing_window: '4h', sentiment_score: sentimentScore ?? undefined,
+      momentum_strength: ev.momentum, timing_window: pred?.timing_window || '4h',
+      predicted_gain_pct: pred?.predicted_move_pct, sentiment_score: sentimentScore ?? undefined,
       is_active: true, expires_at: expiresAt, metadata_json: JSON.stringify(ev.meta)
     };
     const mine = active.filter((s: any) => String(s.asset_symbol || '').toUpperCase() === sym);

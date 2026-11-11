@@ -90,7 +90,7 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
         <div>
           <p style={{ color: 'var(--text-secondary)' }}>Predicted Move</p>
           <p className={`font-semibold ${(signal.predicted_move_pct || signal.predicted_gain_percent || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {(signal.predicted_move_pct || signal.predicted_gain_percent || 0) >= 0 ? '+' : ''}{(signal.predicted_move_pct || signal.predicted_gain_percent || 0).toFixed(1)}%
+            {(() => { const m = Number(signal.predicted_move_pct || signal.predicted_gain_percent || 0); return `${m >= 0 ? '+' : ''}${m.toFixed(Math.abs(m) < 1 ? 2 : 1)}`; })()}%
           </p>
         </div>
         <div>
