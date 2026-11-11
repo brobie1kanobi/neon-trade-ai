@@ -212,9 +212,12 @@ export default function QuickActions() {
                   </Badge>
                 </div>
                 <span className={`text-xs font-bold ${(topSignal.predicted_move_pct || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {(topSignal.predicted_move_pct || 0) >= 0 ? '+' : ''}{topSignal.predicted_move_pct?.toFixed(1)}%
+                  {(() => { const m = Number(topSignal.predicted_move_pct || 0); return `${m >= 0 ? '+' : ''}${m.toFixed(Math.abs(m) < 1 ? 2 : 1)}`; })()}%
                 </span>
               </div>
+          }
+            {topSignal?.ai_analysis &&
+          <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{topSignal.ai_analysis}</p>
           }
 
             {/* No data fallback */}

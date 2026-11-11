@@ -557,6 +557,8 @@ Deno.serve(async (req) => {
         total_value: total,
         confidence_score: confidence,
         ai_reasoning: signal.reasoning || 'Neon Trade AI is analyzing market trends and social media noise...',
+        ai_analysis: metadata?.prediction?.analysis || null,
+        predicted_move_pct: Number(signal.predicted_gain_pct || 0),
         predicted_gain: signal.predicted_gain_pct || effectiveGainMargin,
         is_blocked: !!blockReason,
         block_reason: blockReason,

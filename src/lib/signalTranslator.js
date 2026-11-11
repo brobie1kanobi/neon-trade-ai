@@ -112,9 +112,10 @@ export function summarizeReasoning(reasoning) {
     .map(i => i.detail.charAt(0).toUpperCase() + i.detail.slice(1))
     .join('. ');
 
+  const score = Math.round(parsed.composite ?? 0) || 0; // never "-0"
   let summary = detailSentences ?
-    `${detailSentences}. Combined score: ${parsed.composite?.toFixed(0)}/100 (${scoreLabel}).` :
-    `Composite score: ${parsed.composite?.toFixed(0)}/100.`;
+    `${detailSentences}. Combined score: ${score}/100 (${scoreLabel}).` :
+    `Composite score: ${score}/100.`;
   if (parsed.btcNote) summary += ` ${parsed.btcNote}.`;
   return summary;
 }

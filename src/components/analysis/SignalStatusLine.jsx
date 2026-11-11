@@ -24,7 +24,7 @@ export default function SignalStatusLine({ signal }) {
         }
       </div>
       {signal.non_actionable_reason &&
-      <p style={{ color: 'var(--text-secondary)' }}>Why no trade: {signal.non_actionable_reason}</p>
+      <p style={{ color: 'var(--text-secondary)' }}>Why no trade: {String(signal.non_actionable_reason).replace(/score is -0 /, 'score is 0 ')}</p>
       }
     </div>);
 }

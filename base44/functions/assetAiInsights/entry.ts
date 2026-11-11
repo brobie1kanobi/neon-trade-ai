@@ -1,4 +1,27 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
+import { loadCanonicalSignals } from '../../shared/signalEngine.ts';
+import { signalMeta } from '../../shared/signalSelect.ts';
+
+// Real indicator values from the app's own canonical signal, so the asset page
+// analysis matches Market Analysis and the auto-trader instead of guessing.
+async function canonicalContext(base44, symbol) {
+  const s = (await loadCanonicalSignals(base44, [symbol]).catch(() => new Map())).get(symbol);
+  if (!s) return '';
+  const m = signalMeta(s);
+  const ind = m.indicators || {};
+  const facts = [
+    `decision=${s.signal_type} (${s.confidence_score}% confidence)`,
+    `combined score=${Math.round(m.composite ?? 0) || 0} (buy needs +20)`,
+    ind.rsi != null ? `RSI14=${Number(ind.rsi).toFixed(1)}` : null,
+    ind.macd ? `MACD histogram=${Number(ind.macd.histPct).toFixed(3)}% of price` : null,
+    ind.bollinger ? `Bollinger %B=${Number(ind.bollinger.percentB).toFixed(2)}, width=${Number(ind.bollinger.bandwidth).toFixed(2)}%` : null,
+    ind.volume_ratio != null ? `volume=${Number(ind.volume_ratio).toFixed(2)}x average` : null,
+    ind.trend_1h != null ? `trend 1h=${ind.trend_1h}, 4h=${ind.trend_4h}` : null,
+    s.predicted_gain_pct ? `predicted move=${s.predicted_gain_pct}% within ${s.timing_window}` : null,
+    m.prediction?.analysis ? `app analysis: ${m.prediction.analysis}` : null
+  ].filter(Boolean).join('; ');
+  return `\n\nThe app's own live analysis for ${symbol} (authoritative — use these exact values for technical_analysis and do not contradict the decision): ${facts}`;
+}
 
 // Narrow, app-specific AI endpoints for the asset/market UI.
 // Restricted Core integrations (InvokeLLM) run here with the service role
@@ -39,13 +62,14 @@ export default async function (req: Request): Promise<Response> {
       const symbol = cleanSymbol(body?.symbol);
       if (!symbol) return Response.json({ error: 'Invalid symbol' }, { status: 400 });
       const assetType = body?.assetType === 'stock' ? 'stock' : 'crypto';
+      const appContext = assetType === 'crypto' ? await canonicalContext(base44, symbol) : '';
 
       const result = await ai.InvokeLLM({
         prompt: `Provide a detailed but concise market analysis for the ${assetType} ${symbol}.
 1. sentiment: a single word — "Bullish", "Bearish" or "Neutral".
 2. summary: 2-3 sentences on the current market position and outlook.
 3. technical_analysis: a brief summary of key technical indicators (RSI, MACD, key moving averages).
-4. recent_news: 2-3 markdown bullet points of recent significant news or catalysts affecting the price.`,
+4. recent_news: 2-3 markdown bullet points of recent significant news or catalysts affecting the price.${appContext}`,
         add_context_from_internet: true,
         model: 'gemini_3_flash',
         response_json_schema: {

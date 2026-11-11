@@ -4,7 +4,8 @@ import { TrendingUp, TrendingDown, BarChart3, Clock, Target, Info } from "lucide
 import { summarizeReasoning, friendlyPattern, buildEligibilityExplanation } from "@/lib/signalTranslator";
 
 export default function AIAnalysisCard({ prospect, userMargins }) {
-  const summary = summarizeReasoning(prospect.ai_reasoning);
+  const summary = prospect.ai_analysis || summarizeReasoning(prospect.ai_reasoning);
+  const move = Number(prospect.predicted_move_pct || 0);
   const explanationLines = buildEligibilityExplanation(prospect, userMargins);
 
   return (
@@ -25,7 +26,12 @@ export default function AIAnalysisCard({ prospect, userMargins }) {
         {prospect.timing_window &&
           <Badge variant="outline" className="text-xs flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {prospect.timing_window === 'immediate' ? '⚡ Now' : prospect.timing_window === 'short_term' ? '24-48h' : 'Wait'}
+            {prospect.timing_window === 'immediate' ? '⚡ Now' : prospect.timing_window === 'short_term' ? '24-48h' : `Next ${prospect.timing_window}`}
+          </Badge>
+        }
+        {move !== 0 &&
+          <Badge variant="outline" className={`text-xs ${move > 0 ? 'text-green-500' : 'text-red-500'}`}>
+            Predicted {move > 0 ? '+' : ''}{move.toFixed(Math.abs(move) < 1 ? 2 : 1)}%
           </Badge>
         }
         {prospect.optimal_action && prospect.optimal_action !== 'buy' &&
