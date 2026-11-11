@@ -133,7 +133,7 @@ function SignalCard({ signal, onSendToTrader, onManualTrade }) {
       </div>
 
       <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-        {summarizeReasoning(signal.reasoning || signal.action_reason)}
+        {signal.ai_analysis || summarizeReasoning(signal.reasoning || signal.action_reason)}
       </p>
 
       <SignalStatusLine signal={signal} />

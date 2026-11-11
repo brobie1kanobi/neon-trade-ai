@@ -238,7 +238,7 @@ function evaluate(sym: string, d: any, ctx: any) {
     meta: {
       pipeline: PIPELINE_ID, version: PIPELINE_VERSION, generated_at: new Date(now).toISOString(),
       data_status: incomplete ? 'incomplete' : 'complete',
-      non_actionable_reason: action === 'hold' || incomplete ? (reason || `Combined indicator score is ${composite.toFixed(0)} (range −100 to +100). A buy needs +${BUY_T} or higher and a sell needs −${BUY_T} or lower, so the indicators are too mixed to act on${parts.length ? ` (${parts.join(', ')})` : ''}`) : null,
+      non_actionable_reason: action === 'hold' || incomplete ? (reason || `Combined indicator score is ${Math.round(composite) || 0} (range −100 to +100). A buy needs +${BUY_T} or higher and a sell needs −${BUY_T} or lower, so the indicators are too mixed to act on${parts.length ? ` (${parts.join(', ')})` : ''}`) : null,
       inputs: { price, change_24h: d.change24h, candles_1h: t1?.closes.length || 0, candles_4h: t4?.closes.length || 0, last_1h_candle: t1?.lastOpenTime ? new Date(t1.lastOpenTime).toISOString() : null, btc_momentum: btc, fear_greed: sentimentScore },
       indicators: ind, scores, weights, composite_raw: r2(compositeRaw), composite: r2(composite), adjustments,
       strategies_used: Object.keys(scores), user_margins: ctx.margins, history_mode: ctx.mode
@@ -269,6 +269,7 @@ export function toRecommendation(s: any) {
   return {
     symbol: s.asset_symbol, signal_id: s.id, action: type, optimal_action: type,
     confidence_score: Number(s.confidence_score || 0), reasoning: s.reasoning || '',
+    ai_analysis: m.prediction?.analysis || null,
     current_price: Number(s.price_at_signal || 0), current_24h_change: Number(s.change_24h || 0),
     predicted_move_pct: Number(s.predicted_gain_pct || 0), timing_window: s.timing_window || '4h',
     stop_loss_pct: s.stop_loss_pct, take_profit_pct: s.take_profit_pct, momentum_strength: s.momentum_strength,
@@ -346,7 +347,7 @@ export async function runCanonicalPipeline(base44: any, user: any, opts: { symbo
   const ctx = { strategies, btc, sentimentScore, history, now, margins, mode };
   const evals: Record<string, any> = {};
   for (const sym of symbols) evals[sym] = evaluate(sym, data[sym], ctx);
-  const predictions = await predictMoves(base44, symbols.map(sym => ({ sym, d: data[sym], meta: evals[sym].meta })), btc, sentimentScore);
+  const predictions = await predictMoves(base44, symbols.map(sym => ({ sym, d: data[sym], meta: { ...evals[sym].meta, history_stats: history[sym] }, action: evals[sym].action })), btc, sentimentScore);
   for (const sym of symbols) {
     const ev = evals[sym];
     const pred = predictions[sym];

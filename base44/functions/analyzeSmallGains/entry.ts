@@ -144,7 +144,8 @@ Deno.serve(async (req) => {
     let map = await loadCanonicalSignals(base44, symbols);
     const maxAge = force ? FORCE_REFRESH_AFTER_MS : REFRESH_AFTER_MS;
     // A signal without a predicted move is treated as stale so it is re-analyzed.
-    const stale = symbols.filter(s => !map.get(s) || signalAgeMs(map.get(s)) > maxAge || !Number(map.get(s).predicted_gain_pct));
+    const stale = symbols.filter(s => !map.get(s) || signalAgeMs(map.get(s)) > maxAge || !Number(map.get(s).predicted_gain_pct)
+      || (!toRecommendation(map.get(s)).ai_analysis && signalAgeMs(map.get(s)) > 5 * 60 * 1000));
     let pipelineSummary = null;
     if (stale.length > 0) {
       pipelineSummary = (await runCanonicalPipeline(base44, user, { symbols: stale })).summary;
