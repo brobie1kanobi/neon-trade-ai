@@ -116,7 +116,22 @@ Deno.serve(async (req) => {
     MIN_ORDER_SIZES = await getMinOrderSizes();
 
     // 1. Fetch all active conditional orders
-    const orders = await base44.asServiceRole.entities.ConditionalOrder.filter({ status: 'active' });
+    const allOrders = await base44.asServiceRole.entities.ConditionalOrder.filter({ status: 'active' });
+
+    // SECURITY: live (real-money) orders run against the shared Kraken account,
+    // so they are only honored when the order's OWNER is an admin. Live orders
+    // created by anyone else are cancelled and never executed.
+    const admins = await base44.asServiceRole.entities.User.filter({ role: 'admin' });
+    const adminIds = new Set(admins.map((u) => u.id));
+    const orders = [];
+    for (const o of allOrders) {
+      if (o.is_simulation !== false || adminIds.has(o.created_by_id)) { orders.push(o); continue; }
+      console.warn(`[monitor] Cancelling unauthorized live order ${o.id} (owner ${o.created_by_id} is not an admin)`);
+      await base44.asServiceRole.entities.ConditionalOrder.update(o.id, {
+        status: 'cancelled',
+        closure_reason: 'Live trading is restricted to admins; order was not executed'
+      });
+    }
     if (!orders.length) {
       console.log('[monitor] No active conditional orders.');
       return Response.json({ success: true, processed: 0, executed: 0 });
