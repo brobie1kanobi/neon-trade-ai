@@ -609,7 +609,9 @@ export default function MarketAnalysis() {
     }
   };
 
+  const minSignalConfidence = typeof settings?.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
   const filteredRecommendations = (analysisData?.recommendations || []).filter((r) => {
+    if (Number(r.confidence_score || 0) < minSignalConfidence) return false;
     if (filter === 'all') return true;
     if (filter === 'strong_signals') return r.optimal_action === 'strong_buy' || r.optimal_action === 'strong_sell';
     if (filter === 'buy') return r.optimal_action === 'buy' || r.optimal_action === 'strong_buy';
@@ -727,7 +729,7 @@ export default function MarketAnalysis() {
           <div className="text-center py-8">
               <AlertCircle className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-secondary)' }} />
               <p style={{ color: 'var(--text-secondary)' }}>
-                No signals match this filter. Try expanding your watchlist or changing the filter.
+                No signals at or above your {minSignalConfidence}% Min Signal Confidence match this filter right now.
               </p>
             </div> :
 

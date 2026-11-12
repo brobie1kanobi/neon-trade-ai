@@ -125,7 +125,13 @@ async function getJson(url: string, ms = 8000) {
   return j;
 }
 async function fetchOHLC(pair: string, interval: number) {
-  const j = await getJson(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=${interval}`);
+  // Kraken's public endpoint intermittently throttles bursts; retry before
+  // giving up so a transient miss doesn't zero out the whole signal.
+  let j: any;
+  for (let attempt = 0; ; attempt++) {
+    try { j = await getJson(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=${interval}`); break; }
+    catch (e) { if (attempt >= 2) throw e; await new Promise(r => setTimeout(r, 800 * (attempt + 1))); }
+  }
   const key = Object.keys(j.result || {}).find(k => k !== 'last');
   const candles = (j?.result?.[key as string] || []).slice(0, -1); // drop the in-progress candle
   return {
@@ -166,7 +172,9 @@ function evaluate(sym: string, d: any, ctx: any) {
     const lastClose = t1.closes[t1.closes.length - 1];
     if (price > 0 && Math.abs(price - lastClose) / lastClose > 0.03) issues.push('live price disagrees with candles by >3%');
   }
-  if (strategies.trend && (!t4 || t4.closes.length < 50)) issues.push('insufficient 4h candles');
+  // 4h candles only refine the trend score — missing them must not void the
+  // whole analysis (trend falls back to the 1h series below).
+  const has4h = !!(t4 && t4.closes.length >= 50);
   if (sym !== 'BTC' && BTC_CORRELATED_ALTS.has(sym) && !btc) issues.push('BTC momentum unavailable');
 
   const ind: any = {}, scores: any = {}, weights: any = {};
@@ -179,9 +187,10 @@ function evaluate(sym: string, d: any, ctx: any) {
       ind.volume_ratio = volumeRatio(t1.volumes);
       if (ind.volume_ratio != null) { scores.volume = scoreVolume(ind.volume_ratio, c[c.length - 1] - c[c.length - 2]); weights.volume = 10; }
     }
-    if (strategies.trend && t4 && t4.closes.length >= 50) {
-      ind.trend_1h = trendSide(c); ind.trend_4h = trendSide(t4.closes);
-      scores.trend = (ind.trend_1h + ind.trend_4h) * 40; weights.trend = 25;
+    if (strategies.trend) {
+      ind.trend_1h = trendSide(c);
+      if (has4h) { ind.trend_4h = trendSide(t4.closes); scores.trend = (ind.trend_1h + ind.trend_4h) * 40; weights.trend = 25; }
+      else { scores.trend = ind.trend_1h * 40; weights.trend = 15; }
     }
   }
   if (strategies.sentiment && sentimentScore != null) { scores.sentiment = clamp(sentimentScore - 50, -50, 50); weights.sentiment = 10; }

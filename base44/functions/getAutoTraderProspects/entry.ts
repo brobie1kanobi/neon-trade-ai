@@ -468,9 +468,10 @@ Deno.serve(async (req) => {
       // Gate on the SAME threshold the auto-trader executes on (auto_execute_threshold).
       // This page previously used min_signal_confidence (50), so signals the trader would
       // never send — e.g. BTC at 55% against a 60% threshold — showed up here as READY.
-      const minConfidence = typeof settings.auto_execute_threshold === 'number'
-        ? settings.auto_execute_threshold
-        : (typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50);
+      // Visibility follows the user's Min Signal Confidence; anything below the
+      // Auto-Execute Threshold is still shown but marked as waiting (see blockReason).
+      const minConfidence = typeof settings.min_signal_confidence === 'number' ? settings.min_signal_confidence : 50;
+      const execThreshold = typeof settings.auto_execute_threshold === 'number' ? settings.auto_execute_threshold : minConfidence;
       if (confidence < minConfidence) {
         console.log('[Prospects] Skipping', symbol, '- confidence too low:', confidence, '< min:', minConfidence);
         continue;
@@ -513,6 +514,8 @@ Deno.serve(async (req) => {
       const ready = tradeReadiness(signal, price);
       if (!ready.ok) {
         blockReason = `Signal not tradeable right now (${ready.reason.replace(/_/g, ' ')})`;
+      } else if (confidence < execThreshold) {
+        blockReason = `Confidence ${confidence}% is below your ${execThreshold}% auto-execute threshold`;
       } else if (trendBlock) {
         blockReason = trendBlock;
       } else if (tradingCash < 1) {
