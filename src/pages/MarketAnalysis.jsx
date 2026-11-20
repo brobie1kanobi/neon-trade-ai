@@ -566,7 +566,9 @@ export default function MarketAnalysis() {
           const balRes = await base44.functions.invoke('getKrakenBalance', {});
           const bal = balRes?.data || balRes;
           const usdAvail = parseFloat((bal?.available_usd_balance ?? bal?.usd_balance) || 0);
-          if (usdAvail < amount) {
+          // Only block on a verified balance; a cooldown reply reports $0. Kraken
+          // itself still rejects the order if funds are really short.
+          if (bal?.success && usdAvail < amount) {
             toast.error("Insufficient USD on Kraken", {
               description: `Available: $${usdAvail.toFixed(2)} • Need: $${amount.toFixed(2)}`
             });

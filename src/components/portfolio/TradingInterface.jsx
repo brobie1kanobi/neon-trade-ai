@@ -322,13 +322,17 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           try {
             const balRes = await base44.functions.invoke('getKrakenBalance', {});
             const bal = balRes?.data || balRes;
-            const krakenUsd = parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0);
-            const krakenHoldings = bal?.holdings || {};
+            // A failed/cooldown response reports $0 — never treat that as the real
+            // balance. Fall back to the cash already shown in the app.
+            const krakenUsd = bal?.success
+              ? parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0)
+              : availableCash;
             const holdingsMap = {};
-            for (const [sym, info] of Object.entries(krakenHoldings)) {
-              holdingsMap[`${sym}_live`] = {
-                quantity: info?.quantity || 0,
-                current_price: info?.usd_value ? (info.usd_value / (info.quantity || 1)) : 0,
+            for (const h of (Array.isArray(bal?.holdings) ? bal.holdings : [])) {
+              holdingsMap[`${h.symbol}_live`] = {
+                symbol: h.symbol,
+                quantity: h.quantity || 0,
+                current_price: h.current_price || 0,
                 is_simulation: false
               };
             }
@@ -398,7 +402,9 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
             const balRes = await base44.functions.invoke('getKrakenBalance', {});
             const bal = balRes?.data || balRes;
             // CRITICAL: Use available_usd_balance which excludes funds locked in open orders
-            const usdAvail = parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0);
+            const usdAvail = bal?.success
+              ? parseFloat(bal?.available_usd_balance ?? bal?.usd_balance ?? 0)
+              : availableCash;
             
             console.log(`[TradingInterface] Preflight check: UI shows $${availableCash.toFixed(2)}, Kraken has $${usdAvail.toFixed(2)}, need $${totalRequired.toFixed(2)}`);
             
@@ -429,11 +435,12 @@ export default function TradingInterface({ wallet, onTrade, autoTradingEnabled, 
           try {
             const balRes = await base44.functions.invoke('getKrakenBalance', {});
             const bal = balRes?.data || balRes;
-            const holdings = bal?.holdings || {};
-            
-            // Find matching asset (handle Kraken naming: BTC, XBT, etc.)
+            if (!bal?.success) throw new Error(bal?.error || 'Kraken balance unavailable');
+            // holdings is an array of { symbol, quantity } (symbols already normalized)
             const symbol = tradeData.symbol.toUpperCase();
-            const assetBalance = holdings[symbol]?.quantity || holdings[`X${symbol}`]?.quantity || 0;
+            const assetBalance = (Array.isArray(bal?.holdings) ? bal.holdings : [])
+              .filter((h) => String(h.symbol || '').toUpperCase() === symbol)
+              .reduce((sum, h) => sum + (Number(h.quantity) || 0), 0);
             
             console.log(`[TradingInterface] SELL preflight: ${symbol} owned=${assetBalance}, selling=${tradeData.quantity}`);
             

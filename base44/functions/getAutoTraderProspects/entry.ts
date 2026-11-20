@@ -159,7 +159,12 @@ Deno.serve(async (req) => {
       const balKey = (Deno.env.get('Kraken_API_Key') || '').trim();
       const balSecret = (Deno.env.get('Kraken_API_Secret') || '').trim();
       if (balKey && balSecret) {
-          const extBalResult = await callKrakenDirect(balKey, balSecret, '/0/private/BalanceEx', {});
+          // Route through krakenApi so this shares its cache, rate limiter and
+          // lockout guard. Direct calls here (every 60s from the Prospects page)
+          // bypassed the cooldown and kept renewing Kraken's temporary lockout.
+          const balRes = await base44.functions.invoke('krakenApi', { action: 'getExtendedBalance' }).catch((e) => ({ data: { success: false, error: e.message } }));
+          const balData = balRes?.data || balRes;
+          const extBalResult = balData?.success ? { result: balData.balance || {} } : { error: [balData?.error || 'Kraken balance unavailable'] };
           
           if (extBalResult?.error?.length > 0) {
             console.warn('[Prospects] Kraken BalanceEx error:', extBalResult.error.join(', '));
@@ -222,7 +227,9 @@ Deno.serve(async (req) => {
             
             // Check open orders to deduct reserved capital from TRADING cash only
             try {
-              const ordersResult = await callKrakenDirect(balKey, balSecret, '/0/private/OpenOrders', { trades: 'true' });
+              const ordRes = await base44.functions.invoke('krakenApi', { action: 'getOpenOrders' });
+              const ordData = ordRes?.data || ordRes;
+              const ordersResult = ordData?.success ? { result: { open: Object.fromEntries((ordData.orders || []).map((o) => [o.order_id, o])) } } : null;
               if (ordersResult?.result?.open) {
                 for (const [, order] of Object.entries(ordersResult.result.open)) {
                   const side = (order.descr?.type || '').toLowerCase();

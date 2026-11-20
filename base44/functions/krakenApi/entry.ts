@@ -197,7 +197,13 @@ const LOCKOUT_KEY = 'kraken:lockout';
 // Kraken rate limits are per API key, so the Trade key gets its own cooldown —
 // a Balance-key lockout must never block the Trade key from getting a token.
 const TRADE_LOCKOUT_KEY = 'kraken:lockout:trade';
-const LOCKOUT_MS = 180000; // back off 3 min after Kraken rate-limits/locks out
+const LOCKOUT_MS = 180000; // trade key: back off 3 min after Kraken rate-limits/locks out
+// Balance key: Kraken's temporary lockout lasts longer than 3 min, and every
+// retry during it renews the lockout — so balance reads back off for 10 min and
+// serve the last verified balance meanwhile.
+const BALANCE_LOCKOUT_MS = 600000;
+// How old a verified balance may be and still be served during a cooldown.
+const STALE_BALANCE_MAX_MS = 6 * 60 * 60 * 1000;
 
 Deno.serve(async (req) => {
   let staleShared = null;
@@ -277,7 +283,10 @@ Deno.serve(async (req) => {
         else await base44.asServiceRole.entities.KrakenApiCache.create(record);
       } catch (_e) {}
     };
-    sharedSetLockout = () => sharedSet(LOCKOUT_KEY, { locked: true }, LOCKOUT_MS);
+    // getOrderInfo runs on the Trade key — its lockout must not freeze balance reads.
+    sharedSetLockout = () => action === 'getOrderInfo'
+      ? sharedSet(TRADE_LOCKOUT_KEY, { locked: true }, LOCKOUT_MS)
+      : sharedSet(LOCKOUT_KEY, { locked: true }, BALANCE_LOCKOUT_MS);
 
     const setCached = async (act, data) => {
       const ttl = RESPONSE_TTL[act];
@@ -309,7 +318,8 @@ Deno.serve(async (req) => {
         // Only reuse a stale balance as a fallback if it's recent — an hours-old
         // copy hid new fills (e.g. ADA buys) for as long as lockouts kept recurring.
         const age = Date.now() - new Date(hit.data.fetched_at || 0).getTime();
-        if (action !== 'getExtendedBalance' || age < 180000) staleShared = hit.data;
+        // It is only ever served while Kraken is unreachable/cooling down.
+        if (action !== 'getExtendedBalance' || age < STALE_BALANCE_MAX_MS) staleShared = hit.data;
       }
 
       // If Kraken recently rate-limited/locked us out, do NOT call it again —
@@ -476,7 +486,7 @@ Deno.serve(async (req) => {
         // A lockout hit while fetching a token must start the global cooldown
         // too, otherwise every caller keeps retrying and renewing it.
         if (/rate limit|lockout|too many requests/i.test(String(e?.message || ''))) {
-          try { await sharedSet(wsLockKey, { locked: true }, LOCKOUT_MS); } catch (_e) {}
+          try { await sharedSet(wsLockKey, { locked: true }, keyType === 'trade' ? LOCKOUT_MS : BALANCE_LOCKOUT_MS); } catch (_e) {}
           return Response.json({ success: false, connected: true, error: e.message, kraken_backoff: true, used_key_type: keyType }, { status: 200 });
         }
         return Response.json({ success: false, connected: false, error: e.message, used_key_type: keyType }, { status: 200 });
