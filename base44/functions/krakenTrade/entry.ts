@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.20';
 import { getMinOrderSizes } from '../../shared/krakenMinimums.ts';
+import { tradeLockedUntil, setTradeLockout, isLockoutError, lockoutMessage } from '../../shared/tradeLockout.ts';
 
 /**
  * Kraken Trade Executor - COMPLETE WebSocket v2 Trading Implementation
@@ -756,7 +757,10 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5, 
       // caller so it fetches a fresh token and retries once.
       if (isTokenError(msg)) { throw e; }
 
-      const shouldRetry = /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|403/i.test(msg);
+      // Never retry Kraken rate-limit/lockout replies: retrying while limited is
+      // exactly what escalates a rate limit into a 15-minute "Temporary lockout".
+      if (/rate limit|lockout/i.test(msg)) { throw e; }
+      const shouldRetry = /timeout|WebSocket closed|WebSocket error|403/i.test(msg);
       if (!shouldRetry) { throw e; }
       const delay = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 400);
       console.warn(`[krakenTrade] Retry ${attempt + 1}/${maxAttempts} after ${delay}ms due to: ${msg}`);
@@ -764,7 +768,7 @@ async function executeKrakenTradeWithRetry(token, orderParams, maxAttempts = 5, 
       attempt++;
     }
   }
-  if (base44 && /rate limit|EAPI:Rate limit|timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(String(lastErr?.message || ''))) {
+  if (base44 && /timeout|WebSocket closed|WebSocket error|permission denied|403/i.test(String(lastErr?.message || ''))) {
     console.warn('[krakenTrade] Falling back to REST AddOrder for', orderParams.order_type, orderParams.symbol);
     return await executeKrakenRestOrder(base44, orderParams);
   }
@@ -988,6 +992,13 @@ Deno.serve(async (req) => {
     const { action = 'place_order' } = requestBody;
 
     console.log('[krakenTrade] Action:', action, 'User:', user.email);
+
+    // Circuit breaker: while Kraken has the Trade key locked out, any call
+    // (order, cancel, token) renews the lockout. Fail fast without touching Kraken.
+    const lockedUntil = await tradeLockedUntil(base44);
+    if (lockedUntil) {
+      return Response.json({ success: false, error: lockoutMessage(lockedUntil), kraken_backoff: true, locked_until: lockedUntil }, { status: 200 });
+    }
 
     // Get Kraken connection
     // Secrets-based credentials; presence validated when requesting WS token
@@ -1718,6 +1729,16 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[krakenTrade] ❌ Error:', error.message);
+
+    // Start the shared cooldown so background callers stop renewing the lockout.
+    if (isLockoutError(error.message)) {
+      try {
+        const b = createClientFromRequest(req);
+        await setTradeLockout(b);
+        const until = await tradeLockedUntil(b);
+        if (until) error.message = lockoutMessage(until);
+      } catch (_e) {}
+    }
     
     // Log error with full context for debugging
     try {

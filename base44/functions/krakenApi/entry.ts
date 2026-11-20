@@ -197,7 +197,7 @@ const LOCKOUT_KEY = 'kraken:lockout';
 // Kraken rate limits are per API key, so the Trade key gets its own cooldown —
 // a Balance-key lockout must never block the Trade key from getting a token.
 const TRADE_LOCKOUT_KEY = 'kraken:lockout:trade';
-const LOCKOUT_MS = 180000; // trade key: back off 3 min after Kraken rate-limits/locks out
+const LOCKOUT_MS = 15 * 60 * 1000; // trade key: Kraken lockouts last ~15 min and renew on every call
 // Balance key: Kraken's temporary lockout lasts longer than 3 min, and every
 // retry during it renews the lockout — so balance reads back off for 10 min and
 // serve the last verified balance meanwhile.
@@ -459,12 +459,13 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Kraken already rate-limited us — do not ask for another token and
-          // renew that lockout. Tell the caller to back off instead.
-          const wsLock = await sharedGet(wsLockKey);
-          if (wsLock && !wsLock.expired) {
-            return Response.json({ success: false, connected: true, error: `Kraken ${keyType} key is in cooldown after rate limiting — retrying shortly`, kraken_backoff: true, used_key_type: keyType }, { status: 200 });
-          }
+        }
+
+        // Kraken already locked us out — do not ask for another token (even a
+        // forced refresh) and renew that lockout. Tell the caller to back off.
+        const wsLock = await sharedGet(wsLockKey);
+        if (wsLock && !wsLock.expired) {
+          return Response.json({ success: false, connected: true, error: `Kraken ${keyType} key is in cooldown after rate limiting — retrying shortly`, kraken_backoff: true, used_key_type: keyType }, { status: 200 });
         }
 
         await getLimiter(user.email, keyType).remove(endpointCost('/0/private/GetWebSocketsToken'));
