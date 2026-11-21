@@ -114,11 +114,11 @@ Deno.serve(async (req) => {
         if (!fetched || fetched.is_active === false) {
           return Response.json({ error: 'Strategy not found or inactive' }, { status: 404 });
         }
-        if (user?.role !== 'admin' && fetched.created_by !== user.email) {
+        if (user?.role !== 'admin' && fetched.created_by_id !== user.id) {
           return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
         }
         effectiveStrategy = fetched;
-      } else if (strategy && strategy.created_by && user?.role !== 'admin' && strategy.created_by !== user.email) {
+      } else if (strategy && strategy.created_by_id && user?.role !== 'admin' && strategy.created_by_id !== user.id) {
         return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
       }
 

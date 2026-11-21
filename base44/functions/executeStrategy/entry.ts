@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     if (!strategy || !strategy.is_active) {
       return Response.json({ error: 'Strategy not found or inactive' }, { status: 404 });
     }
-    if (user?.role !== 'admin' && strategy.created_by !== user.email) {
+    if (user?.role !== 'admin' && strategy.created_by_id !== user.id) {
       return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
     }
     // Live (real-money) trade records may only be written by admins — same rule as krakenTrade.

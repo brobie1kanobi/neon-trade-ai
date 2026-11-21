@@ -123,6 +123,9 @@ Deno.serve(async (req) => {
     // created by anyone else are cancelled and never executed.
     const admins = await base44.asServiceRole.entities.User.filter({ role: 'admin' });
     const adminIds = new Set(admins.map((u) => u.id));
+    // Records written on an order owner's behalf are attributed via a server-side
+    // lookup by created_by_id (records no longer expose the creator's email).
+    const ownerEmailById = new Map((await base44.asServiceRole.entities.User.list()).map((u) => [u.id, u.email]));
     const orders = [];
     for (const o of allOrders) {
       if (o.is_simulation !== false || adminIds.has(o.created_by_id)) { orders.push(o); continue; }
@@ -172,8 +175,8 @@ Deno.serve(async (req) => {
 
       const { id, symbol, quantity, purchase_price, gain_margin, loss_margin,
               is_simulation, trailing_enabled, highest_price, trailing_margin,
-              kraken_tp_order_id, kraken_sl_order_id, asset_type, signal_id,
-              created_by } = order;
+              kraken_tp_order_id, kraken_sl_order_id, asset_type, signal_id } = order;
+      const created_by = ownerEmailById.get(order.created_by_id);
 
       // CRITICAL: If this position already has a REAL resting take-profit order on
       // Kraken, the exchange owns the exit — do not touch it. Previously this

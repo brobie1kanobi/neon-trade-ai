@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     }
     
     // SECURITY: Verify the authenticated user owns this strategy or is an admin
-    if (strategy.created_by !== user.email && user.role !== 'admin') {
+    if (strategy.created_by_id !== user.id && user.role !== 'admin') {
       return Response.json({ error: 'Forbidden: You do not own this strategy' }, { status: 403 });
     }
     

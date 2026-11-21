@@ -203,7 +203,7 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => {
     if (!user?.email) return;
     const unsubscribe = base44.entities.UserSettings.subscribe((event) => {
-      if (event?.data?.created_by === user.email) {
+      if (event?.data?.created_by_id === user.id) {
         loadSettings(true);
       }
     });
