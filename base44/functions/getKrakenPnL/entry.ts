@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
     
     // Calculate realized PnL from trades
     const positionMap = {};
+    const buyLots = {}; // per-symbol buys in time order, used to price the CURRENT balance
     let totalRealizedPnL = 0;
     let realizedPnL24h = 0;
     
@@ -152,6 +153,7 @@ Deno.serve(async (req) => {
       }
       
       if (type === 'buy') {
+        (buyLots[symbol] ||= []).push({ vol, cost });
         positionMap[symbol].totalCost += cost;
         positionMap[symbol].totalQuantity += vol;
         
@@ -197,6 +199,27 @@ Deno.serve(async (req) => {
     // Get symbols that have a balance (krakenApi already normalized: BTC, SOL, XLM, etc.)
     const symbols = Object.keys(balances)
       .filter(asset => asset !== 'USD' && asset !== 'ZUSD');
+
+    // The running average above drifts: each closing sell is a hair smaller than
+    // its buy, so phantom leftover amounts at old prices pile up and get blended
+    // into the next buy (BTC showed $60,679 avg vs Kraken's $59,633). Price what
+    // is ACTUALLY held from the most recent buys that cover the live balance —
+    // the same entry price Kraken shows.
+    for (const sym of symbols) {
+      const balance = parseFloat(balances[sym]) || 0;
+      const lots = buyLots[sym];
+      if (!(balance > 0) || !lots?.length || !positionMap[sym]) continue;
+      let qty = 0, cost = 0;
+      for (let i = lots.length - 1; i >= 0 && qty < balance; i--) {
+        const take = Math.min(lots[i].vol, balance - qty);
+        cost += lots[i].cost * (take / lots[i].vol);
+        qty += take;
+      }
+      if (qty > 0) {
+        positionMap[sym].avgPrice = cost / qty;
+        positionMap[sym].totalQuantity = balance;
+      }
+    }
 
     let totalUnrealizedPnL = 0;
 
