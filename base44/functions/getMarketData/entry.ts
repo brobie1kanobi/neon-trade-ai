@@ -467,7 +467,7 @@ async function getStockData(stockSymbols) {
     
     for (const symbol of limited) {
       try {
-        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaKey}`;
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${alphaKey}`;
         const response = await fetchWithTimeout(url);
         
         if (response && response.ok) {
@@ -558,7 +558,7 @@ async function getChartData(symbol, assetType, days) {
       const to = today.toISOString().split('T')[0];
       const from = fromDate.toISOString().split('T')[0];
       
-      const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/day/${from}/${to}?adjusted=true&sort=asc&apiKey=${polyKey}`;
+      const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&apiKey=${polyKey}`;
 
       const response = await fetchWithTimeout(url);
       if (!response || !response.ok) {
@@ -767,7 +767,7 @@ async function getAssetDetails(symbol, assetType) {
       const polyKey = Deno.env.get('POLY_API_KEY');
       if (!polyKey) return null;
 
-      const url = `https://api.polygon.io/v3/reference/tickers/${symbol}?apiKey=${polyKey}`;
+      const url = `https://api.polygon.io/v3/reference/tickers/${encodeURIComponent(symbol)}?apiKey=${polyKey}`;
       const response = await fetchWithTimeout(url);
       if (response && response.ok) {
         const data = await response.json();

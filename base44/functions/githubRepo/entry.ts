@@ -8,6 +8,22 @@ const GH_HEADERS = (token) => ({
   'User-Agent': 'NeonTrade-AI'
 });
 
+// GitHub owner / repo names: letters, digits, '.', '_', '-' only (no '..').
+const isSafeName = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(s) && s !== '.' && s !== '..';
+
+// Repo-relative paths / branch names: no traversal, absolute, or odd characters.
+const isSafePath = (p) => {
+  if (typeof p !== 'string' || p.length === 0 || p.length > 512) return false;
+  if (p.includes('..') || p.startsWith('/') || p.includes('\\')) return false;
+  if (/^[a-zA-Z]:/.test(p)) return false; // Windows drive-letter absolute path
+  for (const seg of p.split('/')) {
+    if (seg === '..' || seg === '.' || seg.trim() === '') return false;
+  }
+  return /^[a-zA-Z0-9._\-/]+$/.test(p);
+};
+
+const encodePath = (p) => p.split('/').map(encodeURIComponent).join('/');
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -111,12 +127,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Security: owner/repo/path/branch come from the request body and are
+    // interpolated into api.github.com URLs — validate and encode them so a
+    // caller cannot use "../" or "?" to reach other GitHub API endpoints.
+    if (action === 'getRepoContents' || action === 'pushFiles') {
+      if (!isSafeName(body.owner) || !isSafeName(body.repo)) {
+        return Response.json({ error: 'Invalid owner or repo' }, { status: 400 });
+      }
+      if (body.branch != null && !isSafePath(body.branch)) {
+        return Response.json({ error: 'Invalid branch name' }, { status: 400 });
+      }
+    }
+
     if (action === 'getRepoContents') {
       const { owner, repo, path } = body;
-      if (!owner || !repo) {
-        return Response.json({ error: 'owner and repo are required' }, { status: 400 });
+      if (path && !isSafePath(path)) {
+        return Response.json({ error: 'Invalid path' }, { status: 400 });
       }
-      const apiPath = path ? `/${path}` : '';
+      const apiPath = path ? `/${encodePath(path)}` : '';
       const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${apiPath}`, {
         headers: GH_HEADERS(accessToken)
       });
@@ -141,7 +169,7 @@ Deno.serve(async (req) => {
       const message = commitMessage || `Update from NeonTrade AI - ${new Date().toISOString()}`;
 
       // Get the latest commit SHA for the branch
-      const refResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${targetBranch}`, {
+      const refResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodePath(targetBranch)}`, {
         headers: GH_HEADERS(accessToken)
       });
       if (!refResp.ok) {
@@ -163,20 +191,6 @@ Deno.serve(async (req) => {
 
       // Security: validate every file path to prevent path traversal / arbitrary
       // file overwrite (e.g. "../.env", absolute paths, or hidden config files).
-      const isSafePath = (p) => {
-        if (typeof p !== 'string' || p.length === 0 || p.length > 512) return false;
-        // Normalize separators and reject traversal, absolute, and backslash paths.
-        if (p.includes('..') || p.startsWith('/') || p.startsWith('\\') || p.includes('\\')) return false;
-        if (/^[a-zA-Z]:/.test(p)) return false; // Windows drive-letter absolute path
-        // Reject any path segment that is a traversal or empty.
-        const segments = p.split('/');
-        for (const seg of segments) {
-          if (seg === '..' || seg === '.' || seg.trim() === '') return false;
-        }
-        // Only allow a conservative set of characters in path segments.
-        if (!/^[a-zA-Z0-9._\-/]+$/.test(p)) return false;
-        return true;
-      };
       for (const file of files) {
         if (!file || !isSafePath(file.path)) {
           return Response.json({ error: `Invalid or unsafe file path: ${file?.path ?? '(missing)'}` }, { status: 400 });
@@ -236,7 +250,7 @@ Deno.serve(async (req) => {
       const newCommitData = await newCommitResp.json();
 
       // Update the branch reference
-      const updateRefResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+      const updateRefResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodePath(targetBranch)}`, {
         method: 'PATCH',
         headers: { ...GH_HEADERS(accessToken), 'Content-Type': 'application/json' },
         body: JSON.stringify({
