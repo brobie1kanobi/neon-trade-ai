@@ -123,9 +123,6 @@ Deno.serve(async (req) => {
     // created by anyone else are cancelled and never executed.
     const admins = await base44.asServiceRole.entities.User.filter({ role: 'admin' });
     const adminIds = new Set(admins.map((u) => u.id));
-    // Records written on an order owner's behalf are attributed via a server-side
-    // lookup by created_by_id (records no longer expose the creator's email).
-    const ownerEmailById = new Map((await base44.asServiceRole.entities.User.list()).map((u) => [u.id, u.email]));
     const orders = [];
     for (const o of allOrders) {
       if (o.is_simulation !== false || adminIds.has(o.created_by_id)) { orders.push(o); continue; }
@@ -176,7 +173,6 @@ Deno.serve(async (req) => {
       const { id, symbol, quantity, purchase_price, gain_margin, loss_margin,
               is_simulation, trailing_enabled, highest_price, trailing_margin,
               kraken_tp_order_id, kraken_sl_order_id, asset_type, signal_id } = order;
-      const created_by = ownerEmailById.get(order.created_by_id);
 
       // CRITICAL: If this position already has a REAL resting take-profit order on
       // Kraken, the exchange owns the exit — do not touch it. Previously this
@@ -389,15 +385,14 @@ Deno.serve(async (req) => {
               status: 'filled', is_auto_trade: true, is_simulation: true,
               signal_id, kraken_order_id: sellResult.order_id,
               exit_purchase_price: purchase_price, exit_reason: exitReason,
-              filled_at: new Date().toISOString(), created_by
+              filled_at: new Date().toISOString()
             });
 
             await base44.asServiceRole.entities.Notification.create({
               title: `SIM ${reason.split(' ')[0]}: ${symbol}`,
               message: `Sold ${sellQuantity} ${symbol} @ $${price.toFixed(6)} – ${reason}`,
               type: gainPct >= 0 ? 'success' : 'warning', read: false,
-              details_json: JSON.stringify({ symbol, quantity: sellQuantity, price, reason, is_simulation: true }),
-              created_by
+              details_json: JSON.stringify({ symbol, quantity: sellQuantity, price, reason, is_simulation: true })
             });
 
             try {
@@ -414,8 +409,7 @@ Deno.serve(async (req) => {
                 is_success: outcomePct > 0,
                 exit_reason: exitReason,
                 is_simulation: true,
-                source: 'simulation',
-                created_by
+                source: 'simulation'
               });
             } catch (mpErr) {
               console.warn(`[monitor] ModelPerformance write failed for ${symbol}:`, mpErr.message);
@@ -434,7 +428,7 @@ Deno.serve(async (req) => {
               status: 'pending_fill', is_auto_trade: true, is_simulation: false,
               signal_id, kraken_order_id: sellResult.order_id,
               exit_purchase_price: purchase_price, exit_reason: exitReason,
-              submitted_at: new Date().toISOString(), created_by
+              submitted_at: new Date().toISOString()
             });
             console.log(`[monitor] ${symbol}: sell sent to Kraken (${sellResult.order_id}) — awaiting real fill from exchange sync`);
           }
@@ -448,7 +442,7 @@ Deno.serve(async (req) => {
           });
           await base44.asServiceRole.entities.Notification.create({
             title: `SELL FAILED: ${symbol}`, message: `${reason} but sell failed: ${sellResult?.error}`,
-            type: 'error', read: false, created_by
+            type: 'error', read: false
           });
           results.push({ id, symbol, reason, error: sellResult?.error });
         }
