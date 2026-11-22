@@ -3,6 +3,7 @@ import { computeIdealEntry } from '../../shared/idealEntry.ts';
 import { pickSignalPerSymbol, tradeReadiness, isCanonicalSignal, REQUIRE_CANONICAL } from '../../shared/signalSelect.ts';
 import { checkOpenPosition, repairMissingBracket } from '../../shared/positionGuard.ts';
 import { claimBuy, releaseClaim } from '../../shared/buyClaim.ts';
+import { tradeLockedUntil } from '../../shared/tradeLockout.ts';
 import { getMinOrderSizes, FALLBACK_MIN_ORDER_SIZES } from '../../shared/krakenMinimums.ts';
 
 /**
@@ -1442,8 +1443,14 @@ Deno.serve(async (req) => {
       // CRITICAL: Execute trade based on mode
       if (!isSimMode) {
         // LIVE MODE: Use Kraken API with ADVANCED orders (Trailing Stop + Take Profit)
+        // Kraken cooldown active: don't attempt (or record) any buy until it clears.
+        const lockedUntil = await tradeLockedUntil(base44);
+        if (lockedUntil) {
+          log(`COOLDOWN: Kraken trade key cooling down until ${lockedUntil} — no buys sent this run`);
+          break;
+        }
         // Claim the buy before sending it so an overlapping run can't buy the same coin too.
-        const claim = await claimBuy(base44, user.email, sym, false, idempotencyKey);
+        const claim = await claimBuy(base44, user.email, sym, false, idempotencyKey, { quantity: qty, price, total_value });
         if (!claim.won) {
           log(`BUY CLAIM: Skipping ${sym} — another run already claimed this buy (${claim.winnerId})`);
           continue;
@@ -1632,7 +1639,7 @@ Deno.serve(async (req) => {
         } catch (krakenError) {
           log(`Kraken buy failed for ${sym}`, { error: krakenError.message });
           tradesFailed.push({ symbol: sym, error: krakenError.message });
-          await releaseClaim(base44, claimId, krakenError.message);
+          await releaseClaim(base44, claimId, krakenError.message, sym);
           
           // CRITICAL: Only record health errors for INFRASTRUCTURE failures
           // Do NOT count order validation rejections (minimum not met, invalid volume, 

@@ -6,7 +6,14 @@ function reasonLabel(t) {
   const s = raw.toLowerCase();
   if (s.includes("websocket token") || s.includes("unknown key")) return "Kraken trading key not accepted (WebSocket token)";
   if (s.includes("insufficient")) return "Insufficient funds";
-  if (s.includes("lockout") || s.includes("rate limit")) return "Kraken rate limit / lockout";
+  if (s.includes("locked the trading key") || s.includes("lockout") || s.includes("rate limit")) {
+    // Kraken cooldowns last 15 minutes from when they were hit.
+    const until = new Date(new Date(t.created_date).getTime() + 15 * 60 * 1000);
+    const time = until.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+    return until.getTime() > Date.now()
+      ? `Kraken rate-limit cooldown — trading resumes at ${time} ET (no order sent)`
+      : `Kraken rate-limit cooldown — cleared at ${time} ET (no order sent)`;
+  }
   if (s.includes("minimum") || s.includes("volume")) return "Below minimum order size";
   if (s.includes("exposure")) return "Max asset exposure reached";
   if (s.includes("loss cap") || s.includes("daily loss")) return "Daily loss cap";

@@ -822,10 +822,18 @@ async function executeKrakenRestOrder(base44, orderParams) {
     payload.timeinforce = String(orderParams.time_in_force).toUpperCase();
   }
 
-  // Pace the REST fallback on the same Trade-key gate as WebSocket orders.
-  await tradeRateGate('trade_key', 2);
+  const result = await tradeKeyRest('/0/private/AddOrder', payload);
+  const txid = result?.txid?.[0] || null;
+  return { success: true, order_id: txid, order_userref: null, via: 'rest_fallback' };
+}
 
-  const endpoint = '/0/private/AddOrder';
+// Signed private REST call on the TRADE key, paced on the same gate as WS orders.
+async function tradeKeyRest(endpoint, params) {
+  const tradeKey = Deno.env.get('Trade_Key');
+  const tradeSecret = Deno.env.get('Trade_Secret');
+  if (!tradeKey || !tradeSecret) throw new Error('Missing Trade_Key/Trade_Secret in application secrets');
+  await tradeRateGate('trade_key', 2);
+  const payload = { ...params, nonce: params.nonce || String(Date.now() * 1000) };
   const postData = new URLSearchParams(payload).toString();
   const nonce = payload.nonce;
   const enc = new TextEncoder();
@@ -853,8 +861,18 @@ async function executeKrakenRestOrder(base44, orderParams) {
   if (result.error?.length > 0) {
     throw new Error(result.error.join(', '));
   }
-  const txid = result.result?.txid?.[0] || null;
-  return { success: true, order_id: txid, order_userref: null, via: 'rest_fallback' };
+  return result.result;
+}
+
+// REST backup for cancels when Kraken's WebSocket refuses the connection.
+async function restCancelOrders(orderIds) {
+  const ids = Array.isArray(orderIds) ? orderIds : [orderIds];
+  let count = 0;
+  for (const txid of ids) {
+    const r = await tradeKeyRest('/0/private/CancelOrder', { txid: String(txid) });
+    count += Number(r?.count) || 0;
+  }
+  return { order_ids: ids, result: { count }, via: 'rest_fallback' };
 }
 
 /**
@@ -1692,9 +1710,16 @@ Deno.serve(async (req) => {
       try {
         cancelResult = await cancelKrakenOrder(await getWsTokenLazy(2), orderIds);
       } catch (cancelErr) {
-        if (!isTokenError(cancelErr?.message)) throw cancelErr;
-        console.warn('[krakenTrade] Token rejected on cancel — refreshing and retrying once');
-        cancelResult = await cancelKrakenOrder(await refreshWsToken(2), orderIds);
+        const m = String(cancelErr?.message || '');
+        if (/WebSocket connection error|WebSocket closed|Cancel order timeout/i.test(m)) {
+          // WS handshake refused — retrying it every monitor run is what tripped the lockout.
+          console.warn('[krakenTrade] WS cancel failed — using REST CancelOrder instead');
+          cancelResult = await restCancelOrders(orderIds);
+        } else {
+          if (!isTokenError(m)) throw cancelErr;
+          console.warn('[krakenTrade] Token rejected on cancel — refreshing and retrying once');
+          cancelResult = await cancelKrakenOrder(await refreshWsToken(2), orderIds);
+        }
       }
 
       console.log('[krakenTrade] ✅ Orders cancelled:', cancelResult);

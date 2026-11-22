@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
+import { heldCostBasis } from '../../shared/heldCostBasis.ts';
 
 /**
  * Get Kraken PnL - Calculates realized and unrealized PnL from Kraken trade history
@@ -205,20 +206,13 @@ Deno.serve(async (req) => {
     // into the next buy (BTC showed $60,679 avg vs Kraken's $59,633). Price what
     // is ACTUALLY held from the most recent buys that cover the live balance —
     // the same entry price Kraken shows.
-    for (const sym of symbols) {
-      const balance = parseFloat(balances[sym]) || 0;
-      const lots = buyLots[sym];
-      if (!(balance > 0) || !lots?.length || !positionMap[sym]) continue;
-      let qty = 0, cost = 0;
-      for (let i = lots.length - 1; i >= 0 && qty < balance; i--) {
-        const take = Math.min(lots[i].vol, balance - qty);
-        cost += lots[i].cost * (take / lots[i].vol);
-        qty += take;
-      }
-      if (qty > 0) {
-        positionMap[sym].avgPrice = cost / qty;
-        positionMap[sym].totalQuantity = balance;
-      }
+    void buyLots;
+    const heldQty = Object.fromEntries(symbols.map(s => [s, parseFloat(balances[s]) || 0]));
+    const heldAvg = heldCostBasis(allTradesEntries.map(([, t]) => t), heldQty);
+    for (const [sym, avg] of Object.entries(heldAvg)) {
+      if (!positionMap[sym]) continue;
+      positionMap[sym].avgPrice = avg;
+      positionMap[sym].totalQuantity = heldQty[sym];
     }
 
     let totalUnrealizedPnL = 0;

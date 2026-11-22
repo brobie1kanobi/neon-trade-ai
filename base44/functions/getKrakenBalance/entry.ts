@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 import { parseKrakenAsset, knownPair, isStakingAsset, extractBaseAsset } from '../../shared/krakenAssets.ts';
+import { heldCostBasis } from '../../shared/heldCostBasis.ts';
 
 /**
  * Get Kraken Balance — Routes through krakenApi to respect rate limits.
@@ -42,24 +43,10 @@ async function getNetDepositsUsd(base44, prices) {
   return net;
 }
 
-// Average cost per asset from Kraken's recent trade history (fees included).
-async function getKrakenCostBook(base44) {
-  const book = {};
+// Average entry per held asset, matching Kraken's own "Avg. entry" column.
+async function getKrakenCostBook(base44, heldQty) {
   const res = await base44.functions.invoke('krakenApi', { action: 'getTradesHistory' }).catch(() => null);
-  const trades = (res?.data || res)?.trades || [];
-  trades.sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
-  for (const t of trades) {
-    const sym = extractBaseAsset(t.pair);
-    const vol = parseFloat(t.vol) || 0, cost = parseFloat(t.cost) || 0, fee = parseFloat(t.fee) || 0;
-    if (!sym || vol <= 0) continue;
-    const b = book[sym] || (book[sym] = { qty: 0, cost: 0 });
-    if (t.type === 'buy') { b.qty += vol; b.cost += cost + fee; }
-    else if (t.type === 'sell' && b.qty > 0) {
-      const sold = Math.min(vol, b.qty);
-      b.cost -= (b.cost / b.qty) * sold; b.qty -= sold;
-    }
-  }
-  return book;
+  return heldCostBasis((res?.data || res)?.trades || [], heldQty);
 }
 
 // Price exactly 24h ago per symbol (hourly candle open), cached 5 min per isolate.
@@ -75,7 +62,7 @@ async function getPrices24hAgo(symbols) {
     try {
       const resp = await Promise.race([
         fetch(`https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=60&since=${since}`),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
       ]);
       const data = await resp.json();
       const series = Object.entries(data?.result || {}).find(([k]) => k !== 'last')?.[1];
@@ -208,7 +195,7 @@ Deno.serve(async (req) => {
     // limit on every app open.
     const netDeposits = null;
     const [tradeBook, ref24h] = await Promise.all([
-      getKrakenCostBook(base44),
+      getKrakenCostBook(base44, qtyBySymbol),
       getPrices24hAgo(Object.keys(qtyBySymbol))
     ]);
 
@@ -217,8 +204,7 @@ Deno.serve(async (req) => {
     for (const [sym, qty] of Object.entries(qtyBySymbol)) {
       const p = prices[sym] || 0;
       const val = qty * p;
-      const book = tradeBook[sym];
-      const avgCost = (book && book.qty > 0 ? book.cost / book.qty : 0) || costBasisMap[sym] || 0;
+      const avgCost = tradeBook[sym] || costBasisMap[sym] || 0;
       const basis = avgCost > 0 ? avgCost * qty : 0;
       const p24 = ref24h[sym] || 0;
       totalCryptoValue += val;

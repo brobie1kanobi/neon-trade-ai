@@ -86,11 +86,14 @@ export default function SystemHealthPanel() {
       };
 
       // Trade execution health
-      const failRate = recentTrades.length > 0 ? failedTrades.length / recentTrades.length : 0;
+      // Attempts stopped before reaching Kraken (cooldown) aren't execution failures.
+      const notSent = /no order was sent|locked the trading key|lockout/i;
+      const realFailures = failedTrades.filter(t => !notSent.test(t.risk_rejection_reason || ''));
+      const failRate = recentTrades.length > 0 ? realFailures.length / recentTrades.length : 0;
       components.trade_execution = {
         status: failRate > 0.3 ? 'unhealthy' : failRate > 0.1 ? 'degraded' : executedTrades.length > 0 ? 'healthy' : 'idle',
         label: 'Trade Execution',
-        detail: `${executedTrades.length} executed, ${failedTrades.length} failed (24h)`,
+        detail: `${executedTrades.length} executed, ${realFailures.length} failed${failedTrades.length > realFailures.length ? `, ${failedTrades.length - realFailures.length} not sent (cooldown)` : ''} (24h)`,
         icon: TrendingUp,
         last_activity: lastTradeTime,
         blocked_trades: failedTrades

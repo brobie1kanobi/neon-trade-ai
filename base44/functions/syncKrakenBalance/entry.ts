@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 import { parseKrakenAsset, extractBaseAsset, isStakingAsset } from '../../shared/krakenAssets.ts';
+import { heldCostBasis } from '../../shared/heldCostBasis.ts';
 
 /**
  * Sync Kraken Balance — Routes ALL Kraken calls through krakenApi
@@ -94,6 +95,15 @@ Deno.serve(async (req) => {
         for (const symbol in costBasisMap) {
           const data = costBasisMap[symbol];
           if (data.totalQuantity > 0) data.avgPrice = data.totalCost / data.totalQuantity;
+        }
+        // Price what is actually held from the latest buys (matches Kraken's avg entry).
+        const heldQty = {};
+        for (const h of krakenHoldings) {
+          const s = parseKrakenAsset(h.symbol);
+          heldQty[s] = (heldQty[s] || 0) + (parseFloat(h.quantity) || 0);
+        }
+        for (const [s, avg] of Object.entries(heldCostBasis(tradesData.trades, heldQty))) {
+          costBasisMap[s] = { ...(costBasisMap[s] || {}), avgPrice: avg };
         }
         console.log('[syncKrakenBalance] Cost basis calculated');
       }
