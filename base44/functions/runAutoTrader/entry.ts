@@ -676,6 +676,7 @@ Deno.serve(async (req) => {
     // CRITICAL: Fetch the latest MarketIntelligenceCache to get the AVOID list
     // The auto-trader MUST respect the AI's avoid list — never buy assets marked as AVOID
     let avoidList = [];
+    let extremeFear = false;
     try {
       const intelCaches = await base44.asServiceRole.entities.MarketIntelligenceCache.filter({}, '-cached_at', 1);
       if (intelCaches.length > 0) {
@@ -692,22 +693,12 @@ Deno.serve(async (req) => {
           const regime = String(cache.market_regime || '').toLowerCase();
           const momentum = String(cache.momentum_direction || '').toLowerCase();
           
+          // Extreme fear no longer blocks everything: signal-backed buys that meet the
+          // user's auto-execute threshold still go out. Only unbacked "emerging" buys pause.
           if (sentiment <= 25 && (regime.includes('risk-off') || momentum === 'bearish')) {
-            log('MARKET REGIME BLOCK: Extreme fear detected — blocking all auto-buys', {
+            extremeFear = true;
+            log('EXTREME FEAR: only signals meeting your auto-execute threshold will buy; emerging buys paused', {
               sentiment, regime, momentum
-            });
-            await releaseLock(base44, autoTraderRunId, 'completed', {
-              trades_attempted: 0,
-              trades_successful: 0,
-              logs_json: JSON.stringify(runLogs),
-              note: 'Blocked by extreme fear market regime'
-            });
-            return Response.json({
-              success: true,
-              message: 'Auto-trading paused: extreme market fear detected (sentiment ' + sentiment + ')',
-              trades_count: 0,
-              market_sentiment: sentiment,
-              market_regime: regime
             });
           }
           
@@ -1866,7 +1857,7 @@ Deno.serve(async (req) => {
     let emergingTradesPlaced = [];
     // Hard cap to 1 emerging trade per run to stay within time budget
     const MAX_EMERGING = 1;
-    if (emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled && timeLeft() > 8000) {
+    if (!extremeFear && emergingOpportunities.length > 0 && availableCash > 10 && settings.auto_trading_enabled && timeLeft() > 8000) {
       console.log(`[runAutoTrader] Processing ${emergingOpportunities.length} emerging prospects...`);
       
       let __emergingCount = 0;
